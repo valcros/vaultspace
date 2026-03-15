@@ -1,8 +1,10 @@
 // VaultSpace Prisma Schema
 // See DATABASE_SCHEMA.md for full documentation
+// Generated from AI_BUILD_PLAYBOOK.md Phase 1
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
 }
 
 datasource db {
@@ -14,195 +16,428 @@ datasource db {
 // ENUMS
 // =============================================================================
 
-enum OrgRole {
-  owner
-  admin
-  member
+// User roles - F004
+enum UserRole {
+  ADMIN // Can manage users, rooms, organization settings
+  VIEWER // Can access documents via links
 }
 
-enum RoomRole {
-  admin
-  viewer
+// Room lifecycle - F108
+enum RoomStatus {
+  DRAFT // Not accessible to viewers
+  ACTIVE // Normal operation
+  ARCHIVED // Read-only
+  CLOSED // Deny all viewer access
 }
 
-enum ScanStatus {
-  pending
-  scanning
-  clean
-  infected
-  failed
+// Document lifecycle
+enum DocumentStatus {
+  ACTIVE // Normal operation
+  ARCHIVED // Hidden from viewers but maintained
+  DELETED // Soft-deleted (in trash)
 }
 
-enum PreviewStatus {
-  pending
-  processing
-  ready
-  failed
-  unsupported
-}
-
-enum InviteStatus {
-  pending
-  accepted
-  expired
-  revoked
-}
-
-enum AuditAction {
-  // Auth
-  login
-  logout
-  password_change
+// Event types - F102: comprehensive audit trail
+enum EventType {
   // Organization
-  org_create
-  org_update
-  org_delete
-  // User management
-  user_invite
-  user_remove
-  user_role_change
-  // Room
-  room_create
-  room_update
-  room_delete
-  room_archive
-  // Document
-  document_upload
-  document_view
-  document_download
-  document_move
-  document_rename
-  document_delete
-  document_restore
-  // Access
-  access_grant
-  access_revoke
-  access_update
-  // Settings
-  settings_update
+  ORGANIZATION_CREATED
+  ORGANIZATION_UPDATED
+  ORGANIZATION_DELETED
+
+  // Users & authentication
+  USER_CREATED
+  USER_INVITED
+  USER_ACCEPTED_INVITATION
+  USER_LOGIN
+  USER_LOGOUT
+  USER_UPDATED
+  USER_DELETED
+  USER_2FA_ENABLED
+  USER_2FA_DISABLED
+  USER_PASSWORD_CHANGED
+  USER_PASSWORD_RESET
+
+  // Rooms
+  ROOM_CREATED
+  ROOM_UPDATED
+  ROOM_STATUS_CHANGED
+  ROOM_ARCHIVED
+  ROOM_CLOSED
+  ROOM_DUPLICATED
+  ROOM_DELETED
+
+  // Documents
+  DOCUMENT_UPLOADED
+  DOCUMENT_VERSION_CREATED
+  DOCUMENT_UPDATED
+  DOCUMENT_METADATA_UPDATED
+  DOCUMENT_MOVED
+  DOCUMENT_TAGGED
+  DOCUMENT_ARCHIVED
+  DOCUMENT_DELETED
+  DOCUMENT_RESTORED
+  DOCUMENT_SCANNED
+
+  // Access control
+  PERMISSION_GRANTED
+  PERMISSION_REVOKED
+  PERMISSION_UPDATED
+  LINK_CREATED
+  LINK_REVOKED
+  LINK_ACCESSED
+  LINK_PASSWORD_VERIFIED
+
+  // Analytics
+  DOCUMENT_VIEWED
+  DOCUMENT_DOWNLOADED
+  DOCUMENT_PRINTED
+  PAGE_VIEWED
+
+  // Admin actions
+  ADMIN_SETTING_CHANGED
+  ADMIN_EXPORT_INITIATED
+
+  // System
+  SYSTEM_BACKUP_STARTED
+  SYSTEM_BACKUP_COMPLETED
+  SYSTEM_JOB_FAILED
+}
+
+// Actor type - who triggered the event
+enum ActorType {
+  ADMIN // Admin user action
+  VIEWER // Viewer/external user action
+  SYSTEM // Automated system action
+}
+
+// Link permissions - F116
+enum LinkPermission {
+  VIEW // Read-only
+  DOWNLOAD // Can download
+}
+
+// Link scope - what's accessible via link
+enum LinkScope {
+  ENTIRE_ROOM
+  FOLDER
+  DOCUMENT
+}
+
+// Preview generation status - F101
+enum PreviewStatus {
+  PENDING // Queued for generation
+  PROCESSING // Currently generating
+  READY // Previews available
+  FAILED // Generation failed
+  UNSUPPORTED // Format not supported for preview
+}
+
+// Malware scan status - F107
+enum ScanStatus {
+  PENDING // Queued for scan
+  SCANNING // Currently scanning
+  CLEAN // Passed scan
+  INFECTED // Flagged as malware
+  ERROR // Scan failed with error
+}
+
+// Preview asset type - F101
+enum PreviewAssetType {
+  PDF // Full document PDF
+  THUMBNAIL // Small page preview
+  RENDER // High-res preview
+}
+
+// Permission resource types
+enum PermissionResourceType {
+  ROOM
+  FOLDER
+  DOCUMENT
+}
+
+// Permission grantee types
+enum PermissionGranteeType {
+  USER
+  GROUP
+  ROLE
+  PUBLIC // For link-based access
+}
+
+// Permission levels
+enum PermissionLevel {
+  NONE // Explicitly denied
+  VIEW // Read-only
+  DOWNLOAD // Can download
+  ADMIN // Full control on resource
+}
+
+// Role scope
+enum RoleScopeType {
+  ORGANIZATION // Admin/viewer for entire org
+  ROOM // Admin for specific room only
+}
+
+// Notification types
+enum NotificationType {
+  VIEW_ACTIVITY
+  UPLOAD_COMPLETE
+  LINK_ACCESSED
+  ADMIN_ACTION
+  DIGEST
+}
+
+// Notification frequency
+enum DigestFrequency {
+  IMMEDIATE
+  DAILY
+  WEEKLY
+}
+
+// Invitation status
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REJECTED
 }
 
 // =============================================================================
-// MODELS - Skeleton for Phase 0
-// Full implementation in Phase 1
+// MODELS
 // =============================================================================
 
+// Organization (Multi-Tenant Root)
 model Organization {
   id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations (to be expanded in Phase 1)
-  users  OrganizationUser[]
-  rooms  Room[]
-  events AuditEvent[]
+  // Organization identity
+  name String @db.VarChar(255)
+  slug String @unique @db.VarChar(100)
 
+  // Branding
+  logoUrl      String? @db.VarChar(500)
+  primaryColor String  @default("#2563eb") @db.VarChar(7)
+  faviconUrl   String? @db.VarChar(500)
+
+  // Configuration
+  isActive        Boolean @default(true)
+  allowSelfSignup Boolean @default(false)
+
+  // Retention & compliance
+  eventRetentionDays Int     @default(365)
+  trashRetentionDays Int     @default(30)
+  maxStorageBytes    BigInt?
+
+  // Relations
+  users            UserOrganization[]
+  rooms            Room[]
+  roomTemplates    RoomTemplate[]
+  documents        Document[]
+  documentVersions DocumentVersion[]
+  events           Event[]
+  invitations      Invitation[]
+  permissions      Permission[]
+  groups           Group[]
+  links            Link[]
+  searchIndexes    SearchIndex[]
+  fileBlobs        FileBlob[]
+  previewAssets    PreviewAsset[]
+  extractedTexts   ExtractedText[]
+  linkVisits       LinkVisit[]
+  viewSessions     ViewSession[]
+  notifications    Notification[]
+  roleAssignments  RoleAssignment[]
+  folders          Folder[]
+
+  @@index([slug])
+  @@index([isActive])
   @@map("organizations")
 }
 
+// User (Identity & Authentication)
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  name         String
-  avatarUrl    String?
-  emailVerified Boolean  @default(false)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  lastLoginAt  DateTime?
-
-  // Relations
-  organizations OrganizationUser[]
-  sessions      Session[]
-  roomAccess    RoomAccess[]
-  events        AuditEvent[]
-
-  @@map("users")
-}
-
-model OrganizationUser {
-  organizationId String
-  userId         String
-  role           OrgRole  @default(member)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([organizationId, userId])
-  @@map("organization_users")
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  userId       String
-  token        String   @unique
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
-  lastActiveAt DateTime @default(now())
-  ipAddress    String?
-  userAgent    String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([token])
-  @@index([expiresAt])
-  @@map("sessions")
-}
-
-model Room {
-  id             String    @id @default(cuid())
-  organizationId String
-  name           String
-  description    String?
-  isArchived     Boolean   @default(false)
-  archivedAt     DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  folders      Folder[]
-  documents    Document[]
-  access       RoomAccess[]
-
-  @@unique([organizationId, name])
-  @@index([organizationId])
-  @@map("rooms")
-}
-
-model RoomAccess {
   id        String   @id @default(cuid())
-  roomId    String
-  userId    String
-  role      RoomRole @default(viewer)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Authentication
+  email        String @unique @db.VarChar(255)
+  passwordHash String @db.VarChar(255)
 
-  @@unique([roomId, userId])
-  @@index([userId])
-  @@map("room_access")
+  // Profile
+  firstName String @db.VarChar(100)
+  lastName  String @db.VarChar(100)
+
+  // Session & security
+  lastLoginAt     DateTime?
+  emailVerifiedAt DateTime?
+
+  // Account status
+  isActive Boolean @default(true)
+
+  // Relations
+  organizations      UserOrganization[]
+  permissions        Permission[]
+  roleAssignments    RoleAssignment[]
+  groupMemberships   GroupMembership[]
+  viewSessions       ViewSession[]
+  invitationsSent    Invitation[]
+  sessions           Session[]
+  linksCreated       Link[]
+  documentVersions   DocumentVersion[]
+  eventsTriggered    Event[]
+  permissionsGranted Permission[]       @relation("GrantedBy")
+
+  @@index([email])
+  @@index([isActive])
+  @@map("users")
 }
 
+// UserOrganization (Multi-Tenant User-Org Mapping)
+model UserOrganization {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  userId         String
+
+  // Role: admin or viewer (primary role)
+  role UserRole @default(VIEWER)
+
+  // Permissions
+  isActive       Boolean @default(true)
+  canManageUsers Boolean @default(false)
+  canManageRooms Boolean @default(false)
+
+  // Relations
+  organization            Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationPreferences NotificationPreference[]
+  notifications           Notification[]
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([role])
+  @@map("user_organizations")
+}
+
+// Session (Auth Sessions)
+model Session {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId         String
+  organizationId String? // Bound organization for this session
+
+  // Token
+  token     String   @unique @db.VarChar(255)
+  expiresAt DateTime
+
+  // Activity tracking
+  lastActiveAt DateTime @default(now())
+
+  // Metadata
+  ipAddress String? @db.VarChar(50)
+  userAgent String? @db.Text
+
+  // Status
+  isActive Boolean @default(true)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("sessions")
+}
+
+// Room (Data Room Container)
+model Room {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  // Identity
+  name        String  @db.VarChar(255)
+  description String? @db.Text
+  slug        String  @db.VarChar(100)
+
+  // Lifecycle - F108
+  status RoomStatus @default(DRAFT)
+
+  // Access control
+  requiresPassword          Boolean @default(false)
+  passwordHash              String? @db.VarChar(255)
+  requiresEmailVerification Boolean @default(true)
+
+  // Settings - F130
+  allowDownloads    Boolean @default(true)
+  defaultExpiryDays Int?
+
+  // Lifecycle tracking
+  archivedAt DateTime?
+  closedAt   DateTime?
+
+  // Statistics (denormalized)
+  totalDocuments Int @default(0)
+  totalFolders   Int @default(0)
+  totalViews     Int @default(0)
+  totalViewers   Int @default(0)
+
+  // Creator tracking
+  createdByUserId String?
+  templateId      String?
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  folders      Folder[]
+  documents    Document[]
+  links        Link[]
+  permissions  Permission[]
+  events       Event[]
+  linkVisits   LinkVisit[]
+  viewSessions ViewSession[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([archivedAt])
+  @@map("rooms")
+}
+
+// Folder (Hierarchical Structure)
 model Folder {
-  id             String   @id @default(cuid())
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   organizationId String
   roomId         String
-  parentId       String?
-  name           String
-  path           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
 
-  room     Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  parent   Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
-  children Folder[]  @relation("FolderTree")
-  documents Document[]
+  // Hierarchy
+  parentId     String?
+  name         String @db.VarChar(255)
+  path         String @db.VarChar(1000) // Full path for quick lookup
+  displayOrder Int    @default(0)
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  parent       Folder?      @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Folder[]     @relation("FolderHierarchy")
+
+  documents   Document[]
+  permissions Permission[]
 
   @@unique([roomId, path])
   @@index([organizationId])
@@ -211,84 +446,736 @@ model Folder {
   @@map("folders")
 }
 
+// Document (Document Metadata & Container)
 model Document {
-  id             String    @id @default(cuid())
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   organizationId String
   roomId         String
   folderId       String?
-  name           String
-  deletedAt      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
 
-  room     Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  folder   Folder?           @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  versions DocumentVersion[]
+  // Identity & version tracking
+  name         String         @db.VarChar(500)
+  displayOrder Int            @default(0)
+  status       DocumentStatus @default(ACTIVE)
 
+  // File information
+  mimeType         String @db.VarChar(100)
+  fileSize         BigInt
+  originalFileName String @db.VarChar(500)
+
+  // Versioning - F002
+  currentVersionId String?
+  totalVersions    Int     @default(0)
+
+  // Indexing - F010
+  batesNumber      String? @db.VarChar(20)
+  batesStartNumber Int?
+
+  // Tagging & metadata - F110
+  tags           String[] @default([])
+  customMetadata Json?
+
+  // Access control
+  allowDownload Boolean @default(true)
+
+  // Analytics
+  viewCount         Int       @default(0)
+  uniqueViewerCount Int       @default(0)
+  lastViewedAt      DateTime?
+  downloadCount     Int       @default(0)
+
+  // Soft delete tracking
+  deletedAt DateTime?
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  folder       Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  versions      DocumentVersion[]
+  permissions   Permission[]
+  searchIndexes SearchIndex[]
+  linkVisits    LinkVisit[]
+  viewSessions  ViewSession[]
+
+  @@unique([organizationId, id])
   @@index([organizationId])
   @@index([roomId])
   @@index([folderId])
+  @@index([status])
+  @@index([batesNumber])
   @@index([deletedAt])
   @@map("documents")
 }
 
+// DocumentVersion (Immutable Snapshots)
 model DocumentVersion {
-  id            String        @id @default(cuid())
-  documentId    String
-  versionNumber Int
-  storagePath   String
-  mimeType      String
-  sizeBytes     BigInt
-  checksum      String
-  scanStatus    ScanStatus    @default(pending)
-  previewStatus PreviewStatus @default(pending)
-  previewPath   String?
-  uploadedById  String?
-  createdAt     DateTime      @default(now())
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organizationId String
+  documentId     String
+
+  // Version tracking
+  versionNumber     Int
+  uploadedByUserId  String?
+  uploadedByEmail   String? @db.VarChar(255)
+  changeDescription String? @db.Text
+
+  // File information
+  mimeType String @db.VarChar(100)
+  fileSize BigInt
+  fileName String @db.VarChar(500)
+
+  // Integrity - F106: Hash chain for tamper detection
+  fileSha256        String  @db.VarChar(64)
+  versionHash       String  @db.VarChar(64)
+  parentVersionHash String? @db.VarChar(64)
+
+  // Preview generation status - F101
+  previewStatus      PreviewStatus @default(PENDING)
+  previewError       String?       @db.Text
+  previewGeneratedAt DateTime?
+
+  // Scan status - F107
+  scanStatus ScanStatus @default(PENDING)
+  scanError  String?    @db.Text
+  scannedAt  DateTime?
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document       Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedByUser User?        @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  fileBlob      FileBlob?
+  previewAssets PreviewAsset[]
+  extractedText ExtractedText?
+  searchIndexes SearchIndex[]
 
   @@unique([documentId, versionNumber])
-  @@index([scanStatus])
+  @@index([organizationId])
+  @@index([documentId])
   @@index([previewStatus])
+  @@index([scanStatus])
+  @@index([createdAt])
   @@map("document_versions")
 }
 
-model Invite {
-  id             String       @id @default(cuid())
-  organizationId String
-  email          String
-  role           OrgRole      @default(member)
-  token          String       @unique
-  status         InviteStatus @default(pending)
-  expiresAt      DateTime
-  invitedById    String
-  createdAt      DateTime     @default(now())
-  acceptedAt     DateTime?
+// FileBlob (Original File Storage Reference)
+model FileBlob {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
 
-  @@index([token])
+  organizationId String
+  versionId      String @unique
+
+  // Storage reference
+  storageKey    String @db.VarChar(500)
+  storageBucket String @default("documents") @db.VarChar(100)
+
+  // Encryption - F120: Optional document-level encryption
+  isEncrypted         Boolean @default(false)
+  encryptionKey       String? @db.VarChar(500)
+  encryptionAlgorithm String? @db.VarChar(50)
+
+  // Relations
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  version      DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
   @@index([organizationId])
-  @@index([email])
-  @@map("invites")
+  @@index([storageKey])
+  @@map("file_blobs")
 }
 
-model AuditEvent {
-  id             String      @id @default(cuid())
+// PreviewAsset (Generated Previews & Thumbnails)
+model PreviewAsset {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   organizationId String
+  versionId      String
+
+  // Preview type
+  assetType PreviewAssetType @default(PDF)
+
+  // Page/variant information
+  pageNumber Int?
+  variantDpi Int  @default(96)
+
+  // Storage reference
+  storageKey    String @db.VarChar(500)
+  mimeType      String @db.VarChar(100)
+  fileSizeBytes BigInt
+
+  // Dimensions for rendering
+  width  Int?
+  height Int?
+
+  // Relations
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  version      DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([versionId])
+  @@index([assetType])
+  @@index([pageNumber])
+  @@map("preview_assets")
+}
+
+// ExtractedText (Full-Text Content)
+model ExtractedText {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  versionId      String @unique
+
+  // Full extracted text
+  plainText String @db.Text
+
+  // Language detection
+  detectedLanguage String? @db.VarChar(10)
+  confidence       Float?
+
+  // Relations
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  version      DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([versionId])
+  @@index([detectedLanguage])
+  @@map("extracted_texts")
+}
+
+// SearchIndex (Denormalized Search Data)
+model SearchIndex {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  documentId     String
+  versionId      String
+
+  // Searchable content - F011
+  documentTitle String @db.VarChar(500)
+  extractedText String @db.Text
+  fileName      String @db.VarChar(500)
+
+  // Metadata for search
+  tags           String[] @default([])
+  customMetadata Json?
+  mimeType       String   @db.VarChar(100)
+  uploadedAt     DateTime
+
+  // Relations
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version      DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, versionId])
+  @@index([organizationId])
+  @@index([documentId])
+  @@index([versionId])
+  @@map("search_indexes")
+}
+
+// Link (Shareable Access Links)
+model Link {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId  String
+  roomId          String
+  createdByUserId String?
+
+  // Link identity
+  slug        String  @unique @db.VarChar(50)
+  name        String? @db.VarChar(255)
+  description String? @db.Text
+
+  // Access permissions - F116
+  permission LinkPermission @default(VIEW)
+
+  // Link-level access control
+  requiresPassword          Boolean  @default(false)
+  passwordHash              String?  @db.VarChar(255)
+  requiresEmailVerification Boolean  @default(false)
+  allowedEmails             String[] @default([])
+
+  // Expiry - F116
+  expiresAt DateTime?
+  maxViews  Int?
+  viewCount Int       @default(0)
+
+  // Scope: what documents are accessible via this link
+  scope            LinkScope @default(ENTIRE_ROOM)
+  scopedFolderId   String?
+  scopedDocumentId String?
+
+  // Status
+  isActive Boolean @default(true)
+
+  // Analytics
+  lastAccessedAt DateTime?
+
+  // Relations
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room          Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  createdByUser User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  visits       LinkVisit[]
+  viewSessions ViewSession[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([expiresAt])
+  @@index([viewCount])
+  @@index([isActive])
+  @@map("links")
+}
+
+// LinkVisit (Link-Level Analytics)
+model LinkVisit {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String
+  linkId         String
+  roomId         String
+  documentId     String?
+
+  // Visitor identification
+  visitorEmail      String? @db.VarChar(255)
+  visitorIdentifier String? @db.VarChar(100)
+
+  // Session information
+  viewSessionId String?
+
+  // Metrics - F027
+  timeSpentSeconds Int @default(0)
+  pagesViewed      Int @default(1)
+
+  // Device & location
+  ipAddress   String? @db.VarChar(50)
+  userAgent   String? @db.Text
+  countryCode String? @db.VarChar(2)
+
+  // Relations
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  link         Link          @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  room         Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  document     Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  session      ViewSession?  @relation(fields: [viewSessionId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([linkId])
+  @@index([roomId])
+  @@index([documentId])
+  @@index([visitorEmail])
+  @@index([createdAt])
+  @@map("link_visits")
+}
+
+// ViewSession (Detailed Viewer Activity)
+model ViewSession {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  roomId         String
   userId         String?
-  action         AuditAction
-  resourceType   String
-  resourceId     String
-  metadata       Json?
-  ipAddress      String?
-  userAgent      String?
-  timestamp      DateTime    @default(now())
+  linkId         String?
 
+  // Session identification
+  sessionToken String @unique @db.VarChar(255)
+
+  // Visitor info
+  visitorEmail String? @db.VarChar(255)
+  visitorName  String? @db.VarChar(255)
+
+  // Activity tracking
+  lastActivityAt        DateTime @updatedAt
+  totalTimeSpentSeconds Int      @default(0)
+
+  // Device info
+  ipAddress   String? @db.VarChar(50)
+  userAgent   String? @db.Text
+
+  // Access flags
+  isActive Boolean @default(true)
+
+  // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  link         Link?        @relation(fields: [linkId], references: [id], onDelete: SetNull)
 
-  @@index([organizationId, timestamp])
+  visits    LinkVisit[]
+  events    Event[]
+  documents Document[]
+
+  @@unique([organizationId, sessionToken])
+  @@index([organizationId])
+  @@index([roomId])
   @@index([userId])
-  @@index([resourceType, resourceId])
-  @@map("audit_events")
+  @@index([linkId])
+  @@index([lastActivityAt])
+  @@index([isActive])
+  @@map("view_sessions")
+}
+
+// Permission (RBAC: Document/Folder-Level ACLs)
+model Permission {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  // What resource is this permission on?
+  resourceType PermissionResourceType
+
+  roomId     String?
+  folderId   String?
+  documentId String?
+
+  // Who gets this permission?
+  granteeType PermissionGranteeType
+
+  userId  String?
+  groupId String?
+
+  // What can they do?
+  permissionLevel PermissionLevel
+
+  // Inheritance
+  inheritFromParent Boolean @default(true)
+
+  // Time-based access
+  expiresAt DateTime?
+
+  // Status
+  isActive Boolean @default(true)
+
+  // Audit trail
+  grantedByUserId String?
+  grantedAt       DateTime @default(now())
+
+  // Relations
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room          Room?        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  folder        Folder?      @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  document      Document?    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user          User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group         Group?       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  grantedByUser User?        @relation("GrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([resourceType])
+  @@index([userId])
+  @@index([groupId])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("permissions")
+}
+
+// RoleAssignment (Explicit Role Mappings)
+model RoleAssignment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  userId         String
+
+  // Role
+  role UserRole
+
+  // Scope
+  scopeType RoleScopeType
+
+  roomId String?
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, scopeType, roomId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([role])
+  @@map("role_assignments")
+}
+
+// Group (User Groups for Batch Permissions)
+model Group {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  // Group identity
+  name        String  @db.VarChar(255)
+  description String? @db.Text
+
+  // External organization
+  externalOrganization String? @db.VarChar(255)
+
+  // Status
+  isActive Boolean @default(true)
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  memberships GroupMembership[]
+  permissions Permission[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([externalOrganization])
+  @@map("groups")
+}
+
+// GroupMembership (User-Group Mapping)
+model GroupMembership {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  groupId String
+  userId  String
+
+  // Relations
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("group_memberships")
+}
+
+// Event (Immutable Audit Trail)
+model Event {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String
+
+  // Event identification
+  eventType EventType
+
+  // Actor information
+  actorType  ActorType
+  actorId    String?
+  actorEmail String?   @db.VarChar(255)
+
+  // Resource being changed
+  roomId     String?
+  folderId   String?
+  documentId String?
+
+  // Request/Session tracking
+  requestId String? @db.VarChar(100)
+  sessionId String?
+
+  // Details
+  description String? @db.Text
+
+  // Event-specific data as JSON
+  metadata Json?
+
+  // Network information
+  ipAddress String? @db.VarChar(50)
+  userAgent String? @db.Text
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  viewSession  ViewSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([eventType])
+  @@index([actorId])
+  @@index([roomId])
+  @@index([documentId])
+  @@index([createdAt])
+  @@index([requestId])
+  @@index([sessionId])
+  @@map("events")
+}
+
+// RoomTemplate (Room Templates - F109)
+model RoomTemplate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  // Template identity
+  name             String  @db.VarChar(255)
+  description      String? @db.Text
+  category         String  @db.VarChar(100)
+  isSystemTemplate Boolean @default(false)
+  isPublic         Boolean @default(false)
+
+  // Template structure
+  folderStructure    Json
+  defaultPermissions Json?
+  defaultSettings    Json?
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([category])
+  @@index([isSystemTemplate])
+  @@map("room_templates")
+}
+
+// Notification (User Notifications)
+model Notification {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId     String
+  userOrganizationId String
+
+  // Notification content
+  type    NotificationType
+  title   String           @db.VarChar(255)
+  message String           @db.Text
+
+  // Resource reference
+  roomId     String?
+  documentId String?
+  linkId     String?
+
+  // Status
+  isRead Boolean @default(false)
+
+  // Relations
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userOrganization UserOrganization @relation(fields: [userOrganizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userOrganizationId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// NotificationPreference (User Notification Settings)
+model NotificationPreference {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId     String
+  userOrganizationId String @unique
+
+  // Email preferences
+  emailOnDocumentViewed   Boolean @default(true)
+  emailOnDocumentUploaded Boolean @default(true)
+  emailOnAccessRevoked    Boolean @default(true)
+  emailDailyDigest        Boolean @default(false)
+
+  // Notification frequency
+  digestFrequency DigestFrequency @default(DAILY)
+
+  // Do not disturb
+  quietHoursStart String? @db.VarChar(5)
+  quietHoursEnd   String? @db.VarChar(5)
+
+  // Relations
+  userOrganization UserOrganization @relation(fields: [userOrganizationId], references: [id], onDelete: Cascade)
+
+  @@index([userOrganizationId])
+  @@map("notification_preferences")
+}
+
+// Invitation (Team Member Invitations)
+model Invitation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  // Invite details
+  email String   @db.VarChar(255)
+  role  UserRole @default(VIEWER)
+
+  // Status
+  status InvitationStatus @default(PENDING)
+
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  // Link
+  invitationToken String @unique @db.VarChar(255)
+  invitationUrl   String @db.VarChar(500)
+
+  // Relations
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedByUser   User?        @relation(fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  invitedByUserId String?
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+// PasswordResetToken (Password Reset)
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId String
+
+  // Token
+  token     String   @unique @db.VarChar(255)
+  expiresAt DateTime
+
+  // Usage tracking
+  usedAt DateTime?
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// EmailVerificationToken (Email Verification)
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId String
+
+  // Token
+  token     String   @unique @db.VarChar(255)
+  expiresAt DateTime
+
+  // Usage tracking
+  usedAt DateTime?
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
 }
