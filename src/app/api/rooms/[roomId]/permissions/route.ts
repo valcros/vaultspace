@@ -12,6 +12,9 @@ import { PermissionGranteeType, PermissionLevel, PermissionResourceType } from '
 import { requireAuth } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
+// This route uses cookies for auth, so it must be dynamic
+export const dynamic = 'force-dynamic';
+
 interface RouteContext {
   params: Promise<{ roomId: string }>;
 }

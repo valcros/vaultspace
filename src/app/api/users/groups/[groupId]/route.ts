@@ -13,6 +13,9 @@ import { createServiceContext, groupService } from '@/services';
 import { AppError, formatErrorResponse, NotFoundError } from '@/lib/errors';
 import { HTTP_STATUS } from '@/lib/constants';
 
+// This route uses cookies for auth, so it must be dynamic
+export const dynamic = 'force-dynamic';
+
 interface RouteContext {
   params: Promise<{ groupId: string }>;
 }

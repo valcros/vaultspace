@@ -11,6 +11,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
+// This route uses cookies for auth, so it must be dynamic
+export const dynamic = 'force-dynamic';
+
 import type { RoomStatus } from '@prisma/client';
 
 interface RouteContext {

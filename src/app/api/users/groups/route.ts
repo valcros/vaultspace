@@ -12,6 +12,9 @@ import { createServiceContext, groupService } from '@/services';
 import { AppError, formatErrorResponse, ValidationError } from '@/lib/errors';
 import { HTTP_STATUS } from '@/lib/constants';
 
+// This route uses cookies for auth, so it must be dynamic
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/users/groups
  * Create a new group

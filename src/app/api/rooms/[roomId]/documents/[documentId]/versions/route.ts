@@ -13,6 +13,9 @@ import { getProviders } from '@/providers';
 import { createHash } from 'crypto';
 import { sanitizeFilename } from '@/lib/fileTypes';
 
+// This route uses cookies for auth, so it must be dynamic
+export const dynamic = 'force-dynamic';
+
 interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
 }

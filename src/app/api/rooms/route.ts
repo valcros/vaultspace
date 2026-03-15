@@ -8,6 +8,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
+
+// This route uses cookies for auth, so it must be dynamic
+export const dynamic = 'force-dynamic';
 import { db } from '@/lib/db';
 
 /**

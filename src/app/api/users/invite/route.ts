@@ -13,6 +13,9 @@ import { db } from '@/lib/db';
 import { EmailNotificationService } from '@/services/notifications';
 import { getProviders } from '@/providers';
 
+// This route uses cookies for auth, so it must be dynamic
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/users/invite
  * Send invitation to a new team member
