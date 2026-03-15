@@ -40,6 +40,57 @@ export async function getSession(): Promise<SessionData | null> {
 }
 
 /**
+ * Get session from NextRequest (alternative for API routes)
+ * Use this when cookies() doesn't work correctly in standalone builds
+ */
+export async function getSessionFromRequest(request: NextRequest): Promise<SessionData | null> {
+  // Try getting cookie from request.cookies first
+  const token = request.cookies.get(SESSION_CONFIG.COOKIE_NAME)?.value;
+
+  if (!token) {
+    // Fallback: try parsing from Cookie header directly
+    const cookieHeader = request.headers.get('cookie');
+    if (!cookieHeader) {
+      return null;
+    }
+    const cookies = Object.fromEntries(
+      cookieHeader.split('; ').map(c => {
+        const [key, ...val] = c.split('=');
+        return [key, val.join('=')];
+      })
+    );
+    const headerToken = cookies[SESSION_CONFIG.COOKIE_NAME];
+    if (!headerToken) {
+      return null;
+    }
+    try {
+      return await validateSession(headerToken);
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    return await validateSession(token);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Require authentication from request - throws if not authenticated
+ */
+export async function requireAuthFromRequest(request: NextRequest): Promise<SessionData> {
+  const session = await getSessionFromRequest(request);
+
+  if (!session) {
+    throw new AuthenticationError('Authentication required');
+  }
+
+  return session;
+}
+
+/**
  * Require authentication - throws if not authenticated
  */
 export async function requireAuth(): Promise<SessionData> {

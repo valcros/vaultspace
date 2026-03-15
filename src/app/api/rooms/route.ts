@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { requireAuth } from '@/lib/middleware';
+import { requireAuthFromRequest } from '@/lib/middleware';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -19,7 +19,7 @@ import { db } from '@/lib/db';
  */
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth();
+    const session = await requireAuthFromRequest(request);
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireAuth();
+    const session = await requireAuthFromRequest(request);
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {

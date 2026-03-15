@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { requireAuth } from '@/lib/middleware';
+import { requireAuthFromRequest } from '@/lib/middleware';
 import { db } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -16,9 +16,9 @@ export const dynamic = 'force-dynamic';
  * GET /api/users
  * List all users in the organization
  */
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth();
+    const session = await requireAuthFromRequest(request);
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {

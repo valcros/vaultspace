@@ -4,7 +4,9 @@ export type { RateLimitConfig, RateLimitResult } from './rateLimit';
 
 export {
   getSession,
+  getSessionFromRequest,
   requireAuth,
+  requireAuthFromRequest,
   requireAdmin,
   getRequestContext,
   setSessionCookie,
