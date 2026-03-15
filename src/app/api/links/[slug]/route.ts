@@ -10,6 +10,8 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { db } from '@/lib/db';
+import { EmailNotificationService } from '@/services/notifications';
+import { getProviders } from '@/providers';
 
 interface RouteContext {
   params: Promise<{ slug: string }>;
@@ -249,6 +251,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       },
     });
 
+    // Send view notification to room admins (non-blocking)
+    // Only notify if link is scoped to a document
+    if (link.scopedDocumentId) {
+      sendViewNotification(
+        link.organizationId,
+        link.roomId,
+        link.scopedDocumentId,
+        email?.toLowerCase().trim()
+      ).catch((err) => console.error('[PublicLinkAPI] Notification error:', err));
+    }
+
     return NextResponse.json({
       sessionToken,
       roomId: link.roomId,
@@ -264,4 +277,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Send view notification to room admins (non-blocking)
+ */
+async function sendViewNotification(
+  organizationId: string,
+  roomId: string,
+  documentId: string,
+  viewerEmail?: string
+): Promise<void> {
+  const providers = getProviders();
+  const baseUrl = process.env['APP_URL'] || 'http://localhost:3000';
+
+  const notificationService = new EmailNotificationService({
+    emailProvider: providers.email,
+    fromAddress: process.env['SMTP_FROM'] || 'noreply@vaultspace.local',
+    appUrl: baseUrl,
+  });
+
+  await notificationService.notifyDocumentViewed({
+    organizationId,
+    roomId,
+    documentId,
+    viewerEmail,
+  });
 }
