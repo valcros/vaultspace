@@ -19,8 +19,8 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Install dumb-init to handle signals properly
-RUN apk add --no-cache dumb-init curl
+# Install dumb-init and OpenSSL 1.1 compatibility for Prisma
+RUN apk add --no-cache dumb-init curl openssl1.1-compat
 
 # Set production environment
 ENV NODE_ENV=production
