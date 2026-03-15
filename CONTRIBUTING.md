@@ -39,6 +39,7 @@ Before you begin, ensure you have the following installed:
 - **Git** - Download from [git-scm.com](https://git-scm.com/)
 
 Verify your setup:
+
 ```bash
 node --version      # Should be v20.x or higher
 npm --version       # Should be v10.x or higher
@@ -52,6 +53,7 @@ git --version       # Should be v2.x or higher
 1. **Fork the repository** on GitHub by clicking the "Fork" button at the top-right of the repo page.
 
 2. **Clone your fork:**
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/vaultspace.git
    cd vaultspace
@@ -65,6 +67,7 @@ git --version       # Should be v2.x or higher
 ### Local Development Setup
 
 1. **Start the Docker Compose stack** (PostgreSQL, Redis, Gotenberg for previews):
+
    ```bash
    docker compose up -d
    ```
@@ -75,11 +78,13 @@ git --version       # Should be v2.x or higher
    - **Gotenberg** on `localhost:3001` (for document preview conversion)
 
 2. **Install dependencies:**
+
    ```bash
    npm install
    ```
 
 3. **Set up the database:**
+
    ```bash
    npm run db:migrate
    ```
@@ -87,6 +92,7 @@ git --version       # Should be v2.x or higher
    This runs all pending migrations and generates the Prisma client.
 
 4. **Start the development server:**
+
    ```bash
    npm run dev
    ```
@@ -94,6 +100,7 @@ git --version       # Should be v2.x or higher
    The app will be available at `http://localhost:3000`.
 
 5. **(Optional) Seed demo data:**
+
    ```bash
    npm run db:seed
    ```
@@ -103,6 +110,7 @@ git --version       # Should be v2.x or higher
 ### Default Credentials
 
 After seeding, you can log in with:
+
 - **Email:** `admin@example.com`
 - **Password:** `dev-password` (insecure; dev-only)
 
@@ -165,6 +173,7 @@ Use one of these prefixes:
 - `chore/xxx` - Maintenance (e.g., `chore/dependency-update`)
 
 Example:
+
 ```bash
 git checkout -b feature/password-reset
 ```
@@ -174,6 +183,7 @@ git checkout -b feature/password-reset
 We follow **Conventional Commits** for clear, scannable commit history.
 
 Format:
+
 ```
 <type>(<scope>): <subject>
 
@@ -183,6 +193,7 @@ Format:
 ```
 
 **Types:**
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `docs:` - Documentation
@@ -196,6 +207,7 @@ Format:
 **Subject:** Imperative, lowercase, no period. Max 50 characters.
 
 **Examples:**
+
 ```
 feat(auth): add password reset flow
 fix(permissions): correct multi-tenant scoping
@@ -234,6 +246,7 @@ test(document): add validation edge cases
 - Type all function parameters and return types.
 
 Example:
+
 ```typescript
 // ✓ Good
 function createRoom(name: string, orgId: string): Promise<Room> {
@@ -252,6 +265,7 @@ function createRoom(name, orgId) {
 - **Prettier** enforces consistent code style.
 
 Run before committing:
+
 ```bash
 npm run lint             # Run ESLint
 npm run format           # Run Prettier (auto-fix)
@@ -267,6 +281,7 @@ Or enable auto-format-on-save in your editor (VS Code: install Prettier + ESLint
 All business logic must go in the `src/services/` layer. API routes should be thin wrappers that delegate to services.
 
 **Pattern:**
+
 ```typescript
 // src/services/DocumentService.ts
 class DocumentService {
@@ -340,6 +355,7 @@ Prisma middleware auto-applies tenant scoping to common query patterns (see [ARC
 External integrations use provider interfaces. Implementations are selected via environment variables.
 
 For example:
+
 ```typescript
 // lib/providers/storage/StorageProvider.ts (interface)
 interface StorageProvider {
@@ -469,7 +485,11 @@ If a provider interface doesn't exist, create one in `lib/providers/<type>/`:
 // lib/providers/email/EmailProvider.ts
 export interface EmailProvider {
   send(request: SendEmailRequest): Promise<SendEmailResult>;
-  sendTemplate(to: string, templateId: string, data: Record<string, string>): Promise<SendEmailResult>;
+  sendTemplate(
+    to: string,
+    templateId: string,
+    data: Record<string, string>
+  ): Promise<SendEmailResult>;
   verifyEmail(email: string): Promise<boolean>;
 }
 
@@ -507,7 +527,7 @@ export class SendGridEmailProvider implements EmailProvider {
       const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -528,7 +548,11 @@ export class SendGridEmailProvider implements EmailProvider {
     }
   }
 
-  async sendTemplate(to: string, templateId: string, data: Record<string, string>): Promise<SendEmailResult> {
+  async sendTemplate(
+    to: string,
+    templateId: string,
+    data: Record<string, string>
+  ): Promise<SendEmailResult> {
     // Implementation for template-based sending
     // ...
   }
@@ -677,6 +701,7 @@ Add the new provider to the relevant documentation:
 We use labels for organization and triage. Here are the standard labels:
 
 ### Type
+
 - `type/feature` - Feature request or implementation
 - `type/bug` - Bug report or fix
 - `type/docs` - Documentation
@@ -684,18 +709,21 @@ We use labels for organization and triage. Here are the standard labels:
 - `type/performance` - Performance improvement
 
 ### Priority
+
 - `priority/critical` - Blocks other work or production issue
 - `priority/high` - Important, should be done soon
 - `priority/medium` - Normal priority (default)
 - `priority/low` - Nice-to-have, can wait
 
 ### Status
+
 - `status/needs-review` - Awaiting review
 - `status/in-progress` - Active development
 - `status/blocked` - Blocked by other issue/PR
 - `status/ready-to-merge` - Approved and ready
 
 ### Category
+
 - `category/auth` - Authentication and authorization
 - `category/storage` - File storage and management
 - `category/admin` - Admin UI and operations
@@ -705,6 +733,7 @@ We use labels for organization and triage. Here are the standard labels:
 - `category/testing` - Test infrastructure and coverage
 
 ### Other
+
 - `good-first-issue` - Good starting point for new contributors
 - `help-wanted` - Seeking community contribution
 - `duplicate` - Duplicate of another issue

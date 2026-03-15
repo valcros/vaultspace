@@ -1,0 +1,529 @@
+COMMENTS AND SUGGESTIONS. Items marked to delay or move are only suggestions and may not align with the aggressive build attitude of the project.
+
+Overall Assessment
+
+This document is excellent for an early open-source project.
+
+What stands out positively:
+
+Clear product positioning
+
+Explicit architecture primitives
+
+Dependency chains
+
+Adapter interface strategy
+
+Deployment-first thinking
+
+Self-hosting focus
+
+Event-driven architecture
+
+Most open-source projects never reach this level of specification early.
+
+Your architecture is especially strong in these areas:
+
+event-driven design
+
+async processing
+
+pluggable providers
+
+layered permissions
+
+self-host deployment
+
+These choices give you enterprise-grade architecture without forcing enterprise complexity early.
+
+Major Strategic Strengths
+1. Correct licensing decision
+
+Switching to AGPLv3 was the right call.
+
+The document clearly explains:
+
+community usage allowed
+
+SaaS forks must publish modifications
+
+commercial strategy through hosted service/support
+
+That combination is exactly how successful OSS infrastructure projects work.
+
+Examples of similar models:
+
+GitLab CE
+
+Sentry
+
+Plausible Analytics
+
+Grafana
+
+This keeps the project credibly open while protecting it from pure SaaS copycats.
+
+2. The EventBus decision is extremely important
+
+One of the strongest design choices:
+
+F102 – Internal event bus
+
+This is the foundation for:
+
+audit trail
+
+analytics
+
+notifications
+
+webhooks
+
+integrations
+
+Most document platforms fail because they don’t separate events from state changes early.
+
+Your architecture:
+
+State change
+→ Event emitted
+→ Subscribers process event
+
+This will make the system far more extensible later.
+
+Suggestion:
+
+Document the event schema early.
+
+Example:
+
+event_id
+event_type
+timestamp
+actor_id
+actor_type
+room_id
+document_id
+metadata_json
+ip_address
+user_agent
+
+That schema becomes the backbone of the platform.
+
+3. Correct decision: Job queue as first-class infrastructure
+
+F100 – Background job queue is essential.
+
+Nearly everything heavy should run as jobs:
+
+preview generation
+
+OCR
+
+email sending
+
+virus scanning
+
+analytics aggregation
+
+report generation
+
+Your decision to default to:
+
+BullMQ + Redis
+
+is a good one.
+
+It’s mature and widely used.
+
+One suggestion:
+
+Create a job classification system:
+
+high priority
+normal
+low
+scheduled
+
+Example:
+
+High priority
+
+preview generation
+
+Normal
+
+email
+
+Low
+
+analytics aggregation
+
+Scheduled
+
+retention cleanup
+
+4. The adapter architecture is excellent
+
+Your Generic Interface Summary is one of the strongest sections.
+
+Interfaces like:
+
+StorageProvider
+EmailProvider
+PreviewProvider
+JobProvider
+EncryptionProvider
+AIProvider
+SignatureProvider
+
+This creates:
+
+cloud independence
+
+plugin ecosystem potential
+
+maintainable architecture
+
+Very good decision.
+
+5. The dependency graph is unusually good
+
+Your MVP build order section is extremely useful.
+
+Most projects fail because they don’t map dependencies.
+
+This section clearly shows:
+
+Layer 0 → Layer 6 development order.
+
+Example:
+
+Upload
+→ Preview pipeline
+→ Indexing
+→ Version control
+→ ACL
+→ Audit
+→ Viewer features
+
+That sequencing is correct and realistic.
+
+Architecture Feedback
+
+There are a few things I would refine.
+
+1. Add a search service abstraction
+
+Right now search is defined as:
+
+Postgres FTS or Meilisearch
+
+But search will become critical.
+
+Recommendation:
+
+Create a SearchProvider interface.
+
+Example:
+
+SearchProvider
+
+Implementations:
+
+Postgres FTS (MVP)
+Meilisearch (V1)
+OpenSearch / Elasticsearch (V2)
+
+Search engines eventually require separate scaling.
+
+2. Preview pipeline architecture
+
+The preview pipeline is well designed but needs one additional layer.
+
+Right now it converts documents → PDF.
+
+But you will also need:
+
+thumbnail generation
+page extraction
+watermark overlay
+text extraction
+
+I would structure the pipeline as:
+
+Upload
+→ Scan
+→ Convert
+→ Extract text
+→ Generate thumbnails
+→ Index
+
+Each stage should be a job.
+
+3. Add a dedicated permission engine
+
+Permissions are currently scattered across:
+
+roles
+groups
+ACL
+links
+
+You should centralize evaluation into one module:
+
+PermissionEngine
+
+Example function:
+
+canUserAccessDocument(user, document, action)
+
+Actions:
+
+view
+download
+print
+share
+comment
+
+This prevents permission logic duplication.
+
+4. Multi-tenant architecture decision
+
+The document currently implies single organization per deployment.
+
+But eventually users will want:
+
+multi-tenant SaaS
+
+So decide early if your database model supports:
+
+organization_id
+room_id
+
+Every entity should include:
+
+organization_id
+
+Even if self-hosted installs only have one.
+
+Feature Scope Observations
+
+The scope is aggressive but mostly correct.
+
+Your counts:
+
+MVP: 47
+V1: 43
+V2: 30
+
+That’s a large project but manageable.
+
+Excellent V1 features
+
+Some V1 features are particularly important.
+
+Watermarking
+F023 dynamic watermarking
+
+This is critical for VDR credibility.
+
+Audit logs
+F025 audit trail
+
+Without this the platform would not be trusted.
+
+Compliance export
+F133 compliance package
+
+Very strong idea.
+
+This is something commercial VDRs charge heavily for.
+
+Chain of custody
+F134 chain of custody report
+
+This will matter for legal use cases.
+
+Potential Gaps
+
+There are a few missing capabilities worth considering.
+
+1. Document redaction
+
+This is extremely important for legal use cases.
+
+Add:
+
+Document redaction tool
+
+Example:
+
+V2 feature
+
+Allows admin to redact sensitive information before sharing.
+
+2. Document request workflow
+
+Investors often request documents.
+
+Example workflow:
+
+Viewer requests document
+Admin uploads response
+Request marked complete
+
+This could be:
+
+V2 feature
+3. Bulk document operations
+
+Admins will need:
+
+bulk move
+bulk permissions
+bulk tagging
+bulk delete
+
+Some are implied but not explicit.
+
+4. Advanced watermarking
+
+Later versions could include:
+
+viewer name
+email
+IP
+timestamp
+room name
+
+Overlay per page.
+
+5. Document integrity verification
+
+You already store SHA256.
+
+Consider adding:
+
+hash chain across document versions
+
+This strengthens legal defensibility.
+
+Priority Adjustments I Recommend
+
+A few features might need priority changes.
+
+Move to MVP
+
+These would improve MVP significantly.
+
+Malware scanning
+
+Currently:
+
+F107 V1
+
+I recommend:
+
+MVP
+
+Security is critical.
+
+Backup / restore
+F137 V1
+
+Should probably be:
+
+MVP
+
+Admins will demand backup before trusting system.
+
+Possibly move to V2
+
+Some V1 features could move later.
+
+Example:
+
+document diff
+
+Useful but not critical for VDR.
+
+Governance Suggestions
+
+Since you plan to open-source this publicly:
+
+Add repo documents:
+
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+ARCHITECTURE.md
+ROADMAP.md
+
+Also define:
+
+RFC process
+
+for major features.
+
+Community Growth Strategy
+
+For open-source adoption:
+
+Make sure you provide:
+
+docker compose example
+demo dataset
+sample room template
+
+Users should be able to run:
+
+docker compose up
+
+and see a demo room immediately.
+
+Long-Term Platform Vision
+
+This project could eventually become more than a data room.
+
+It could evolve into:
+
+secure document collaboration platform
+
+Similar to:
+
+Datasite
+
+Intralinks
+
+Firmex
+
+But open source.
+
+If successful it could also power:
+
+trust centers
+compliance portals
+document exchanges
+Final Evaluation
+
+Strength of this document:
+
+Architecture: 9/10
+Feature coverage: 9/10
+OSS readiness: 9/10
+Product positioning: 9/10
+
+This is already far more structured than most early open-source infrastructure projects.
+
+The main next steps should be:
+
+Permission model specification
+
+Database schema design
+
+Event model documentation
+
+Service architecture diagram
+
+Those four documents will turn this into a complete system design.
