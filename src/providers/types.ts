@@ -295,6 +295,38 @@ export interface EncryptionProvider {
 }
 
 // =============================================================================
+// OCR Provider (F132)
+// =============================================================================
+
+export interface OCROptions {
+  language?: string; // ISO language code, default 'eng'
+  quality?: 'fast' | 'normal' | 'high';
+}
+
+export interface OCRResult {
+  text: string;
+  confidence: number;
+  language: string;
+}
+
+export interface OCRProvider {
+  /**
+   * Extract text from an image or scanned document
+   */
+  extractText(data: Buffer, mimeType: string, options?: OCROptions): Promise<OCRResult>;
+
+  /**
+   * Check if a document needs OCR (scanned/image-based)
+   */
+  requiresOCR(data: Buffer, mimeType: string): Promise<boolean>;
+
+  /**
+   * Check if OCR engine is available
+   */
+  isAvailable(): Promise<boolean>;
+}
+
+// =============================================================================
 // Provider Factory
 // =============================================================================
 
@@ -307,4 +339,5 @@ export interface Providers {
   preview: PreviewProvider;
   search: SearchProvider;
   encryption: EncryptionProvider;
+  ocr: OCRProvider;
 }

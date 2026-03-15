@@ -13,6 +13,7 @@ import { ConsoleEmailProvider } from './email/ConsoleEmailProvider';
 import { SmtpEmailProvider } from './email/SmtpEmailProvider';
 import { BullMQJobProvider } from './job/BullMQJobProvider';
 import { LocalStorageProvider } from './storage/LocalStorageProvider';
+import { createOCRProvider } from './ocr';
 
 // Singleton instance
 let providersInstance: Providers | null = null;
@@ -40,6 +41,7 @@ function createProviders(): Providers {
     preview: createPreviewProvider(),
     search: createSearchProvider(),
     encryption: createEncryptionProvider(),
+    ocr: createOCRProvider(),
   };
 }
 
