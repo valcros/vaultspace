@@ -1,0 +1,294 @@
+// VaultSpace Prisma Schema
+// See DATABASE_SCHEMA.md for full documentation
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum OrgRole {
+  owner
+  admin
+  member
+}
+
+enum RoomRole {
+  admin
+  viewer
+}
+
+enum ScanStatus {
+  pending
+  scanning
+  clean
+  infected
+  failed
+}
+
+enum PreviewStatus {
+  pending
+  processing
+  ready
+  failed
+  unsupported
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
+enum AuditAction {
+  // Auth
+  login
+  logout
+  password_change
+  // Organization
+  org_create
+  org_update
+  org_delete
+  // User management
+  user_invite
+  user_remove
+  user_role_change
+  // Room
+  room_create
+  room_update
+  room_delete
+  room_archive
+  // Document
+  document_upload
+  document_view
+  document_download
+  document_move
+  document_rename
+  document_delete
+  document_restore
+  // Access
+  access_grant
+  access_revoke
+  access_update
+  // Settings
+  settings_update
+}
+
+// =============================================================================
+// MODELS - Skeleton for Phase 0
+// Full implementation in Phase 1
+// =============================================================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations (to be expanded in Phase 1)
+  users  OrganizationUser[]
+  rooms  Room[]
+  events AuditEvent[]
+
+  @@map("organizations")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  emailVerified Boolean  @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+
+  // Relations
+  organizations OrganizationUser[]
+  sessions      Session[]
+  roomAccess    RoomAccess[]
+  events        AuditEvent[]
+
+  @@map("users")
+}
+
+model OrganizationUser {
+  organizationId String
+  userId         String
+  role           OrgRole  @default(member)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, userId])
+  @@map("organization_users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  token        String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+  ipAddress    String?
+  userAgent    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Room {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  isArchived     Boolean   @default(false)
+  archivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folders      Folder[]
+  documents    Document[]
+  access       RoomAccess[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("rooms")
+}
+
+model RoomAccess {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  role      RoomRole @default(viewer)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId])
+  @@map("room_access")
+}
+
+model Folder {
+  id             String   @id @default(cuid())
+  organizationId String
+  roomId         String
+  parentId       String?
+  name           String
+  path           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  room     Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  parent   Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Folder[]  @relation("FolderTree")
+  documents Document[]
+
+  @@unique([roomId, path])
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([parentId])
+  @@map("folders")
+}
+
+model Document {
+  id             String    @id @default(cuid())
+  organizationId String
+  roomId         String
+  folderId       String?
+  name           String
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  room     Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  folder   Folder?           @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  versions DocumentVersion[]
+
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([folderId])
+  @@index([deletedAt])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id            String        @id @default(cuid())
+  documentId    String
+  versionNumber Int
+  storagePath   String
+  mimeType      String
+  sizeBytes     BigInt
+  checksum      String
+  scanStatus    ScanStatus    @default(pending)
+  previewStatus PreviewStatus @default(pending)
+  previewPath   String?
+  uploadedById  String?
+  createdAt     DateTime      @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNumber])
+  @@index([scanStatus])
+  @@index([previewStatus])
+  @@map("document_versions")
+}
+
+model Invite {
+  id             String       @id @default(cuid())
+  organizationId String
+  email          String
+  role           OrgRole      @default(member)
+  token          String       @unique
+  status         InviteStatus @default(pending)
+  expiresAt      DateTime
+  invitedById    String
+  createdAt      DateTime     @default(now())
+  acceptedAt     DateTime?
+
+  @@index([token])
+  @@index([organizationId])
+  @@index([email])
+  @@map("invites")
+}
+
+model AuditEvent {
+  id             String      @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         AuditAction
+  resourceType   String
+  resourceId     String
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  timestamp      DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, timestamp])
+  @@index([userId])
+  @@index([resourceType, resourceId])
+  @@map("audit_events")
+}
