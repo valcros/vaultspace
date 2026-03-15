@@ -10,6 +10,8 @@ import crypto from 'crypto';
 
 import { requireAuth } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import { EmailNotificationService } from '@/services/notifications';
+import { getProviders } from '@/providers';
 
 /**
  * POST /api/users/invite
@@ -121,7 +123,42 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // TODO: Send invitation email via EmailNotificationService
+    // Send invitation email
+    try {
+      const providers = getProviders();
+      const notificationService = new EmailNotificationService({
+        emailProvider: providers.email,
+        fromAddress: process.env['SMTP_FROM'] || 'noreply@vaultspace.local',
+        appUrl: baseUrl,
+      });
+
+      // Get organization name for the email
+      const organization = await db.organization.findUnique({
+        where: { id: session.organizationId },
+        select: { name: true },
+      });
+
+      // Get inviter name
+      const inviter = await db.user.findUnique({
+        where: { id: session.userId },
+        select: { firstName: true, lastName: true },
+      });
+      const inviterName = inviter
+        ? ((inviter.firstName || '') + ' ' + (inviter.lastName || '')).trim() || 'A team member'
+        : 'A team member';
+
+      await notificationService.sendInvitationEmail({
+        email: normalizedEmail,
+        inviterName,
+        organizationName: organization?.name || 'your organization',
+        role,
+        invitationUrl,
+        expiresAt,
+      });
+    } catch (emailError) {
+      console.error('[InviteAPI] Failed to send invitation email:', emailError);
+      // Continue - invitation was created, email just failed
+    }
 
     return NextResponse.json(
       {

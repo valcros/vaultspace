@@ -34,6 +34,15 @@ export interface AccessRevokedEvent {
   targetUserId: string;
 }
 
+export interface InvitationEvent {
+  email: string;
+  inviterName: string;
+  organizationName: string;
+  role: string;
+  invitationUrl: string;
+  expiresAt: Date;
+}
+
 export class EmailNotificationService {
   private config: NotificationConfig;
 
@@ -204,6 +213,35 @@ export class EmailNotificationService {
   }
 
   /**
+   * Send team member invitation email
+   */
+  async sendInvitationEmail(event: InvitationEvent): Promise<void> {
+    try {
+      const expiryDate = event.expiresAt.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
+      await this.sendEmail({
+        to: event.email,
+        subject: 'Invitation to join ' + event.organizationName + ' on VaultSpace',
+        html: this.buildInvitationEmail({
+          inviterName: event.inviterName,
+          organizationName: event.organizationName,
+          role: event.role,
+          invitationUrl: event.invitationUrl,
+          expiryDate,
+        }),
+      });
+    } catch (error) {
+      console.error('[EmailNotification] Invitation email error:', error);
+      throw error; // Re-throw so caller knows the email failed
+    }
+  }
+
+  /**
    * Get admins for a room who have the specified notification enabled
    */
   private async getAdminsForRoom(
@@ -350,6 +388,31 @@ export class EmailNotificationService {
       '<p>If you believe this is an error, please contact the room administrator.</p>',
       '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
       '<p style="color: #64748b; font-size: 12px;">Manage notification preferences in account settings.</p>',
+      '</div>',
+    ].join('\n');
+  }
+
+  /**
+   * Build invitation email HTML
+   */
+  private buildInvitationEmail(data: {
+    inviterName: string;
+    organizationName: string;
+    role: string;
+    invitationUrl: string;
+    expiryDate: string;
+  }): string {
+    return [
+      '<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">',
+      '<h2 style="color: #1e293b;">You\'ve Been Invited to VaultSpace</h2>',
+      '<p>' + data.inviterName + ' has invited you to join <strong>' + data.organizationName + '</strong> as a ' + data.role.toLowerCase() + '.</p>',
+      '<p>VaultSpace is a secure virtual data room for sharing confidential documents.</p>',
+      '<div style="margin: 24px 0;">',
+      '<a href="' + data.invitationUrl + '" style="background: #2563eb; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 500;">Accept Invitation</a>',
+      '</div>',
+      '<p style="color: #64748b; font-size: 14px;">This invitation expires on ' + data.expiryDate + '.</p>',
+      '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
+      '<p style="color: #94a3b8; font-size: 12px;">If you did not expect this invitation, you can safely ignore this email.</p>',
       '</div>',
     ].join('\n');
   }

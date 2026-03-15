@@ -291,7 +291,7 @@ async function main() {
       .update(doc.name + Date.now())
       .digest('hex');
 
-    await prisma.documentVersion.create({
+    const version = await prisma.documentVersion.create({
       data: {
         organizationId: organization.id,
         documentId: document.id,
@@ -310,10 +310,10 @@ async function main() {
       },
     });
 
-    // Update document with current version
+    // Update document with current version ID
     await prisma.document.update({
       where: { id: document.id },
-      data: { currentVersionId: document.id },
+      data: { currentVersionId: version.id },
     });
 
     console.log('Document created: ' + doc.name);
