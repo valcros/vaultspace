@@ -25,11 +25,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Rooms', href: '/admin/rooms', icon: FolderOpen },
-  { label: 'Users', href: '/admin/users', icon: Users },
-  { label: 'Groups', href: '/admin/groups', icon: UsersRound },
-  { label: 'Activity', href: '/admin/activity', icon: Activity },
-  { label: 'Settings', href: '/admin/settings', icon: Settings },
+  { label: 'Rooms', href: '/rooms', icon: FolderOpen },
+  { label: 'Users', href: '/users', icon: Users },
+  { label: 'Groups', href: '/groups', icon: UsersRound },
+  { label: 'Activity', href: '/activity', icon: Activity },
+  { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
 interface SidebarProps {
@@ -55,7 +55,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
       {/* Logo */}
       <div className="flex h-16 items-center justify-between border-b border-neutral-200 px-4">
         {!collapsed && (
-          <Link href="/admin/rooms" className="flex items-center gap-2">
+          <Link href="/rooms" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white font-bold">
               V
             </div>
@@ -63,7 +63,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
           </Link>
         )}
         {collapsed && (
-          <Link href="/admin/rooms" className="mx-auto">
+          <Link href="/rooms" className="mx-auto">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white font-bold">
               V
             </div>

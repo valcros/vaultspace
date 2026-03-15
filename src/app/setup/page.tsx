@@ -175,7 +175,7 @@ export default function SetupWizardPage() {
   };
 
   const handleFinish = () => {
-    router.push('/admin/rooms');
+    router.push('/rooms');
   };
 
   return (

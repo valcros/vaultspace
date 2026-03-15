@@ -62,7 +62,7 @@ function RegisterForm() {
         throw new Error(data.error || 'Failed to create account');
       }
 
-      router.push('/admin/rooms');
+      router.push('/rooms');
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
