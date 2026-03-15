@@ -5,12 +5,13 @@
  * All providers are singletons within the application lifecycle.
  */
 
-import type { CacheProvider, EmailProvider, Providers, StorageProvider } from './types';
+import type { CacheProvider, EmailProvider, JobProvider, Providers, StorageProvider } from './types';
 
 import { InMemoryCacheProvider } from './cache/InMemoryCacheProvider';
 import { RedisCacheProvider } from './cache/RedisCacheProvider';
 import { ConsoleEmailProvider } from './email/ConsoleEmailProvider';
 import { SmtpEmailProvider } from './email/SmtpEmailProvider';
+import { BullMQJobProvider } from './job/BullMQJobProvider';
 import { LocalStorageProvider } from './storage/LocalStorageProvider';
 
 // Singleton instance
@@ -100,14 +101,25 @@ function createCacheProvider(): CacheProvider {
   return new InMemoryCacheProvider();
 }
 
-// Stub implementations for providers that will be fully implemented in later phases
-function createJobProvider() {
+function createJobProvider(): JobProvider {
+  const redisUrl = process.env['REDIS_URL'];
+
+  if (redisUrl) {
+    return new BullMQJobProvider({
+      redisUrl,
+      prefix: process.env['JOB_QUEUE_PREFIX'] ?? 'vaultspace:jobs:',
+    });
+  }
+
+  // Fallback stub for development without Redis
   return {
     addJob: async () => `job-${Date.now()}`,
     getJobStatus: async () => 'pending',
     cancelJob: async () => {},
   };
 }
+
+// Stub implementations for providers that will be fully implemented in later phases
 
 function createScanProvider() {
   return {
