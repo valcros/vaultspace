@@ -65,10 +65,14 @@ export default function RoomsPage() {
 
   const fetchRooms = async () => {
     try {
-      const response = await fetch('/api/rooms');
+      const response = await fetch('/api/rooms', {
+        credentials: 'include',
+      });
       const data = await response.json();
       if (response.ok) {
         setRooms(data.rooms || []);
+      } else {
+        console.error('Failed to fetch rooms:', data.error);
       }
     } catch (error) {
       console.error('Failed to fetch rooms:', error);
@@ -88,6 +92,7 @@ export default function RoomsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRoom),
+        credentials: 'include',
       });
 
       const data = await response.json();
@@ -250,6 +255,7 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: room.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE' }),
+        credentials: 'include',
       });
       onRefresh();
     } catch (error) {

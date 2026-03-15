@@ -61,7 +61,9 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users');
+      const response = await fetch('/api/users', {
+        credentials: 'include',
+      });
       const data = await response.json();
       if (response.ok) {
         setUsers(data.users || []);
@@ -84,6 +86,7 @@ export default function UsersPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inviteData),
+        credentials: 'include',
       });
 
       if (response.ok) {
