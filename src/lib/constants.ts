@@ -10,6 +10,8 @@ export const SESSION_CONFIG = {
   IDLE_TIMEOUT_HOURS: 24,
   ABSOLUTE_MAX_DAYS: 7,
   TOKEN_LENGTH: 32, // 256 bits
+  DEFAULT_DURATION_DAYS: 1, // 1 day for normal sessions
+  EXTENDED_DURATION_DAYS: 30, // 30 days for "remember me"
 } as const;
 
 // Password configuration

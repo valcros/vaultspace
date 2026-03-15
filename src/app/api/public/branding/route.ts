@@ -10,6 +10,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
+
+// This route uses request headers, so it must be dynamic
+export const dynamic = 'force-dynamic';
 import {
   getRequestContext,
   resolveOrganizationFromHeaders,

@@ -1,0 +1,383 @@
+'use client';
+
+import * as React from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { ArrowLeft, Save, Trash2 } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { PageHeader } from '@/components/layout/page-header';
+import { Skeleton } from '@/components/ui/skeleton';
+
+interface RoomSettings {
+  id: string;
+  name: string;
+  description: string | null;
+  status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
+  watermarkEnabled: boolean;
+  downloadEnabled: boolean;
+  ndaRequired: boolean;
+  ndaText: string | null;
+  expiresAt: string | null;
+}
+
+export default function RoomSettingsPage() {
+  const params = useParams();
+  const router = useRouter();
+  const roomId = params['roomId'] as string;
+
+  const [room, setRoom] = React.useState<RoomSettings | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [success, setSuccess] = React.useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = React.useState('');
+
+  const [formData, setFormData] = React.useState({
+    name: '',
+    description: '',
+    watermarkEnabled: true,
+    downloadEnabled: false,
+    ndaRequired: false,
+    ndaText: '',
+  });
+
+  const fetchRoom = React.useCallback(async () => {
+    try {
+      const response = await fetch(`/api/rooms/${roomId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setRoom(data.room);
+        setFormData({
+          name: data.room.name,
+          description: data.room.description || '',
+          watermarkEnabled: data.room.watermarkEnabled,
+          downloadEnabled: data.room.downloadEnabled,
+          ndaRequired: data.room.ndaRequired || false,
+          ndaText: data.room.ndaText || '',
+        });
+      } else if (response.status === 404) {
+        router.push('/rooms');
+      }
+    } catch (error) {
+      console.error('Failed to fetch room:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [roomId, router]);
+
+  React.useEffect(() => {
+    fetchRoom();
+  }, [fetchRoom]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      const response = await fetch(`/api/rooms/${roomId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to save settings');
+      }
+
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    try {
+      await fetch(`/api/rooms/${roomId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: room?.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE',
+        }),
+      });
+      fetchRoom();
+    } catch (error) {
+      console.error('Failed to archive room:', error);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleteConfirmation !== room?.name) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/rooms/${roomId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        router.push('/rooms');
+      }
+    } catch (error) {
+      console.error('Failed to delete room:', error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-6">
+        <Skeleton className="h-8 w-64 mb-4" />
+        <Skeleton className="h-4 w-96 mb-8" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  if (!room) {
+    return null;
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Room Settings"
+        breadcrumbs={[
+          { label: 'Rooms', href: '/rooms' },
+          { label: room.name, href: `/rooms/${roomId}` },
+          { label: 'Settings' },
+        ]}
+        actions={
+          <Button variant="outline" onClick={() => router.push(`/rooms/${roomId}`)}>
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Room
+          </Button>
+        }
+      />
+
+      <div className="p-6 max-w-3xl">
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {success && (
+          <Alert variant="default" className="mb-6 border-success-200 bg-success-50 text-success-800">
+            <AlertDescription>Settings saved successfully</AlertDescription>
+          </Alert>
+        )}
+
+        {/* General Settings */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>General Settings</CardTitle>
+            <CardDescription>Basic room information and configuration</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Room Name</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={3}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Security Settings */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Security Settings</CardTitle>
+            <CardDescription>Control access and document protection</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="watermark">Enable Watermarks</Label>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Add viewer identification watermarks to documents
+                </p>
+              </div>
+              <Switch
+                id="watermark"
+                checked={formData.watermarkEnabled}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, watermarkEnabled: checked })
+                }
+              />
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="download">Allow Downloads</Label>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Let viewers download original documents
+                </p>
+              </div>
+              <Switch
+                id="download"
+                checked={formData.downloadEnabled}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, downloadEnabled: checked })
+                }
+              />
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="nda">Require NDA Acceptance</Label>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Viewers must accept terms before accessing
+                </p>
+              </div>
+              <Switch
+                id="nda"
+                checked={formData.ndaRequired}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, ndaRequired: checked })
+                }
+              />
+            </div>
+
+            {formData.ndaRequired && (
+              <div className="space-y-2 pl-4 border-l-2 border-neutral-200">
+                <Label htmlFor="ndaText">NDA Text</Label>
+                <Textarea
+                  id="ndaText"
+                  value={formData.ndaText}
+                  onChange={(e) => setFormData({ ...formData, ndaText: e.target.value })}
+                  rows={4}
+                  placeholder="Enter the NDA terms that viewers must accept..."
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Save Button */}
+        <div className="flex justify-end mb-8">
+          <Button onClick={handleSave} loading={isSaving}>
+            <Save className="w-4 h-4 mr-2" />
+            Save Changes
+          </Button>
+        </div>
+
+        <Separator className="my-8" />
+
+        {/* Danger Zone */}
+        <Card className="border-danger-200">
+          <CardHeader>
+            <CardTitle className="text-danger-600">Danger Zone</CardTitle>
+            <CardDescription>
+              Irreversible actions. Proceed with caution.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">
+                  {room.status === 'ACTIVE' ? 'Archive Room' : 'Unarchive Room'}
+                </p>
+                <p className="text-sm text-neutral-500 mt-1">
+                  {room.status === 'ACTIVE'
+                    ? 'Archived rooms are hidden from viewers but can be restored'
+                    : 'Restore this room to make it visible to viewers'}
+                </p>
+              </div>
+              <Button variant="outline" onClick={handleArchive}>
+                {room.status === 'ACTIVE' ? 'Archive' : 'Unarchive'}
+              </Button>
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-danger-600">Delete Room</p>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Permanently delete this room and all its contents. This cannot be undone.
+                </p>
+              </div>
+              <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Room</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. This will permanently delete the room and all its
+              documents, links, and activity history.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="confirmDelete">
+              Type <span className="font-mono font-bold">{room.name}</span> to confirm
+            </Label>
+            <Input
+              id="confirmDelete"
+              value={deleteConfirmation}
+              onChange={(e) => setDeleteConfirmation(e.target.value)}
+              className="mt-2"
+              placeholder={room.name}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteConfirmation !== room.name}
+            >
+              Delete Room
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

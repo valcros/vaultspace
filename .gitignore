@@ -49,7 +49,7 @@ prisma/migrations/.migration_lock.toml
 # Local development
 .tmp/
 uploads/
-storage/
+/storage/
 *.pem
 *.key
 
