@@ -80,6 +80,14 @@ export interface EmailSendJobPayload {
   organizationId?: string;
 }
 
+export interface NotificationJobPayload {
+  organizationId: string;
+  roomId: string;
+  documentId: string;
+  uploaderId?: string;
+  viewerEmail?: string;
+}
+
 // =============================================================================
 // Export Jobs
 // =============================================================================
@@ -123,6 +131,8 @@ export const JOB_NAMES = {
 
   // Email
   EMAIL_SEND: 'email.send',
+  NOTIFY_DOCUMENT_UPLOADED: 'notify-document-uploaded',
+  NOTIFY_DOCUMENT_VIEWED: 'notify-document-viewed',
 
   // Export
   EXPORT_ZIP: 'export.zip',

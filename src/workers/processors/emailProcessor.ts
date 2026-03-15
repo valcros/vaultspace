@@ -2,13 +2,15 @@
  * Email Job Processor
  *
  * Processes email sending jobs using the EmailProvider.
+ * Also handles notification jobs for document events.
  */
 
 import { Job } from 'bullmq';
 
 import { getProviders } from '@/providers';
+import { EmailNotificationService } from '@/services/notifications';
 
-import type { EmailSendJobPayload } from '../types';
+import type { EmailSendJobPayload, NotificationJobPayload } from '../types';
 
 // Email templates - simplified for Phase 2
 const EMAIL_TEMPLATES: Record<string, (data: Record<string, unknown>) => { subject: string; html: string; text?: string }> = {
@@ -96,4 +98,56 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
     console.error(`[EmailProcessor] Failed to send email:`, error);
     throw error;
   }
+}
+
+/**
+ * Create notification service instance
+ */
+function createNotificationService(): EmailNotificationService {
+  const providers = getProviders();
+  return new EmailNotificationService({
+    emailProvider: providers.email,
+    fromAddress: process.env['SMTP_FROM'] || 'noreply@vaultspace.local',
+    appUrl: process.env['APP_URL'] || 'http://localhost:3000',
+  });
+}
+
+/**
+ * Process document uploaded notification job
+ */
+export async function processDocumentUploadedNotification(
+  job: Job<NotificationJobPayload>
+): Promise<void> {
+  const { organizationId, roomId, documentId, uploaderId } = job.data;
+  console.log(`[EmailProcessor] Processing document upload notification for ${documentId}`);
+
+  const notificationService = createNotificationService();
+  await notificationService.notifyDocumentUploaded({
+    organizationId,
+    roomId,
+    documentId,
+    uploaderId,
+  });
+
+  console.log(`[EmailProcessor] Document upload notification sent for ${documentId}`);
+}
+
+/**
+ * Process document viewed notification job
+ */
+export async function processDocumentViewedNotification(
+  job: Job<NotificationJobPayload>
+): Promise<void> {
+  const { organizationId, roomId, documentId, viewerEmail } = job.data;
+  console.log(`[EmailProcessor] Processing document view notification for ${documentId}`);
+
+  const notificationService = createNotificationService();
+  await notificationService.notifyDocumentViewed({
+    organizationId,
+    roomId,
+    documentId,
+    viewerEmail,
+  });
+
+  console.log(`[EmailProcessor] Document view notification sent for ${documentId}`);
 }

@@ -9,6 +9,8 @@ import { Worker, type ConnectionOptions, type Job } from 'bullmq';
 
 import {
   processEmailJob,
+  processDocumentUploadedNotification,
+  processDocumentViewedNotification,
   processPreviewJob,
   processScanJob,
   processSearchIndexJob,
@@ -71,6 +73,14 @@ async function processJob(job: Job): Promise<void> {
 
     case JOB_NAMES.EMAIL_SEND:
       await processEmailJob(job);
+      break;
+
+    case JOB_NAMES.NOTIFY_DOCUMENT_UPLOADED:
+      await processDocumentUploadedNotification(job);
+      break;
+
+    case JOB_NAMES.NOTIFY_DOCUMENT_VIEWED:
+      await processDocumentViewedNotification(job);
       break;
 
     default:

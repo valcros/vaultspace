@@ -9,6 +9,7 @@ export {
   getRequestContext,
   setSessionCookie,
   clearSessionCookie,
+  resolveOrganizationFromHeaders,
 } from './auth';
 
-export type { RequestContext } from './auth';
+export type { RequestContext, CustomDomainContext } from './auth';

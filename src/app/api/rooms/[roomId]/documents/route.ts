@@ -12,7 +12,6 @@ import { createServiceContext, documentService } from '@/services';
 import { AppError, formatErrorResponse, NotFoundError, RateLimitError } from '@/lib/errors';
 import { UPLOAD_CONFIG, HTTP_STATUS } from '@/lib/constants';
 import { rateLimiters } from '@/lib/middleware/rateLimit';
-import { EmailNotificationService } from '@/services/notifications';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -132,10 +131,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
           mimeType: doc.mimeType,
         });
 
-        // Send upload notification (non-blocking)
-        sendUploadNotification(session.organizationId, roomId, doc.id, session.userId).catch(
-          (err) => console.error('[DocumentAPI] Notification error:', err)
-        );
+        // Queue upload notification job (async via job queue per architecture)
+        const providers = getProviders();
+        providers.job.addJob('email', 'notify-document-uploaded', {
+          organizationId: session.organizationId,
+          roomId,
+          documentId: doc.id,
+          uploaderId: session.userId,
+        }).catch((err) => console.error('[DocumentAPI] Failed to queue notification:', err));
       } catch (error) {
         errors.push({
           filename: file.name,
@@ -242,28 +245,3 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 }
 
-/**
- * Send upload notification to room admins (non-blocking)
- */
-async function sendUploadNotification(
-  organizationId: string,
-  roomId: string,
-  documentId: string,
-  uploaderId: string
-): Promise<void> {
-  const providers = getProviders();
-  const baseUrl = process.env['APP_URL'] || 'http://localhost:3000';
-
-  const notificationService = new EmailNotificationService({
-    emailProvider: providers.email,
-    fromAddress: process.env['SMTP_FROM'] || 'noreply@vaultspace.local',
-    appUrl: baseUrl,
-  });
-
-  await notificationService.notifyDocumentUploaded({
-    organizationId,
-    roomId,
-    documentId,
-    uploaderId,
-  });
-}

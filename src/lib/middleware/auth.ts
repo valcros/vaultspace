@@ -10,6 +10,7 @@ import type { NextRequest } from 'next/server';
 import { validateSession } from '../auth';
 import { SESSION_CONFIG } from '../constants';
 import { AuthenticationError } from '../errors';
+import { db } from '../db';
 
 import type { SessionData } from '../auth';
 
@@ -65,12 +66,21 @@ export async function requireAdmin(): Promise<SessionData> {
 }
 
 /**
+ * Custom domain context from middleware headers
+ */
+export interface CustomDomainContext {
+  customHost: string | null;
+  orgSlug: string | null;
+}
+
+/**
  * Extract request context from NextRequest
  */
 export function getRequestContext(request: NextRequest): {
   requestId: string;
   ipAddress: string;
   userAgent: string;
+  customDomain: CustomDomainContext;
 } {
   const requestId =
     request.headers.get('x-request-id') ??
@@ -83,7 +93,13 @@ export function getRequestContext(request: NextRequest): {
 
   const userAgent = request.headers.get('user-agent') ?? 'unknown';
 
-  return { requestId, ipAddress, userAgent };
+  // Extract custom domain headers set by middleware
+  const customDomain: CustomDomainContext = {
+    customHost: request.headers.get('x-custom-host'),
+    orgSlug: request.headers.get('x-org-slug'),
+  };
+
+  return { requestId, ipAddress, userAgent, customDomain };
 }
 
 /**
@@ -106,4 +122,42 @@ export async function setSessionCookie(token: string, expiresAt: Date): Promise<
 export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_CONFIG.COOKIE_NAME);
+}
+
+/**
+ * Resolve organization from custom domain headers (F001)
+ * Used by routes that need to handle custom domain/subdomain scenarios
+ */
+export async function resolveOrganizationFromHeaders(
+  customDomain: CustomDomainContext
+): Promise<{ organizationId: string; organizationSlug: string } | null> {
+  // Try org slug from subdomain first
+  if (customDomain.orgSlug) {
+    const org = await db.organization.findFirst({
+      where: {
+        slug: customDomain.orgSlug,
+        isActive: true,
+      },
+      select: { id: true, slug: true },
+    });
+    if (org) {
+      return { organizationId: org.id, organizationSlug: org.slug };
+    }
+  }
+
+  // Try custom domain lookup
+  if (customDomain.customHost) {
+    const org = await db.organization.findFirst({
+      where: {
+        customDomain: customDomain.customHost,
+        isActive: true,
+      },
+      select: { id: true, slug: true },
+    });
+    if (org) {
+      return { organizationId: org.id, organizationSlug: org.slug };
+    }
+  }
+
+  return null;
 }

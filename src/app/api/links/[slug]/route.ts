@@ -10,7 +10,6 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { db } from '@/lib/db';
-import { EmailNotificationService } from '@/services/notifications';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -251,15 +250,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       },
     });
 
-    // Send view notification to room admins (non-blocking)
+    // Queue view notification job (async via job queue per architecture)
     // Only notify if link is scoped to a document
     if (link.scopedDocumentId) {
-      sendViewNotification(
-        link.organizationId,
-        link.roomId,
-        link.scopedDocumentId,
-        email?.toLowerCase().trim()
-      ).catch((err) => console.error('[PublicLinkAPI] Notification error:', err));
+      const providers = getProviders();
+      providers.job.addJob('email', 'notify-document-viewed', {
+        organizationId: link.organizationId,
+        roomId: link.roomId,
+        documentId: link.scopedDocumentId,
+        viewerEmail: email?.toLowerCase().trim(),
+      }).catch((err) => console.error('[PublicLinkAPI] Failed to queue notification:', err));
     }
 
     return NextResponse.json({
@@ -279,28 +279,3 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 }
 
-/**
- * Send view notification to room admins (non-blocking)
- */
-async function sendViewNotification(
-  organizationId: string,
-  roomId: string,
-  documentId: string,
-  viewerEmail?: string
-): Promise<void> {
-  const providers = getProviders();
-  const baseUrl = process.env['APP_URL'] || 'http://localhost:3000';
-
-  const notificationService = new EmailNotificationService({
-    emailProvider: providers.email,
-    fromAddress: process.env['SMTP_FROM'] || 'noreply@vaultspace.local',
-    appUrl: baseUrl,
-  });
-
-  await notificationService.notifyDocumentViewed({
-    organizationId,
-    roomId,
-    documentId,
-    viewerEmail,
-  });
-}
