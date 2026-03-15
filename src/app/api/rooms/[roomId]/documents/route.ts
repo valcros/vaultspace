@@ -12,6 +12,8 @@ import { createServiceContext, documentService } from '@/services';
 import { AppError, formatErrorResponse, NotFoundError, RateLimitError } from '@/lib/errors';
 import { UPLOAD_CONFIG, HTTP_STATUS } from '@/lib/constants';
 import { rateLimiters } from '@/lib/middleware/rateLimit';
+import { EmailNotificationService } from '@/services/notifications';
+import { getProviders } from '@/providers';
 
 interface RouteContext {
   params: Promise<{ roomId: string }>;
@@ -129,6 +131,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
           fileSize: Number(doc.fileSize),
           mimeType: doc.mimeType,
         });
+
+        // Send upload notification (non-blocking)
+        sendUploadNotification(session.organizationId, roomId, doc.id, session.userId).catch(
+          (err) => console.error('[DocumentAPI] Notification error:', err)
+        );
       } catch (error) {
         errors.push({
           filename: file.name,
@@ -233,4 +240,30 @@ export async function GET(request: NextRequest, context: RouteContext) {
       status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
     });
   }
+}
+
+/**
+ * Send upload notification to room admins (non-blocking)
+ */
+async function sendUploadNotification(
+  organizationId: string,
+  roomId: string,
+  documentId: string,
+  uploaderId: string
+): Promise<void> {
+  const providers = getProviders();
+  const baseUrl = process.env['APP_URL'] || 'http://localhost:3000';
+
+  const notificationService = new EmailNotificationService({
+    emailProvider: providers.email,
+    fromAddress: process.env['SMTP_FROM'] || 'noreply@vaultspace.local',
+    appUrl: baseUrl,
+  });
+
+  await notificationService.notifyDocumentUploaded({
+    organizationId,
+    roomId,
+    documentId,
+    uploaderId,
+  });
 }
