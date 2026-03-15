@@ -31,6 +31,7 @@
     "db:studio": "prisma studio",
     "db:backup": "tsx scripts/backup.ts",
     "db:restore": "tsx scripts/restore.ts",
+    "gdpr:export": "tsx scripts/gdpr-export.ts",
     "worker": "tsx src/workers/index.ts",
     "worker:dev": "tsx watch src/workers/index.ts",
     "postinstall": "prisma generate"

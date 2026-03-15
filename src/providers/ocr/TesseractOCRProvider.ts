@@ -45,14 +45,18 @@ export class TesseractOCRProvider implements OCRProvider {
   private async getWorker(): Promise<TesseractWorker> {
     if (!this.worker) {
       try {
-        // Dynamic import to avoid issues if tesseract.js is not installed
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        this.tesseract = require('tesseract.js') as TesseractModule;
+        // Dynamic import with webpack magic comment to exclude from bundle
+        // @ts-expect-error - tesseract.js is an optional dependency
+        const tesseractModule = await import(/* webpackIgnore: true */ 'tesseract.js').catch(() => null);
+        if (!tesseractModule) {
+          throw new Error('tesseract.js not installed');
+        }
+        this.tesseract = tesseractModule as unknown as TesseractModule;
         this.worker = await this.tesseract.createWorker(this.defaultLanguage);
         this.initialized = true;
       } catch (error) {
         console.error('[TesseractOCR] Failed to initialize:', error);
-        throw new Error('OCR engine not available');
+        throw new Error('OCR engine not available. Install tesseract.js for OCR support.');
       }
     }
     return this.worker;
