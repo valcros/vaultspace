@@ -1,10 +1,11 @@
 /**
  * Password Utilities
  *
- * Secure password hashing and validation using bcrypt.
+ * Secure password hashing and validation using bcryptjs.
+ * Using bcryptjs (pure JS) for cross-platform Docker compatibility.
  */
 
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 import { PASSWORD_CONFIG } from '../constants';
 

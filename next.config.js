@@ -6,7 +6,7 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '500mb',
     },
-    serverComponentsExternalPackages: ['bcrypt', 'bullmq', 'ioredis', 'nodemailer'],
+    serverComponentsExternalPackages: ['bullmq', 'ioredis', 'nodemailer'],
   },
   // Standalone output for Docker
   output: 'standalone',
