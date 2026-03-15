@@ -224,6 +224,9 @@ model Organization {
   isActive        Boolean @default(true)
   allowSelfSignup Boolean @default(false)
 
+  // Custom Domain (F001)
+  customDomain String? @unique @db.VarChar(255)
+
   // Retention & compliance
   eventRetentionDays Int     @default(365)
   trashRetentionDays Int     @default(30)
