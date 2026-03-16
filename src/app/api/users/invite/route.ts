@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
 
     // Build invitation URL
     const baseUrl = process.env['APP_URL'] || 'http://localhost:3000';
-    const invitationUrl = baseUrl + '/register?token=' + invitationToken;
+    const invitationUrl = baseUrl + '/auth/register?token=' + invitationToken;
 
     // Create invitation
     const invitation = await db.invitation.create({
