@@ -128,10 +128,14 @@ export async function POST(request: NextRequest) {
 
     // Send invitation email
     try {
+      console.log('[InviteAPI] Preparing to send invitation email to:', normalizedEmail);
       const providers = getProviders();
+      const senderAddress = process.env['ACS_SENDER_ADDRESS'] || process.env['SMTP_FROM'] || 'noreply@vaultspace.org';
+      console.log('[InviteAPI] Using sender address:', senderAddress);
+
       const notificationService = new EmailNotificationService({
         emailProvider: providers.email,
-        fromAddress: process.env['SMTP_FROM'] || 'noreply@vaultspace.local',
+        fromAddress: senderAddress,
         appUrl: baseUrl,
       });
 
@@ -150,6 +154,7 @@ export async function POST(request: NextRequest) {
         ? ((inviter.firstName || '') + ' ' + (inviter.lastName || '')).trim() || 'A team member'
         : 'A team member';
 
+      console.log('[InviteAPI] Sending invitation email...');
       await notificationService.sendInvitationEmail({
         email: normalizedEmail,
         inviterName,
@@ -158,6 +163,7 @@ export async function POST(request: NextRequest) {
         invitationUrl,
         expiresAt,
       });
+      console.log('[InviteAPI] Invitation email sent successfully');
     } catch (emailError) {
       console.error('[InviteAPI] Failed to send invitation email:', emailError);
       // Continue - invitation was created, email just failed

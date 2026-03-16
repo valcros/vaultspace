@@ -54,6 +54,7 @@ export default function UsersPage() {
   const [showInviteDialog, setShowInviteDialog] = React.useState(false);
   const [isInviting, setIsInviting] = React.useState(false);
   const [inviteData, setInviteData] = React.useState<{ email: string; role: 'ADMIN' | 'VIEWER' }>({ email: '', role: 'VIEWER' });
+  const [inviteError, setInviteError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     fetchUsers();
@@ -81,6 +82,7 @@ export default function UsersPage() {
     }
 
     setIsInviting(true);
+    setInviteError(null);
     try {
       const response = await fetch('/api/users/invite', {
         method: 'POST',
@@ -89,13 +91,19 @@ export default function UsersPage() {
         credentials: 'include',
       });
 
+      const data = await response.json();
+
       if (response.ok) {
         setShowInviteDialog(false);
         setInviteData({ email: '', role: 'VIEWER' });
+        setInviteError(null);
         fetchUsers();
+      } else {
+        setInviteError(data.error || 'Failed to send invitation');
       }
     } catch (error) {
       console.error('Failed to invite user:', error);
+      setInviteError('Network error. Please try again.');
     } finally {
       setIsInviting(false);
     }
@@ -253,7 +261,12 @@ export default function UsersPage() {
       </div>
 
       {/* Invite User Dialog */}
-      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+      <Dialog open={showInviteDialog} onOpenChange={(open) => {
+        setShowInviteDialog(open);
+        if (!open) {
+          setInviteError(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite User</DialogTitle>
@@ -262,6 +275,11 @@ export default function UsersPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {inviteError && (
+              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+                {inviteError}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <Input
@@ -269,7 +287,10 @@ export default function UsersPage() {
                 type="email"
                 placeholder="colleague@example.com"
                 value={inviteData.email}
-                onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
+                onChange={(e) => {
+                  setInviteData({ ...inviteData, email: e.target.value });
+                  setInviteError(null);
+                }}
                 autoFocus
               />
             </div>
