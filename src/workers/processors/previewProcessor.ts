@@ -42,8 +42,8 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
   }
 
   try {
-    // Get file from storage
-    const fileBuffer = await providers.storage.get(organizationId, storageKey);
+    // Get file from storage (documents bucket stores original uploads)
+    const fileBuffer = await providers.storage.get('documents', storageKey);
 
     // Convert to preview format
     const previewResult = await providers.preview.convert(fileBuffer, contentType, {
@@ -56,7 +56,7 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
     const previewKey = `previews/${documentId}/${versionId}.pdf`;
     const firstPage = previewResult.pages[0];
     if (firstPage) {
-      await providers.storage.put(organizationId, previewKey, firstPage.data);
+      await providers.storage.put('previews', previewKey, firstPage.data);
 
       // Create preview asset record
       await db.previewAsset.create({
@@ -145,8 +145,8 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
   const providers = getProviders();
 
   try {
-    // Get preview file
-    const previewBuffer = await providers.storage.get(organizationId, previewKey);
+    // Get preview file from previews bucket
+    const previewBuffer = await providers.storage.get('previews', previewKey);
 
     // Generate thumbnail
     const thumbnailBuffer = await providers.preview.generateThumbnail(
@@ -156,9 +156,9 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
       height
     );
 
-    // Store thumbnail
+    // Store thumbnail in previews bucket
     const thumbnailKey = `thumbnails/${documentId}/${versionId}.png`;
-    await providers.storage.put(organizationId, thumbnailKey, thumbnailBuffer);
+    await providers.storage.put('previews', thumbnailKey, thumbnailBuffer);
 
     // Create preview asset record for thumbnail
     await db.previewAsset.create({

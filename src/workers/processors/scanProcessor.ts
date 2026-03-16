@@ -56,8 +56,8 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
   }
 
   try {
-    // Get file from storage
-    const fileBuffer = await providers.storage.get(organizationId, storageKey);
+    // Get file from storage (documents bucket stores original uploads)
+    const fileBuffer = await providers.storage.get('documents', storageKey);
 
     // Scan file
     const scanResult = await providers.scan.scan(fileBuffer);

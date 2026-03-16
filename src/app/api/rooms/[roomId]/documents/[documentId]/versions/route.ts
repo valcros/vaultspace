@@ -220,10 +220,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return version;
     });
 
-    // Queue processing jobs
-    await providers.job.addJob('document', 'document.scan', {
+    // Queue processing jobs (high priority queue)
+    await providers.job.addJob('high', 'document.scan', {
+      documentId,
       versionId: newVersion.id,
       organizationId: session.organizationId,
+      storageKey,
+      contentType: file.type || document.mimeType,
+      fileName: file.name,
     });
 
     return NextResponse.json({ version: newVersion }, { status: 201 });

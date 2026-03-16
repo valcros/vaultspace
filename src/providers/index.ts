@@ -9,11 +9,15 @@ import type { CacheProvider, EmailProvider, JobProvider, Providers, StorageProvi
 
 import { InMemoryCacheProvider } from './cache/InMemoryCacheProvider';
 import { RedisCacheProvider } from './cache/RedisCacheProvider';
+import { AzureCommunicationEmailProvider } from './email/AzureCommunicationEmailProvider';
 import { ConsoleEmailProvider } from './email/ConsoleEmailProvider';
 import { SmtpEmailProvider } from './email/SmtpEmailProvider';
 import { BullMQJobProvider } from './job/BullMQJobProvider';
 import { LocalStorageProvider } from './storage/LocalStorageProvider';
+import { AzureBlobStorageProvider } from './storage/AzureBlobStorageProvider';
 import { createOCRProvider } from './ocr';
+import { createScanProvider } from './scan';
+import { createPreviewProvider } from './preview';
 
 // Singleton instance
 let providersInstance: Providers | null = null;
@@ -55,7 +59,22 @@ function createStorageProvider(): StorageProvider {
         signedUrlSecret: process.env['SESSION_SECRET'] ?? 'dev-secret',
       });
     }
-    // S3 and Azure providers would be added here for production
+    case 'azure': {
+      const accountName = process.env['AZURE_STORAGE_ACCOUNT_NAME'];
+      const accountKey = process.env['AZURE_STORAGE_ACCOUNT_KEY'];
+
+      if (!accountName || !accountKey) {
+        throw new Error(
+          'Azure storage requires AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY'
+        );
+      }
+
+      return new AzureBlobStorageProvider({
+        accountName,
+        accountKey,
+      });
+    }
+    // S3 provider would be added here for AWS deployments
     default:
       throw new Error(`Unknown storage provider: ${provider}`);
   }
@@ -65,12 +84,25 @@ function createEmailProvider(): EmailProvider {
   const provider = process.env['EMAIL_PROVIDER'] ?? 'console';
   const isDev = process.env['NODE_ENV'] !== 'production';
 
-  // Always use console in dev if no SMTP configured
-  if (isDev && !process.env['SMTP_HOST']) {
+  // Always use console in dev if no email provider configured
+  if (isDev && !process.env['SMTP_HOST'] && !process.env['ACS_CONNECTION_STRING']) {
     return new ConsoleEmailProvider();
   }
 
   switch (provider) {
+    case 'acs': {
+      const connectionString = process.env['ACS_CONNECTION_STRING'];
+      const senderAddress = process.env['ACS_SENDER_ADDRESS'] ?? 'noreply@vaultspace.org';
+
+      if (!connectionString) {
+        throw new Error('ACS email requires ACS_CONNECTION_STRING');
+      }
+
+      return new AzureCommunicationEmailProvider({
+        connectionString,
+        senderAddress,
+      });
+    }
     case 'smtp': {
       return new SmtpEmailProvider({
         host: process.env['SMTP_HOST'] ?? 'localhost',
@@ -122,21 +154,6 @@ function createJobProvider(): JobProvider {
 }
 
 // Stub implementations for providers that will be fully implemented in later phases
-
-function createScanProvider() {
-  return {
-    scan: async () => ({ clean: true }),
-    isAvailable: async () => false,
-  };
-}
-
-function createPreviewProvider() {
-  return {
-    convert: async () => ({ pages: [], totalPages: 0, mimeType: 'application/pdf' }),
-    generateThumbnail: async () => Buffer.alloc(0),
-    isSupported: () => false,
-  };
-}
 
 function createSearchProvider() {
   return {

@@ -41,33 +41,40 @@ export async function getSession(): Promise<SessionData | null> {
 
 /**
  * Get session from NextRequest (alternative for API routes)
- * Use this when cookies() doesn't work correctly in standalone builds
+ * Tries multiple methods to read the cookie for maximum compatibility
  */
 export async function getSessionFromRequest(request: NextRequest): Promise<SessionData | null> {
-  // Try getting cookie from request.cookies first
-  const token = request.cookies.get(SESSION_CONFIG.COOKIE_NAME)?.value;
+  let token: string | undefined;
+
+  // Method 1: Try cookies() from next/headers first (works for SSR and API routes)
+  try {
+    const cookieStore = await cookies();
+    token = cookieStore.get(SESSION_CONFIG.COOKIE_NAME)?.value;
+  } catch {
+    // cookies() may fail in some contexts, try alternatives
+  }
+
+  // Method 2: Try request.cookies
+  if (!token) {
+    token = request.cookies.get(SESSION_CONFIG.COOKIE_NAME)?.value;
+  }
+
+  // Method 3: Parse Cookie header directly as fallback
+  if (!token) {
+    const cookieHeader = request.headers.get('cookie');
+    if (cookieHeader) {
+      const parsedCookies = Object.fromEntries(
+        cookieHeader.split('; ').map(c => {
+          const [key, ...val] = c.split('=');
+          return [key, val.join('=')];
+        })
+      );
+      token = parsedCookies[SESSION_CONFIG.COOKIE_NAME];
+    }
+  }
 
   if (!token) {
-    // Fallback: try parsing from Cookie header directly
-    const cookieHeader = request.headers.get('cookie');
-    if (!cookieHeader) {
-      return null;
-    }
-    const cookies = Object.fromEntries(
-      cookieHeader.split('; ').map(c => {
-        const [key, ...val] = c.split('=');
-        return [key, val.join('=')];
-      })
-    );
-    const headerToken = cookies[SESSION_CONFIG.COOKIE_NAME];
-    if (!headerToken) {
-      return null;
-    }
-    try {
-      return await validateSession(headerToken);
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   try {

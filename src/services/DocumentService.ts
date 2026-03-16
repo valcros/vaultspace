@@ -242,17 +242,23 @@ export class DocumentService {
       },
     });
 
-    // Queue background jobs for scanning and preview
-    await providers.job.addJob('scan', 'virus-scan', {
-      documentId: result.document.id,
-      versionId: result.version.id,
+    // Queue virus scan job - preview generation is queued by scan processor after clean scan
+    // This ensures malware gating before any preview processing
+    // Jobs go to priority queues: high (scan/preview), normal (general), low (reports)
+    const jobStorageKey = generateStorageKey(
       organizationId,
-    });
+      result.document.id,
+      result.version.id,
+      result.version.fileName
+    );
 
-    await providers.job.addJob('preview', 'generate-preview', {
+    await providers.job.addJob('high', 'document.scan', {
       documentId: result.document.id,
       versionId: result.version.id,
       organizationId,
+      storageKey: jobStorageKey,
+      contentType: file.mimeType,
+      fileName: file.filename,
     });
 
     return {

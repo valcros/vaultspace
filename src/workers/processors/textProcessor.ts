@@ -19,8 +19,8 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
   const providers = getProviders();
 
   try {
-    // Get file from storage
-    const fileBuffer = await providers.storage.get(organizationId, storageKey);
+    // Get file from storage (previews bucket stores converted PDFs for text extraction)
+    const fileBuffer = await providers.storage.get('previews', storageKey);
 
     // For now, we use a simplified text extraction
     // In production, this would use OCR or PDF text extraction

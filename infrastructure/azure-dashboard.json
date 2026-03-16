@@ -1,0 +1,50 @@
+{
+  "lenses": [
+    {
+      "order": 0,
+      "parts": [
+        {
+          "position": {
+            "x": 0,
+            "y": 0,
+            "colSpan": 6,
+            "rowSpan": 4
+          },
+          "metadata": {
+            "type": "Extension/HubsExtension/PartType/MarkdownPart",
+            "inputs": [],
+            "settings": {
+              "content": {
+                "settings": {
+                  "content": "# VaultSpace Staging\n\n**Application Status:**\n- Web: [ca-vaultspace-web](https://ca-vaultspace-web.victoriousglacier-374689f2.eastus.azurecontainerapps.io)\n- Health: [API Health Check](https://ca-vaultspace-web.victoriousglacier-374689f2.eastus.azurecontainerapps.io/api/health?deep=true)\n\n**Resources:**\n- Container Apps Environment\n- PostgreSQL Flexible Server\n- Azure Cache for Redis\n- Azure Blob Storage\n- Key Vault",
+                  "title": "VaultSpace Dashboard",
+                  "subtitle": "Staging Environment"
+                }
+              }
+            }
+          }
+        },
+        {
+          "position": {
+            "x": 6,
+            "y": 0,
+            "colSpan": 6,
+            "rowSpan": 4
+          },
+          "metadata": {
+            "type": "Extension/HubsExtension/PartType/ResourceGroupMapPinnedPart",
+            "inputs": [
+              {
+                "name": "resourceGroup",
+                "value": "/subscriptions/041a67eb-fec8-41a4-9d70-c35863268cd6/resourceGroups/rg-vaultspace-staging"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "model": {}
+  }
+}
