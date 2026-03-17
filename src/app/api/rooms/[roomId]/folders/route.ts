@@ -88,7 +88,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
 
         if (!canManage) {
-          return { error: 'You do not have permission to create folders in this room', status: HTTP_STATUS.FORBIDDEN };
+          return {
+            error: 'You do not have permission to create folders in this room',
+            status: HTTP_STATUS.FORBIDDEN,
+          };
         }
 
         // Verify room exists and is active
@@ -211,7 +214,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         );
 
         if (!canView) {
-          return { error: 'You do not have permission to view this room', status: HTTP_STATUS.FORBIDDEN };
+          return {
+            error: 'You do not have permission to view this room',
+            status: HTTP_STATUS.FORBIDDEN,
+          };
         }
 
         // Verify room exists
