@@ -141,8 +141,14 @@ export default function RoomDetailPage() {
   const [showMemberDialog, setShowMemberDialog] = React.useState(false);
   const [showLinkDialog, setShowLinkDialog] = React.useState(false);
   const [showFolderDialog, setShowFolderDialog] = React.useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
+  const [showPreviewDialog, setShowPreviewDialog] = React.useState(false);
+  const [selectedDocument, setSelectedDocument] = React.useState<Document | null>(null);
   const [newFolderName, setNewFolderName] = React.useState('');
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [previewError, setPreviewError] = React.useState<string | null>(null);
 
   const fetchRoom = React.useCallback(async () => {
     try {
@@ -338,6 +344,95 @@ export default function RoomDetailPage() {
     [breadcrumbs]
   );
 
+  // Handle document download
+  const handleDownload = React.useCallback(
+    async (doc: Document) => {
+      try {
+        const response = await fetch(
+          `/api/rooms/${roomId}/documents/${doc.id}/download`
+        );
+        if (!response.ok) {
+          throw new Error('Download failed');
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = doc.name;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch (error) {
+        console.error('Download error:', error);
+        alert('Failed to download document');
+      }
+    },
+    [roomId]
+  );
+
+  // Handle document preview
+  const handlePreview = React.useCallback(
+    async (doc: Document) => {
+      setSelectedDocument(doc);
+      setPreviewUrl(null);
+      setPreviewError(null);
+      setShowPreviewDialog(true);
+
+      // For PDFs and images, we can preview directly
+      const previewableTypes = [
+        'application/pdf',
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+      ];
+
+      if (previewableTypes.includes(doc.mimeType)) {
+        setPreviewUrl(`/api/rooms/${roomId}/documents/${doc.id}/preview`);
+      } else {
+        setPreviewError('Preview not available for this file type. Use download instead.');
+      }
+    },
+    [roomId]
+  );
+
+  // Handle document delete
+  const handleDelete = React.useCallback(
+    async (doc: Document) => {
+      setSelectedDocument(doc);
+      setShowDeleteDialog(true);
+    },
+    []
+  );
+
+  // Confirm delete
+  const confirmDelete = React.useCallback(async () => {
+    if (!selectedDocument) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch(
+        `/api/rooms/${roomId}/documents/${selectedDocument.id}`,
+        { method: 'DELETE' }
+      );
+
+      if (response.ok) {
+        setShowDeleteDialog(false);
+        setSelectedDocument(null);
+        fetchDocuments(); // Refresh the list
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to delete document');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Failed to delete document');
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [roomId, selectedDocument, fetchDocuments]);
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -527,7 +622,11 @@ export default function RoomDetailPage() {
                     ))}
                     {/* Render documents */}
                     {documents.map((doc) => (
-                      <tr key={doc.id} className="border-b last:border-0 hover:bg-neutral-50">
+                      <tr
+                        key={doc.id}
+                        className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
+                        onClick={() => handlePreview(doc)}
+                      >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <FileText className="h-5 w-5 text-neutral-400" />
@@ -553,7 +652,7 @@ export default function RoomDetailPage() {
                         <td className="px-4 py-3 text-sm text-neutral-500">
                           {formatDate(doc.createdAt)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -561,18 +660,21 @@ export default function RoomDetailPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem disabled className="text-neutral-400">
+                              <DropdownMenuItem onClick={() => handlePreview(doc)}>
                                 <Eye className="mr-2 h-4 w-4" />
-                                Preview (Coming soon)
+                                Preview
                               </DropdownMenuItem>
-                              <DropdownMenuItem disabled className="text-neutral-400">
+                              <DropdownMenuItem onClick={() => handleDownload(doc)}>
                                 <Download className="mr-2 h-4 w-4" />
-                                Download (Coming soon)
+                                Download
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem disabled className="text-neutral-400">
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(doc)}
+                                className="text-danger-600"
+                              >
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete (Coming soon)
+                                Delete
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -933,6 +1035,99 @@ export default function RoomDetailPage() {
             >
               {isCreatingFolder ? 'Creating...' : 'Create Folder'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Document</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{selectedDocument?.name}&quot;? This document
+              will be moved to trash and can be restored later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteDialog(false);
+                setSelectedDocument(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview Dialog */}
+      <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>{selectedDocument?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="h-[70vh] overflow-auto">
+            {previewError ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <FileText className="mb-4 h-16 w-16 text-neutral-300" />
+                <p className="mb-4 text-neutral-500">{previewError}</p>
+                {selectedDocument && (
+                  <Button onClick={() => handleDownload(selectedDocument)}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download Instead
+                  </Button>
+                )}
+              </div>
+            ) : previewUrl ? (
+              selectedDocument?.mimeType === 'application/pdf' ? (
+                <iframe
+                  src={previewUrl}
+                  className="h-full w-full border-0"
+                  title={selectedDocument?.name}
+                />
+              ) : selectedDocument?.mimeType.startsWith('image/') ? (
+                <div className="flex h-full items-center justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={previewUrl}
+                    alt={selectedDocument?.name}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              ) : (
+                <iframe
+                  src={previewUrl}
+                  className="h-full w-full border-0"
+                  title={selectedDocument?.name}
+                />
+              )
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-center">
+                  <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600 mx-auto" />
+                  <p className="text-neutral-500">Loading preview...</p>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            {selectedDocument && (
+              <Button variant="outline" onClick={() => handleDownload(selectedDocument)}>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </Button>
+            )}
+            <Button onClick={() => setShowPreviewDialog(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
