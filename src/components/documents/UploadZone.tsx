@@ -189,12 +189,17 @@ export function UploadZone({
         try {
           const formData = new FormData();
           formData.append('file', uploadFile.file);
+          // Send folderId in form data (backend reads from form data, not query param)
+          if (folderId) {
+            formData.append('folderId', folderId);
+          }
+          // folderPath is for preserving folder structure from drag-dropped folders
           if (uploadFile.path !== '/') {
             formData.append('folderPath', uploadFile.path);
           }
 
           const response = await fetch(
-            `/api/rooms/${roomId}/documents${folderId ? `?folderId=${folderId}` : ''}`,
+            `/api/rooms/${roomId}/documents`,
             {
               method: 'POST',
               body: formData,
@@ -213,7 +218,11 @@ export function UploadZone({
             prev.map((f, idx) => (idx === i ? { ...f, status: 'success' as const, progress: 100 } : f))
           );
 
-          results.push({ documentId: data.document.id, name: data.document.name });
+          // API returns documents array - extract first uploaded document
+          if (data.documents && data.documents.length > 0) {
+            const doc = data.documents[0];
+            results.push({ documentId: doc.id, name: doc.name });
+          }
         } catch (error) {
           // Update status to error
           setFiles((prev) =>

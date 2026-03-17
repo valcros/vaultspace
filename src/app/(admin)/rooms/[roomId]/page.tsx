@@ -46,6 +46,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
+import { UploadZone } from '@/components/documents/UploadZone';
 
 interface Room {
   id: string;
@@ -111,6 +112,9 @@ export default function RoomDetailPage() {
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
   const [showMemberDialog, setShowMemberDialog] = React.useState(false);
   const [showLinkDialog, setShowLinkDialog] = React.useState(false);
+  const [showFolderDialog, setShowFolderDialog] = React.useState(false);
+  const [newFolderName, setNewFolderName] = React.useState('');
+  const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
 
   const fetchRoom = React.useCallback(async () => {
     try {
@@ -217,6 +221,45 @@ export default function RoomDetailPage() {
     });
   };
 
+  // Handle upload completion - refresh document list
+  const handleUploadComplete = React.useCallback(
+    (results: Array<{ documentId: string; name: string }>) => {
+      console.log('Upload complete:', results);
+      setShowUploadDialog(false);
+      fetchDocuments();
+    },
+    [fetchDocuments]
+  );
+
+  // Handle folder creation
+  const handleCreateFolder = React.useCallback(async () => {
+    if (!newFolderName.trim()) return;
+
+    setIsCreatingFolder(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/folders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newFolderName.trim() }),
+      });
+
+      if (response.ok) {
+        setShowFolderDialog(false);
+        setNewFolderName('');
+        fetchDocuments(); // Refresh to show new folder
+      } else {
+        const error = await response.json();
+        console.error('Failed to create folder:', error);
+        alert(error.error?.message || 'Failed to create folder');
+      }
+    } catch (error) {
+      console.error('Failed to create folder:', error);
+      alert('Failed to create folder');
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  }, [roomId, newFolderName, fetchDocuments]);
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -302,7 +345,7 @@ export default function RoomDetailPage() {
                   <Upload className="w-4 h-4 mr-2" />
                   Upload Files
                 </Button>
-                <Button variant="outline">
+                <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
                   <FolderPlus className="w-4 h-4 mr-2" />
                   New Folder
                 </Button>
@@ -614,7 +657,7 @@ export default function RoomDetailPage() {
 
       {/* Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Upload Files</DialogTitle>
             <DialogDescription>
@@ -622,21 +665,16 @@ export default function RoomDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <div className="border-2 border-dashed rounded-lg p-8 text-center">
-              <Upload className="w-8 h-8 mx-auto text-neutral-400 mb-4" />
-              <p className="text-sm text-neutral-500 mb-2">
-                Drag and drop files here, or click to browse
-              </p>
-              <Button variant="outline" size="sm">
-                Browse Files
-              </Button>
-            </div>
+            <UploadZone
+              roomId={roomId}
+              onUploadComplete={handleUploadComplete}
+              onUploadError={(error) => console.error('Upload error:', error)}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowUploadDialog(false)}>
-              Cancel
+              Close
             </Button>
-            <Button>Upload</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -710,6 +748,48 @@ export default function RoomDetailPage() {
               Cancel
             </Button>
             <Button>Create Link</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Folder Dialog */}
+      <Dialog open={showFolderDialog} onOpenChange={setShowFolderDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Folder</DialogTitle>
+            <DialogDescription>
+              Create a folder to organize documents in this data room.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="folderName">Folder Name</Label>
+              <Input
+                id="folderName"
+                placeholder="Enter folder name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isCreatingFolder) {
+                    handleCreateFolder();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowFolderDialog(false);
+                setNewFolderName('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreateFolder} disabled={isCreatingFolder || !newFolderName.trim()}>
+              {isCreatingFolder ? 'Creating...' : 'Create Folder'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
