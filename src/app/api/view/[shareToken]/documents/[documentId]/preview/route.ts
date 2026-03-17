@@ -145,12 +145,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const data = await storage.get(bucket, key);
     const mimeType = previewAsset.mimeType || 'image/png';
 
+    // X-Frame-Options: SAMEORIGIN allows iframe embedding within same origin for preview dialogs
     return new NextResponse(new Uint8Array(data), {
       status: 200,
       headers: {
         'Content-Type': mimeType,
         'Content-Length': data.length.toString(),
         'Cache-Control': 'private, max-age=300', // 5 minute cache
+        'X-Frame-Options': 'SAMEORIGIN',
       },
     });
   } catch (error) {
