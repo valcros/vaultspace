@@ -28,7 +28,7 @@ VaultSpace provides enterprise-grade document security and collaboration for M&A
 
 ## Getting Started
 
-*Coming soon* - Development setup instructions will be added as implementation progresses.
+_Coming soon_ - Development setup instructions will be added as implementation progresses.
 
 ## Contributing
 

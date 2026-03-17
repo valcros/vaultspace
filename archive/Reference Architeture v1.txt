@@ -1,0 +1,48 @@
+                         ┌───────────────────────────────┐
+                         │        End Users / Admins     │
+                         │  Browsers, viewers, API apps  │
+                         └──────────────┬────────────────┘
+                                        │ HTTPS
+                                        ▼
+                         ┌───────────────────────────────┐
+                         │   DNS + TLS + Reverse Proxy   │
+                         │ Front Door / App Gateway /    │
+                         │ Caddy / Nginx / Traefik       │
+                         └──────────────┬────────────────┘
+                                        │
+                    ┌───────────────────┴───────────────────┐
+                    │                                       │
+                    ▼                                       ▼
+      ┌───────────────────────────┐           ┌───────────────────────────┐
+      │   Web / API App Pods      │           │   Web / API App Pods      │
+      │ Next.js + TS + API routes │  scale    │ Next.js + TS + API routes │
+      │ Admin UI + Viewer UI      │ ◄──────►  │ Admin UI + Viewer UI      │
+      └──────────────┬────────────┘           └──────────────┬────────────┘
+                     │                                       │
+                     └───────────────────┬───────────────────┘
+                                         │
+                        ┌────────────────┼─────────────────┐
+                        │                │                 │
+                        ▼                ▼                 ▼
+          ┌────────────────────┐  ┌───────────────┐  ┌───────────────────┐
+          │   Redis / Cache    │  │ PostgreSQL    │  │ Object Storage     │
+          │ sessions, rate     │  │ app state,    │  │ originals, previews│
+          │ limits, queue      │  │ ACLs, events, │  │ exports, backups   │
+          │ metadata           │  │ audit logs    │  │                    │
+          └─────────┬──────────┘  └──────┬────────┘  └─────────┬─────────┘
+                    │                    │                     │
+                    │                    │                     │
+                    ▼                    │                     ▼
+          ┌────────────────────┐         │         ┌──────────────────────┐
+          │  Job Queue Workers │─────────┘         │ Preview / Conversion │
+          │ emails, reports,   │                   │ Workers              │
+          │ cleanup, webhooks  │                   │ LibreOffice /        │
+          └─────────┬──────────┘                   │ Gotenberg / OCR      │
+                    │                              └──────────┬───────────┘
+                    │                                         │
+                    ▼                                         ▼
+          ┌────────────────────┐                   ┌──────────────────────┐
+          │ Scan Workers       │                   │ Search Index Service │
+          │ ClamAV / scanning  │                   │ Postgres FTS first,  │
+          │ quarantine flow    │                   │ Meilisearch later    │
+          └────────────────────┘                   └──────────────────────┘

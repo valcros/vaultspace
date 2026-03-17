@@ -1,0 +1,27 @@
+DNS / TLS / Edge
+- Azure Front Door or Application Gateway
+- or simple reverse proxy in front of Container Apps
+
+App runtime
+- Azure Container Apps
+- later: AKS for larger production installs
+
+Database
+- Azure Database for PostgreSQL
+
+Cache / queue backend
+- Azure Cache for Redis
+
+Object storage
+- Azure Blob Storage
+
+Background workers
+- Container Apps jobs or dedicated worker containers
+
+Secrets
+- env vars first
+- later Azure Key Vault adapter
+
+Monitoring
+- OpenTelemetry
+- later Azure Application Insights adapter

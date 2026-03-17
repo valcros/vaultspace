@@ -1,0 +1,353 @@
+Recommended deployment stages
+1. Local development
+
+Use this first:
+
+Docker Compose
+- app
+- postgres
+- redis
+- optional worker
+- optional preview service
+
+This should remain the easiest way to run the product.
+
+2. Cloud dev / testing
+
+Best Azure reference for early testing:
+
+Azure Container Apps
+Azure PostgreSQL
+Azure Blob Storage
+Azure Redis
+
+This is the sweet spot for early development because it is much simpler than AKS.
+
+3. Production reference
+
+For larger deployments:
+
+AKS
+Managed PostgreSQL
+Blob Storage
+Redis
+Separate worker pools
+
+
+Core runtime components
+Web/API app
+
+This is the main Next.js app.
+
+Responsibilities:
+
+admin UI
+
+viewer UI
+
+authenticated API
+
+permission checks via PermissionEngine
+
+session handling
+
+room/document operations
+
+viewer rendering and watermark application
+
+Keep this stateless so multiple app instances can scale horizontally.
+
+Worker tier
+
+Split async work away from the web tier.
+
+Suggested worker types:
+
+general-worker
+preview-worker
+scan-worker
+report-worker
+
+Why separate them:
+
+preview generation is CPU-heavy
+
+virus scanning can be slow
+
+reports and exports can be long-running
+
+emails and webhooks should not compete with preview jobs
+
+Database
+
+PostgreSQL stores:
+
+organizations
+
+users
+
+rooms
+
+folders
+
+documents
+
+versions
+
+permissions
+
+links
+
+events
+
+audit trail
+
+settings
+
+invitations
+
+reports metadata
+
+Redis
+
+Use Redis for:
+
+BullMQ backend
+
+caching
+
+session data if needed
+
+rate limiting counters
+
+short-lived preview metadata
+
+Object storage
+
+Blob storage stores:
+
+original files
+
+converted previews
+
+thumbnails
+
+room export ZIPs
+
+backups
+
+possibly redacted derivatives later
+
+Recommended request flow
+Upload flow
+
+User uploads file
+→ app stores original in object storage
+→ DB record created
+→ upload event emitted
+→ job queued
+→ scan worker scans
+→ preview worker converts
+→ text extracted
+→ thumbnails generated
+→ search index updated
+→ document becomes viewable
+
+Viewer flow
+
+Viewer opens room
+→ session validated
+→ PermissionEngine checks access
+→ NDA / password / link policy checked
+→ preview served
+→ watermark applied at render time
+→ activity event emitted
+→ analytics updated asynchronously
+
+Security architecture
+Minimum secure setup
+
+For MVP/V1, I’d recommend:
+
+HTTPS everywhere
+Private storage container/bucket
+Signed temporary access URLs only internally
+Server-side permission checks for every action
+Redis-backed rate limits
+Virus scanning before public availability
+Immutable audit events
+Backups enabled from day one
+
+Secrets handling
+
+Early stage:
+
+environment variables
+
+Later:
+
+Azure Key Vault adapter
+
+Network posture
+
+For production:
+
+Postgres not public
+
+Redis not public
+
+storage private
+
+app tier only public entrypoint
+
+worker tier private
+
+Scaling model
+Horizontal scale targets
+
+This architecture supports scaling by separating:
+
+stateless app instances
+
+worker instances
+
+preview workers
+
+database
+
+storage
+
+First bottlenecks you’ll hit
+
+Usually in this order:
+
+preview conversion CPU
+
+database event/audit volume
+
+search indexing
+
+report generation
+
+watermark/render throughput
+
+Scale strategies
+
+When needed:
+
+More web app replicas
+More preview workers
+Separate scan workers
+Redis tuning
+Postgres read replicas later
+Dedicated search engine later
+
+Suggested Azure environments
+Dev
+
+Cheap and simple:
+
+1 app container
+1 worker container
+1 small Postgres instance
+1 small Redis
+1 Blob container
+
+Staging
+
+Closer to production:
+
+2 app replicas
+1 general worker
+1 preview worker
+managed Postgres
+managed Redis
+Blob storage
+
+Production
+
+For serious customers:
+
+2–4 app replicas
+2 general workers
+2 preview workers
+optional scan worker
+managed Postgres with backups
+managed Redis
+private Blob storage
+Front Door / App Gateway
+monitoring + alerts
+
+Design rules I strongly recommend
+1. Keep the app stateless
+
+No local-only required state in app containers.
+
+2. Never do heavy processing in request path
+
+All conversion, scanning, exports, OCR, and report generation should be queued.
+
+3. Keep storage private
+
+Only serve documents through authenticated application logic or tightly scoped signed access.
+
+4. Separate originals from derivatives
+
+Use different storage paths or containers for:
+
+originals
+
+previews
+
+thumbnails
+
+exports
+
+5. Make the worker model explicit
+
+Do not let “background jobs” remain abstract. Define worker roles early.
+
+Reference Azure layout
+
+Resource Group
+├── Front Door / App Gateway
+├── Container Apps Environment
+│   ├── dataroom-web
+│   ├── dataroom-worker
+│   ├── dataroom-preview-worker
+│   └── dataroom-scan-worker
+├── Azure Database for PostgreSQL
+├── Azure Cache for Redis
+├── Azure Blob Storage
+├── Key Vault (later)
+└── Monitoring / Logs
+
+Best practical starting point
+
+For your project, I would start with this exact cloud reference:
+
+Azure Container Apps
+Azure PostgreSQL Flexible Server
+Azure Blob Storage
+Azure Cache for Redis
+
+Not AKS yet.
+
+That gives you:
+
+realistic cloud behavior
+
+low operational burden
+
+enough fidelity for development/testing
+
+room to graduate later
+
+What I’d design next
+
+The next most valuable artifact is a deployment topology spec with three files:
+
+DEPLOYMENT_ARCHITECTURE.md
+ENVIRONMENT_VARIABLES.md
+WORKER_AND_QUEUE_MODEL.md
+
