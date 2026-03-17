@@ -17,7 +17,6 @@ import {
   Eye,
   Trash2,
   Copy,
-  Mail,
   BarChart3,
   History,
   ChevronRight,
@@ -101,13 +100,15 @@ interface Admin {
 
 interface ShareLink {
   id: string;
-  name: string;
-  token: string;
-  accessType: 'PUBLIC' | 'EMAIL_REQUIRED' | 'PASSWORD_PROTECTED';
-  viewCount: number;
+  name: string | null;
+  slug: string;
+  permission: 'VIEW' | 'DOWNLOAD';
+  requiresPassword: boolean;
+  requiresEmailVerification: boolean;
   expiresAt: string | null;
   isActive: boolean;
   createdAt: string;
+  _count?: { visits: number };
 }
 
 interface ActivityEvent {
@@ -149,6 +150,20 @@ export default function RoomDetailPage() {
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [previewError, setPreviewError] = React.useState<string | null>(null);
+
+  // Folder delete states
+  const [showFolderDeleteDialog, setShowFolderDeleteDialog] = React.useState(false);
+  const [selectedFolder, setSelectedFolder] = React.useState<FolderItem | null>(null);
+  const [isDeletingFolder, setIsDeletingFolder] = React.useState(false);
+
+  // Link create states
+  const [newLinkName, setNewLinkName] = React.useState('');
+  const [newLinkPermission, setNewLinkPermission] = React.useState<'VIEW' | 'DOWNLOAD'>('VIEW');
+  const [isCreatingLink, setIsCreatingLink] = React.useState(false);
+
+  // Member add states
+  const [newMemberEmail, setNewMemberEmail] = React.useState('');
+  const [isAddingMember, setIsAddingMember] = React.useState(false);
 
   const fetchRoom = React.useCallback(async () => {
     try {
@@ -435,6 +450,177 @@ export default function RoomDetailPage() {
     }
   }, [roomId, selectedDocument, fetchDocuments]);
 
+  // Handle folder delete
+  const handleFolderDelete = React.useCallback((folder: FolderItem) => {
+    setSelectedFolder(folder);
+    setShowFolderDeleteDialog(true);
+  }, []);
+
+  // Confirm folder delete
+  const confirmFolderDelete = React.useCallback(async () => {
+    if (!selectedFolder) {
+      return;
+    }
+
+    setIsDeletingFolder(true);
+    try {
+      const response = await fetch(
+        `/api/rooms/${roomId}/folders/${selectedFolder.id}`,
+        { method: 'DELETE' }
+      );
+
+      if (response.ok) {
+        setShowFolderDeleteDialog(false);
+        setSelectedFolder(null);
+        fetchFolders();
+        fetchDocuments(); // Documents may have been deleted too
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to delete folder');
+      }
+    } catch (error) {
+      console.error('Folder delete error:', error);
+      alert('Failed to delete folder');
+    } finally {
+      setIsDeletingFolder(false);
+    }
+  }, [roomId, selectedFolder, fetchFolders, fetchDocuments]);
+
+  // Handle share link creation
+  const handleCreateLink = React.useCallback(async () => {
+    if (!newLinkName.trim()) {
+      alert('Please enter a link name');
+      return;
+    }
+
+    setIsCreatingLink(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newLinkName.trim(),
+          permission: newLinkPermission,
+          scope: 'ENTIRE_ROOM',
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setShowLinkDialog(false);
+        setNewLinkName('');
+        setNewLinkPermission('VIEW');
+        fetchLinks();
+        // Copy link URL to clipboard
+        if (data.link?.url) {
+          await navigator.clipboard.writeText(data.link.url);
+          alert('Link created and copied to clipboard!');
+        }
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to create link');
+      }
+    } catch (error) {
+      console.error('Create link error:', error);
+      alert('Failed to create link');
+    } finally {
+      setIsCreatingLink(false);
+    }
+  }, [roomId, newLinkName, newLinkPermission, fetchLinks]);
+
+  // Handle copy link
+  const handleCopyLink = React.useCallback(async (link: ShareLink) => {
+    const baseUrl = window.location.origin;
+    const linkUrl = `${baseUrl}/r/${link.slug}`;
+    try {
+      await navigator.clipboard.writeText(linkUrl);
+      alert('Link copied to clipboard!');
+    } catch (error) {
+      console.error('Copy error:', error);
+      alert('Failed to copy link');
+    }
+  }, []);
+
+  // Handle delete link
+  const handleDeleteLink = React.useCallback(async (link: ShareLink) => {
+    if (!confirm(`Are you sure you want to delete the link "${link.name}"?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/links/${link.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchLinks();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to delete link');
+      }
+    } catch (error) {
+      console.error('Delete link error:', error);
+      alert('Failed to delete link');
+    }
+  }, [roomId, fetchLinks]);
+
+  // Handle add member (room admin)
+  const handleAddMember = React.useCallback(async () => {
+    if (!newMemberEmail.trim()) {
+      alert('Please enter an email address');
+      return;
+    }
+
+    setIsAddingMember(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/admins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newMemberEmail.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        setShowMemberDialog(false);
+        setNewMemberEmail('');
+        fetchAdmins();
+        alert('Admin added successfully!');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to add admin');
+      }
+    } catch (error) {
+      console.error('Add member error:', error);
+      alert('Failed to add admin');
+    } finally {
+      setIsAddingMember(false);
+    }
+  }, [roomId, newMemberEmail, fetchAdmins]);
+
+  // Handle remove member
+  const handleRemoveMember = React.useCallback(async (admin: Admin) => {
+    if (!confirm(`Are you sure you want to remove ${admin.firstName} ${admin.lastName} as a room admin?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/admins/${admin.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchAdmins();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to remove admin');
+      }
+    } catch (error) {
+      console.error('Remove member error:', error);
+      alert('Failed to remove admin');
+    }
+  }, [roomId, fetchAdmins]);
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -613,9 +799,12 @@ export default function RoomDetailPage() {
                                 Open
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem disabled className="text-neutral-400">
+                              <DropdownMenuItem
+                                onClick={() => handleFolderDelete(folder)}
+                                className="text-danger-600"
+                              >
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete (Coming soon)
+                                Delete
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -752,7 +941,10 @@ export default function RoomDetailPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               {admin.scope === 'room' && (
-                                <DropdownMenuItem className="text-danger-600">
+                                <DropdownMenuItem
+                                  onClick={() => handleRemoveMember(admin)}
+                                  className="text-danger-600"
+                                >
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   Remove
                                 </DropdownMenuItem>
@@ -796,19 +988,13 @@ export default function RoomDetailPage() {
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-base">{link.name}</CardTitle>
+                          <CardTitle className="text-base">{link.name || 'Unnamed Link'}</CardTitle>
                           <CardDescription className="mt-1 flex items-center gap-2">
-                            <Badge
-                              variant={
-                                link.accessType === 'PUBLIC'
-                                  ? 'warning'
-                                  : link.accessType === 'PASSWORD_PROTECTED'
-                                    ? 'default'
-                                    : 'secondary'
-                              }
-                            >
-                              {link.accessType.replace('_', ' ').toLowerCase()}
+                            <Badge variant={link.permission === 'DOWNLOAD' ? 'default' : 'secondary'}>
+                              {link.permission === 'DOWNLOAD' ? 'View & Download' : 'View Only'}
                             </Badge>
+                            {link.requiresPassword && <Badge variant="warning">Password</Badge>}
+                            {link.requiresEmailVerification && <Badge variant="secondary">Email Required</Badge>}
                             {!link.isActive && <Badge variant="danger">Disabled</Badge>}
                           </CardDescription>
                         </div>
@@ -819,17 +1005,15 @@ export default function RoomDetailPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleCopyLink(link)}>
                               <Copy className="mr-2 h-4 w-4" />
                               Copy Link
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <Mail className="mr-2 h-4 w-4" />
-                              Send via Email
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>Edit</DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-danger-600">
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteLink(link)}
+                              className="text-danger-600"
+                            >
                               <Trash2 className="mr-2 h-4 w-4" />
                               Delete
                             </DropdownMenuItem>
@@ -840,8 +1024,8 @@ export default function RoomDetailPage() {
                     <CardContent>
                       <div className="flex items-center gap-6 text-sm text-neutral-500">
                         <div>
-                          <span className="font-medium text-neutral-900">{link.viewCount}</span>{' '}
-                          views
+                          <span className="font-medium text-neutral-900">{link._count?.visits || 0}</span>{' '}
+                          visits
                         </div>
                         <div>Created {formatDate(link.createdAt)}</div>
                         {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
@@ -925,33 +1109,43 @@ export default function RoomDetailPage() {
       <Dialog open={showMemberDialog} onOpenChange={setShowMemberDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Member</DialogTitle>
-            <DialogDescription>Add a team member to this data room.</DialogDescription>
+            <DialogTitle>Add Room Admin</DialogTitle>
+            <DialogDescription>
+              Add a team member as an admin of this data room. They must have an existing account.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="memberEmail">Email Address</Label>
-              <Input id="memberEmail" type="email" placeholder="member@example.com" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="memberRole">Role</Label>
-              <Select defaultValue="VIEWER">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ADMIN">Admin</SelectItem>
-                  <SelectItem value="VIEWER">Viewer</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input
+                id="memberEmail"
+                type="email"
+                placeholder="member@example.com"
+                value={newMemberEmail}
+                onChange={(e) => setNewMemberEmail(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isAddingMember) {
+                    handleAddMember();
+                  }
+                }}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMemberDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowMemberDialog(false);
+                setNewMemberEmail('');
+              }}
+            >
               Cancel
             </Button>
-            <Button disabled title="Coming soon">
-              Add Member (Coming soon)
+            <Button
+              onClick={handleAddMember}
+              disabled={isAddingMember || !newMemberEmail.trim()}
+            >
+              {isAddingMember ? 'Adding...' : 'Add Admin'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -969,28 +1163,50 @@ export default function RoomDetailPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="linkName">Link Name</Label>
-              <Input id="linkName" placeholder="Investor Access" />
+              <Input
+                id="linkName"
+                placeholder="Investor Access"
+                value={newLinkName}
+                onChange={(e) => setNewLinkName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isCreatingLink) {
+                    handleCreateLink();
+                  }
+                }}
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="accessType">Access Type</Label>
-              <Select defaultValue="EMAIL_REQUIRED">
+              <Label htmlFor="linkPermission">Permission Level</Label>
+              <Select
+                value={newLinkPermission}
+                onValueChange={(value) => setNewLinkPermission(value as 'VIEW' | 'DOWNLOAD')}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="PUBLIC">Public (anyone with link)</SelectItem>
-                  <SelectItem value="EMAIL_REQUIRED">Email Required</SelectItem>
-                  <SelectItem value="PASSWORD_PROTECTED">Password Protected</SelectItem>
+                  <SelectItem value="VIEW">View Only</SelectItem>
+                  <SelectItem value="DOWNLOAD">View & Download</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowLinkDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowLinkDialog(false);
+                setNewLinkName('');
+                setNewLinkPermission('VIEW');
+              }}
+            >
               Cancel
             </Button>
-            <Button disabled title="Coming soon">
-              Create Link (Coming soon)
+            <Button
+              onClick={handleCreateLink}
+              disabled={isCreatingLink || !newLinkName.trim()}
+            >
+              {isCreatingLink ? 'Creating...' : 'Create Link'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1041,7 +1257,7 @@ export default function RoomDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Document Confirmation Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1067,6 +1283,37 @@ export default function RoomDetailPage() {
               disabled={isDeleting}
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Folder Confirmation Dialog */}
+      <Dialog open={showFolderDeleteDialog} onOpenChange={setShowFolderDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Folder</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{selectedFolder?.name}&quot;? This will delete
+              all documents and subfolders inside it. Documents will be moved to trash.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowFolderDeleteDialog(false);
+                setSelectedFolder(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmFolderDelete}
+              disabled={isDeletingFolder}
+            >
+              {isDeletingFolder ? 'Deleting...' : 'Delete Folder'}
             </Button>
           </DialogFooter>
         </DialogContent>
