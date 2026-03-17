@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
-import { withOrgContext } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -179,7 +179,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       // Check if email is allowed
       if (link.allowedEmails.length > 0) {
         const normalizedEmail = email.toLowerCase().trim();
-        const allowed = link.allowedEmails.some((e) => e.toLowerCase().trim() === normalizedEmail);
+        const allowed = link.allowedEmails.some(
+          (e: string) => e.toLowerCase().trim() === normalizedEmail
+        );
 
         if (!allowed) {
           return NextResponse.json(
