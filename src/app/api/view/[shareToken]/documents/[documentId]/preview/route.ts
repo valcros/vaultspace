@@ -16,6 +16,13 @@ interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
 }
 
+// All responses from this route need X-Frame-Options: SAMEORIGIN to allow iframe embedding
+const FRAME_HEADERS = { 'X-Frame-Options': 'SAMEORIGIN' };
+
+function jsonResponse(data: object, status: number) {
+  return NextResponse.json(data, { status, headers: FRAME_HEADERS });
+}
+
 /**
  * PRE-RLS BOOTSTRAP: Resolve viewer session from token
  * Returns organizationId for subsequent RLS context
@@ -57,12 +64,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const session = await getViewerSession(shareToken);
 
     if (!session) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
+      return jsonResponse({ error: 'Session expired or invalid' }, 401);
     }
 
     // Check if document is allowed by link scope
     if (session.link?.scope === 'DOCUMENT' && session.link.scopedDocumentId !== documentId) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+      return jsonResponse({ error: 'Document not found' }, 404);
     }
 
     // Get page number from query params
@@ -111,7 +118,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     });
 
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
+      return jsonResponse({ error: result.error }, result.status || 500);
     }
 
     const { latestVersion } = result;
@@ -119,10 +126,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const previewAsset = latestVersion.previewAssets[0];
     if (!previewAsset) {
       // Return a placeholder response if no preview is available yet
-      return NextResponse.json(
-        { error: 'Preview not available', processing: true },
-        { status: 202 }
-      );
+      return jsonResponse({ error: 'Preview not available', processing: true }, 202);
     }
 
     // Get storage provider and generate signed URL
@@ -135,10 +139,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     // Check if file exists
     const exists = await storage.exists(bucket, key);
     if (!exists) {
-      return NextResponse.json(
-        { error: 'Preview file not found', processing: true },
-        { status: 202 }
-      );
+      return jsonResponse({ error: 'Preview file not found', processing: true }, 202);
     }
 
     // Get the file and return it directly (more reliable than redirect for images)
@@ -157,6 +158,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
     });
   } catch (error) {
     console.error('[ViewerPreviewAPI] Error:', error);
-    return NextResponse.json({ error: 'Failed to get preview' }, { status: 500 });
+    return jsonResponse({ error: 'Failed to get preview' }, 500);
   }
 }

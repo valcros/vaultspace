@@ -30,6 +30,13 @@ const PREVIEWABLE_MIME_TYPES = new Set([
   'text/csv',
 ]);
 
+// All responses from this route need X-Frame-Options: SAMEORIGIN to allow iframe embedding
+const FRAME_HEADERS = { 'X-Frame-Options': 'SAMEORIGIN' };
+
+function jsonResponse(data: object, status: number) {
+  return NextResponse.json(data, { status, headers: FRAME_HEADERS });
+}
+
 /**
  * GET /api/rooms/:roomId/documents/:documentId/preview
  * Get document preview for authenticated admin
@@ -102,7 +109,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
 
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
+      return jsonResponse({ error: result.error }, result.status || 500);
     }
 
     const { document, latestVersion } = result;
@@ -120,7 +127,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       // Check if file exists
       const exists = await storage.exists(bucket, key);
       if (!exists) {
-        return NextResponse.json({ error: 'File not found in storage' }, { status: 404 });
+        return jsonResponse({ error: 'File not found in storage' }, 404);
       }
 
       // Get file content
@@ -163,7 +170,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     // No preview available - return metadata about the document
-    return NextResponse.json({
+    return jsonResponse({
       message: 'Preview not available for this file type',
       document: {
         id: document.id,
@@ -171,9 +178,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         mimeType: document.mimeType,
         canPreview: false,
       },
-    }, { status: 200 });
+    }, 200);
   } catch (error) {
     console.error('[AdminPreviewAPI] Error:', error);
-    return NextResponse.json({ error: 'Failed to get preview' }, { status: 500 });
+    return jsonResponse({ error: 'Failed to get preview' }, 500);
   }
 }
