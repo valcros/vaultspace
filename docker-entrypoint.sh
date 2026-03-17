@@ -9,7 +9,17 @@ echo "[entrypoint] VaultSpace starting..."
 # Run database migrations in production
 if [ "$NODE_ENV" = "production" ]; then
   echo "[entrypoint] Running database migrations..."
-  npx prisma migrate deploy
+
+  # Use db push to synchronize the schema with the database
+  # This is safe for staging environments and handles cases where migrations were
+  # incorrectly marked as applied without the schema actually being created
+  if [ "$PRISMA_FORCE_SCHEMA_SYNC" = "true" ]; then
+    echo "[entrypoint] Force-syncing schema (PRISMA_FORCE_SCHEMA_SYNC=true)..."
+    node ./node_modules/prisma/build/index.js db push --accept-data-loss
+  else
+    # Standard migration deployment
+    node ./node_modules/prisma/build/index.js migrate deploy
+  fi
 
   # Apply RLS policies in production (REQUIRED for multi-tenant security)
   if [ "$ENABLE_RLS" != "false" ]; then

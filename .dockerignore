@@ -1,0 +1,42 @@
+# Dependencies - installed during build
+node_modules
+
+# Build outputs
+.next
+dist
+out
+
+# Development files
+.env*.local
+*.log
+npm-debug.log*
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+coverage
+.nyc_output
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Documentation (not needed in image)
+*.md
+!README.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Local development
+docker-compose*.yml
+.env.example
