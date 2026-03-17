@@ -32,7 +32,8 @@ export function createServiceContext(options: CreateServiceContextOptions): Serv
     actorType: session.organization.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
     ipAddress,
     userAgent,
-    sessionId: session.sessionId,
+    // Note: sessionId on events references ViewSession (external viewer sessions),
+    // not the user's login Session. User actions don't set sessionId.
   });
 
   return {
