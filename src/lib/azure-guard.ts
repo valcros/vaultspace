@@ -116,10 +116,14 @@ export function validateAzureConfig(): { valid: boolean; errors: string[] } {
     errors.push('REDIS_URL must point to Azure Cache for Redis (.redis.cache.windows.net)');
   }
 
-  // Check AZURE_STORAGE_ACCOUNT is set
-  if (!process.env['AZURE_STORAGE_ACCOUNT'] && !process.env['AZURE_STORAGE_CONNECTION_STRING']) {
+  // Check Azure Storage is configured (accept multiple naming conventions)
+  if (
+    !process.env['AZURE_STORAGE_ACCOUNT'] &&
+    !process.env['AZURE_STORAGE_ACCOUNT_NAME'] &&
+    !process.env['AZURE_STORAGE_CONNECTION_STRING']
+  ) {
     errors.push(
-      'Azure Storage configuration is required (AZURE_STORAGE_ACCOUNT or AZURE_STORAGE_CONNECTION_STRING)'
+      'Azure Storage configuration is required (AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_ACCOUNT_NAME, or AZURE_STORAGE_CONNECTION_STRING)'
     );
   }
 
