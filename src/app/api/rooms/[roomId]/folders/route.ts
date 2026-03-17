@@ -94,17 +94,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
           };
         }
 
-        // Verify room exists and is active
+        // Verify room exists and is not deleted/archived
         const room = await tx.room.findFirst({
           where: {
             id: roomId,
             organizationId: session.organizationId,
-            status: 'ACTIVE',
+            status: { in: ['DRAFT', 'ACTIVE'] },
           },
         });
 
         if (!room) {
-          return { error: 'Room not found or not active', status: HTTP_STATUS.NOT_FOUND };
+          return { error: 'Room not found or not available', status: HTTP_STATUS.NOT_FOUND };
         }
 
         // If parentId provided, verify it exists and belongs to this room
