@@ -14,6 +14,24 @@ import { createEventBus, EventBus } from './EventBus';
 const mockEventCreate = vi.fn();
 const mockEventTransaction = vi.fn();
 
+// Track call count for generating unique event IDs
+let eventCallCount = 0;
+
+// Mock withOrgContext to directly call the operation with a mock transaction
+const mockWithOrgContext = vi.fn().mockImplementation(async (_orgId, operation) => {
+  const mockTx = {
+    event: {
+      create: (args: unknown) => {
+        eventCallCount++;
+        mockEventCreate(args);
+        return Promise.resolve({ id: `event-${eventCallCount}` });
+      },
+      createMany: vi.fn(),
+    },
+  };
+  return operation(mockTx);
+});
+
 vi.mock('../db', () => ({
   db: {
     event: {
@@ -21,6 +39,7 @@ vi.mock('../db', () => ({
     },
     $transaction: (args: unknown) => mockEventTransaction(args),
   },
+  withOrgContext: (...args: unknown[]) => mockWithOrgContext(...args),
 }));
 
 describe('EventBus', () => {
@@ -30,6 +49,7 @@ describe('EventBus', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    eventCallCount = 0;
   });
 
   describe('emit', () => {
@@ -67,15 +87,13 @@ describe('EventBus', () => {
     });
 
     it('should emit event with minimal options', async () => {
-      mockEventCreate.mockResolvedValue({ id: 'event-2' });
-
       const eventBus = createEventBus(orgId, {
         actorType: 'SYSTEM' as ActorType,
       });
 
       const eventId = await eventBus.emit('USER_LOGIN' as EventType);
 
-      expect(eventId).toBe('event-2');
+      expect(eventId).toBe('event-1');
       expect(mockEventCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
           eventType: 'USER_LOGIN',
@@ -131,16 +149,6 @@ describe('EventBus', () => {
 
   describe('emitBatch', () => {
     it('should emit multiple events in a transaction', async () => {
-      const events = [
-        { id: 'event-5' },
-        { id: 'event-6' },
-        { id: 'event-7' },
-        { id: 'event-8' },
-        { id: 'event-9' },
-      ];
-
-      mockEventTransaction.mockResolvedValue(events);
-
       const eventBus = createEventBus(orgId, {
         actorType: 'ADMIN' as ActorType,
         actorId: 'user-1',
@@ -155,14 +163,11 @@ describe('EventBus', () => {
       ]);
 
       expect(eventIds).toHaveLength(5);
-      expect(eventIds).toEqual(['event-5', 'event-6', 'event-7', 'event-8', 'event-9']);
+      // Events are created with sequential IDs based on our mock
+      expect(eventIds).toEqual(['event-1', 'event-2', 'event-3', 'event-4', 'event-5']);
     });
 
     it('should preserve actor context across batch events', async () => {
-      mockEventTransaction.mockImplementation((queries) => {
-        return Promise.all(queries.map((_q: unknown, i: number) => ({ id: `event-${i + 10}` })));
-      });
-
       const eventBus = createEventBus(orgId, {
         actorType: 'ADMIN' as ActorType,
         actorId: 'user-bulk',
@@ -175,8 +180,8 @@ describe('EventBus', () => {
         { eventType: 'DOCUMENT_UPLOADED' as EventType, documentId: 'doc-a' },
       ]);
 
-      // Verify the transaction was called with proper data
-      expect(mockEventTransaction).toHaveBeenCalled();
+      // Verify withOrgContext was called (events go through RLS context)
+      expect(mockWithOrgContext).toHaveBeenCalled();
     });
   });
 
@@ -235,19 +240,13 @@ describe('EventBus', () => {
 
   describe('event immutability', () => {
     it('should store events without modification methods', async () => {
-      mockEventCreate.mockResolvedValue({
-        id: 'event-immutable',
-        eventType: 'USER_LOGIN',
-        createdAt: new Date(),
-      });
-
       const eventBus = createEventBus(orgId, { actorType: 'ADMIN' as ActorType });
       const eventId = await eventBus.emit('USER_LOGIN' as EventType);
 
       // Events are stored via db.event.create
       // The EventBus does not expose update or delete methods
       // This test verifies the event ID is returned for audit purposes
-      expect(eventId).toBe('event-immutable');
+      expect(eventId).toBe('event-1');
     });
   });
 });
