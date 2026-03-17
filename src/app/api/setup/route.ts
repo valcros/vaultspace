@@ -30,10 +30,7 @@ export async function POST(request: NextRequest) {
     // Check if setup has already been completed
     const existingOrg = await db.organization.findFirst();
     if (existingOrg) {
-      return NextResponse.json(
-        { error: 'Setup has already been completed' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Setup has already been completed' }, { status: 400 });
     }
 
     const body = await request.json();
@@ -52,10 +49,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingSlug) {
-      return NextResponse.json(
-        { error: 'Organization slug is already taken' },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: 'Organization slug is already taken' }, { status: 409 });
     }
 
     // Check if admin email is unique
@@ -152,10 +146,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.error('[SetupAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to complete setup' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to complete setup' }, { status: 500 });
   }
 }
 
@@ -169,9 +160,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error('[SetupAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to check setup status' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to check setup status' }, { status: 500 });
   }
 }

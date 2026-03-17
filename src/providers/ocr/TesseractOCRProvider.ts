@@ -46,8 +46,9 @@ export class TesseractOCRProvider implements OCRProvider {
     if (!this.worker) {
       try {
         // Dynamic import with webpack magic comment to exclude from bundle
-        // @ts-expect-error - tesseract.js is an optional dependency
-        const tesseractModule = await import(/* webpackIgnore: true */ 'tesseract.js').catch(() => null);
+        const tesseractModule = await import(/* webpackIgnore: true */ 'tesseract.js').catch(
+          () => null
+        );
         if (!tesseractModule) {
           throw new Error('tesseract.js not installed');
         }
@@ -65,11 +66,7 @@ export class TesseractOCRProvider implements OCRProvider {
   /**
    * Extract text from an image or scanned document
    */
-  async extractText(
-    data: Buffer,
-    mimeType: string,
-    options: OCROptions = {}
-  ): Promise<OCRResult> {
+  async extractText(data: Buffer, mimeType: string, options: OCROptions = {}): Promise<OCRResult> {
     // Check if the mime type is supported
     if (!this.isSupportedFormat(mimeType)) {
       return {

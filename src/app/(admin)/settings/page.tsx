@@ -2,13 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Building2,
-  Users,
-  Bell,
-  Activity,
-  ChevronRight,
-} from 'lucide-react';
+import { Building2, Users, Bell, Activity, ChevronRight } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
@@ -69,19 +63,19 @@ export default function SettingsPage() {
             return (
               <Card
                 key={section.id}
-                className="cursor-pointer hover:border-primary-200 hover:shadow-md transition-all"
+                className="cursor-pointer transition-all hover:border-primary-200 hover:shadow-md"
                 onClick={() => router.push(section.href)}
               >
                 <CardContent className="p-6">
                   <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-5 h-5 text-primary-600" />
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary-50">
+                      <Icon className="h-5 w-5 text-primary-600" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <h3 className="font-medium text-neutral-900">{section.title}</h3>
-                      <p className="text-sm text-neutral-500 mt-1">{section.description}</p>
+                      <p className="mt-1 text-sm text-neutral-500">{section.description}</p>
                     </div>
-                    <ChevronRight className="w-5 h-5 text-neutral-400 flex-shrink-0" />
+                    <ChevronRight className="h-5 w-5 flex-shrink-0 text-neutral-400" />
                   </div>
                 </CardContent>
               </Card>

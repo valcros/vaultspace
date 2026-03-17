@@ -13,7 +13,10 @@ import { EmailNotificationService } from '@/services/notifications';
 import type { EmailSendJobPayload, NotificationJobPayload } from '../types';
 
 // Email templates - simplified for Phase 2
-const EMAIL_TEMPLATES: Record<string, (data: Record<string, unknown>) => { subject: string; html: string; text?: string }> = {
+const EMAIL_TEMPLATES: Record<
+  string,
+  (data: Record<string, unknown>) => { subject: string; html: string; text?: string }
+> = {
   'room-invitation': (data) => ({
     subject: `You've been invited to ${data['roomName']}`,
     html: `
@@ -48,7 +51,7 @@ const EMAIL_TEMPLATES: Record<string, (data: Record<string, unknown>) => { subje
     text: `Reset your password at: ${data['resetUrl']}. This link expires in 1 hour.`,
   }),
 
-  'welcome': (data) => ({
+  welcome: (data) => ({
     subject: 'Welcome to VaultSpace',
     html: `
       <h1>Welcome to VaultSpace!</h1>
@@ -105,10 +108,14 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
  */
 function createNotificationService(): EmailNotificationService {
   const providers = getProviders();
+  const appUrl = process.env['APP_URL'];
+  if (!appUrl) {
+    throw new Error('[EmailProcessor] APP_URL environment variable is required');
+  }
   return new EmailNotificationService({
     emailProvider: providers.email,
     fromAddress: process.env['SMTP_FROM'] || 'noreply@vaultspace.local',
-    appUrl: process.env['APP_URL'] || 'http://localhost:3000',
+    appUrl,
   });
 }
 

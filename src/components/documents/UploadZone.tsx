@@ -198,13 +198,10 @@ export function UploadZone({
             formData.append('folderPath', uploadFile.path);
           }
 
-          const response = await fetch(
-            `/api/rooms/${roomId}/documents`,
-            {
-              method: 'POST',
-              body: formData,
-            }
-          );
+          const response = await fetch(`/api/rooms/${roomId}/documents`, {
+            method: 'POST',
+            body: formData,
+          });
 
           if (!response.ok) {
             const error = await response.json();
@@ -215,7 +212,9 @@ export function UploadZone({
 
           // Update status to success
           setFiles((prev) =>
-            prev.map((f, idx) => (idx === i ? { ...f, status: 'success' as const, progress: 100 } : f))
+            prev.map((f, idx) =>
+              idx === i ? { ...f, status: 'success' as const, progress: 100 } : f
+            )
           );
 
           // API returns documents array - extract first uploaded document
@@ -227,9 +226,7 @@ export function UploadZone({
           // Update status to error
           setFiles((prev) =>
             prev.map((f, idx) =>
-              idx === i
-                ? { ...f, status: 'error' as const, error: (error as Error).message }
-                : f
+              idx === i ? { ...f, status: 'error' as const, error: (error as Error).message } : f
             )
           );
           onUploadError?.(error as Error);
@@ -285,12 +282,7 @@ export function UploadZone({
       <div
         role="button"
         tabIndex={0}
-        className={`
-          relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
-          transition-colors duration-200
-          ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
-          ${isUploading ? 'pointer-events-none opacity-50' : ''}
-        `}
+        className={`relative cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors duration-200 ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'} ${isUploading ? 'pointer-events-none opacity-50' : ''} `}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -323,9 +315,7 @@ export function UploadZone({
             />
           </svg>
           <div className="text-sm text-gray-600">
-            <span className="font-medium text-blue-600 hover:text-blue-500">
-              Click to upload
-            </span>{' '}
+            <span className="font-medium text-blue-600 hover:text-blue-500">Click to upload</span>{' '}
             or drag and drop
           </div>
           <p className="text-xs text-gray-500">
@@ -337,7 +327,7 @@ export function UploadZone({
       {/* File list with progress */}
       {files.length > 0 && (
         <div className="mt-4 space-y-2">
-          <div className="flex justify-between items-center">
+          <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-gray-700">
               {files.length} file{files.length > 1 ? 's' : ''}
             </span>
@@ -352,14 +342,12 @@ export function UploadZone({
             )}
           </div>
 
-          <ul className="divide-y divide-gray-200 border rounded-md">
+          <ul className="divide-y divide-gray-200 rounded-md border">
             {files.map((file, index) => (
               <li key={`${file.file.name}-${index}`} className="px-4 py-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {file.file.name}
-                    </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">{file.file.name}</p>
                     <p className="text-xs text-gray-500">
                       {(file.file.size / 1024).toFixed(1)} KB
                       {file.path !== '/' && ` • ${file.path}`}
@@ -367,23 +355,23 @@ export function UploadZone({
                   </div>
                   <div className="ml-4">
                     {file.status === 'pending' && (
-                      <span className="text-gray-400 text-sm">Pending</span>
+                      <span className="text-sm text-gray-400">Pending</span>
                     )}
                     {file.status === 'uploading' && (
-                      <span className="text-blue-500 text-sm">Uploading...</span>
+                      <span className="text-sm text-blue-500">Uploading...</span>
                     )}
                     {file.status === 'success' && (
-                      <span className="text-green-500 text-sm">Done</span>
+                      <span className="text-sm text-green-500">Done</span>
                     )}
                     {file.status === 'error' && (
-                      <span className="text-red-500 text-sm" title={file.error}>
+                      <span className="text-sm text-red-500" title={file.error}>
                         Failed
                       </span>
                     )}
                   </div>
                 </div>
                 {file.status === 'uploading' && (
-                  <div className="mt-2 h-1 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-gray-200">
                     <div
                       className="h-full bg-blue-500 transition-all duration-300"
                       style={{ width: `${file.progress}%` }}

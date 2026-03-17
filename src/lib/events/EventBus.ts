@@ -3,11 +3,25 @@
  *
  * Immutable audit event system. Every state mutation emits an event.
  * Events are stored in the database and cannot be modified after creation.
+ *
+ * RLS Support:
+ * EventBus can accept an optional Prisma transaction client to emit events
+ * within an RLS-scoped context. When called from services using withOrgContext(),
+ * pass the transaction client to ensure event writes respect the RLS tenant boundary.
+ *
+ * For transactional consistency, events should be emitted inside the same
+ * withOrgContext() block as the mutation they're recording. This ensures
+ * events are only persisted when the mutation succeeds.
  */
 
-import type { ActorType, EventType, Prisma } from '@prisma/client';
+import type { ActorType, EventType, Prisma as PrismaTypes } from '@prisma/client';
 
-import { db } from '../db';
+import { db, withOrgContext } from '../db';
+
+/**
+ * Database client type - either the global singleton or a transaction client
+ */
+type DbClient = typeof db | PrismaTypes.TransactionClient;
 
 export interface EventPayload {
   eventType: EventType;
@@ -50,6 +64,10 @@ export class EventBus {
 
   /**
    * Emit an event to the audit log
+   *
+   * @param eventType - The type of event
+   * @param options - Event options (roomId, documentId, etc.)
+   * @param client - Optional Prisma transaction client for RLS context
    */
   async emit(
     eventType: EventType,
@@ -59,32 +77,44 @@ export class EventBus {
       documentId?: string;
       description?: string;
       metadata?: Record<string, unknown>;
-    } = {}
+    } = {},
+    client?: DbClient
   ): Promise<string> {
-    const event = await db.event.create({
-      data: {
-        eventType,
-        actorType: this.context.actorType,
-        actorId: this.context.actorId,
-        actorEmail: this.context.actorEmail,
-        organizationId: this.context.organizationId,
-        roomId: options.roomId,
-        folderId: options.folderId,
-        documentId: options.documentId,
-        requestId: this.context.requestId,
-        sessionId: this.context.sessionId,
-        description: options.description,
-        metadata: (options.metadata ?? {}) as Prisma.InputJsonValue,
-        ipAddress: this.context.ipAddress,
-        userAgent: this.context.userAgent,
-      },
-    });
+    const eventData = {
+      eventType,
+      actorType: this.context.actorType,
+      actorId: this.context.actorId,
+      actorEmail: this.context.actorEmail,
+      organizationId: this.context.organizationId,
+      roomId: options.roomId,
+      folderId: options.folderId,
+      documentId: options.documentId,
+      requestId: this.context.requestId,
+      sessionId: this.context.sessionId,
+      description: options.description,
+      metadata: (options.metadata ?? {}) as PrismaTypes.InputJsonValue,
+      ipAddress: this.context.ipAddress,
+      userAgent: this.context.userAgent,
+    };
 
-    return event.id;
+    // If a client is provided, use it directly (already in RLS context)
+    if (client) {
+      const event = await client.event.create({ data: eventData });
+      return event.id;
+    }
+
+    // Otherwise, wrap in RLS context
+    return withOrgContext(this.context.organizationId, async (tx) => {
+      const event = await tx.event.create({ data: eventData });
+      return event.id;
+    });
   }
 
   /**
    * Emit multiple events in a transaction
+   *
+   * @param events - Array of events to emit
+   * @param client - Optional Prisma transaction client for RLS context
    */
   async emitBatch(
     events: Array<{
@@ -94,32 +124,62 @@ export class EventBus {
       documentId?: string;
       description?: string;
       metadata?: Record<string, unknown>;
-    }>
+    }>,
+    client?: DbClient
   ): Promise<string[]> {
-    const result = await db.$transaction(
-      events.map((e) =>
-        db.event.create({
-          data: {
-            eventType: e.eventType,
-            actorType: this.context.actorType,
-            actorId: this.context.actorId,
-            actorEmail: this.context.actorEmail,
-            organizationId: this.context.organizationId,
-            roomId: e.roomId,
-            folderId: e.folderId,
-            documentId: e.documentId,
-            requestId: this.context.requestId,
-            sessionId: this.context.sessionId,
-            description: e.description,
-            metadata: (e.metadata ?? {}) as Prisma.InputJsonValue,
-            ipAddress: this.context.ipAddress,
-            userAgent: this.context.userAgent,
-          },
-        })
-      )
-    );
+    // If a client is provided, use it directly (already in RLS context)
+    if (client) {
+      const result = await Promise.all(
+        events.map((e) =>
+          client.event.create({
+            data: {
+              eventType: e.eventType,
+              actorType: this.context.actorType,
+              actorId: this.context.actorId,
+              actorEmail: this.context.actorEmail,
+              organizationId: this.context.organizationId,
+              roomId: e.roomId,
+              folderId: e.folderId,
+              documentId: e.documentId,
+              requestId: this.context.requestId,
+              sessionId: this.context.sessionId,
+              description: e.description,
+              metadata: (e.metadata ?? {}) as PrismaTypes.InputJsonValue,
+              ipAddress: this.context.ipAddress,
+              userAgent: this.context.userAgent,
+            },
+          })
+        )
+      );
+      return result.map((e) => e.id);
+    }
 
-    return result.map((e) => e.id);
+    // Otherwise, wrap in RLS context
+    return withOrgContext(this.context.organizationId, async (tx) => {
+      const result = await Promise.all(
+        events.map((e) =>
+          tx.event.create({
+            data: {
+              eventType: e.eventType,
+              actorType: this.context.actorType,
+              actorId: this.context.actorId,
+              actorEmail: this.context.actorEmail,
+              organizationId: this.context.organizationId,
+              roomId: e.roomId,
+              folderId: e.folderId,
+              documentId: e.documentId,
+              requestId: this.context.requestId,
+              sessionId: this.context.sessionId,
+              description: e.description,
+              metadata: (e.metadata ?? {}) as PrismaTypes.InputJsonValue,
+              ipAddress: this.context.ipAddress,
+              userAgent: this.context.userAgent,
+            },
+          })
+        )
+      );
+      return result.map((e) => e.id);
+    });
   }
 }
 
@@ -161,6 +221,7 @@ function generateRequestId(): string {
 
 /**
  * Get events for an organization
+ * Uses RLS context for tenant isolation
  */
 export async function getOrganizationEvents(
   organizationId: string,
@@ -173,26 +234,43 @@ export async function getOrganizationEvents(
     to?: Date;
     limit?: number;
     offset?: number;
-  } = {}
+  } = {},
+  client?: DbClient
 ) {
-  return db.event.findMany({
-    where: {
-      organizationId,
-      ...(options.eventTypes?.length && { eventType: { in: options.eventTypes } }),
-      ...(options.roomId && { roomId: options.roomId }),
-      ...(options.documentId && { documentId: options.documentId }),
-      ...(options.actorId && { actorId: options.actorId }),
-      ...(options.from && { createdAt: { gte: options.from } }),
-      ...(options.to && { createdAt: { lte: options.to } }),
-    },
-    orderBy: { createdAt: 'desc' },
-    take: options.limit ?? 100,
-    skip: options.offset ?? 0,
+  const where = {
+    organizationId,
+    ...(options.eventTypes?.length && { eventType: { in: options.eventTypes } }),
+    ...(options.roomId && { roomId: options.roomId }),
+    ...(options.documentId && { documentId: options.documentId }),
+    ...(options.actorId && { actorId: options.actorId }),
+    ...(options.from && { createdAt: { gte: options.from } }),
+    ...(options.to && { createdAt: { lte: options.to } }),
+  };
+
+  // If a client is provided, use it directly
+  if (client) {
+    return client.event.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: options.limit ?? 100,
+      skip: options.offset ?? 0,
+    });
+  }
+
+  // Otherwise, wrap in RLS context
+  return withOrgContext(organizationId, async (tx) => {
+    return tx.event.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: options.limit ?? 100,
+      skip: options.offset ?? 0,
+    });
   });
 }
 
 /**
  * Get event count by type for analytics
+ * Uses RLS context for tenant isolation
  */
 export async function getEventCounts(
   organizationId: string,
@@ -200,16 +278,31 @@ export async function getEventCounts(
     roomId?: string;
     from?: Date;
     to?: Date;
-  } = {}
+  } = {},
+  client?: DbClient
 ) {
-  return db.event.groupBy({
-    by: ['eventType'],
-    where: {
-      organizationId,
-      ...(options.roomId && { roomId: options.roomId }),
-      ...(options.from && { createdAt: { gte: options.from } }),
-      ...(options.to && { createdAt: { lte: options.to } }),
-    },
-    _count: true,
+  const where = {
+    organizationId,
+    ...(options.roomId && { roomId: options.roomId }),
+    ...(options.from && { createdAt: { gte: options.from } }),
+    ...(options.to && { createdAt: { lte: options.to } }),
+  };
+
+  // If a client is provided, use it directly
+  if (client) {
+    return client.event.groupBy({
+      by: ['eventType'],
+      where,
+      _count: true,
+    });
+  }
+
+  // Otherwise, wrap in RLS context
+  return withOrgContext(organizationId, async (tx) => {
+    return tx.event.groupBy({
+      by: ['eventType'],
+      where,
+      _count: true,
+    });
   });
 }

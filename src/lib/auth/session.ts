@@ -8,7 +8,7 @@
 import type { Session } from '@prisma/client';
 
 import { SESSION_CONFIG } from '../constants';
-import { db } from '../db';
+import { db, withOrgContext } from '../db';
 import { AuthenticationError } from '../errors';
 import { getProviders } from '@/providers';
 
@@ -134,20 +134,24 @@ export async function validateSession(token: string): Promise<SessionData> {
   }
 
   // Get organization membership
-  if (!session.organizationId) {
+  const orgId = session.organizationId;
+  if (!orgId) {
     throw new AuthenticationError('No organization bound to session');
   }
 
-  const membership = await db.userOrganization.findUnique({
-    where: {
-      organizationId_userId: {
-        organizationId: session.organizationId,
-        userId: session.userId,
+  // Use RLS context for org-scoped membership lookup
+  const membership = await withOrgContext(orgId, async (tx) => {
+    return tx.userOrganization.findUnique({
+      where: {
+        organizationId_userId: {
+          organizationId: orgId,
+          userId: session.userId,
+        },
       },
-    },
-    include: {
-      organization: true,
-    },
+      include: {
+        organization: true,
+      },
+    });
   });
 
   if (!membership || !membership.isActive) {
@@ -157,7 +161,7 @@ export async function validateSession(token: string): Promise<SessionData> {
   const sessionData: SessionData = {
     sessionId: session.id,
     userId: session.userId,
-    organizationId: session.organizationId,
+    organizationId: orgId,
     user: {
       id: session.user.id,
       email: session.user.email,

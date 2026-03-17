@@ -104,12 +104,12 @@ export default function ViewerAccessPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
         <Card className="w-full max-w-md">
           <CardContent className="p-8">
-            <Skeleton className="h-12 w-12 mx-auto rounded-full mb-4" />
-            <Skeleton className="h-6 w-48 mx-auto mb-2" />
-            <Skeleton className="h-4 w-64 mx-auto" />
+            <Skeleton className="mx-auto mb-4 h-12 w-12 rounded-full" />
+            <Skeleton className="mx-auto mb-2 h-6 w-48" />
+            <Skeleton className="mx-auto h-4 w-64" />
           </CardContent>
         </Card>
       </div>
@@ -118,13 +118,13 @@ export default function ViewerAccessPage() {
 
   if (error && !linkInfo) {
     return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">
-            <div className="w-12 h-12 rounded-full bg-danger-100 flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-6 h-6 text-danger-600" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-danger-100">
+              <Shield className="h-6 w-6 text-danger-600" />
             </div>
-            <h1 className="text-xl font-bold text-neutral-900 mb-2">Access Denied</h1>
+            <h1 className="mb-2 text-xl font-bold text-neutral-900">Access Denied</h1>
             <p className="text-neutral-500">{error}</p>
           </CardContent>
         </Card>
@@ -134,13 +134,13 @@ export default function ViewerAccessPage() {
 
   if (accessGranted) {
     return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">
-            <div className="w-12 h-12 rounded-full bg-success-100 flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-6 h-6 text-success-600" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success-100">
+              <CheckCircle className="h-6 w-6 text-success-600" />
             </div>
-            <h1 className="text-xl font-bold text-neutral-900 mb-2">Access Granted</h1>
+            <h1 className="mb-2 text-xl font-bold text-neutral-900">Access Granted</h1>
             <p className="text-neutral-500">Redirecting you to the data room...</p>
           </CardContent>
         </Card>
@@ -149,11 +149,11 @@ export default function ViewerAccessPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           {/* Organization Logo or Default */}
-          <div className="flex justify-center mb-4">
+          <div className="mb-4 flex justify-center">
             {linkInfo?.organizationLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -162,15 +162,13 @@ export default function ViewerAccessPage() {
                 className="h-12 object-contain"
               />
             ) : (
-              <div className="w-12 h-12 rounded-xl bg-primary-600 text-white flex items-center justify-center font-bold text-xl">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-600 text-xl font-bold text-white">
                 {linkInfo?.organizationName.charAt(0) || 'V'}
               </div>
             )}
           </div>
           <CardTitle>{linkInfo?.roomName}</CardTitle>
-          <CardDescription>
-            Shared by {linkInfo?.organizationName}
-          </CardDescription>
+          <CardDescription>Shared by {linkInfo?.organizationName}</CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -186,7 +184,7 @@ export default function ViewerAccessPage() {
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                   <Input
                     id="email"
                     type="email"
@@ -209,7 +207,7 @@ export default function ViewerAccessPage() {
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                   <Input
                     id="password"
                     type="password"
@@ -229,11 +227,9 @@ export default function ViewerAccessPage() {
 
             {/* NDA Acceptance */}
             {linkInfo?.ndaRequired && (
-              <div className="space-y-3 p-4 bg-neutral-50 rounded-lg border">
-                <p className="text-sm font-medium text-neutral-900">
-                  Non-Disclosure Agreement
-                </p>
-                <div className="max-h-32 overflow-y-auto text-xs text-neutral-600 bg-white p-3 rounded border">
+              <div className="space-y-3 rounded-lg border bg-neutral-50 p-4">
+                <p className="text-sm font-medium text-neutral-900">Non-Disclosure Agreement</p>
+                <div className="max-h-32 overflow-y-auto rounded border bg-white p-3 text-xs text-neutral-600">
                   {linkInfo.ndaText || 'You agree to keep all information confidential.'}
                 </div>
                 <div className="flex items-start gap-2">
@@ -260,14 +256,12 @@ export default function ViewerAccessPage() {
               }
             >
               Access Data Room
-              <ArrowRight className="w-4 h-4 ml-2" />
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </form>
 
-          <div className="mt-6 pt-4 border-t text-center">
-            <p className="text-xs text-neutral-400">
-              Protected by VaultSpace • Secure data room
-            </p>
+          <div className="mt-6 border-t pt-4 text-center">
+            <p className="text-xs text-neutral-400">Protected by VaultSpace • Secure data room</p>
           </div>
         </CardContent>
       </Card>

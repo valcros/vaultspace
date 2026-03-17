@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -27,72 +27,75 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
-
-    // Get organization retention settings
-    const organization = await db.organization.findUnique({
-      where: { id: session.organizationId },
-      select: { trashRetentionDays: true },
-    });
-
-    const retentionDays = organization?.trashRetentionDays ?? 30;
-
-    // Get soft-deleted documents
-    const deletedDocuments = await db.document.findMany({
-      where: {
-        roomId,
-        organizationId: session.organizationId,
-        status: 'DELETED',
-        deletedAt: { not: null },
-      },
-      include: {
-        folder: {
-          select: {
-            id: true,
-            name: true,
-            path: true,
-          },
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
         },
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          take: 1,
-          include: {
-            uploadedByUser: {
-              select: {
-                firstName: true,
-                lastName: true,
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get organization retention settings
+      const organization = await tx.organization.findUnique({
+        where: { id: session.organizationId },
+        select: { trashRetentionDays: true },
+      });
+
+      const retentionDays = organization?.trashRetentionDays ?? 30;
+
+      // Get soft-deleted documents
+      const deletedDocuments = await tx.document.findMany({
+        where: {
+          roomId,
+          organizationId: session.organizationId,
+          status: 'DELETED',
+          deletedAt: { not: null },
+        },
+        include: {
+          folder: {
+            select: {
+              id: true,
+              name: true,
+              path: true,
+            },
+          },
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 1,
+            include: {
+              uploadedByUser: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: { deletedAt: 'desc' },
+        orderBy: { deletedAt: 'desc' },
+      });
+
+      return { deletedDocuments, retentionDays };
     });
 
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
     // Calculate permanent deletion dates
-    const documentsWithDeletionDates = deletedDocuments.map((doc) => {
+    const documentsWithDeletionDates = result.deletedDocuments.map((doc) => {
       const deletedAt = doc.deletedAt!;
       const permanentDeletionDate = new Date(deletedAt);
-      permanentDeletionDate.setDate(permanentDeletionDate.getDate() + retentionDays);
+      permanentDeletionDate.setDate(permanentDeletionDate.getDate() + result.retentionDays);
 
       return {
         ...doc,
@@ -106,13 +109,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       documents: documentsWithDeletionDates,
-      retentionDays,
+      retentionDays: result.retentionDays,
     });
   } catch (error) {
     console.error('[TrashAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to list trash' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to list trash' }, { status: 500 });
   }
 }

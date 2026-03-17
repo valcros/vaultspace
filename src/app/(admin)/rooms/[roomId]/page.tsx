@@ -37,7 +37,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -265,8 +271,8 @@ export default function RoomDetailPage() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <Skeleton className="h-8 w-64 mb-4" />
-        <Skeleton className="h-4 w-96 mb-8" />
+        <Skeleton className="mb-4 h-8 w-64" />
+        <Skeleton className="mb-8 h-4 w-96" />
         <Skeleton className="h-96 w-full" />
       </div>
     );
@@ -281,37 +287,34 @@ export default function RoomDetailPage() {
       <PageHeader
         title={room.name}
         description={room.description || 'No description'}
-        breadcrumbs={[
-          { label: 'Rooms', href: '/rooms' },
-          { label: room.name },
-        ]}
+        breadcrumbs={[{ label: 'Rooms', href: '/rooms' }, { label: room.name }]}
         actions={
           <div className="flex items-center gap-2">
             {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
-                  <MoreHorizontal className="w-4 h-4 mr-2" />
+                  <MoreHorizontal className="mr-2 h-4 w-4" />
                   More
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/analytics`)}>
-                  <BarChart3 className="w-4 h-4 mr-2" />
+                  <BarChart3 className="mr-2 h-4 w-4" />
                   Analytics
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/audit`)}>
-                  <History className="w-4 h-4 mr-2" />
+                  <History className="mr-2 h-4 w-4" />
                   Audit Trail
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/trash`)}>
-                  <Trash2 className="w-4 h-4 mr-2" />
+                  <Trash2 className="mr-2 h-4 w-4" />
                   Trash
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <Button variant="outline" onClick={() => router.push(`/rooms/${roomId}/settings`)}>
-              <Settings className="w-4 h-4 mr-2" />
+              <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
           </div>
@@ -322,33 +325,33 @@ export default function RoomDetailPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="documents" className="gap-2">
-              <FileText className="w-4 h-4" />
+              <FileText className="h-4 w-4" />
               Documents
             </TabsTrigger>
             <TabsTrigger value="members" className="gap-2">
-              <Users className="w-4 h-4" />
+              <Users className="h-4 w-4" />
               Members
             </TabsTrigger>
             <TabsTrigger value="links" className="gap-2">
-              <LinkIcon className="w-4 h-4" />
+              <LinkIcon className="h-4 w-4" />
               Share Links
             </TabsTrigger>
             <TabsTrigger value="activity" className="gap-2">
-              <Activity className="w-4 h-4" />
+              <Activity className="h-4 w-4" />
               Activity
             </TabsTrigger>
           </TabsList>
 
           {/* Documents Tab */}
           <TabsContent value="documents" className="mt-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Button onClick={() => setShowUploadDialog(true)}>
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Upload className="mr-2 h-4 w-4" />
                   Upload Files
                 </Button>
                 <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
-                  <FolderPlus className="w-4 h-4 mr-2" />
+                  <FolderPlus className="mr-2 h-4 w-4" />
                   New Folder
                 </Button>
               </div>
@@ -356,31 +359,31 @@ export default function RoomDetailPage() {
 
             {documents.length === 0 ? (
               <Card className="p-12 text-center">
-                <FileText className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-                <h3 className="text-lg font-semibold text-neutral-900 mb-2">No documents yet</h3>
-                <p className="text-neutral-500 mb-6 max-w-sm mx-auto">
+                <FileText className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No documents yet</h3>
+                <p className="mx-auto mb-6 max-w-sm text-neutral-500">
                   Upload your first documents to start sharing them securely.
                 </p>
                 <Button onClick={() => setShowUploadDialog(true)}>
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Upload className="mr-2 h-4 w-4" />
                   Upload Files
                 </Button>
               </Card>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="overflow-hidden rounded-lg border">
                 <table className="w-full">
-                  <thead className="bg-neutral-50 border-b">
+                  <thead className="border-b bg-neutral-50">
                     <tr>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                         Name
                       </th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                         Size
                       </th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                         Status
                       </th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                         Uploaded
                       </th>
                       <th className="w-10"></th>
@@ -391,7 +394,7 @@ export default function RoomDetailPage() {
                       <tr key={doc.id} className="border-b last:border-0 hover:bg-neutral-50">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <FileText className="w-5 h-5 text-neutral-400" />
+                            <FileText className="h-5 w-5 text-neutral-400" />
                             <span className="font-medium">{doc.name}</span>
                           </div>
                         </td>
@@ -423,16 +426,16 @@ export default function RoomDetailPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem>
-                                <Eye className="w-4 h-4 mr-2" />
+                                <Eye className="mr-2 h-4 w-4" />
                                 Preview
                               </DropdownMenuItem>
                               <DropdownMenuItem>
-                                <Download className="w-4 h-4 mr-2" />
+                                <Download className="mr-2 h-4 w-4" />
                                 Download
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem className="text-danger-600">
-                                <Trash2 className="w-4 h-4 mr-2" />
+                                <Trash2 className="mr-2 h-4 w-4" />
                                 Delete
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -448,34 +451,34 @@ export default function RoomDetailPage() {
 
           {/* Members Tab */}
           <TabsContent value="members" className="mt-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6 flex items-center justify-between">
               <Button onClick={() => setShowMemberDialog(true)}>
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="mr-2 h-4 w-4" />
                 Add Admin
               </Button>
             </div>
 
             {admins.length === 0 ? (
               <Card className="p-12 text-center">
-                <Users className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-                <h3 className="text-lg font-semibold text-neutral-900 mb-2">No admins yet</h3>
-                <p className="text-neutral-500 mb-6 max-w-sm mx-auto">
+                <Users className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No admins yet</h3>
+                <p className="mx-auto mb-6 max-w-sm text-neutral-500">
                   Add team members to collaborate on this data room.
                 </p>
                 <Button onClick={() => setShowMemberDialog(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="mr-2 h-4 w-4" />
                   Add Admin
                 </Button>
               </Card>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="overflow-hidden rounded-lg border">
                 <table className="w-full">
-                  <thead className="bg-neutral-50 border-b">
+                  <thead className="border-b bg-neutral-50">
                     <tr>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                         Admin
                       </th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                         Scope
                       </th>
                       <th className="w-10"></th>
@@ -486,10 +489,7 @@ export default function RoomDetailPage() {
                       <tr key={admin.id} className="border-b last:border-0 hover:bg-neutral-50">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <UserAvatar
-                              name={`${admin.firstName} ${admin.lastName}`}
-                              size="sm"
-                            />
+                            <UserAvatar name={`${admin.firstName} ${admin.lastName}`} size="sm" />
                             <div>
                               <div className="font-medium">
                                 {admin.firstName} {admin.lastName}
@@ -513,7 +513,7 @@ export default function RoomDetailPage() {
                             <DropdownMenuContent align="end">
                               {admin.scope === 'room' && (
                                 <DropdownMenuItem className="text-danger-600">
-                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  <Trash2 className="mr-2 h-4 w-4" />
                                   Remove
                                 </DropdownMenuItem>
                               )}
@@ -530,22 +530,22 @@ export default function RoomDetailPage() {
 
           {/* Links Tab */}
           <TabsContent value="links" className="mt-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6 flex items-center justify-between">
               <Button onClick={() => setShowLinkDialog(true)}>
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="mr-2 h-4 w-4" />
                 Create Link
               </Button>
             </div>
 
             {links.length === 0 ? (
               <Card className="p-12 text-center">
-                <LinkIcon className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-                <h3 className="text-lg font-semibold text-neutral-900 mb-2">No share links yet</h3>
-                <p className="text-neutral-500 mb-6 max-w-sm mx-auto">
+                <LinkIcon className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No share links yet</h3>
+                <p className="mx-auto mb-6 max-w-sm text-neutral-500">
                   Create share links to give external users access to this room.
                 </p>
                 <Button onClick={() => setShowLinkDialog(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="mr-2 h-4 w-4" />
                   Create Link
                 </Button>
               </Card>
@@ -557,7 +557,7 @@ export default function RoomDetailPage() {
                       <div className="flex items-start justify-between">
                         <div>
                           <CardTitle className="text-base">{link.name}</CardTitle>
-                          <CardDescription className="flex items-center gap-2 mt-1">
+                          <CardDescription className="mt-1 flex items-center gap-2">
                             <Badge
                               variant={
                                 link.accessType === 'PUBLIC'
@@ -580,17 +580,17 @@ export default function RoomDetailPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem>
-                              <Copy className="w-4 h-4 mr-2" />
+                              <Copy className="mr-2 h-4 w-4" />
                               Copy Link
                             </DropdownMenuItem>
                             <DropdownMenuItem>
-                              <Mail className="w-4 h-4 mr-2" />
+                              <Mail className="mr-2 h-4 w-4" />
                               Send via Email
                             </DropdownMenuItem>
                             <DropdownMenuItem>Edit</DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-danger-600">
-                              <Trash2 className="w-4 h-4 mr-2" />
+                              <Trash2 className="mr-2 h-4 w-4" />
                               Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -603,14 +603,8 @@ export default function RoomDetailPage() {
                           <span className="font-medium text-neutral-900">{link.viewCount}</span>{' '}
                           views
                         </div>
-                        <div>
-                          Created {formatDate(link.createdAt)}
-                        </div>
-                        {link.expiresAt && (
-                          <div>
-                            Expires {formatDate(link.expiresAt)}
-                          </div>
-                        )}
+                        <div>Created {formatDate(link.createdAt)}</div>
+                        {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
                       </div>
                     </CardContent>
                   </Card>
@@ -623,29 +617,34 @@ export default function RoomDetailPage() {
           <TabsContent value="activity" className="mt-6">
             {activity.length === 0 ? (
               <Card className="p-12 text-center">
-                <Activity className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-                <h3 className="text-lg font-semibold text-neutral-900 mb-2">No activity yet</h3>
-                <p className="text-neutral-500 max-w-sm mx-auto">
+                <Activity className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No activity yet</h3>
+                <p className="mx-auto max-w-sm text-neutral-500">
                   Activity will appear here as users interact with this room.
                 </p>
               </Card>
             ) : (
               <div className="space-y-4">
                 {activity.map((event) => (
-                  <div key={event.id} className="flex items-start gap-4 py-3 border-b last:border-0">
-                    <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center">
-                      <Activity className="w-4 h-4 text-neutral-500" />
+                  <div
+                    key={event.id}
+                    className="flex items-start gap-4 border-b py-3 last:border-0"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-100">
+                      <Activity className="h-4 w-4 text-neutral-500" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm">
                         <span className="font-medium">
                           {event.actor
                             ? `${event.actor.firstName} ${event.actor.lastName}`
                             : 'System'}
                         </span>{' '}
-                        <span className="text-neutral-500">{event.type.replace(/_/g, ' ').toLowerCase()}</span>
+                        <span className="text-neutral-500">
+                          {event.type.replace(/_/g, ' ').toLowerCase()}
+                        </span>
                       </p>
-                      <p className="text-xs text-neutral-400 mt-1">
+                      <p className="mt-1 text-xs text-neutral-400">
                         {new Date(event.createdAt).toLocaleString()}
                       </p>
                     </div>
@@ -686,9 +685,7 @@ export default function RoomDetailPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Member</DialogTitle>
-            <DialogDescription>
-              Add a team member to this data room.
-            </DialogDescription>
+            <DialogDescription>Add a team member to this data room.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -789,7 +786,10 @@ export default function RoomDetailPage() {
             >
               Cancel
             </Button>
-            <Button onClick={handleCreateFolder} disabled={isCreatingFolder || !newFolderName.trim()}>
+            <Button
+              onClick={handleCreateFolder}
+              disabled={isCreatingFolder || !newFolderName.trim()}
+            >
               {isCreatingFolder ? 'Creating...' : 'Create Folder'}
             </Button>
           </DialogFooter>

@@ -65,17 +65,14 @@ export function DocumentViewer({
   const isImage = mimeType.startsWith('image/');
 
   // Handle PDF load success
-  const onDocumentLoadSuccess = useCallback(
-    ({ numPages }: { numPages: number }) => {
-      setState((prev) => ({
-        ...prev,
-        numPages,
-        isLoading: false,
-        error: null,
-      }));
-    },
-    []
-  );
+  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
+    setState((prev) => ({
+      ...prev,
+      numPages,
+      isLoading: false,
+      error: null,
+    }));
+  }, []);
 
   // Handle PDF load error
   const onDocumentLoadError = useCallback((error: Error) => {
@@ -185,9 +182,9 @@ export function DocumentViewer({
   const renderContent = useMemo(() => {
     if (state.error) {
       return (
-        <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+        <div className="flex h-full flex-col items-center justify-center p-8 text-center">
           <svg
-            className="w-16 h-16 text-gray-400 mb-4"
+            className="mb-4 h-16 w-16 text-gray-400"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -211,8 +208,8 @@ export function DocumentViewer({
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}
           loading={
-            <div className="flex items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+            <div className="flex h-64 items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-500" />
             </div>
           }
           className="flex justify-center"
@@ -230,12 +227,12 @@ export function DocumentViewer({
 
     if (isImage) {
       return (
-        <div className="flex justify-center items-center h-full">
+        <div className="flex h-full items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={previewUrl}
             alt={documentName}
-            className="max-w-full max-h-full object-contain"
+            className="max-h-full max-w-full object-contain"
             style={{ transform: `scale(${state.scale})` }}
             onLoad={() => setState((prev) => ({ ...prev, isLoading: false, numPages: 1 }))}
             onError={() =>
@@ -252,9 +249,9 @@ export function DocumentViewer({
 
     // Unsupported format
     return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+      <div className="flex h-full flex-col items-center justify-center p-8 text-center">
         <svg
-          className="w-16 h-16 text-gray-400 mb-4"
+          className="mb-4 h-16 w-16 text-gray-400"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -266,12 +263,12 @@ export function DocumentViewer({
             d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
           />
         </svg>
-        <p className="text-gray-600 mb-4">Preview not available for this file type</p>
+        <p className="mb-4 text-gray-600">Preview not available for this file type</p>
         {allowDownload && (
           <a
             href={previewUrl}
             download={documentName}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+            className="rounded-md bg-blue-500 px-4 py-2 text-white transition-colors hover:bg-blue-600"
           >
             Download File
           </a>
@@ -292,13 +289,11 @@ export function DocumentViewer({
   ]);
 
   return (
-    <div className={`flex flex-col h-full bg-gray-100 ${className}`}>
+    <div className={`flex h-full flex-col bg-gray-100 ${className}`}>
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-white border-b shadow-sm">
+      <div className="flex items-center justify-between border-b bg-white px-4 py-2 shadow-sm">
         <div className="flex items-center space-x-2">
-          <h2 className="text-sm font-medium text-gray-700 truncate max-w-xs">
-            {documentName}
-          </h2>
+          <h2 className="max-w-xs truncate text-sm font-medium text-gray-700">{documentName}</h2>
         </div>
 
         <div className="flex items-center space-x-4">
@@ -309,11 +304,16 @@ export function DocumentViewer({
                 type="button"
                 onClick={prevPage}
                 disabled={state.currentPage <= 1}
-                className="p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded p-1 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Previous page"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 19l-7-7 7-7"
+                  />
                 </svg>
               </button>
 
@@ -324,21 +324,26 @@ export function DocumentViewer({
                   onChange={handlePageInputChange}
                   onFocus={() => setPageInput(String(state.currentPage))}
                   onBlur={() => setPageInput('')}
-                  className="w-12 text-center text-sm border rounded px-1 py-0.5"
+                  className="w-12 rounded border px-1 py-0.5 text-center text-sm"
                   aria-label="Current page"
                 />
-                <span className="text-sm text-gray-500 mx-1">/ {state.numPages}</span>
+                <span className="mx-1 text-sm text-gray-500">/ {state.numPages}</span>
               </form>
 
               <button
                 type="button"
                 onClick={nextPage}
                 disabled={state.currentPage >= state.numPages}
-                className="p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded p-1 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Next page"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
                 </svg>
               </button>
             </div>
@@ -350,10 +355,10 @@ export function DocumentViewer({
               type="button"
               onClick={zoomOut}
               disabled={state.scale <= MIN_SCALE}
-              className="p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded p-1 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Zoom out"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
               </svg>
             </button>
@@ -361,7 +366,7 @@ export function DocumentViewer({
             <button
               type="button"
               onClick={resetZoom}
-              className="text-sm text-gray-600 px-2 hover:bg-gray-100 rounded"
+              className="rounded px-2 text-sm text-gray-600 hover:bg-gray-100"
             >
               {Math.round(state.scale * 100)}%
             </button>
@@ -370,11 +375,16 @@ export function DocumentViewer({
               type="button"
               onClick={zoomIn}
               disabled={state.scale >= MAX_SCALE}
-              className="p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded p-1 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Zoom in"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
               </svg>
             </button>
           </div>
@@ -384,10 +394,10 @@ export function DocumentViewer({
             <a
               href={previewUrl}
               download={documentName}
-              className="p-1 rounded hover:bg-gray-100 border-l pl-4"
+              className="rounded border-l p-1 pl-4 hover:bg-gray-100"
               aria-label="Download"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -405,8 +415,8 @@ export function DocumentViewer({
 
       {/* Loading overlay */}
       {state.isLoading && (
-        <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
+        <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-500" />
         </div>
       )}
     </div>

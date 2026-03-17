@@ -47,28 +47,19 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user || !user.isActive) {
-      return NextResponse.json(
-        { error: 'Invalid email or password' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
     // Verify password
     const passwordValid = await bcrypt.compare(password, user.passwordHash);
     if (!passwordValid) {
-      return NextResponse.json(
-        { error: 'Invalid email or password' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
     // Get default organization
     const userOrg = user.organizations[0];
     if (!userOrg || !userOrg.organization.isActive) {
-      return NextResponse.json(
-        { error: 'No active organization found' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'No active organization found' }, { status: 403 });
     }
 
     // Generate session token
@@ -121,9 +112,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.error('[LoginAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to sign in' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to sign in' }, { status: 500 });
   }
 }

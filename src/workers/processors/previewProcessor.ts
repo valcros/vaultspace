@@ -14,7 +14,9 @@ import type { PreviewGenerateJobPayload, ThumbnailGenerateJobPayload } from '../
 export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Promise<void> {
   const { documentId, versionId, organizationId, storageKey, contentType, fileName } = job.data;
 
-  console.log(`[PreviewProcessor] Generating preview for document ${documentId}, version ${versionId}`);
+  console.log(
+    `[PreviewProcessor] Generating preview for document ${documentId}, version ${versionId}`
+  );
 
   const providers = getProviders();
 
@@ -26,7 +28,9 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
 
   // Check if preview is supported for this content type
   if (!providers.preview.isSupported(contentType)) {
-    console.log(`[PreviewProcessor] Content type ${contentType} not supported, marking unsupported`);
+    console.log(
+      `[PreviewProcessor] Content type ${contentType} not supported, marking unsupported`
+    );
 
     await db.documentVersion.update({
       where: { id: versionId },
@@ -45,31 +49,30 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
     // Get file from storage (documents bucket stores original uploads)
     const fileBuffer = await providers.storage.get('documents', storageKey);
 
-    // Convert to preview format
+    // Convert to preview format (PNG for page renders)
     const previewResult = await providers.preview.convert(fileBuffer, contentType, {
-      format: 'pdf',
+      format: 'png',
       quality: 90,
       dpi: 150,
     });
 
-    // Store preview as PDF
-    const previewKey = `previews/${documentId}/${versionId}.pdf`;
-    const firstPage = previewResult.pages[0];
-    if (firstPage) {
-      await providers.storage.put('previews', previewKey, firstPage.data);
+    // Store each page as a RENDER asset
+    for (const page of previewResult.pages) {
+      const renderKey = `previews/${documentId}/${versionId}/page-${page.pageNumber}.png`;
+      await providers.storage.put('previews', renderKey, page.data);
 
-      // Create preview asset record
+      // Create preview asset record for each page
       await db.previewAsset.create({
         data: {
           organizationId,
           versionId,
-          assetType: 'PDF',
-          storageKey: previewKey,
-          pageNumber: 1,
-          mimeType: previewResult.mimeType,
-          width: firstPage.width,
-          height: firstPage.height,
-          fileSizeBytes: BigInt(firstPage.data.length),
+          assetType: 'RENDER',
+          storageKey: renderKey,
+          pageNumber: page.pageNumber,
+          mimeType: page.mimeType,
+          width: page.width,
+          height: page.height,
+          fileSizeBytes: BigInt(page.data.length),
         },
       });
     }
@@ -89,9 +92,12 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       data: { totalVersions: { increment: 0 } }, // Touch for updatedAt
     });
 
-    console.log(`[PreviewProcessor] Preview generated: ${previewResult.totalPages} pages`);
+    console.log(
+      `[PreviewProcessor] Preview generated: ${previewResult.totalPages} pages, created ${previewResult.pages.length} RENDER assets`
+    );
 
-    // Queue thumbnail generation
+    // Queue thumbnail generation using the first page render
+    const firstPageKey = `previews/${documentId}/${versionId}/page-1.png`;
     await providers.job.addJob(
       'high',
       'thumbnail.generate',
@@ -99,7 +105,7 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
         documentId,
         versionId,
         organizationId,
-        previewKey,
+        previewKey: firstPageKey,
         pageNumber: 1,
         width: 200,
         height: 280,
@@ -107,7 +113,7 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       { priority: 'normal' }
     );
 
-    // Queue text extraction
+    // Queue text extraction using the original document
     await providers.job.addJob(
       'high',
       'text.extract',
@@ -115,15 +121,18 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
         documentId,
         versionId,
         organizationId,
-        storageKey: previewKey,
-        contentType: 'application/pdf',
+        storageKey,
+        contentType,
         fileName,
         pageCount: previewResult.totalPages,
       },
       { priority: 'normal' }
     );
   } catch (error) {
-    console.error(`[PreviewProcessor] Preview generation failed for document ${documentId}:`, error);
+    console.error(
+      `[PreviewProcessor] Preview generation failed for document ${documentId}:`,
+      error
+    );
 
     await db.documentVersion.update({
       where: { id: versionId },
@@ -148,10 +157,10 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
     // Get preview file from previews bucket
     const previewBuffer = await providers.storage.get('previews', previewKey);
 
-    // Generate thumbnail
+    // Generate thumbnail (preview is now a PNG image, not PDF)
     const thumbnailBuffer = await providers.preview.generateThumbnail(
       previewBuffer,
-      'application/pdf',
+      'image/png',
       width,
       height
     );
@@ -177,7 +186,10 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
 
     console.log(`[PreviewProcessor] Thumbnail generated: ${thumbnailKey}`);
   } catch (error) {
-    console.error(`[PreviewProcessor] Thumbnail generation failed for document ${documentId}:`, error);
+    console.error(
+      `[PreviewProcessor] Thumbnail generation failed for document ${documentId}:`,
+      error
+    );
     // Don't throw - thumbnail failure is non-critical
     console.log(`[PreviewProcessor] Continuing without thumbnail`);
   }

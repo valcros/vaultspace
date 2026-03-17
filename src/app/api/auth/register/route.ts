@@ -51,24 +51,15 @@ export async function POST(request: NextRequest) {
       });
 
       if (!invitation) {
-        return NextResponse.json(
-          { error: 'Invalid invitation token' },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: 'Invalid invitation token' }, { status: 400 });
       }
 
       if (invitation.expiresAt < new Date()) {
-        return NextResponse.json(
-          { error: 'Invitation has expired' },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: 'Invitation has expired' }, { status: 400 });
       }
 
       if (invitation.status !== 'PENDING') {
-        return NextResponse.json(
-          { error: 'Invitation has already been used' },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: 'Invitation has already been used' }, { status: 400 });
       }
 
       organizationId = invitation.organizationId;
@@ -168,9 +159,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.error('[RegisterAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create account' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
   }
 }

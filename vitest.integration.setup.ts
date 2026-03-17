@@ -1,11 +1,16 @@
 /**
  * Vitest Integration Test Setup
  *
- * Sets up the test database and cleans up between tests.
+ * AZURE-ONLY: Tests must run against Azure-hosted services.
+ * Local execution is blocked at the config level.
  */
 
 import { PrismaClient } from '@prisma/client';
 import { beforeAll, afterAll, beforeEach } from 'vitest';
+import { guardIntegrationTests } from '@/lib/azure-guard';
+
+// Enforce Azure-only for integration tests
+guardIntegrationTests();
 
 const prisma = new PrismaClient();
 

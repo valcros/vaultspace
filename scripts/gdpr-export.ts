@@ -111,17 +111,26 @@ async function exportUserData(userEmail: string): Promise<GdprExportData> {
       createdAt: user.createdAt.toISOString(),
       lastLoginAt: user.lastLoginAt?.toISOString() || null,
     },
-    organizations: user.organizations.map((uo: { organization: { name: string }; role: string; createdAt: Date }) => ({
-      name: uo.organization.name,
-      role: uo.role,
-      joinedAt: uo.createdAt.toISOString(),
-    })),
-    sessions: user.sessions.map((s: { createdAt: Date; lastActiveAt: Date | null; ipAddress: string | null; userAgent: string | null }) => ({
-      createdAt: s.createdAt.toISOString(),
-      lastActivityAt: s.lastActiveAt?.toISOString() || null,
-      ipAddress: s.ipAddress,
-      userAgent: s.userAgent,
-    })),
+    organizations: user.organizations.map(
+      (uo: { organization: { name: string }; role: string; createdAt: Date }) => ({
+        name: uo.organization.name,
+        role: uo.role,
+        joinedAt: uo.createdAt.toISOString(),
+      })
+    ),
+    sessions: user.sessions.map(
+      (s: {
+        createdAt: Date;
+        lastActiveAt: Date | null;
+        ipAddress: string | null;
+        userAgent: string | null;
+      }) => ({
+        createdAt: s.createdAt.toISOString(),
+        lastActivityAt: s.lastActiveAt?.toISOString() || null,
+        ipAddress: s.ipAddress,
+        userAgent: s.userAgent,
+      })
+    ),
     uploadedDocuments: uploadedVersions.map((v) => ({
       documentName: v.document.name,
       roomName: v.document.room?.name || 'Unknown',

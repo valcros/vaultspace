@@ -55,10 +55,7 @@ export async function GET(request: NextRequest) {
 
     // Validate required params
     if (!bucket || !key || !expires || !sig) {
-      return NextResponse.json(
-        { error: 'Missing required parameters' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
     // Get storage provider
@@ -69,20 +66,14 @@ export async function GET(request: NextRequest) {
     if (storage instanceof LocalStorageProvider) {
       const isValid = storage.validateSignedUrl(bucket, key, expires, sig);
       if (!isValid) {
-        return NextResponse.json(
-          { error: 'Invalid or expired download link' },
-          { status: 403 }
-        );
+        return NextResponse.json({ error: 'Invalid or expired download link' }, { status: 403 });
       }
     }
 
     // Check if file exists
     const exists = await storage.exists(bucket, key);
     if (!exists) {
-      return NextResponse.json(
-        { error: 'File not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
 
     // Get file content
@@ -105,9 +96,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('[StorageDownloadAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to download file' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to download file' }, { status: 500 });
   }
 }

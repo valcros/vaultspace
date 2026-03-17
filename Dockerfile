@@ -22,8 +22,8 @@ RUN npm run build
 FROM node:20-slim AS runner
 WORKDIR /app
 
-# Install dumb-init, curl, and OpenSSL for Prisma
-RUN apt-get update && apt-get install -y dumb-init curl openssl && rm -rf /var/lib/apt/lists/*
+# Install dumb-init, curl, OpenSSL for Prisma, and PostgreSQL client for RLS
+RUN apt-get update && apt-get install -y dumb-init curl openssl postgresql-client && rm -rf /var/lib/apt/lists/*
 
 # Set production environment
 ENV NODE_ENV=production
@@ -39,6 +39,12 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 
 # Create storage directories
 RUN mkdir -p storage uploads && chown -R nextjs:nodejs storage uploads
@@ -53,6 +59,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/api/health || exit 1
 
-# Run with dumb-init to handle signals
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+# Run with dumb-init to handle signals, using entrypoint for migrations
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "./docker-entrypoint.sh"]
 CMD ["node", "server.js"]

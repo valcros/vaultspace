@@ -59,7 +59,12 @@ export async function POST(request: NextRequest) {
     // Send reset email via job queue
     const providers = getProviders();
     const orgName = user.organizations[0]?.organization.name || 'VaultSpace';
-    const resetUrl = `${process.env['NEXTAUTH_URL'] || 'http://localhost:3000'}/auth/reset-password?token=${resetToken}`;
+    const baseUrl = process.env['NEXTAUTH_URL'] || process.env['APP_URL'];
+    if (!baseUrl) {
+      console.error('[ForgotPasswordAPI] NEXTAUTH_URL or APP_URL must be configured');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+    const resetUrl = `${baseUrl}/auth/reset-password?token=${resetToken}`;
 
     await providers.job.addJob('email', 'send-password-reset', {
       to: user.email,
@@ -79,9 +84,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.error('[ForgotPasswordAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to process request' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
   }
 }

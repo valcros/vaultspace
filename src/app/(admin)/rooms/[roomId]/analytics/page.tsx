@@ -89,9 +89,9 @@ export default function RoomAnalyticsPage() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <Skeleton className="h-8 w-64 mb-4" />
-        <Skeleton className="h-4 w-96 mb-8" />
-        <div className="grid gap-4 md:grid-cols-4 mb-8">
+        <Skeleton className="mb-4 h-8 w-64" />
+        <Skeleton className="mb-8 h-4 w-96" />
+        <div className="mb-8 grid gap-4 md:grid-cols-4">
           {[...Array(4)].map((_, i) => (
             <Skeleton key={i} className="h-32" />
           ))}
@@ -116,7 +116,7 @@ export default function RoomAnalyticsPage() {
         ]}
         actions={
           <Button variant="outline" onClick={() => router.push(`/rooms/${roomId}`)}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Room
           </Button>
         }
@@ -124,52 +124,60 @@ export default function RoomAnalyticsPage() {
 
       <div className="p-6">
         {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-4 mb-8">
+        <div className="mb-8 grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
-                <Eye className="w-4 h-4" />
+                <Eye className="h-4 w-4" />
                 Total Views
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{analytics.summary.totalViews.toLocaleString()}</div>
+              <div className="text-3xl font-bold">
+                {analytics.summary.totalViews.toLocaleString()}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
+                <Users className="h-4 w-4" />
                 Unique Viewers
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{analytics.summary.uniqueViewers.toLocaleString()}</div>
+              <div className="text-3xl font-bold">
+                {analytics.summary.uniqueViewers.toLocaleString()}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
-                <Download className="w-4 h-4" />
+                <Download className="h-4 w-4" />
                 Total Downloads
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{analytics.summary.totalDownloads.toLocaleString()}</div>
+              <div className="text-3xl font-bold">
+                {analytics.summary.totalDownloads.toLocaleString()}
+              </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-2">
-                <FileText className="w-4 h-4" />
+                <FileText className="h-4 w-4" />
                 Total Documents
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{analytics.summary.totalDocuments.toLocaleString()}</div>
+              <div className="text-3xl font-bold">
+                {analytics.summary.totalDocuments.toLocaleString()}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -178,8 +186,8 @@ export default function RoomAnalyticsPage() {
         <Card className="mb-8">
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-primary-600" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50">
+                <TrendingUp className="h-5 w-5 text-primary-600" />
               </div>
               <div>
                 <CardTitle>Top Documents</CardTitle>
@@ -189,26 +197,24 @@ export default function RoomAnalyticsPage() {
           </CardHeader>
           <CardContent>
             {analytics.topDocuments.length === 0 ? (
-              <p className="text-sm text-neutral-500 text-center py-8">
-                No document activity yet
-              </p>
+              <p className="py-8 text-center text-sm text-neutral-500">No document activity yet</p>
             ) : (
               <div className="space-y-4">
                 {analytics.topDocuments.map((doc, index) => (
                   <div key={doc.id} className="flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center text-sm font-medium">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-100 text-sm font-medium">
                       {index + 1}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{doc.name}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{doc.name}</p>
                     </div>
                     <div className="flex items-center gap-6 text-sm text-neutral-500">
                       <div className="flex items-center gap-1">
-                        <Eye className="w-4 h-4" />
+                        <Eye className="h-4 w-4" />
                         {doc.viewCount}
                       </div>
                       <div className="flex items-center gap-1">
-                        <Download className="w-4 h-4" />
+                        <Download className="h-4 w-4" />
                         {doc.downloadCount}
                       </div>
                     </div>
@@ -223,8 +229,8 @@ export default function RoomAnalyticsPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-primary-600" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50">
+                <BarChart3 className="h-5 w-5 text-primary-600" />
               </div>
               <div>
                 <CardTitle>Activity Over Time</CardTitle>
@@ -234,15 +240,15 @@ export default function RoomAnalyticsPage() {
           </CardHeader>
           <CardContent>
             {analytics.viewTimeline.length === 0 ? (
-              <p className="text-sm text-neutral-500 text-center py-16">
+              <p className="py-16 text-center text-sm text-neutral-500">
                 No activity data available
               </p>
             ) : (
-              <div className="h-64 flex items-center justify-center text-neutral-400">
+              <div className="flex h-64 items-center justify-center text-neutral-400">
                 <div className="text-center">
-                  <BarChart3 className="w-12 h-12 mx-auto mb-4" />
+                  <BarChart3 className="mx-auto mb-4 h-12 w-12" />
                   <p className="text-sm">Chart visualization coming soon</p>
-                  <p className="text-xs mt-2">
+                  <p className="mt-2 text-xs">
                     {analytics.viewTimeline.length} days of data available
                   </p>
                 </div>

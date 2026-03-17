@@ -7,12 +7,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 interface RouteContext {
   params: Promise<{ shareToken: string }>;
 }
 
+/**
+ * PRE-RLS BOOTSTRAP: Resolve viewer session from token
+ *
+ * This is intentionally a narrowly scoped raw db lookup to bootstrap
+ * viewer context. The sessionToken is a secret that proves the viewer
+ * has already been authenticated via /api/view/[shareToken]/access.
+ * Once we have the session, we use its organizationId to enter RLS context.
+ */
 async function getViewerSession(shareToken: string) {
   const cookieStore = await cookies();
   const viewerToken = cookieStore.get(`viewer_${shareToken}`)?.value;
@@ -21,11 +29,14 @@ async function getViewerSession(shareToken: string) {
     return null;
   }
 
+  // Bootstrap lookup by session token - returns organizationId for RLS context
   const session = await db.viewSession.findFirst({
     where: {
       sessionToken: viewerToken,
     },
-    include: {
+    select: {
+      organizationId: true,
+      roomId: true,
       link: {
         select: {
           slug: true,
@@ -39,6 +50,8 @@ async function getViewerSession(shareToken: string) {
           id: true,
           name: true,
           allowDownloads: true,
+          enableWatermark: true,
+          watermarkTemplate: true,
         },
       },
       organization: {
@@ -59,10 +72,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const session = await getViewerSession(shareToken);
 
     if (!session) {
-      return NextResponse.json(
-        { error: 'Session expired or invalid' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -84,49 +94,54 @@ export async function GET(request: NextRequest, context: RouteContext) {
       folderWhere['parentId'] = session.link.scopedFolderId;
     }
 
-    // Get folders at current path
-    const folders = await db.folder.findMany({
-      where: folderWhere,
-      orderBy: { name: 'asc' },
-      include: {
-        _count: {
-          select: { documents: true },
+    // Use RLS context for org-scoped queries
+    const { folders, documents } = await withOrgContext(session.organizationId, async (tx) => {
+      // Get folders at current path
+      const foldersResult = await tx.folder.findMany({
+        where: folderWhere,
+        orderBy: { name: 'asc' },
+        include: {
+          _count: {
+            select: { documents: true },
+          },
         },
-      },
-    });
+      });
 
-    // Build document query based on link scope
-    const documentWhere: Record<string, unknown> = {
-      roomId: session.room.id,
-      status: 'ACTIVE',
-    };
+      // Build document query based on link scope
+      const documentWhere: Record<string, unknown> = {
+        roomId: session.room.id,
+        status: 'ACTIVE',
+      };
 
-    if (path) {
-      documentWhere['folder'] = { path };
-    } else {
-      documentWhere['folderId'] = null;
-    }
+      if (path) {
+        documentWhere['folder'] = { path };
+      } else {
+        documentWhere['folderId'] = null;
+      }
 
-    // If link is scoped to a specific document, only show that document
-    if (session.link?.scope === 'DOCUMENT' && session.link.scopedDocumentId) {
-      documentWhere['id'] = session.link.scopedDocumentId;
-    }
+      // If link is scoped to a specific document, only show that document
+      if (session.link?.scope === 'DOCUMENT' && session.link.scopedDocumentId) {
+        documentWhere['id'] = session.link.scopedDocumentId;
+      }
 
-    // Get documents at current path
-    const documents = await db.document.findMany({
-      where: documentWhere,
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        mimeType: true,
-        fileSize: true,
-        folderId: true,
-        createdAt: true,
-        folder: {
-          select: { path: true },
+      // Get documents at current path
+      const documentsResult = await tx.document.findMany({
+        where: documentWhere,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          mimeType: true,
+          fileSize: true,
+          folderId: true,
+          createdAt: true,
+          folder: {
+            select: { path: true },
+          },
         },
-      },
+      });
+
+      return { folders: foldersResult, documents: documentsResult };
     });
 
     return NextResponse.json({
@@ -135,7 +150,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
         organizationName: session.organization.name,
         organizationLogo: session.organization.logoUrl,
         downloadEnabled: session.room.allowDownloads,
-        watermarkEnabled: false, // Watermark not in current schema
+        watermarkEnabled: session.room.enableWatermark,
+        watermarkTemplate: session.room.watermarkTemplate,
       },
       folders: folders.map((f) => ({
         id: f.id,
@@ -155,9 +171,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
     });
   } catch (error) {
     console.error('[ViewerDocumentsAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to load documents' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to load documents' }, { status: 500 });
   }
 }

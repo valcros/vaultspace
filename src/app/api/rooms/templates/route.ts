@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -97,12 +97,14 @@ export async function GET(_request: NextRequest) {
   try {
     const session = await requireAuth();
 
-    // Get custom templates for this organization
-    const customTemplates = await db.roomTemplate.findMany({
-      where: {
-        organizationId: session.organizationId,
-      },
-      orderBy: { name: 'asc' },
+    // Use RLS context for org-scoped queries
+    const customTemplates = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.roomTemplate.findMany({
+        where: {
+          organizationId: session.organizationId,
+        },
+        orderBy: { name: 'asc' },
+      });
     });
 
     // Combine built-in and custom templates
@@ -120,10 +122,7 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({ templates });
   } catch (error) {
     console.error('[TemplatesAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to list templates' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to list templates' }, { status: 500 });
   }
 }
 
@@ -137,84 +136,78 @@ export async function POST(request: NextRequest) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await request.json();
     const { name, description, fromRoomId, structure } = body;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json(
-        { error: 'Template name is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Template name is required' }, { status: 400 });
     }
 
-    let templateStructure = structure;
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      let templateStructure = structure;
 
-    // If creating from existing room, copy its folder structure
-    if (fromRoomId) {
-      const room = await db.room.findFirst({
-        where: {
-          id: fromRoomId,
-          organizationId: session.organizationId,
-        },
-        include: {
-          folders: {
-            select: {
-              name: true,
-              path: true,
-              parentId: true,
-            },
-            orderBy: { path: 'asc' },
+      // If creating from existing room, copy its folder structure
+      if (fromRoomId) {
+        const room = await tx.room.findFirst({
+          where: {
+            id: fromRoomId,
+            organizationId: session.organizationId,
           },
+          include: {
+            folders: {
+              select: {
+                name: true,
+                path: true,
+                parentId: true,
+              },
+              orderBy: { path: 'asc' },
+            },
+          },
+        });
+
+        if (!room) {
+          return { error: 'Source room not found', status: 404 };
+        }
+
+        templateStructure = {
+          folders: room.folders.map((f) => ({
+            name: f.name,
+            path: f.path,
+          })),
+        };
+      }
+
+      if (!templateStructure) {
+        return { error: 'Template structure is required (or provide fromRoomId)', status: 400 };
+      }
+
+      // Create template
+      const template = await tx.roomTemplate.create({
+        data: {
+          organizationId: session.organizationId,
+          name: name.trim(),
+          description: description?.trim(),
+          category: body.category ?? 'custom',
+          folderStructure: templateStructure,
+          isSystemTemplate: false,
+          isPublic: false,
         },
       });
 
-      if (!room) {
-        return NextResponse.json(
-          { error: 'Source room not found' },
-          { status: 404 }
-        );
-      }
-
-      templateStructure = {
-        folders: room.folders.map((f) => ({
-          name: f.name,
-          path: f.path,
-        })),
-      };
-    }
-
-    if (!templateStructure) {
-      return NextResponse.json(
-        { error: 'Template structure is required (or provide fromRoomId)' },
-        { status: 400 }
-      );
-    }
-
-    // Create template
-    const template = await db.roomTemplate.create({
-      data: {
-        organizationId: session.organizationId,
-        name: name.trim(),
-        description: description?.trim(),
-        category: body.category ?? 'custom',
-        folderStructure: templateStructure,
-        isSystemTemplate: false,
-        isPublic: false,
-      },
+      return { template };
     });
 
-    return NextResponse.json({ template }, { status: 201 });
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    return NextResponse.json({ template: result.template }, { status: 201 });
   } catch (error) {
     console.error('[TemplatesAPI] POST error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create template' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to create template' }, { status: 500 });
   }
 }

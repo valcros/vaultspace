@@ -56,7 +56,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
       <div className="flex h-16 items-center justify-between border-b border-neutral-200 px-4">
         {!collapsed && (
           <Link href="/rooms" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white font-bold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
               V
             </div>
             <span className="font-semibold text-neutral-900">VaultSpace</span>
@@ -64,7 +64,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
         )}
         {collapsed && (
           <Link href="/rooms" className="mx-auto">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white font-bold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
               V
             </div>
           </Link>
@@ -84,8 +84,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) => {
-          const isActive =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
           return (
@@ -126,18 +125,11 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
 
       {/* User Profile */}
       <div className={clsx('p-4', collapsed && 'px-2')}>
-        <div
-          className={clsx(
-            'flex items-center gap-3',
-            collapsed && 'flex-col justify-center'
-          )}
-        >
+        <div className={clsx('flex items-center gap-3', collapsed && 'flex-col justify-center')}>
           <UserAvatar name={user.name} imageUrl={user.imageUrl} size="sm" />
           {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-medium text-neutral-900">
-                {user.name}
-              </p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-neutral-900">{user.name}</p>
               <p className="truncate text-xs text-neutral-500">{user.email}</p>
             </div>
           )}

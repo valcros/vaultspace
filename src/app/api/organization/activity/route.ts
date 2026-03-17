@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -22,10 +22,7 @@ export async function GET(request: NextRequest) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     // Parse query parameters
@@ -60,37 +57,48 @@ export async function GET(request: NextRequest) {
       where['createdAt'] = { ...((where['createdAt'] as object) || {}), lte: new Date(to) };
     }
 
-    // Get events
-    const [events, total] = await Promise.all([
-      db.event.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: {
-          actor: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
+    // Use RLS context for org-scoped queries
+    const { events, total } = await withOrgContext(session.organizationId, async (tx) => {
+      const [events, total] = await Promise.all([
+        tx.event.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+          include: {
+            actor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+            room: {
+              select: {
+                id: true,
+                name: true,
+              },
             },
           },
-          room: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
-      }),
-      db.event.count({ where }),
-    ]);
+        }),
+        tx.event.count({ where }),
+      ]);
+      return { events, total };
+    });
 
     // Export as CSV if requested
     if (exportCsv) {
       const csvRows = [
-        ['Timestamp', 'Event Type', 'Actor', 'Actor Email', 'Room', 'Description', 'IP Address'].join(','),
+        [
+          'Timestamp',
+          'Event Type',
+          'Actor',
+          'Actor Email',
+          'Room',
+          'Description',
+          'IP Address',
+        ].join(','),
       ];
 
       for (const event of events) {
@@ -98,20 +106,22 @@ export async function GET(request: NextRequest) {
           ? (event.actor.firstName + ' ' + event.actor.lastName).trim()
           : event.actorEmail || 'System';
         const roomName = event.room?.name || '';
-        
-        csvRows.push([
-          event.createdAt.toISOString(),
-          event.eventType,
-          '"' + actorName.replace(/"/g, '""') + '"',
-          event.actor?.email || event.actorEmail || '',
-          '"' + roomName.replace(/"/g, '""') + '"',
-          '"' + (event.description || '').replace(/"/g, '""') + '"',
-          event.ipAddress || '',
-        ].join(','));
+
+        csvRows.push(
+          [
+            event.createdAt.toISOString(),
+            event.eventType,
+            '"' + actorName.replace(/"/g, '""') + '"',
+            event.actor?.email || event.actorEmail || '',
+            '"' + roomName.replace(/"/g, '""') + '"',
+            '"' + (event.description || '').replace(/"/g, '""') + '"',
+            event.ipAddress || '',
+          ].join(',')
+        );
       }
 
       const csv = csvRows.join('\n');
-      
+
       return new NextResponse(csv, {
         headers: {
           'Content-Type': 'text/csv',
@@ -135,9 +145,7 @@ export async function GET(request: NextRequest) {
           : event.actorEmail
             ? { email: event.actorEmail }
             : null,
-        room: event.room
-          ? { id: event.room.id, name: event.room.name }
-          : null,
+        room: event.room ? { id: event.room.id, name: event.room.name } : null,
         description: event.description,
         ipAddress: event.ipAddress,
         createdAt: event.createdAt,
@@ -151,9 +159,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('[ActivityAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get activity log' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get activity log' }, { status: 500 });
   }
 }

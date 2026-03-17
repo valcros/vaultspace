@@ -65,10 +65,7 @@ function getTimestamp(): string {
 }
 
 // Write records to JSONL file (one JSON object per line)
-async function writeJsonl<T extends object>(
-  filePath: string,
-  records: T[]
-): Promise<number> {
+async function writeJsonl<T extends object>(filePath: string, records: T[]): Promise<number> {
   const dir = dirname(filePath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -216,7 +213,10 @@ async function main() {
 
   // GroupMemberships
   const memberships = await prisma.groupMembership.findMany();
-  const membershipCount = await writeJsonl(join(databaseDir, 'group_memberships.jsonl'), memberships);
+  const membershipCount = await writeJsonl(
+    join(databaseDir, 'group_memberships.jsonl'),
+    memberships
+  );
   manifest.database.tables['group_memberships'] = membershipCount;
   console.log(`  - group_memberships: ${membershipCount} records`);
 

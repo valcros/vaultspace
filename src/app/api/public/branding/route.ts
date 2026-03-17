@@ -13,14 +13,16 @@ import { db } from '@/lib/db';
 
 // This route uses request headers, so it must be dynamic
 export const dynamic = 'force-dynamic';
-import {
-  getRequestContext,
-  resolveOrganizationFromHeaders,
-} from '@/lib/middleware';
+import { getRequestContext, resolveOrganizationFromHeaders } from '@/lib/middleware';
 
 /**
  * GET /api/public/branding
  * Get organization branding based on custom domain or subdomain headers
+ *
+ * PRE-RLS BOOTSTRAP: This is a public endpoint that resolves organization
+ * from custom domain headers. It intentionally uses the global db client
+ * to fetch minimal public branding info. The RLS policy `org_bootstrap_lookup`
+ * allows SELECT on organizations when no org context is set.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -37,7 +39,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Fetch organization branding
+    // PRE-RLS BOOTSTRAP: Fetch public branding (minimal fields only)
     const organization = await db.organization.findUnique({
       where: { id: resolved.organizationId },
       select: {
@@ -62,9 +64,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('[PublicBrandingAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get branding' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get branding' }, { status: 500 });
   }
 }

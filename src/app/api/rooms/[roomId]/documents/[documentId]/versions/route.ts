@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { createHash } from 'crypto';
 import { sanitizeFilename } from '@/lib/fileTypes';
@@ -29,63 +29,63 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const session = await requireAuth();
     const { roomId, documentId } = await context.params;
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
 
-    // Get document with all versions
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          include: {
-            uploadedByUser: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
+      // Get document with all versions
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          roomId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            include: {
+              uploadedByUser: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
-            },
-            previewAssets: {
-              where: { assetType: 'THUMBNAIL' },
-              take: 1,
+              previewAssets: {
+                where: { assetType: 'THUMBNAIL' },
+                take: 1,
+              },
             },
           },
         },
-      },
+      });
+
+      if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      return { versions: document.versions };
     });
 
-    if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ versions: document.versions });
+    return NextResponse.json({ versions: result.versions });
   } catch (error) {
     console.error('[VersionsAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to list versions' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to list versions' }, { status: 500 });
   }
 }
 
@@ -100,84 +100,73 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
-
-    // Get existing document
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          take: 1,
-        },
-      },
-    });
-
-    if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
-    }
-
-    // Parse multipart form data
+    // Parse multipart form data (can be done outside transaction)
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const changeDescription = formData.get('changeDescription') as string | null;
 
     if (!file) {
-      return NextResponse.json(
-        { error: 'No file provided' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Read file data
+    // Read file data and calculate hash (can be done outside transaction)
     const buffer = Buffer.from(await file.arrayBuffer());
     const fileSha256 = createHash('sha256').update(buffer).digest('hex');
-
-    // Calculate new version number
-    const latestVersion = document.versions[0];
-    const newVersionNumber = latestVersion ? latestVersion.versionNumber + 1 : 1;
-
-    // Calculate version hash (includes parent hash for chain integrity)
-    const parentHash = latestVersion?.versionHash ?? null;
-    const versionHashInput = `${fileSha256}:${newVersionNumber}:${parentHash ?? 'root'}`;
-    const versionHash = createHash('sha256').update(versionHashInput).digest('hex');
-
-    // Create storage key
     const sanitizedFilename = sanitizeFilename(file.name);
-    const storageKey = `${session.organizationId}/documents/${documentId}/versions/v${newVersionNumber}/original/${sanitizedFilename}`;
 
-    // Upload to storage
-    const providers = getProviders();
-    await providers.storage.put('documents', storageKey, buffer);
+    // Use RLS context for all org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
 
-    // Create version record
-    const newVersion = await db.$transaction(async (tx) => {
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get existing document
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          roomId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      // Calculate new version number
+      const latestVersion = document.versions[0];
+      const newVersionNumber = latestVersion ? latestVersion.versionNumber + 1 : 1;
+
+      // Calculate version hash (includes parent hash for chain integrity)
+      const parentHash = latestVersion?.versionHash ?? null;
+      const versionHashInput = `${fileSha256}:${newVersionNumber}:${parentHash ?? 'root'}`;
+      const versionHash = createHash('sha256').update(versionHashInput).digest('hex');
+
+      // Create storage key
+      const storageKey = `${session.organizationId}/documents/${documentId}/versions/v${newVersionNumber}/original/${sanitizedFilename}`;
+
+      // Upload to storage (within RLS context but before DB writes)
+      const providers = getProviders();
+      await providers.storage.put('documents', storageKey, buffer);
+
+      // Create version record
       const version = await tx.documentVersion.create({
         data: {
           organizationId: session.organizationId,
@@ -217,25 +206,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
       });
 
-      return version;
+      return { version, storageKey, document };
     });
 
-    // Queue processing jobs (high priority queue)
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    // Queue processing jobs (high priority queue) - outside transaction
+    const providers = getProviders();
     await providers.job.addJob('high', 'document.scan', {
       documentId,
-      versionId: newVersion.id,
+      versionId: result.version.id,
       organizationId: session.organizationId,
-      storageKey,
-      contentType: file.type || document.mimeType,
+      storageKey: result.storageKey,
+      contentType: file.type || result.document.mimeType,
       fileName: file.name,
     });
 
-    return NextResponse.json({ version: newVersion }, { status: 201 });
+    return NextResponse.json({ version: result.version }, { status: 201 });
   } catch (error) {
     console.error('[VersionsAPI] POST error:', error);
-    return NextResponse.json(
-      { error: 'Failed to upload version' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to upload version' }, { status: 500 });
   }
 }

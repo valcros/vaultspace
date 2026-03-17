@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -28,38 +28,34 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Get user with organization membership
-    const userOrg = await db.userOrganization.findFirst({
-      where: {
-        userId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-            createdAt: true,
-            lastLoginAt: true,
-            isActive: true,
+    // Use RLS context for org-scoped queries
+    const userOrg = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.userOrganization.findFirst({
+        where: {
+          userId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              createdAt: true,
+              lastLoginAt: true,
+              isActive: true,
+            },
           },
         },
-      },
+      });
     });
 
     if (!userOrg) {
-      return NextResponse.json(
-        { error: 'User not found in organization' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'User not found in organization' }, { status: 404 });
     }
 
     return NextResponse.json({
@@ -76,10 +72,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
   } catch (error) {
     console.error('[UserAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get user' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get user' }, { status: 500 });
   }
 }
 
@@ -97,40 +90,31 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     // Cannot delete yourself
     if (userId === session.userId) {
-      return NextResponse.json(
-        { error: 'Cannot delete your own account' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 });
     }
 
-    // Verify user is in organization
-    const userOrg = await db.userOrganization.findFirst({
-      where: {
-        userId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        user: true,
-      },
-    });
+    // Use RLS context for all org-scoped operations
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify user is in organization
+      const userOrg = await tx.userOrganization.findFirst({
+        where: {
+          userId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          user: true,
+        },
+      });
 
-    if (!userOrg) {
-      return NextResponse.json(
-        { error: 'User not found in organization' },
-        { status: 404 }
-      );
-    }
+      if (!userOrg) {
+        return { error: 'User not found in organization', status: 404 };
+      }
 
-    // Perform deletion in transaction
-    await db.$transaction(async (tx) => {
       // 1. Soft delete the user by deactivating and redacting PII
       await tx.user.update({
         where: { id: userId },
@@ -193,7 +177,13 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       await tx.session.deleteMany({
         where: { userId },
       });
+
+      return { success: true };
     });
+
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
 
     return NextResponse.json({
       success: true,
@@ -201,9 +191,6 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     });
   } catch (error) {
     console.error('[UserAPI] DELETE error:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete user' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 });
   }
 }

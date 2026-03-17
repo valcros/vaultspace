@@ -10,7 +10,7 @@ import path from 'path';
 
 import type { Document, DocumentVersion, Prisma } from '@prisma/client';
 
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { NotFoundError, UploadError, ValidationError } from '@/lib/errors';
 import { getPermissionEngine } from '@/lib/permissions';
 import { UPLOAD_CONFIG } from '@/lib/constants';
@@ -112,7 +112,11 @@ function calculateHash(data: Buffer): string {
 /**
  * Calculate version hash for integrity chain
  */
-function calculateVersionHash(fileSha256: string, parentHash: string | null, versionNumber: number): string {
+function calculateVersionHash(
+  fileSha256: string,
+  parentHash: string | null,
+  versionNumber: number
+): string {
   const input = `${fileSha256}:${parentHash ?? 'root'}:${versionNumber}`;
   return crypto.createHash('sha256').update(input).digest('hex');
 }
@@ -127,48 +131,49 @@ export class DocumentService {
     const { roomId, folderId, file, tags } = options;
     const organizationId = session.organizationId;
 
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canUpload = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'admin',
-      { type: 'ROOM', organizationId, roomId }
-    );
-
-    if (!canUpload) {
-      throw new UploadError('You do not have permission to upload to this room');
-    }
-
-    // Validate room exists and is active
-    const room = await db.room.findFirst({
-      where: { id: roomId, organizationId, status: 'ACTIVE' },
-    });
-
-    if (!room) {
-      throw new NotFoundError('Room not found or not active');
-    }
-
-    // Validate folder if provided
-    if (folderId) {
-      const folder = await db.folder.findFirst({
-        where: { id: folderId, organizationId, roomId },
-      });
-
-      if (!folder) {
-        throw new NotFoundError('Folder not found');
-      }
-    }
-
-    // Validate file
+    // Validate file (can be done outside RLS context)
     this.validateFile(file);
 
-    // Calculate hash and sanitize filename
+    // Calculate hash and sanitize filename (can be done outside RLS context)
     const fileSha256 = calculateHash(file.data);
     const sanitizedFilename = sanitizeFilename(file.filename);
     const versionHash = calculateVersionHash(fileSha256, null, 1);
 
-    // Create document and version in a transaction
-    const result = await db.$transaction(async (tx) => {
+    // Use RLS context for all org-scoped database operations
+    const result = await withOrgContext(organizationId, async (tx) => {
+      // Check permissions (inside RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canUpload = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'admin',
+        { type: 'ROOM', organizationId, roomId },
+        tx
+      );
+
+      if (!canUpload) {
+        throw new UploadError('You do not have permission to upload to this room');
+      }
+
+      // Validate room exists and is active
+      const room = await tx.room.findFirst({
+        where: { id: roomId, organizationId, status: 'ACTIVE' },
+      });
+
+      if (!room) {
+        throw new NotFoundError('Room not found or not active');
+      }
+
+      // Validate folder if provided
+      if (folderId) {
+        const folder = await tx.folder.findFirst({
+          where: { id: folderId, organizationId, roomId },
+        });
+
+        if (!folder) {
+          throw new NotFoundError('Folder not found');
+        }
+      }
+
       // Create the document
       const document = await tx.document.create({
         data: {
@@ -204,7 +209,12 @@ export class DocumentService {
       });
 
       // Generate storage key
-      const storageKey = generateStorageKey(organizationId, document.id, version.id, sanitizedFilename);
+      const storageKey = generateStorageKey(
+        organizationId,
+        document.id,
+        version.id,
+        sanitizedFilename
+      );
 
       // Upload to storage
       await providers.storage.put('documents', storageKey, file.data);
@@ -300,43 +310,53 @@ export class DocumentService {
   async getById(ctx: ServiceContext, documentId: string): Promise<DocumentWithVersion | null> {
     const { session } = ctx;
 
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          take: 1,
+    // Use RLS context for org-scoped queries and permission check
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          organizationId: session.organizationId,
         },
-      },
+        include: {
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!document) {
+        return null;
+      }
+
+      // Check permissions (inside RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canView = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId: document.roomId,
+          documentId,
+        },
+        tx
+      );
+
+      if (!canView) {
+        return null;
+      }
+
+      return document;
     });
 
-    if (!document) {
-      return null;
-    }
-
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canView = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'view',
-      {
-        type: 'DOCUMENT',
-        organizationId: session.organizationId,
-        roomId: document.roomId,
-        documentId,
-      }
-    );
-
-    if (!canView) {
+    if (!result) {
       return null;
     }
 
     return {
-      ...document,
-      latestVersion: document.versions[0] ?? null,
+      ...result,
+      latestVersion: result.versions[0] ?? null,
     };
   }
 
@@ -344,7 +364,10 @@ export class DocumentService {
    * List documents in a room/folder
    * @readonly
    */
-  async list(ctx: ServiceContext, options: DocumentListOptions): Promise<PaginatedResult<DocumentWithVersion>> {
+  async list(
+    ctx: ServiceContext,
+    options: DocumentListOptions
+  ): Promise<PaginatedResult<DocumentWithVersion>> {
     const { session } = ctx;
     const { roomId, folderId, status, search, offset = 0, limit = 50 } = options;
 
@@ -359,21 +382,26 @@ export class DocumentService {
       }),
     };
 
-    // Get total count
-    const total = await db.document.count({ where });
+    // Use RLS context for org-scoped queries
+    const { total, documents } = await withOrgContext(session.organizationId, async (tx) => {
+      // Get total count
+      const total = await tx.document.count({ where });
 
-    // Get documents with latest version
-    const documents = await db.document.findMany({
-      where,
-      include: {
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          take: 1,
+      // Get documents with latest version
+      const documents = await tx.document.findMany({
+        where,
+        include: {
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 1,
+          },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: offset,
-      take: limit,
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+      });
+
+      return { total, documents };
     });
 
     const items: DocumentWithVersion[] = documents.map((doc) => ({
@@ -394,73 +422,83 @@ export class DocumentService {
    * Move a document to a different folder
    * @mutating
    */
-  async move(ctx: ServiceContext, documentId: string, targetFolderId: string | null): Promise<Document> {
+  async move(
+    ctx: ServiceContext,
+    documentId: string,
+    targetFolderId: string | null
+  ): Promise<Document> {
     const { session, eventBus } = ctx;
 
-    // Get the document
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!document) {
-      throw new NotFoundError('Document not found');
-    }
-
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canAdmin = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'admin',
-      {
-        type: 'DOCUMENT',
-        organizationId: session.organizationId,
-        roomId: document.roomId,
-        documentId,
-      }
-    );
-
-    if (!canAdmin) {
-      throw new UploadError('You do not have permission to move this document');
-    }
-
-    // Validate target folder if provided
-    if (targetFolderId) {
-      const folder = await db.folder.findFirst({
+    // Use RLS context for all org-scoped operations
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the document
+      const document = await tx.document.findFirst({
         where: {
-          id: targetFolderId,
+          id: documentId,
           organizationId: session.organizationId,
-          roomId: document.roomId,
         },
       });
 
-      if (!folder) {
-        throw new NotFoundError('Target folder not found');
+      if (!document) {
+        throw new NotFoundError('Document not found');
       }
-    }
 
-    const previousFolderId = document.folderId;
+      // Check permissions (pass transaction for RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canAdmin = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'admin',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId: document.roomId,
+          documentId,
+        },
+        tx
+      );
 
-    // Update document
-    const updated = await db.document.update({
-      where: { id: documentId },
-      data: { folderId: targetFolderId },
+      if (!canAdmin) {
+        throw new UploadError('You do not have permission to move this document');
+      }
+
+      // Validate target folder if provided
+      if (targetFolderId) {
+        const folder = await tx.folder.findFirst({
+          where: {
+            id: targetFolderId,
+            organizationId: session.organizationId,
+            roomId: document.roomId,
+          },
+        });
+
+        if (!folder) {
+          throw new NotFoundError('Target folder not found');
+        }
+      }
+
+      const previousFolderId = document.folderId;
+
+      // Update document
+      const updated = await tx.document.update({
+        where: { id: documentId },
+        data: { folderId: targetFolderId },
+      });
+
+      return { document, updated, previousFolderId };
     });
 
-    // Emit event
+    // Emit event (outside RLS context)
     await eventBus.emit('DOCUMENT_MOVED', {
-      roomId: document.roomId,
+      roomId: result.document.roomId,
       documentId,
-      description: `Moved document: ${document.name}`,
+      description: `Moved document: ${result.document.name}`,
       metadata: {
-        previousFolderId,
+        previousFolderId: result.previousFolderId,
         newFolderId: targetFolderId,
       },
     });
 
-    return updated;
+    return result.updated;
   }
 
   /**
@@ -470,52 +508,58 @@ export class DocumentService {
   async delete(ctx: ServiceContext, documentId: string): Promise<Document> {
     const { session, eventBus } = ctx;
 
-    // Get the document
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        organizationId: session.organizationId,
-      },
-    });
+    // Use RLS context for all org-scoped operations
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the document
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          organizationId: session.organizationId,
+        },
+      });
 
-    if (!document) {
-      throw new NotFoundError('Document not found');
-    }
-
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canDelete = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'delete',
-      {
-        type: 'DOCUMENT',
-        organizationId: session.organizationId,
-        roomId: document.roomId,
-        documentId,
+      if (!document) {
+        throw new NotFoundError('Document not found');
       }
-    );
 
-    if (!canDelete) {
-      throw new UploadError('You do not have permission to delete this document');
-    }
+      // Check permissions (pass transaction for RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canDelete = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'delete',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId: document.roomId,
+          documentId,
+        },
+        tx
+      );
 
-    // Soft delete (move to DELETED status)
-    const updated = await db.document.update({
-      where: { id: documentId },
-      data: {
-        status: 'DELETED',
-        deletedAt: new Date(),
-      },
+      if (!canDelete) {
+        throw new UploadError('You do not have permission to delete this document');
+      }
+
+      // Soft delete (move to DELETED status)
+      const updated = await tx.document.update({
+        where: { id: documentId },
+        data: {
+          status: 'DELETED',
+          deletedAt: new Date(),
+        },
+      });
+
+      return { document, updated };
     });
 
-    // Emit event
+    // Emit event (outside RLS context)
     await eventBus.emit('DOCUMENT_DELETED', {
-      roomId: document.roomId,
+      roomId: result.document.roomId,
       documentId,
-      description: `Deleted document: ${document.name}`,
+      description: `Deleted document: ${result.document.name}`,
     });
 
-    return updated;
+    return result.updated;
   }
 
   /**
@@ -525,52 +569,58 @@ export class DocumentService {
   async restore(ctx: ServiceContext, documentId: string): Promise<Document> {
     const { session, eventBus } = ctx;
 
-    // Get the document
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        organizationId: session.organizationId,
-        status: 'DELETED',
-      },
-    });
+    // Use RLS context for all org-scoped operations
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the document
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          organizationId: session.organizationId,
+          status: 'DELETED',
+        },
+      });
 
-    if (!document) {
-      throw new NotFoundError('Document not found or not in trash');
-    }
-
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canRestore = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'admin',
-      {
-        type: 'ROOM',
-        organizationId: session.organizationId,
-        roomId: document.roomId,
+      if (!document) {
+        throw new NotFoundError('Document not found or not in trash');
       }
-    );
 
-    if (!canRestore) {
-      throw new UploadError('You do not have permission to restore this document');
-    }
+      // Check permissions (pass transaction for RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canRestore = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'admin',
+        {
+          type: 'ROOM',
+          organizationId: session.organizationId,
+          roomId: document.roomId,
+        },
+        tx
+      );
 
-    // Restore document
-    const updated = await db.document.update({
-      where: { id: documentId },
-      data: {
-        status: 'ACTIVE',
-        deletedAt: null,
-      },
+      if (!canRestore) {
+        throw new UploadError('You do not have permission to restore this document');
+      }
+
+      // Restore document
+      const updated = await tx.document.update({
+        where: { id: documentId },
+        data: {
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+      });
+
+      return { document, updated };
     });
 
-    // Emit event
+    // Emit event (outside RLS context)
     await eventBus.emit('DOCUMENT_RESTORED', {
-      roomId: document.roomId,
+      roomId: result.document.roomId,
       documentId,
-      description: `Restored document: ${document.name}`,
+      description: `Restored document: ${result.document.name}`,
     });
 
-    return updated;
+    return result.updated;
   }
 }
 

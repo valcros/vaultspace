@@ -43,9 +43,9 @@ export default function ForgotPasswordPage() {
     return (
       <>
         <div className="text-center">
-          <div className="mx-auto w-12 h-12 rounded-full bg-success-100 flex items-center justify-center mb-4">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success-100">
             <svg
-              className="w-6 h-6 text-success-600"
+              className="h-6 w-6 text-success-600"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -58,12 +58,12 @@ export default function ForgotPasswordPage() {
               />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-neutral-900 mb-2">Check your email</h1>
-          <p className="text-sm text-neutral-500 mb-6">
+          <h1 className="mb-2 text-2xl font-bold text-neutral-900">Check your email</h1>
+          <p className="mb-6 text-sm text-neutral-500">
             We&apos;ve sent a password reset link to{' '}
             <span className="font-medium text-neutral-900">{email}</span>
           </p>
-          <p className="text-sm text-neutral-500 mb-6">
+          <p className="mb-6 text-sm text-neutral-500">
             Didn&apos;t receive the email? Check your spam folder or try again.
           </p>
           <Button variant="outline" onClick={() => setSuccess(false)} className="w-full">
@@ -72,7 +72,7 @@ export default function ForgotPasswordPage() {
         </div>
 
         <div className="mt-6 text-center text-sm text-neutral-500">
-          <Link href="/auth/login" className="text-primary-600 hover:text-primary-700 font-medium">
+          <Link href="/auth/login" className="font-medium text-primary-600 hover:text-primary-700">
             Back to sign in
           </Link>
         </div>
@@ -82,9 +82,9 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      <div className="text-center mb-6">
+      <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-neutral-900">Reset your password</h1>
-        <p className="text-sm text-neutral-500 mt-1">
+        <p className="mt-1 text-sm text-neutral-500">
           Enter your email and we&apos;ll send you a reset link
         </p>
       </div>
@@ -117,7 +117,7 @@ export default function ForgotPasswordPage() {
 
       <div className="mt-6 text-center text-sm text-neutral-500">
         Remember your password?{' '}
-        <Link href="/auth/login" className="text-primary-600 hover:text-primary-700 font-medium">
+        <Link href="/auth/login" className="font-medium text-primary-600 hover:text-primary-700">
           Sign in
         </Link>
       </div>

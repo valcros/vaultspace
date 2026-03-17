@@ -136,12 +136,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         // Queue upload notification job (async via job queue per architecture)
         const providers = getProviders();
-        providers.job.addJob('email', 'notify-document-uploaded', {
-          organizationId: session.organizationId,
-          roomId,
-          documentId: doc.id,
-          uploaderId: session.userId,
-        }).catch((err) => console.error('[DocumentAPI] Failed to queue notification:', err));
+        providers.job
+          .addJob('email', 'notify-document-uploaded', {
+            organizationId: session.organizationId,
+            roomId,
+            documentId: doc.id,
+            uploaderId: session.userId,
+          })
+          .catch((err) => console.error('[DocumentAPI] Failed to queue notification:', err));
       } catch (error) {
         errors.push({
           filename: file.name,
@@ -247,4 +249,3 @@ export async function GET(request: NextRequest, context: RouteContext) {
     });
   }
 }
-

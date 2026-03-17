@@ -7,7 +7,7 @@
 
 import type { Prisma, Room, RoomStatus } from '@prisma/client';
 
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 import { getPermissionEngine } from '@/lib/permissions';
 
@@ -78,37 +78,40 @@ export class RoomService {
       throw new ValidationError('Room name must be 255 characters or less');
     }
 
-    // Generate slug
-    let slug = generateSlug(options.name);
-    let suffix = 0;
+    // Use RLS context for all org-scoped operations
+    const room = await withOrgContext(organizationId, async (tx) => {
+      // Generate slug
+      let slug = generateSlug(options.name);
+      let suffix = 0;
 
-    // Ensure unique slug within organization
-    while (true) {
-      const existing = await db.room.findFirst({
-        where: { organizationId, slug },
-      });
+      // Ensure unique slug within organization
+      while (true) {
+        const existing = await tx.room.findFirst({
+          where: { organizationId, slug },
+        });
 
-      if (!existing) {
-        break;
+        if (!existing) {
+          break;
+        }
+
+        suffix++;
+        slug = `${generateSlug(options.name)}-${suffix}`;
       }
 
-      suffix++;
-      slug = `${generateSlug(options.name)}-${suffix}`;
-    }
-
-    // Create room
-    const room = await db.room.create({
-      data: {
-        organizationId,
-        name: options.name.trim(),
-        slug,
-        description: options.description?.trim(),
-        status: options.status ?? 'DRAFT',
-        createdByUserId: session.userId,
-      },
+      // Create room
+      return tx.room.create({
+        data: {
+          organizationId,
+          name: options.name.trim(),
+          slug,
+          description: options.description?.trim(),
+          status: options.status ?? 'DRAFT',
+          createdByUserId: session.userId,
+        },
+      });
     });
 
-    // Emit event
+    // Emit event (EventBus wraps in RLS context internally)
     await eventBus.emit('ROOM_CREATED', {
       roomId: room.id,
       description: `Created room: ${room.name}`,
@@ -129,39 +132,43 @@ export class RoomService {
   async getById(ctx: ServiceContext, roomId: string): Promise<RoomWithStats | null> {
     const { session } = ctx;
 
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        _count: {
-          select: {
-            documents: true,
-            folders: true,
-            links: true,
+    // Use RLS context for org-scoped query and permission check
+    return withOrgContext(session.organizationId, async (tx) => {
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          _count: {
+            select: {
+              documents: true,
+              folders: true,
+              links: true,
+            },
           },
         },
-      },
+      });
+
+      if (!room) {
+        return null;
+      }
+
+      // Check permissions (pass transaction for RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canView = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'view',
+        { type: 'ROOM', organizationId: session.organizationId, roomId },
+        tx
+      );
+
+      if (!canView) {
+        return null;
+      }
+
+      return room;
     });
-
-    if (!room) {
-      return null;
-    }
-
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canView = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'view',
-      { type: 'ROOM', organizationId: session.organizationId, roomId }
-    );
-
-    if (!canView) {
-      return null;
-    }
-
-    return room;
   }
 
   /**
@@ -171,46 +178,53 @@ export class RoomService {
   async getBySlug(ctx: ServiceContext, slug: string): Promise<RoomWithStats | null> {
     const { session } = ctx;
 
-    const room = await db.room.findFirst({
-      where: {
-        slug,
-        organizationId: session.organizationId,
-      },
-      include: {
-        _count: {
-          select: {
-            documents: true,
-            folders: true,
-            links: true,
+    // Use RLS context for org-scoped query and permission check
+    return withOrgContext(session.organizationId, async (tx) => {
+      const room = await tx.room.findFirst({
+        where: {
+          slug,
+          organizationId: session.organizationId,
+        },
+        include: {
+          _count: {
+            select: {
+              documents: true,
+              folders: true,
+              links: true,
+            },
           },
         },
-      },
+      });
+
+      if (!room) {
+        return null;
+      }
+
+      // Check permissions (pass transaction for RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canView = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'view',
+        { type: 'ROOM', organizationId: session.organizationId, roomId: room.id },
+        tx
+      );
+
+      if (!canView) {
+        return null;
+      }
+
+      return room;
     });
-
-    if (!room) {
-      return null;
-    }
-
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canView = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'view',
-      { type: 'ROOM', organizationId: session.organizationId, roomId: room.id }
-    );
-
-    if (!canView) {
-      return null;
-    }
-
-    return room;
   }
 
   /**
    * List rooms in the organization
    * @readonly
    */
-  async list(ctx: ServiceContext, options: RoomListOptions = {}): Promise<PaginatedResult<RoomWithStats>> {
+  async list(
+    ctx: ServiceContext,
+    options: RoomListOptions = {}
+  ): Promise<PaginatedResult<RoomWithStats>> {
     const { session } = ctx;
     const { status, search, offset = 0, limit = 50 } = options;
 
@@ -226,24 +240,27 @@ export class RoomService {
       }),
     };
 
-    // Get total count
-    const total = await db.room.count({ where });
+    // Use RLS context for org-scoped queries
+    const { total, rooms } = await withOrgContext(session.organizationId, async (tx) => {
+      const total = await tx.room.count({ where });
 
-    // Get rooms with counts
-    const rooms = await db.room.findMany({
-      where,
-      include: {
-        _count: {
-          select: {
-            documents: true,
-            folders: true,
-            links: true,
+      const rooms = await tx.room.findMany({
+        where,
+        include: {
+          _count: {
+            select: {
+              documents: true,
+              folders: true,
+              links: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: offset,
-      take: limit,
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+      });
+
+      return { total, rooms };
     });
 
     return {
@@ -262,51 +279,55 @@ export class RoomService {
   async update(ctx: ServiceContext, roomId: string, options: UpdateRoomOptions): Promise<Room> {
     const { session, eventBus } = ctx;
 
-    // Get the room
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
+    // Use RLS context for all org-scoped operations
+    const updated = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the room
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
 
-    if (!room) {
-      throw new NotFoundError('Room not found');
-    }
-
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canAdmin = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'admin',
-      { type: 'ROOM', organizationId: session.organizationId, roomId }
-    );
-
-    if (!canAdmin) {
-      throw new ConflictError('You do not have permission to update this room');
-    }
-
-    // Build update data
-    const data: Prisma.RoomUpdateInput = {};
-
-    if (options.name !== undefined) {
-      if (!options.name.trim()) {
-        throw new ValidationError('Room name cannot be empty');
+      if (!room) {
+        throw new NotFoundError('Room not found');
       }
-      data.name = options.name.trim();
-    }
 
-    if (options.description !== undefined) {
-      data.description = options.description?.trim() || null;
-    }
+      // Check permissions (pass transaction for RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canAdmin = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'admin',
+        { type: 'ROOM', organizationId: session.organizationId, roomId },
+        tx
+      );
 
-    // Update room
-    const updated = await db.room.update({
-      where: { id: roomId },
-      data,
+      if (!canAdmin) {
+        throw new ConflictError('You do not have permission to update this room');
+      }
+
+      // Build update data
+      const data: Prisma.RoomUpdateInput = {};
+
+      if (options.name !== undefined) {
+        if (!options.name.trim()) {
+          throw new ValidationError('Room name cannot be empty');
+        }
+        data.name = options.name.trim();
+      }
+
+      if (options.description !== undefined) {
+        data.description = options.description?.trim() || null;
+      }
+
+      // Update room
+      return tx.room.update({
+        where: { id: roomId },
+        data,
+      });
     });
 
-    // Emit event
+    // Emit event (EventBus wraps in RLS context internally)
     await eventBus.emit('ROOM_UPDATED', {
       roomId,
       description: `Updated room: ${updated.name}`,
@@ -325,39 +346,45 @@ export class RoomService {
   async changeStatus(ctx: ServiceContext, roomId: string, status: RoomStatus): Promise<Room> {
     const { session, eventBus } = ctx;
 
-    // Get the room
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for all org-scoped operations
+    const { updated, previousStatus } = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the room
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        throw new NotFoundError('Room not found');
+      }
+
+      // Check permissions (pass transaction for RLS context)
+      const permissionEngine = getPermissionEngine();
+      const canAdmin = await permissionEngine.can(
+        { userId: session.userId, role: session.organization.role },
+        'admin',
+        { type: 'ROOM', organizationId: session.organizationId, roomId },
+        tx
+      );
+
+      if (!canAdmin) {
+        throw new ConflictError('You do not have permission to change room status');
+      }
+
+      const previousStatus = room.status;
+
+      // Update status
+      const updated = await tx.room.update({
+        where: { id: roomId },
+        data: { status },
+      });
+
+      return { updated, previousStatus };
     });
 
-    if (!room) {
-      throw new NotFoundError('Room not found');
-    }
-
-    // Check permissions
-    const permissionEngine = getPermissionEngine();
-    const canAdmin = await permissionEngine.can(
-      { userId: session.userId, role: session.organization.role },
-      'admin',
-      { type: 'ROOM', organizationId: session.organizationId, roomId }
-    );
-
-    if (!canAdmin) {
-      throw new ConflictError('You do not have permission to change room status');
-    }
-
-    const previousStatus = room.status;
-
-    // Update status
-    const updated = await db.room.update({
-      where: { id: roomId },
-      data: { status },
-    });
-
-    // Emit appropriate event
+    // Emit appropriate event (EventBus wraps in RLS context internally)
     const eventType =
       status === 'ARCHIVED'
         ? 'ROOM_ARCHIVED'
@@ -384,30 +411,35 @@ export class RoomService {
   async delete(ctx: ServiceContext, roomId: string): Promise<Room> {
     const { session, eventBus } = ctx;
 
-    // Get the room
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      throw new NotFoundError('Room not found');
-    }
-
     // Only org admins can delete rooms
     if (session.organization.role !== 'ADMIN') {
       throw new ConflictError('Only organization admins can delete rooms');
     }
 
-    // Update to CLOSED status
-    const updated = await db.room.update({
-      where: { id: roomId },
-      data: { status: 'CLOSED' },
+    // Use RLS context for all org-scoped operations
+    const { room, updated } = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the room
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        throw new NotFoundError('Room not found');
+      }
+
+      // Update to CLOSED status
+      const updated = await tx.room.update({
+        where: { id: roomId },
+        data: { status: 'CLOSED' },
+      });
+
+      return { room, updated };
     });
 
-    // Emit event
+    // Emit event (EventBus wraps in RLS context internally)
     await eventBus.emit('ROOM_DELETED', {
       roomId,
       description: `Deleted room: ${room.name}`,

@@ -147,8 +147,8 @@ export default function RoomSettingsPage() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <Skeleton className="h-8 w-64 mb-4" />
-        <Skeleton className="h-4 w-96 mb-8" />
+        <Skeleton className="mb-4 h-8 w-64" />
+        <Skeleton className="mb-8 h-4 w-96" />
         <Skeleton className="h-96 w-full" />
       </div>
     );
@@ -169,13 +169,13 @@ export default function RoomSettingsPage() {
         ]}
         actions={
           <Button variant="outline" onClick={() => router.push(`/rooms/${roomId}`)}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Room
           </Button>
         }
       />
 
-      <div className="p-6 max-w-3xl">
+      <div className="max-w-3xl p-6">
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
@@ -183,7 +183,10 @@ export default function RoomSettingsPage() {
         )}
 
         {success && (
-          <Alert variant="default" className="mb-6 border-success-200 bg-success-50 text-success-800">
+          <Alert
+            variant="default"
+            className="mb-6 border-success-200 bg-success-50 text-success-800"
+          >
             <AlertDescription>Settings saved successfully</AlertDescription>
           </Alert>
         )}
@@ -225,7 +228,7 @@ export default function RoomSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="watermark">Enable Watermarks</Label>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   Add viewer identification watermarks to documents
                 </p>
               </div>
@@ -243,7 +246,7 @@ export default function RoomSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="download">Allow Downloads</Label>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   Let viewers download original documents
                 </p>
               </div>
@@ -261,21 +264,19 @@ export default function RoomSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="nda">Require NDA Acceptance</Label>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   Viewers must accept terms before accessing
                 </p>
               </div>
               <Switch
                 id="nda"
                 checked={formData.ndaRequired}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, ndaRequired: checked })
-                }
+                onCheckedChange={(checked) => setFormData({ ...formData, ndaRequired: checked })}
               />
             </div>
 
             {formData.ndaRequired && (
-              <div className="space-y-2 pl-4 border-l-2 border-neutral-200">
+              <div className="space-y-2 border-l-2 border-neutral-200 pl-4">
                 <Label htmlFor="ndaText">NDA Text</Label>
                 <Textarea
                   id="ndaText"
@@ -290,9 +291,9 @@ export default function RoomSettingsPage() {
         </Card>
 
         {/* Save Button */}
-        <div className="flex justify-end mb-8">
+        <div className="mb-8 flex justify-end">
           <Button onClick={handleSave} loading={isSaving}>
-            <Save className="w-4 h-4 mr-2" />
+            <Save className="mr-2 h-4 w-4" />
             Save Changes
           </Button>
         </div>
@@ -303,9 +304,7 @@ export default function RoomSettingsPage() {
         <Card className="border-danger-200">
           <CardHeader>
             <CardTitle className="text-danger-600">Danger Zone</CardTitle>
-            <CardDescription>
-              Irreversible actions. Proceed with caution.
-            </CardDescription>
+            <CardDescription>Irreversible actions. Proceed with caution.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
@@ -313,7 +312,7 @@ export default function RoomSettingsPage() {
                 <p className="font-medium">
                   {room.status === 'ACTIVE' ? 'Archive Room' : 'Unarchive Room'}
                 </p>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   {room.status === 'ACTIVE'
                     ? 'Archived rooms are hidden from viewers but can be restored'
                     : 'Restore this room to make it visible to viewers'}
@@ -329,12 +328,12 @@ export default function RoomSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium text-danger-600">Delete Room</p>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   Permanently delete this room and all its contents. This cannot be undone.
                 </p>
               </div>
               <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
-                <Trash2 className="w-4 h-4 mr-2" />
+                <Trash2 className="mr-2 h-4 w-4" />
                 Delete
               </Button>
             </div>

@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -29,36 +29,33 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const session = await requireAuth();
     const { roomId } = await context.params;
 
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        _count: {
-          select: {
-            documents: true,
-            folders: true,
-            permissions: true,
+    // Use RLS context for org-scoped query
+    const room = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          _count: {
+            select: {
+              documents: true,
+              folders: true,
+              permissions: true,
+            },
           },
         },
-      },
+      });
     });
 
     if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 });
     }
 
     return NextResponse.json({ room });
   } catch (error) {
     console.error('[RoomAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get room' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get room' }, { status: 500 });
   }
 }
 
@@ -73,70 +70,75 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await request.json();
-    const { name, description, status, allowDownloads, defaultExpiryDays, requiresPassword, requiresEmailVerification } = body;
+    const {
+      name,
+      description,
+      status,
+      allowDownloads,
+      defaultExpiryDays,
+      requiresPassword,
+      requiresEmailVerification,
+    } = body;
 
-    // Get current room
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Get current room
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
-
-    // Validate status transition (F108)
-    if (status && status !== room.status) {
-      const validTransitions: Record<RoomStatus, RoomStatus[]> = {
-        DRAFT: ['ACTIVE'],
-        ACTIVE: ['ARCHIVED', 'CLOSED'],
-        ARCHIVED: ['ACTIVE', 'CLOSED'],
-        CLOSED: [], // No transitions from CLOSED
-      };
-
-      const allowed = validTransitions[room.status] ?? [];
-      if (!allowed.includes(status)) {
-        return NextResponse.json(
-          { error: `Cannot transition from ${room.status} to ${status}` },
-          { status: 400 }
-        );
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
       }
-    }
 
-    // Update room
-    const updatedRoom = await db.room.update({
-      where: { id: roomId },
-      data: {
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
-        ...(status && { status }),
-        ...(status === 'ARCHIVED' && { archivedAt: new Date() }),
-        ...(allowDownloads !== undefined && { allowDownloads }),
-        ...(defaultExpiryDays !== undefined && { defaultExpiryDays }),
-        ...(requiresPassword !== undefined && { requiresPassword }),
-        ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
-      },
+      // Validate status transition (F108)
+      if (status && status !== room.status) {
+        const validTransitions: Record<RoomStatus, RoomStatus[]> = {
+          DRAFT: ['ACTIVE'],
+          ACTIVE: ['ARCHIVED', 'CLOSED'],
+          ARCHIVED: ['ACTIVE', 'CLOSED'],
+          CLOSED: [], // No transitions from CLOSED
+        };
+
+        const allowed = validTransitions[room.status] ?? [];
+        if (!allowed.includes(status)) {
+          return { error: `Cannot transition from ${room.status} to ${status}`, status: 400 };
+        }
+      }
+
+      // Update room
+      const updatedRoom = await tx.room.update({
+        where: { id: roomId },
+        data: {
+          ...(name && { name }),
+          ...(description !== undefined && { description }),
+          ...(status && { status }),
+          ...(status === 'ARCHIVED' && { archivedAt: new Date() }),
+          ...(allowDownloads !== undefined && { allowDownloads }),
+          ...(defaultExpiryDays !== undefined && { defaultExpiryDays }),
+          ...(requiresPassword !== undefined && { requiresPassword }),
+          ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
+        },
+      });
+
+      return { room: updatedRoom };
     });
 
-    return NextResponse.json({ room: updatedRoom });
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    return NextResponse.json({ room: result.room });
   } catch (error) {
     console.error('[RoomAPI] PATCH error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update room' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update room' }, { status: 500 });
   }
 }
 
@@ -151,42 +153,42 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Get current room
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Get current room
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Soft delete by setting status to CLOSED
+      await tx.room.update({
+        where: { id: roomId },
+        data: {
+          status: 'CLOSED',
+          closedAt: new Date(),
+        },
+      });
+
+      return { success: true };
     });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
-
-    // Soft delete by setting status to CLOSED
-    await db.room.update({
-      where: { id: roomId },
-      data: {
-        status: 'CLOSED',
-        closedAt: new Date(),
-      },
-    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[RoomAPI] DELETE error:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete room' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to delete room' }, { status: 500 });
   }
 }

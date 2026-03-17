@@ -124,7 +124,7 @@ export default function RoomsPage() {
         description="Manage your secure data rooms"
         actions={
           <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="mr-2 h-4 w-4" />
             Create Room
           </Button>
         }
@@ -132,8 +132,8 @@ export default function RoomsPage() {
 
       <div className="p-6">
         {/* Search */}
-        <div className="relative max-w-md mb-6">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+        <div className="relative mb-6 max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <Input
             placeholder="Search rooms..."
             value={searchQuery}
@@ -149,24 +149,24 @@ export default function RoomsPage() {
               <Card key={i}>
                 <CardHeader>
                   <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-4 w-1/2 mt-2" />
+                  <Skeleton className="mt-2 h-4 w-1/2" />
                 </CardHeader>
                 <CardContent>
                   <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-2/3 mt-2" />
+                  <Skeleton className="mt-2 h-4 w-2/3" />
                 </CardContent>
               </Card>
             ))}
           </div>
         ) : rooms.length === 0 ? (
           <Card className="p-12 text-center">
-            <FolderOpen className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-            <h3 className="text-lg font-semibold text-neutral-900 mb-2">No data rooms yet</h3>
-            <p className="text-neutral-500 mb-6 max-w-sm mx-auto">
+            <FolderOpen className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No data rooms yet</h3>
+            <p className="mx-auto mb-6 max-w-sm text-neutral-500">
               Create your first data room to start securely sharing documents with stakeholders.
             </p>
             <Button onClick={() => setShowCreateDialog(true)}>
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="mr-2 h-4 w-4" />
               Create your first room
             </Button>
           </Card>
@@ -175,7 +175,7 @@ export default function RoomsPage() {
             {/* Active Rooms */}
             {activeRooms.length > 0 && (
               <div className="mb-8">
-                <h2 className="text-sm font-medium text-neutral-500 mb-4">
+                <h2 className="mb-4 text-sm font-medium text-neutral-500">
                   Active Rooms ({activeRooms.length})
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -189,7 +189,7 @@ export default function RoomsPage() {
             {/* Archived Rooms */}
             {archivedRooms.length > 0 && (
               <div>
-                <h2 className="text-sm font-medium text-neutral-500 mb-4">
+                <h2 className="mb-4 text-sm font-medium text-neutral-500">
                   Archived Rooms ({archivedRooms.length})
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -265,15 +265,13 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
 
   return (
     <Link href={`/rooms/${room.id}`}>
-      <Card className="hover:border-primary-200 hover:shadow-md transition-all cursor-pointer">
+      <Card className="cursor-pointer transition-all hover:border-primary-200 hover:shadow-md">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
-            <div className="flex-1 min-w-0">
-              <CardTitle className="text-base truncate">{room.name}</CardTitle>
+            <div className="min-w-0 flex-1">
+              <CardTitle className="truncate text-base">{room.name}</CardTitle>
               {room.description && (
-                <CardDescription className="line-clamp-2 mt-1">
-                  {room.description}
-                </CardDescription>
+                <CardDescription className="mt-1 line-clamp-2">{room.description}</CardDescription>
               )}
             </div>
             <DropdownMenu>
@@ -289,15 +287,12 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
                     handleArchive();
                   }}
                 >
-                  <Archive className="w-4 h-4 mr-2" />
+                  <Archive className="mr-2 h-4 w-4" />
                   {room.status === 'ACTIVE' ? 'Archive' : 'Unarchive'}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={(e) => e.preventDefault()}
-                  className="text-danger-600"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
+                <DropdownMenuItem onClick={(e) => e.preventDefault()} className="text-danger-600">
+                  <Trash2 className="mr-2 h-4 w-4" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -307,15 +302,15 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
         <CardContent>
           <div className="flex items-center gap-4 text-sm text-neutral-500">
             <div className="flex items-center gap-1">
-              <FolderOpen className="w-4 h-4" />
+              <FolderOpen className="h-4 w-4" />
               <span>{room.documentCount}</span>
             </div>
             <div className="flex items-center gap-1">
-              <Users className="w-4 h-4" />
+              <Users className="h-4 w-4" />
               <span>{room.memberCount}</span>
             </div>
             <div className="flex items-center gap-1">
-              <LinkIcon className="w-4 h-4" />
+              <LinkIcon className="h-4 w-4" />
               <span>{room.linkCount}</span>
             </div>
           </div>

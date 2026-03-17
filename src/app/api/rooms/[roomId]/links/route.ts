@@ -11,7 +11,7 @@ import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -38,58 +38,58 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for all org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get all links for the room
+      const links = await tx.link.findMany({
+        where: {
+          roomId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          createdByUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          _count: {
+            select: {
+              visits: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return { links };
     });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    // Get all links for the room
-    const links = await db.link.findMany({
-      where: {
-        roomId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        createdByUser: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        },
-        _count: {
-          select: {
-            visits: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return NextResponse.json({ links });
+    return NextResponse.json({ links: result.links });
   } catch (error) {
     console.error('[LinksAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to list links' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to list links' }, { status: 500 });
   }
 }
 
@@ -104,25 +104,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
-    }
-
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -143,106 +125,119 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Validate permission
     const validPermissions: LinkPermission[] = ['VIEW', 'DOWNLOAD'];
     if (!validPermissions.includes(permission)) {
-      return NextResponse.json(
-        { error: 'Invalid permission level' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid permission level' }, { status: 400 });
     }
 
     // Validate scope
     const validScopes: LinkScope[] = ['ENTIRE_ROOM', 'FOLDER', 'DOCUMENT'];
     if (!validScopes.includes(scope)) {
-      return NextResponse.json(
-        { error: 'Invalid scope' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid scope' }, { status: 400 });
     }
 
-    // Validate scoped resources
-    if (scope === 'FOLDER' && scopedFolderId) {
-      const folder = await db.folder.findFirst({
-        where: {
-          id: scopedFolderId,
-          roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!folder) {
-        return NextResponse.json(
-          { error: 'Folder not found' },
-          { status: 404 }
-        );
-      }
-    }
-
-    if (scope === 'DOCUMENT' && scopedDocumentId) {
-      const document = await db.document.findFirst({
-        where: {
-          id: scopedDocumentId,
-          roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!document) {
-        return NextResponse.json(
-          { error: 'Document not found' },
-          { status: 404 }
-        );
-      }
-    }
-
-    // Generate unique slug
-    let slug = generateLinkSlug();
-    let attempts = 0;
-    while (attempts < 5) {
-      const existing = await db.link.findFirst({
-        where: { slug },
-      });
-      if (!existing) {
-        break;
-      }
-      slug = generateLinkSlug();
-      attempts++;
-    }
-
-    // Hash password if provided
+    // Hash password if provided (can be done outside transaction)
     let passwordHash: string | null = null;
     if (password) {
       passwordHash = await bcrypt.hash(password, 12);
     }
 
-    // Create link
-    const link = await db.link.create({
-      data: {
-        organizationId: session.organizationId,
-        roomId,
-        createdByUserId: session.userId,
-        slug,
-        name: name?.trim() ?? null,
-        description: description?.trim() ?? null,
-        permission,
-        requiresPassword: !!password,
-        passwordHash,
-        requiresEmailVerification: requiresEmailVerification ?? false,
-        allowedEmails: allowedEmails ?? [],
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        maxViews: maxViews ?? null,
-        scope,
-        scopedFolderId: scope === 'FOLDER' ? scopedFolderId : null,
-        scopedDocumentId: scope === 'DOCUMENT' ? scopedDocumentId : null,
-      },
+    // Use RLS context for all org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Validate scoped resources
+      if (scope === 'FOLDER' && scopedFolderId) {
+        const folder = await tx.folder.findFirst({
+          where: {
+            id: scopedFolderId,
+            roomId,
+            organizationId: session.organizationId,
+          },
+        });
+
+        if (!folder) {
+          return { error: 'Folder not found', status: 404 };
+        }
+      }
+
+      if (scope === 'DOCUMENT' && scopedDocumentId) {
+        const document = await tx.document.findFirst({
+          where: {
+            id: scopedDocumentId,
+            roomId,
+            organizationId: session.organizationId,
+          },
+        });
+
+        if (!document) {
+          return { error: 'Document not found', status: 404 };
+        }
+      }
+
+      // Generate unique slug
+      let slug = generateLinkSlug();
+      let attempts = 0;
+      while (attempts < 5) {
+        const existing = await tx.link.findFirst({
+          where: { slug },
+        });
+        if (!existing) {
+          break;
+        }
+        slug = generateLinkSlug();
+        attempts++;
+      }
+
+      // Create link
+      const link = await tx.link.create({
+        data: {
+          organizationId: session.organizationId,
+          roomId,
+          createdByUserId: session.userId,
+          slug,
+          name: name?.trim() ?? null,
+          description: description?.trim() ?? null,
+          permission,
+          requiresPassword: !!password,
+          passwordHash,
+          requiresEmailVerification: requiresEmailVerification ?? false,
+          allowedEmails: allowedEmails ?? [],
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+          maxViews: maxViews ?? null,
+          scope,
+          scopedFolderId: scope === 'FOLDER' ? scopedFolderId : null,
+          scopedDocumentId: scope === 'DOCUMENT' ? scopedDocumentId : null,
+        },
+      });
+
+      return { link };
     });
 
-    // Generate full URL
-    const baseUrl = process.env['NEXT_PUBLIC_APP_URL'] ?? 'http://localhost:3000';
-    const linkUrl = `${baseUrl}/r/${link.slug}`;
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    // Generate full URL - APP_URL is required
+    const baseUrl = process.env['NEXT_PUBLIC_APP_URL'] || process.env['APP_URL'];
+    if (!baseUrl) {
+      console.error('[LinksAPI] NEXT_PUBLIC_APP_URL or APP_URL environment variable is required');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+    const linkUrl = `${baseUrl}/r/${result.link.slug}`;
 
     return NextResponse.json(
       {
         link: {
-          ...link,
+          ...result.link,
           url: linkUrl,
         },
       },
@@ -250,9 +245,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   } catch (error) {
     console.error('[LinksAPI] POST error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create link' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to create link' }, { status: 500 });
   }
 }

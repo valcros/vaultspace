@@ -1,12 +1,37 @@
 /**
  * Vitest Integration Test Configuration
  *
- * Integration tests run against Docker services (PostgreSQL, Redis).
- * Requires docker-compose services to be running.
+ * AZURE-ONLY: Integration tests must run against Azure-hosted services.
+ * Local execution is not permitted.
+ *
+ * Required environment variables:
+ * - DATABASE_URL: Azure PostgreSQL connection string
+ * - REDIS_URL: Azure Cache for Redis connection string (if used)
  */
 
 import { defineConfig } from 'vitest/config';
 import path from 'path';
+
+// Validate Azure-only configuration
+const databaseUrl = process.env['DATABASE_URL'];
+if (!databaseUrl) {
+  throw new Error(
+    '\n\n🚫 DATABASE_URL is required for integration tests.\n' +
+      'Set DATABASE_URL to point to Azure PostgreSQL.\n'
+  );
+}
+
+if (databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1')) {
+  throw new Error(
+    '\n\n🚫 INTEGRATION TESTS BLOCKED\n\n' +
+      'DATABASE_URL points to localhost, which is not permitted.\n' +
+      'VaultSpace integration tests must run against Azure PostgreSQL.\n\n' +
+      'Current value: ' +
+      databaseUrl.replace(/:[^:@]+@/, ':****@') +
+      '\n\n' +
+      'Required: Azure PostgreSQL URL (.database.azure.com)\n'
+  );
+}
 
 export default defineConfig({
   test: {
@@ -14,21 +39,21 @@ export default defineConfig({
     globals: true,
     include: ['src/**/*.integration.test.ts', 'tests/integration/**/*.test.ts'],
     exclude: ['node_modules', '.next'],
-    testTimeout: 30000, // Integration tests may be slower
+    testTimeout: 30000,
     hookTimeout: 30000,
     setupFiles: ['./vitest.integration.setup.ts'],
-    // Run integration tests sequentially to avoid database conflicts
     pool: 'forks',
     poolOptions: {
       forks: {
         singleFork: true,
       },
     },
-    // Environment variables for integration tests
     env: {
       NODE_ENV: 'test',
-      DATABASE_URL: process.env['DATABASE_URL'] || 'postgresql://postgres:postgres@localhost:5432/vaultspace_test',
-      REDIS_URL: process.env['REDIS_URL'] || 'redis://localhost:6379',
+      // No defaults - Azure configuration is required
+      DATABASE_URL: process.env['DATABASE_URL'],
+      REDIS_URL: process.env['REDIS_URL'],
+      AZURE_ONLY: 'true',
     },
   },
   resolve: {

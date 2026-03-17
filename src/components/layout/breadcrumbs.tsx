@@ -22,7 +22,7 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
         <li>
           <Link
             href="/rooms"
-            className="flex items-center hover:text-neutral-900 transition-colors"
+            className="flex items-center transition-colors hover:text-neutral-900"
           >
             <Home className="h-4 w-4" />
             <span className="sr-only">Home</span>
@@ -30,11 +30,11 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
         </li>
         {items.map((item, index) => (
           <li key={index} className="flex items-center">
-            <ChevronRight className="h-4 w-4 mx-1 flex-shrink-0" />
+            <ChevronRight className="mx-1 h-4 w-4 flex-shrink-0" />
             {item.href && index < items.length - 1 ? (
               <Link
                 href={item.href}
-                className="hover:text-neutral-900 transition-colors truncate max-w-[200px]"
+                className="max-w-[200px] truncate transition-colors hover:text-neutral-900"
                 title={item.label}
               >
                 {item.label}
@@ -42,8 +42,8 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
             ) : (
               <span
                 className={clsx(
-                  'truncate max-w-[200px]',
-                  index === items.length - 1 && 'text-neutral-900 font-medium'
+                  'max-w-[200px] truncate',
+                  index === items.length - 1 && 'font-medium text-neutral-900'
                 )}
                 title={item.label}
                 aria-current={index === items.length - 1 ? 'page' : undefined}

@@ -11,7 +11,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { PageHeader } from '@/components/layout/page-header';
 
 interface NotificationPreferences {
@@ -48,10 +54,14 @@ export default function NotificationSettingsPage() {
       if (response.ok) {
         const data = await response.json();
         setPreferences({
-          emailOnDocumentViewed: data.preferences.emailOnDocumentViewed ?? defaultPreferences.emailOnDocumentViewed,
-          emailOnDocumentUploaded: data.preferences.emailOnDocumentUploaded ?? defaultPreferences.emailOnDocumentUploaded,
-          emailOnAccessRevoked: data.preferences.emailOnAccessRevoked ?? defaultPreferences.emailOnAccessRevoked,
-          emailDailyDigest: data.preferences.emailDailyDigest ?? defaultPreferences.emailDailyDigest,
+          emailOnDocumentViewed:
+            data.preferences.emailOnDocumentViewed ?? defaultPreferences.emailOnDocumentViewed,
+          emailOnDocumentUploaded:
+            data.preferences.emailOnDocumentUploaded ?? defaultPreferences.emailOnDocumentUploaded,
+          emailOnAccessRevoked:
+            data.preferences.emailOnAccessRevoked ?? defaultPreferences.emailOnAccessRevoked,
+          emailDailyDigest:
+            data.preferences.emailDailyDigest ?? defaultPreferences.emailDailyDigest,
           digestFrequency: data.preferences.digestFrequency ?? defaultPreferences.digestFrequency,
         });
       }
@@ -87,15 +97,18 @@ export default function NotificationSettingsPage() {
     }
   };
 
-  const updatePreference = <K extends keyof NotificationPreferences>(key: K, value: NotificationPreferences[K]) => {
+  const updatePreference = <K extends keyof NotificationPreferences>(
+    key: K,
+    value: NotificationPreferences[K]
+  ) => {
     setPreferences((prev) => ({ ...prev, [key]: value }));
   };
 
   if (isLoading) {
     return (
       <div className="p-6">
-        <Skeleton className="h-8 w-64 mb-4" />
-        <Skeleton className="h-4 w-96 mb-8" />
+        <Skeleton className="mb-4 h-8 w-64" />
+        <Skeleton className="mb-8 h-4 w-96" />
         <Skeleton className="h-96 w-full" />
       </div>
     );
@@ -105,19 +118,16 @@ export default function NotificationSettingsPage() {
     <>
       <PageHeader
         title="Notification Settings"
-        breadcrumbs={[
-          { label: 'Settings', href: '/settings' },
-          { label: 'Notifications' },
-        ]}
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Notifications' }]}
         actions={
           <Button variant="outline" onClick={() => router.push('/settings')}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Settings
           </Button>
         }
       />
 
-      <div className="p-6 max-w-3xl">
+      <div className="max-w-3xl p-6">
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
@@ -125,7 +135,10 @@ export default function NotificationSettingsPage() {
         )}
 
         {success && (
-          <Alert variant="default" className="mb-6 border-success-200 bg-success-50 text-success-800">
+          <Alert
+            variant="default"
+            className="mb-6 border-success-200 bg-success-50 text-success-800"
+          >
             <AlertDescription>Notification preferences saved successfully</AlertDescription>
           </Alert>
         )}
@@ -134,8 +147,8 @@ export default function NotificationSettingsPage() {
         <Card className="mb-6">
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center">
-                <Mail className="w-5 h-5 text-primary-600" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50">
+                <Mail className="h-5 w-5 text-primary-600" />
               </div>
               <div>
                 <CardTitle>Email Notifications</CardTitle>
@@ -147,7 +160,7 @@ export default function NotificationSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="emailDocViewed">Document Viewed</Label>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   Get notified when someone views a document
                 </p>
               </div>
@@ -163,7 +176,7 @@ export default function NotificationSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="emailDocUploaded">Document Uploaded</Label>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   Get notified when new documents are uploaded
                 </p>
               </div>
@@ -179,7 +192,7 @@ export default function NotificationSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="emailAccessRevoked">Access Revoked</Label>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   Get notified when your access to a room is revoked
                 </p>
               </div>
@@ -195,7 +208,7 @@ export default function NotificationSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="emailDailyDigest">Activity Digest</Label>
-                <p className="text-sm text-neutral-500 mt-1">
+                <p className="mt-1 text-sm text-neutral-500">
                   Receive periodic summaries of room activity
                 </p>
               </div>
@@ -211,9 +224,14 @@ export default function NotificationSettingsPage() {
                 <Label htmlFor="digestFrequency">Digest Frequency</Label>
                 <Select
                   value={preferences.digestFrequency}
-                  onValueChange={(value) => updatePreference('digestFrequency', value as NotificationPreferences['digestFrequency'])}
+                  onValueChange={(value) =>
+                    updatePreference(
+                      'digestFrequency',
+                      value as NotificationPreferences['digestFrequency']
+                    )
+                  }
                 >
-                  <SelectTrigger className="w-48 mt-2">
+                  <SelectTrigger className="mt-2 w-48">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -230,7 +248,7 @@ export default function NotificationSettingsPage() {
         {/* Save Button */}
         <div className="flex justify-end">
           <Button onClick={handleSave} loading={isSaving}>
-            <Save className="w-4 h-4 mr-2" />
+            <Save className="mr-2 h-4 w-4" />
             Save Preferences
           </Button>
         </div>

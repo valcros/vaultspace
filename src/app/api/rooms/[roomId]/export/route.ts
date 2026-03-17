@@ -8,8 +8,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+import { QUEUE_NAMES } from '@/workers/types';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -29,25 +30,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for org-scoped queries
+    const room = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
     });
 
     if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 });
     }
 
     const body = await request.json();
@@ -59,10 +56,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       folderId,
     } = body;
 
-    // Create export job
+    // Create export job on the QUEUE_NAMES.LOW queue (consumed by report worker type)
     const providers = getProviders();
     const jobId = await providers.job.addJob(
-      'report',
+      QUEUE_NAMES.LOW,
       'room.export',
       {
         roomId,
@@ -76,7 +73,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           folderId,
         },
       },
-      { priority: 'normal' }
+      { priority: QUEUE_NAMES.LOW }
     );
 
     return NextResponse.json(
@@ -89,10 +86,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   } catch (error) {
     console.error('[ExportAPI] POST error:', error);
-    return NextResponse.json(
-      { error: 'Failed to start export' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to start export' }, { status: 500 });
   }
 }
 
@@ -107,55 +101,60 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
-    }
-
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
     const jobId = searchParams.get('jobId');
 
-    if (jobId) {
-      // Get status of specific job
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      if (jobId) {
+        // Return early with room valid indicator to check job status outside tx
+        return { roomValid: true, checkJob: true };
+      }
+
+      // List recent export events for this room
+      const exportEvents = await tx.event.findMany({
+        where: {
+          organizationId: session.organizationId,
+          roomId,
+          eventType: 'ADMIN_EXPORT_INITIATED',
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      });
+
+      return { exportEvents };
+    });
+
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    if ('checkJob' in result && result.checkJob && jobId) {
+      // Get status of specific job from QUEUE_NAMES.LOW queue
       const providers = getProviders();
-      const status = await providers.job.getJobStatus('report', jobId);
+      const status = await providers.job.getJobStatus(QUEUE_NAMES.LOW, jobId);
 
       return NextResponse.json({ jobId, status });
     }
 
-    // List recent export events for this room
-    const exportEvents = await db.event.findMany({
-      where: {
-        organizationId: session.organizationId,
-        roomId,
-        eventType: 'ADMIN_EXPORT_INITIATED',
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    });
-
-    return NextResponse.json({ exports: exportEvents });
+    return NextResponse.json({ exports: result.exportEvents });
   } catch (error) {
     console.error('[ExportAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get export status' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get export status' }, { status: 500 });
   }
 }

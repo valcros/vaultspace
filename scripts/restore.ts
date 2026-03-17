@@ -158,9 +158,7 @@ async function main() {
 
   // Confirm restore
   if (!force && !dryRun) {
-    const confirmed = await confirm(
-      'WARNING: This will overwrite existing data. Continue?'
-    );
+    const confirmed = await confirm('WARNING: This will overwrite existing data. Continue?');
     if (!confirmed) {
       console.log('Restore cancelled.');
       process.exit(0);
@@ -206,7 +204,9 @@ async function main() {
   console.log(`  - users: ${users.length} records`);
 
   // Restore user organizations
-  const userOrgs = readJsonl<Record<string, unknown>>(join(databaseDir, 'user_organizations.jsonl'));
+  const userOrgs = readJsonl<Record<string, unknown>>(
+    join(databaseDir, 'user_organizations.jsonl')
+  );
   if (!dryRun && userOrgs.length > 0) {
     await prisma.userOrganization.createMany({ data: userOrgs as never[] });
   }
@@ -271,7 +271,9 @@ async function main() {
   console.log(`  - groups: ${groups.length} records`);
 
   // Restore group memberships
-  const memberships = readJsonl<Record<string, unknown>>(join(databaseDir, 'group_memberships.jsonl'));
+  const memberships = readJsonl<Record<string, unknown>>(
+    join(databaseDir, 'group_memberships.jsonl')
+  );
   if (!dryRun && memberships.length > 0) {
     await prisma.groupMembership.createMany({ data: memberships as never[] });
   }

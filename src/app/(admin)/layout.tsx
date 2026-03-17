@@ -54,11 +54,7 @@ async function getSession() {
   return { ...session, organization };
 }
 
-export default async function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
 
   if (!session) {
@@ -70,9 +66,5 @@ export default async function AdminLayout({
     email: session.user.email,
   };
 
-  return (
-    <AppShell user={user}>
-      {children}
-    </AppShell>
-  );
+  return <AppShell user={user}>{children}</AppShell>;
 }

@@ -3,10 +3,18 @@
  *
  * Sends email notifications for document events.
  * Called from API routes or background jobs after events occur.
+ *
+ * RLS Support:
+ * All org-scoped database queries are wrapped in withOrgContext()
+ * to ensure proper tenant isolation under strict RLS.
  */
 
+import type { Prisma } from '@prisma/client';
+
 import type { EmailProvider } from '@/providers/types';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
+
+type DbClient = typeof db | Prisma.TransactionClient;
 
 export interface NotificationConfig {
   emailProvider: EmailProvider;
@@ -55,25 +63,34 @@ export class EmailNotificationService {
    */
   async notifyDocumentViewed(event: DocumentViewedEvent): Promise<void> {
     try {
-      const adminsToNotify = await this.getAdminsForRoom(
+      // Use RLS context for all org-scoped queries
+      const { adminsToNotify, document } = await withOrgContext(
         event.organizationId,
-        event.roomId,
-        'emailOnDocumentViewed'
+        async (tx) => {
+          const adminsToNotify = await this.getAdminsForRoomWithTx(
+            tx,
+            event.organizationId,
+            event.roomId,
+            'emailOnDocumentViewed'
+          );
+
+          if (adminsToNotify.length === 0) {
+            return { adminsToNotify: [], document: null };
+          }
+
+          const document = await tx.document.findFirst({
+            where: {
+              id: event.documentId,
+              organizationId: event.organizationId,
+            },
+            select: { name: true },
+          });
+
+          return { adminsToNotify, document };
+        }
       );
 
-      if (adminsToNotify.length === 0) {
-        return;
-      }
-
-      const document = await db.document.findFirst({
-        where: {
-          id: event.documentId,
-          organizationId: event.organizationId,
-        },
-        select: { name: true },
-      });
-
-      if (!document) {
+      if (!document || adminsToNotify.length === 0) {
         return;
       }
 
@@ -103,42 +120,53 @@ export class EmailNotificationService {
    */
   async notifyDocumentUploaded(event: DocumentUploadedEvent): Promise<void> {
     try {
-      const adminsToNotify = await this.getAdminsForRoom(
+      // Use RLS context for all org-scoped queries
+      const { adminsToNotify, document, uploaderName } = await withOrgContext(
         event.organizationId,
-        event.roomId,
-        'emailOnDocumentUploaded'
+        async (tx) => {
+          const adminsToNotify = await this.getAdminsForRoomWithTx(
+            tx,
+            event.organizationId,
+            event.roomId,
+            'emailOnDocumentUploaded'
+          );
+
+          if (adminsToNotify.length === 0) {
+            return { adminsToNotify: [], document: null, uploaderName: 'Unknown user' };
+          }
+
+          const document = await tx.document.findFirst({
+            where: {
+              id: event.documentId,
+              organizationId: event.organizationId,
+            },
+            select: {
+              name: true,
+              fileSize: true,
+              mimeType: true,
+            },
+          });
+
+          // Get uploader info if available (user lookup is org-scoped via RLS users policy)
+          let uploaderName = 'Unknown user';
+          if (event.uploaderId) {
+            const uploader = await tx.user.findFirst({
+              where: { id: event.uploaderId },
+              select: { firstName: true, lastName: true },
+            });
+            if (uploader) {
+              uploaderName =
+                ((uploader.firstName || '') + ' ' + (uploader.lastName || '')).trim() ||
+                'Unknown user';
+            }
+          }
+
+          return { adminsToNotify, document, uploaderName };
+        }
       );
 
-      if (adminsToNotify.length === 0) {
+      if (!document || adminsToNotify.length === 0) {
         return;
-      }
-
-      const document = await db.document.findFirst({
-        where: {
-          id: event.documentId,
-          organizationId: event.organizationId,
-        },
-        select: {
-          name: true,
-          fileSize: true,
-          mimeType: true,
-        },
-      });
-
-      if (!document) {
-        return;
-      }
-
-      // Get uploader info if available
-      let uploaderName = 'Unknown user';
-      if (event.uploaderId) {
-        const uploader = await db.user.findUnique({
-          where: { id: event.uploaderId },
-          select: { firstName: true, lastName: true },
-        });
-        if (uploader) {
-          uploaderName = ((uploader.firstName || '') + ' ' + (uploader.lastName || '')).trim() || 'Unknown user';
-        }
       }
 
       const fileSize = this.formatFileSize(Number(document.fileSize));
@@ -167,44 +195,53 @@ export class EmailNotificationService {
    */
   async notifyAccessRevoked(event: AccessRevokedEvent): Promise<void> {
     try {
-      const user = await db.user.findUnique({
-        where: { id: event.targetUserId },
-        select: { email: true, firstName: true },
+      // Use RLS context for all org-scoped queries
+      const result = await withOrgContext(event.organizationId, async (tx) => {
+        const user = await tx.user.findFirst({
+          where: { id: event.targetUserId },
+          select: { email: true, firstName: true },
+        });
+
+        const room = await tx.room.findFirst({
+          where: { id: event.roomId, organizationId: event.organizationId },
+          select: { name: true },
+        });
+
+        if (!user || !room) {
+          return null;
+        }
+
+        // Check user's notification preferences
+        const userOrg = await tx.userOrganization.findFirst({
+          where: {
+            userId: event.targetUserId,
+            organizationId: event.organizationId,
+          },
+        });
+
+        if (userOrg) {
+          const prefs = await tx.notificationPreference.findUnique({
+            where: { userOrganizationId: userOrg.id },
+          });
+
+          if (prefs && !prefs.emailOnAccessRevoked) {
+            return null;
+          }
+        }
+
+        return { user, room };
       });
 
-      const room = await db.room.findFirst({
-        where: { id: event.roomId, organizationId: event.organizationId },
-        select: { name: true },
-      });
-
-      if (!user || !room) {
+      if (!result) {
         return;
       }
 
-      // Check user's notification preferences
-      const userOrg = await db.userOrganization.findFirst({
-        where: {
-          userId: event.targetUserId,
-          organizationId: event.organizationId,
-        },
-      });
-
-      if (userOrg) {
-        const prefs = await db.notificationPreference.findUnique({
-          where: { userOrganizationId: userOrg.id },
-        });
-
-        if (prefs && !prefs.emailOnAccessRevoked) {
-          return;
-        }
-      }
-
       await this.sendEmail({
-        to: user.email,
-        subject: 'Access Revoked: ' + room.name,
+        to: result.user.email,
+        subject: 'Access Revoked: ' + result.room.name,
         html: this.buildAccessRevokedEmail({
-          recipientName: user.firstName || 'User',
-          roomName: room.name,
+          recipientName: result.user.firstName || 'User',
+          roomName: result.room.name,
         }),
       });
     } catch (error) {
@@ -243,14 +280,29 @@ export class EmailNotificationService {
 
   /**
    * Get admins for a room who have the specified notification enabled
+   * Uses RLS context when called directly (wraps in withOrgContext)
    */
   private async getAdminsForRoom(
     organizationId: string,
     roomId: string,
     preferenceField: 'emailOnDocumentViewed' | 'emailOnDocumentUploaded'
   ): Promise<Array<{ email: string; name: string }>> {
+    return withOrgContext(organizationId, async (tx) => {
+      return this.getAdminsForRoomWithTx(tx, organizationId, roomId, preferenceField);
+    });
+  }
+
+  /**
+   * Get admins for a room with a provided transaction client (RLS-aware)
+   */
+  private async getAdminsForRoomWithTx(
+    tx: DbClient,
+    organizationId: string,
+    roomId: string,
+    preferenceField: 'emailOnDocumentViewed' | 'emailOnDocumentUploaded'
+  ): Promise<Array<{ email: string; name: string }>> {
     // Get organization admins
-    const orgAdmins = await db.userOrganization.findMany({
+    const orgAdmins = await tx.userOrganization.findMany({
       where: {
         organizationId,
         role: 'ADMIN',
@@ -262,7 +314,7 @@ export class EmailNotificationService {
     });
 
     // Get room-level admins
-    const roomAdmins = await db.roleAssignment.findMany({
+    const roomAdmins = await tx.roleAssignment.findMany({
       where: { organizationId, roomId, role: 'ADMIN', scopeType: 'ROOM' },
       include: {
         user: { select: { id: true, email: true, firstName: true, lastName: true } },
@@ -273,7 +325,7 @@ export class EmailNotificationService {
 
     // Process org admins
     for (const oa of orgAdmins) {
-      const prefs = await db.notificationPreference.findUnique({
+      const prefs = await tx.notificationPreference.findUnique({
         where: { userOrganizationId: oa.id },
       });
       const prefEnabled = prefs?.[preferenceField] ?? true;
@@ -286,16 +338,17 @@ export class EmailNotificationService {
     // Process room admins (only if not already in map)
     for (const ra of roomAdmins) {
       if (!adminMap.has(ra.user.id)) {
-        const userOrg = await db.userOrganization.findFirst({
+        const userOrg = await tx.userOrganization.findFirst({
           where: { userId: ra.user.id, organizationId },
         });
         if (userOrg) {
-          const prefs = await db.notificationPreference.findUnique({
+          const prefs = await tx.notificationPreference.findUnique({
             where: { userOrganizationId: userOrg.id },
           });
           const prefEnabled = prefs?.[preferenceField] ?? true;
           if (prefEnabled) {
-            const name = ((ra.user.firstName || '') + ' ' + (ra.user.lastName || '')).trim() || 'Admin';
+            const name =
+              ((ra.user.firstName || '') + ' ' + (ra.user.lastName || '')).trim() || 'Admin';
             adminMap.set(ra.user.id, { email: ra.user.email, name });
           }
         }
@@ -337,7 +390,9 @@ export class EmailNotificationService {
       '<p style="margin: 8px 0 0;"><strong>Viewer:</strong> ' + data.viewerEmail + '</p>',
       '<p style="margin: 8px 0 0;"><strong>Time:</strong> ' + data.viewTime + '</p>',
       '</div>',
-      '<p><a href="' + data.roomUrl + '" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Room</a></p>',
+      '<p><a href="' +
+        data.roomUrl +
+        '" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Room</a></p>',
       '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
       '<p style="color: #64748b; font-size: 12px;">Manage notification preferences in account settings.</p>',
       '</div>',
@@ -366,7 +421,9 @@ export class EmailNotificationService {
       '<p style="margin: 8px 0 0;"><strong>Size:</strong> ' + data.fileSize + '</p>',
       '<p style="margin: 8px 0 0;"><strong>Type:</strong> ' + data.fileType + '</p>',
       '</div>',
-      '<p><a href="' + data.roomUrl + '" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Room</a></p>',
+      '<p><a href="' +
+        data.roomUrl +
+        '" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Room</a></p>',
       '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
       '<p style="color: #64748b; font-size: 12px;">Manage notification preferences in account settings.</p>',
       '</div>',
@@ -405,12 +462,22 @@ export class EmailNotificationService {
     return [
       '<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">',
       '<h2 style="color: #1e293b;">You\'ve Been Invited to VaultSpace</h2>',
-      '<p>' + data.inviterName + ' has invited you to join <strong>' + data.organizationName + '</strong> as a ' + data.role.toLowerCase() + '.</p>',
+      '<p>' +
+        data.inviterName +
+        ' has invited you to join <strong>' +
+        data.organizationName +
+        '</strong> as a ' +
+        data.role.toLowerCase() +
+        '.</p>',
       '<p>VaultSpace is a secure virtual data room for sharing confidential documents.</p>',
       '<div style="margin: 24px 0;">',
-      '<a href="' + data.invitationUrl + '" style="background: #2563eb; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 500;">Accept Invitation</a>',
+      '<a href="' +
+        data.invitationUrl +
+        '" style="background: #2563eb; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 500;">Accept Invitation</a>',
       '</div>',
-      '<p style="color: #64748b; font-size: 14px;">This invitation expires on ' + data.expiryDate + '.</p>',
+      '<p style="color: #64748b; font-size: 14px;">This invitation expires on ' +
+        data.expiryDate +
+        '.</p>',
       '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
       '<p style="color: #94a3b8; font-size: 12px;">If you did not expect this invitation, you can safely ignore this email.</p>',
       '</div>',

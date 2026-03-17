@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -27,63 +27,63 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const session = await requireAuth();
     const { roomId, documentId } = await context.params;
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
 
-    // Get document with versions
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          take: 10,
-          include: {
-            previewAssets: {
-              where: { assetType: 'THUMBNAIL' },
-              take: 1,
+      // Get document with versions
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          roomId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 10,
+            include: {
+              previewAssets: {
+                where: { assetType: 'THUMBNAIL' },
+                take: 1,
+              },
+            },
+          },
+          folder: {
+            select: {
+              id: true,
+              name: true,
+              path: true,
             },
           },
         },
-        folder: {
-          select: {
-            id: true,
-            name: true,
-            path: true,
-          },
-        },
-      },
+      });
+
+      if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      return { document };
     });
 
-    if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ document });
+    return NextResponse.json({ document: result.document });
   } catch (error) {
     console.error('[DocumentAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get document' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get document' }, { status: 500 });
   }
 }
 
@@ -98,122 +98,105 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
-    }
-
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
-
-    // Get current document
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await request.json();
-    const {
-      name,
-      tags,
-      customMetadata,
-      displayOrder,
-      allowDownload,
-      folderId,
-      batesNumber,
-    } = body;
+    const { name, tags, customMetadata, displayOrder, allowDownload, folderId, batesNumber } = body;
 
     // Validate tags if provided
     if (tags !== undefined) {
       if (!Array.isArray(tags) || !tags.every((t) => typeof t === 'string')) {
-        return NextResponse.json(
-          { error: 'Tags must be an array of strings' },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: 'Tags must be an array of strings' }, { status: 400 });
       }
     }
 
-    // Validate folder if provided
-    if (folderId) {
-      const folder = await db.folder.findFirst({
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
         where: {
-          id: folderId,
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get current document
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
           roomId,
           organizationId: session.organizationId,
         },
       });
 
-      if (!folder) {
-        return NextResponse.json(
-          { error: 'Folder not found' },
-          { status: 404 }
-        );
+      if (!document) {
+        return { error: 'Document not found', status: 404 };
       }
-    }
 
-    // Update document
-    const updatedDocument = await db.document.update({
-      where: { id: documentId },
-      data: {
-        ...(name && { name: name.trim() }),
-        ...(tags !== undefined && { tags }),
-        ...(customMetadata !== undefined && { customMetadata }),
-        ...(displayOrder !== undefined && { displayOrder }),
-        ...(allowDownload !== undefined && { allowDownload }),
-        ...(folderId !== undefined && { folderId }),
-        ...(batesNumber !== undefined && { batesNumber }),
-      },
-    });
+      // Validate folder if provided
+      if (folderId) {
+        const folder = await tx.folder.findFirst({
+          where: {
+            id: folderId,
+            roomId,
+            organizationId: session.organizationId,
+          },
+        });
 
-    // Update search index with new metadata
-    const searchIndex = await db.searchIndex.findFirst({
-      where: {
-        documentId,
-        organizationId: session.organizationId,
-      },
-    });
+        if (!folder) {
+          return { error: 'Folder not found', status: 404 };
+        }
+      }
 
-    if (searchIndex) {
-      await db.searchIndex.update({
-        where: { id: searchIndex.id },
+      // Update document
+      const updatedDocument = await tx.document.update({
+        where: { id: documentId },
         data: {
+          ...(name && { name: name.trim() }),
           ...(tags !== undefined && { tags }),
           ...(customMetadata !== undefined && { customMetadata }),
-          ...(name && { documentTitle: name.trim() }),
+          ...(displayOrder !== undefined && { displayOrder }),
+          ...(allowDownload !== undefined && { allowDownload }),
+          ...(folderId !== undefined && { folderId }),
+          ...(batesNumber !== undefined && { batesNumber }),
         },
       });
+
+      // Update search index with new metadata
+      const searchIndex = await tx.searchIndex.findFirst({
+        where: {
+          documentId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (searchIndex) {
+        await tx.searchIndex.update({
+          where: { id: searchIndex.id },
+          data: {
+            ...(tags !== undefined && { tags }),
+            ...(customMetadata !== undefined && { customMetadata }),
+            ...(name && { documentTitle: name.trim() }),
+          },
+        });
+      }
+
+      return { document: updatedDocument };
+    });
+
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ document: updatedDocument });
+    return NextResponse.json({ document: result.document });
   } catch (error) {
     console.error('[DocumentAPI] PATCH error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update document' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update document' }, { status: 500 });
   }
 }
 
@@ -228,58 +211,55 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get current document
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      // Soft delete - move to DELETED status
+      await tx.document.update({
+        where: { id: documentId },
+        data: {
+          status: 'DELETED',
+          deletedAt: new Date(),
+        },
+      });
+
+      return { success: true };
     });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
-
-    // Get current document
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
-    }
-
-    // Soft delete - move to DELETED status
-    await db.document.update({
-      where: { id: documentId },
-      data: {
-        status: 'DELETED',
-        deletedAt: new Date(),
-      },
-    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[DocumentAPI] DELETE error:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete document' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to delete document' }, { status: 500 });
   }
 }

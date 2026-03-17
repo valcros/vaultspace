@@ -31,16 +31,8 @@ export function Breadcrumbs({ items, className = '' }: BreadcrumbsProps) {
       <ol className="flex items-center space-x-2">
         {/* Home link */}
         <li>
-          <Link
-            href="/"
-            className="text-gray-500 hover:text-gray-700 transition-colors"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+          <Link href="/" className="text-gray-500 transition-colors hover:text-gray-700">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -56,34 +48,27 @@ export function Breadcrumbs({ items, className = '' }: BreadcrumbsProps) {
           <li key={index} className="flex items-center">
             {/* Separator */}
             <svg
-              className="w-4 h-4 text-gray-400 mx-2"
+              className="mx-2 h-4 w-4 text-gray-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 5l7 7-7 7"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
 
             {/* Breadcrumb item */}
             {item.href && !item.current ? (
               <Link
                 href={item.href}
-                className="text-gray-500 hover:text-gray-700 transition-colors truncate max-w-xs"
+                className="max-w-xs truncate text-gray-500 transition-colors hover:text-gray-700"
                 title={item.label}
               >
                 {item.label}
               </Link>
             ) : (
               <span
-                className={`truncate max-w-xs ${
-                  item.current
-                    ? 'text-gray-900 font-medium'
-                    : 'text-gray-500'
+                className={`max-w-xs truncate ${
+                  item.current ? 'font-medium text-gray-900' : 'text-gray-500'
                 }`}
                 title={item.label}
                 aria-current={item.current ? 'page' : undefined}

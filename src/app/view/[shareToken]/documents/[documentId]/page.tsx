@@ -137,15 +137,15 @@ export default function ViewerDocumentPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex flex-col">
+      <div className="flex min-h-screen flex-col bg-neutral-900">
         <div className="border-b border-neutral-700 bg-neutral-800">
-          <div className="max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-4 py-3">
             <Skeleton className="h-6 w-48 bg-neutral-700" />
             <Skeleton className="h-8 w-32 bg-neutral-700" />
           </div>
         </div>
-        <div className="flex-1 flex items-center justify-center">
-          <Skeleton className="w-[600px] h-[800px] bg-neutral-800" />
+        <div className="flex flex-1 items-center justify-center">
+          <Skeleton className="h-[800px] w-[600px] bg-neutral-800" />
         </div>
       </div>
     );
@@ -156,24 +156,24 @@ export default function ViewerDocumentPage() {
   }
 
   return (
-    <div ref={viewerRef} className="min-h-screen bg-neutral-900 flex flex-col">
+    <div ref={viewerRef} className="flex min-h-screen flex-col bg-neutral-900">
       {/* Header */}
-      <div className="border-b border-neutral-700 bg-neutral-800 sticky top-0 z-20">
-        <div className="max-w-screen-2xl mx-auto px-4 py-3">
+      <div className="sticky top-0 z-20 border-b border-neutral-700 bg-neutral-800">
+        <div className="mx-auto max-w-screen-2xl px-4 py-3">
           <div className="flex items-center justify-between">
             {/* Left: Back & Title */}
-            <div className="flex items-center gap-4 min-w-0">
+            <div className="flex min-w-0 items-center gap-4">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleBack}
-                className="text-neutral-300 hover:text-white hover:bg-neutral-700"
+                className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
               >
-                <ArrowLeft className="w-4 h-4 mr-2" />
+                <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
               <div className="h-6 w-px bg-neutral-600" />
-              <h1 className="text-white font-medium truncate">{document.name}</h1>
+              <h1 className="truncate font-medium text-white">{document.name}</h1>
             </div>
 
             {/* Center: Page Navigation */}
@@ -183,11 +183,11 @@ export default function ViewerDocumentPage() {
                 size="sm"
                 onClick={handlePrevPage}
                 disabled={currentPage === 1}
-                className="text-neutral-300 hover:text-white hover:bg-neutral-700 disabled:opacity-50"
+                className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="text-neutral-300 text-sm min-w-[80px] text-center">
+              <span className="min-w-[80px] text-center text-sm text-neutral-300">
                 {currentPage} / {document.pageCount}
               </span>
               <Button
@@ -195,9 +195,9 @@ export default function ViewerDocumentPage() {
                 size="sm"
                 onClick={handleNextPage}
                 disabled={currentPage === document.pageCount}
-                className="text-neutral-300 hover:text-white hover:bg-neutral-700 disabled:opacity-50"
+                className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
 
@@ -208,53 +208,47 @@ export default function ViewerDocumentPage() {
                 size="sm"
                 onClick={handleZoomOut}
                 disabled={zoom <= 50}
-                className="text-neutral-300 hover:text-white hover:bg-neutral-700 disabled:opacity-50"
+                className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
               >
-                <ZoomOut className="w-4 h-4" />
+                <ZoomOut className="h-4 w-4" />
               </Button>
-              <span className="text-neutral-300 text-sm min-w-[50px] text-center">
-                {zoom}%
-              </span>
+              <span className="min-w-[50px] text-center text-sm text-neutral-300">{zoom}%</span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleZoomIn}
                 disabled={zoom >= 200}
-                className="text-neutral-300 hover:text-white hover:bg-neutral-700 disabled:opacity-50"
+                className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
               >
-                <ZoomIn className="w-4 h-4" />
+                <ZoomIn className="h-4 w-4" />
               </Button>
-              <div className="h-6 w-px bg-neutral-600 mx-2" />
+              <div className="mx-2 h-6 w-px bg-neutral-600" />
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleRotate}
-                className="text-neutral-300 hover:text-white hover:bg-neutral-700"
+                className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
               >
-                <RotateCw className="w-4 h-4" />
+                <RotateCw className="h-4 w-4" />
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleFullscreen}
-                className="text-neutral-300 hover:text-white hover:bg-neutral-700"
+                className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
               >
-                {isFullscreen ? (
-                  <X className="w-4 h-4" />
-                ) : (
-                  <Maximize2 className="w-4 h-4" />
-                )}
+                {isFullscreen ? <X className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </Button>
               {document.downloadEnabled && (
                 <>
-                  <div className="h-6 w-px bg-neutral-600 mx-2" />
+                  <div className="mx-2 h-6 w-px bg-neutral-600" />
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={handleDownload}
-                    className="text-neutral-300 hover:text-white hover:bg-neutral-700"
+                    className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
                   >
-                    <Download className="w-4 h-4 mr-2" />
+                    <Download className="mr-2 h-4 w-4" />
                     Download
                   </Button>
                 </>
@@ -265,7 +259,7 @@ export default function ViewerDocumentPage() {
       </div>
 
       {/* Document Viewer */}
-      <div className="flex-1 overflow-auto p-8 flex items-start justify-center">
+      <div className="flex flex-1 items-start justify-center overflow-auto p-8">
         <div
           className="relative bg-white shadow-2xl"
           style={{
@@ -287,9 +281,9 @@ export default function ViewerDocumentPage() {
 
           {/* Watermark Overlay */}
           {document.watermarkText && (
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
               <div
-                className="text-4xl font-bold text-neutral-400/20 transform -rotate-45 whitespace-nowrap select-none"
+                className="-rotate-45 transform select-none whitespace-nowrap text-4xl font-bold text-neutral-400/20"
                 style={{
                   textShadow: '0 0 20px rgba(0,0,0,0.1)',
                 }}
@@ -309,7 +303,7 @@ export default function ViewerDocumentPage() {
 
       {/* Footer */}
       <div className="border-t border-neutral-700 bg-neutral-800">
-        <div className="max-w-screen-2xl mx-auto px-4 py-2 text-center text-xs text-neutral-500">
+        <div className="mx-auto max-w-screen-2xl px-4 py-2 text-center text-xs text-neutral-500">
           Use arrow keys to navigate • Protected by VaultSpace
         </div>
       </div>

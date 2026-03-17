@@ -102,7 +102,10 @@ export class SharpPreviewProvider implements PreviewProvider {
       // If we need to truncate pages, create a new PDF with only the first maxPages
       if (totalPages > maxPages) {
         const newPdf = await PDFDocument.create();
-        const pages = await newPdf.copyPages(pdfDoc, Array.from({ length: maxPages }, (_, i) => i));
+        const pages = await newPdf.copyPages(
+          pdfDoc,
+          Array.from({ length: maxPages }, (_, i) => i)
+        );
         pages.forEach((page) => newPdf.addPage(page));
         outputPdf = Buffer.from(await newPdf.save());
       }
@@ -172,7 +175,7 @@ export class SharpPreviewProvider implements PreviewProvider {
 
     // Determine actual output format - images can only produce image formats, not PDF
     // When PDF is requested, we produce PNG as the closest equivalent
-    const actualFormat = format === 'pdf' ? 'png' : (format === 'jpeg' ? 'jpeg' : 'png');
+    const actualFormat = format === 'pdf' ? 'png' : format === 'jpeg' ? 'jpeg' : 'png';
 
     // Apply format conversion
     switch (actualFormat) {
@@ -202,7 +205,11 @@ export class SharpPreviewProvider implements PreviewProvider {
     };
   }
 
-  private async convertText(data: Buffer, _format: string, _quality: number): Promise<PreviewResult> {
+  private async convertText(
+    data: Buffer,
+    _format: string,
+    _quality: number
+  ): Promise<PreviewResult> {
     const text = data.toString('utf-8').substring(0, 2000);
     const lines = text.split('\n').slice(0, 40);
 
@@ -228,9 +235,7 @@ export class SharpPreviewProvider implements PreviewProvider {
     `;
 
     // Text previews always output PNG (the actual format Sharp produces)
-    const outputBuffer = await sharp(Buffer.from(svg))
-      .png()
-      .toBuffer();
+    const outputBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
 
     return {
       pages: [

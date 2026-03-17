@@ -7,7 +7,7 @@
 
 import type { Group, GroupMembership, Prisma } from '@prisma/client';
 
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 
 import type { PaginatedResult, PaginationOptions, ServiceContext } from './types';
@@ -78,28 +78,31 @@ export class GroupService {
       throw new ValidationError('Group name must be 100 characters or less');
     }
 
-    // Check for duplicate name
-    const existing = await db.group.findFirst({
-      where: {
-        organizationId,
-        name: options.name.trim(),
-      },
+    // Use RLS context for all org-scoped operations
+    const group = await withOrgContext(organizationId, async (tx) => {
+      // Check for duplicate name
+      const existing = await tx.group.findFirst({
+        where: {
+          organizationId,
+          name: options.name.trim(),
+        },
+      });
+
+      if (existing) {
+        throw new ConflictError('A group with this name already exists');
+      }
+
+      // Create group
+      return tx.group.create({
+        data: {
+          organizationId,
+          name: options.name.trim(),
+          description: options.description?.trim(),
+        },
+      });
     });
 
-    if (existing) {
-      throw new ConflictError('A group with this name already exists');
-    }
-
-    // Create group
-    const group = await db.group.create({
-      data: {
-        organizationId,
-        name: options.name.trim(),
-        description: options.description?.trim(),
-      },
-    });
-
-    // Emit event
+    // Emit event (EventBus wraps in RLS context internally)
     await eventBus.emit('PERMISSION_GRANTED', {
       description: `Created group: ${group.name}`,
       metadata: {
@@ -119,26 +122,30 @@ export class GroupService {
   async getById(ctx: ServiceContext, groupId: string): Promise<GroupWithCount | null> {
     const { session } = ctx;
 
-    const group = await db.group.findFirst({
-      where: {
-        id: groupId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        _count: {
-          select: { memberships: true },
+    // Use RLS context for org-scoped query
+    return withOrgContext(session.organizationId, async (tx) => {
+      return tx.group.findFirst({
+        where: {
+          id: groupId,
+          organizationId: session.organizationId,
         },
-      },
+        include: {
+          _count: {
+            select: { memberships: true },
+          },
+        },
+      });
     });
-
-    return group;
   }
 
   /**
    * List groups in the organization
    * @readonly
    */
-  async list(ctx: ServiceContext, options: GroupListOptions = {}): Promise<PaginatedResult<GroupWithCount>> {
+  async list(
+    ctx: ServiceContext,
+    options: GroupListOptions = {}
+  ): Promise<PaginatedResult<GroupWithCount>> {
     const { session } = ctx;
     const { search, offset = 0, limit = 50 } = options;
 
@@ -153,20 +160,23 @@ export class GroupService {
       }),
     };
 
-    // Get total count
-    const total = await db.group.count({ where });
+    // Use RLS context for org-scoped queries
+    const { total, groups } = await withOrgContext(session.organizationId, async (tx) => {
+      const total = await tx.group.count({ where });
 
-    // Get groups with counts
-    const groups = await db.group.findMany({
-      where,
-      include: {
-        _count: {
-          select: { memberships: true },
+      const groups = await tx.group.findMany({
+        where,
+        include: {
+          _count: {
+            select: { memberships: true },
+          },
         },
-      },
-      orderBy: { name: 'asc' },
-      skip: offset,
-      take: limit,
+        orderBy: { name: 'asc' },
+        skip: offset,
+        take: limit,
+      });
+
+      return { total, groups };
     });
 
     return {
@@ -190,53 +200,56 @@ export class GroupService {
       throw new ConflictError('Only admins can update groups');
     }
 
-    // Get the group
-    const group = await db.group.findFirst({
-      where: {
-        id: groupId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!group) {
-      throw new NotFoundError('Group not found');
-    }
-
-    // Build update data
-    const data: Prisma.GroupUpdateInput = {};
-
-    if (options.name !== undefined) {
-      if (!options.name.trim()) {
-        throw new ValidationError('Group name cannot be empty');
-      }
-
-      // Check for duplicate name
-      const existing = await db.group.findFirst({
+    // Use RLS context for all org-scoped operations
+    const updated = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the group
+      const group = await tx.group.findFirst({
         where: {
+          id: groupId,
           organizationId: session.organizationId,
-          name: options.name.trim(),
-          id: { not: groupId },
         },
       });
 
-      if (existing) {
-        throw new ConflictError('A group with this name already exists');
+      if (!group) {
+        throw new NotFoundError('Group not found');
       }
 
-      data.name = options.name.trim();
-    }
+      // Build update data
+      const data: Prisma.GroupUpdateInput = {};
 
-    if (options.description !== undefined) {
-      data.description = options.description?.trim() || null;
-    }
+      if (options.name !== undefined) {
+        if (!options.name.trim()) {
+          throw new ValidationError('Group name cannot be empty');
+        }
 
-    // Update group
-    const updated = await db.group.update({
-      where: { id: groupId },
-      data,
+        // Check for duplicate name
+        const existing = await tx.group.findFirst({
+          where: {
+            organizationId: session.organizationId,
+            name: options.name.trim(),
+            id: { not: groupId },
+          },
+        });
+
+        if (existing) {
+          throw new ConflictError('A group with this name already exists');
+        }
+
+        data.name = options.name.trim();
+      }
+
+      if (options.description !== undefined) {
+        data.description = options.description?.trim() || null;
+      }
+
+      // Update group
+      return tx.group.update({
+        where: { id: groupId },
+        data,
+      });
     });
 
-    // Emit event
+    // Emit event (EventBus wraps in RLS context internally)
     await eventBus.emit('PERMISSION_UPDATED', {
       description: `Updated group: ${updated.name}`,
       metadata: {
@@ -260,24 +273,29 @@ export class GroupService {
       throw new ConflictError('Only admins can delete groups');
     }
 
-    // Get the group
-    const group = await db.group.findFirst({
-      where: {
-        id: groupId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for all org-scoped operations
+    const group = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the group
+      const group = await tx.group.findFirst({
+        where: {
+          id: groupId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!group) {
+        throw new NotFoundError('Group not found');
+      }
+
+      // Delete group (cascades to memberships)
+      await tx.group.delete({
+        where: { id: groupId },
+      });
+
+      return group;
     });
 
-    if (!group) {
-      throw new NotFoundError('Group not found');
-    }
-
-    // Delete group (cascades to memberships)
-    await db.group.delete({
-      where: { id: groupId },
-    });
-
-    // Emit event
+    // Emit event (EventBus wraps in RLS context internally)
     await eventBus.emit('PERMISSION_REVOKED', {
       description: `Deleted group: ${group.name}`,
       metadata: {
@@ -300,52 +318,60 @@ export class GroupService {
       throw new ConflictError('Only admins can manage group members');
     }
 
-    // Get the group
-    const group = await db.group.findFirst({
-      where: {
-        id: groupId,
-        organizationId: session.organizationId,
-      },
-    });
+    // Use RLS context for all org-scoped operations
+    const { membership, group, userMembership } = await withOrgContext(
+      session.organizationId,
+      async (tx) => {
+        // Get the group
+        const group = await tx.group.findFirst({
+          where: {
+            id: groupId,
+            organizationId: session.organizationId,
+          },
+        });
 
-    if (!group) {
-      throw new NotFoundError('Group not found');
-    }
+        if (!group) {
+          throw new NotFoundError('Group not found');
+        }
 
-    // Verify user exists and is in the organization
-    const userMembership = await db.userOrganization.findFirst({
-      where: {
-        userId,
-        organizationId: session.organizationId,
-        isActive: true,
-      },
-      include: {
-        user: true,
-      },
-    });
+        // Verify user exists and is in the organization
+        const userMembership = await tx.userOrganization.findFirst({
+          where: {
+            userId,
+            organizationId: session.organizationId,
+            isActive: true,
+          },
+          include: {
+            user: true,
+          },
+        });
 
-    if (!userMembership) {
-      throw new NotFoundError('User not found in organization');
-    }
+        if (!userMembership) {
+          throw new NotFoundError('User not found in organization');
+        }
 
-    // Check if already a member
-    const existing = await db.groupMembership.findFirst({
-      where: { groupId, userId },
-    });
+        // Check if already a member
+        const existing = await tx.groupMembership.findFirst({
+          where: { groupId, userId },
+        });
 
-    if (existing) {
-      throw new ConflictError('User is already a member of this group');
-    }
+        if (existing) {
+          throw new ConflictError('User is already a member of this group');
+        }
 
-    // Add membership
-    const membership = await db.groupMembership.create({
-      data: {
-        groupId,
-        userId,
-      },
-    });
+        // Add membership
+        const membership = await tx.groupMembership.create({
+          data: {
+            groupId,
+            userId,
+          },
+        });
 
-    // Emit event
+        return { membership, group, userMembership };
+      }
+    );
+
+    // Emit event (EventBus wraps in RLS context internally)
     await eventBus.emit('PERMISSION_GRANTED', {
       description: `Added ${userMembership.user.email} to group: ${group.name}`,
       metadata: {
@@ -372,36 +398,41 @@ export class GroupService {
       throw new ConflictError('Only admins can manage group members');
     }
 
-    // Get the group
-    const group = await db.group.findFirst({
-      where: {
-        id: groupId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for all org-scoped operations
+    const { group, membership } = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the group
+      const group = await tx.group.findFirst({
+        where: {
+          id: groupId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!group) {
+        throw new NotFoundError('Group not found');
+      }
+
+      // Get membership
+      const membership = await tx.groupMembership.findFirst({
+        where: { groupId, userId },
+        include: {
+          user: true,
+        },
+      });
+
+      if (!membership) {
+        throw new NotFoundError('User is not a member of this group');
+      }
+
+      // Remove membership
+      await tx.groupMembership.delete({
+        where: { id: membership.id },
+      });
+
+      return { group, membership };
     });
 
-    if (!group) {
-      throw new NotFoundError('Group not found');
-    }
-
-    // Get membership
-    const membership = await db.groupMembership.findFirst({
-      where: { groupId, userId },
-      include: {
-        user: true,
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundError('User is not a member of this group');
-    }
-
-    // Remove membership
-    await db.groupMembership.delete({
-      where: { id: membership.id },
-    });
-
-    // Emit event
+    // Emit event (EventBus wraps in RLS context internally)
     await eventBus.emit('PERMISSION_REVOKED', {
       description: `Removed ${membership.user.email} from group: ${group.name}`,
       metadata: {
@@ -426,39 +457,44 @@ export class GroupService {
     const { session } = ctx;
     const { offset = 0, limit = 50 } = options;
 
-    // Get the group
-    const group = await db.group.findFirst({
-      where: {
-        id: groupId,
-        organizationId: session.organizationId,
-      },
-    });
+    // Use RLS context for all org-scoped operations
+    const { total, memberships } = await withOrgContext(session.organizationId, async (tx) => {
+      // Get the group
+      const group = await tx.group.findFirst({
+        where: {
+          id: groupId,
+          organizationId: session.organizationId,
+        },
+      });
 
-    if (!group) {
-      throw new NotFoundError('Group not found');
-    }
+      if (!group) {
+        throw new NotFoundError('Group not found');
+      }
 
-    // Get total count
-    const total = await db.groupMembership.count({
-      where: { groupId },
-    });
+      // Get total count
+      const total = await tx.groupMembership.count({
+        where: { groupId },
+      });
 
-    // Get memberships with user info
-    const memberships = await db.groupMembership.findMany({
-      where: { groupId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
+      // Get memberships with user info
+      const memberships = await tx.groupMembership.findMany({
+        where: { groupId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'asc' },
-      skip: offset,
-      take: limit,
+        orderBy: { createdAt: 'asc' },
+        skip: offset,
+        take: limit,
+      });
+
+      return { total, memberships };
     });
 
     const items: GroupMemberInfo[] = memberships.map((m) => ({
@@ -485,16 +521,19 @@ export class GroupService {
   async getUserGroups(ctx: ServiceContext, userId: string): Promise<Group[]> {
     const { session } = ctx;
 
-    const memberships = await db.groupMembership.findMany({
-      where: {
-        userId,
-        group: {
-          organizationId: session.organizationId,
+    // Use RLS context for org-scoped query
+    const memberships = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.groupMembership.findMany({
+        where: {
+          userId,
+          group: {
+            organizationId: session.organizationId,
+          },
         },
-      },
-      include: {
-        group: true,
-      },
+        include: {
+          group: true,
+        },
+      });
     });
 
     return memberships.map((m) => m.group);

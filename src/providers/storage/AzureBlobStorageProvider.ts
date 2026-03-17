@@ -121,11 +121,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
     return blobClient.exists();
   }
 
-  async getSignedUrl(
-    bucket: string,
-    key: string,
-    expiresInSeconds: number
-  ): Promise<string> {
+  async getSignedUrl(bucket: string, key: string, expiresInSeconds: number): Promise<string> {
     const containerClient = await this.getContainerClient(bucket);
     const blobClient = containerClient.getBlobClient(key);
 

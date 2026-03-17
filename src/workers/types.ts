@@ -136,6 +136,7 @@ export const JOB_NAMES = {
 
   // Export
   EXPORT_ZIP: 'export.zip',
+  ROOM_EXPORT: 'room.export',
 
   // Cleanup
   CLEANUP_EXPIRED: 'cleanup.expired',

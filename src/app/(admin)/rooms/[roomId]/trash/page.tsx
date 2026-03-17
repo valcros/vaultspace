@@ -121,16 +121,16 @@ export default function RoomTrashPage() {
 
   const getFileIcon = (mimeType: string) => {
     if (mimeType.includes('folder')) {
-      return <FolderOpen className="w-5 h-5 text-neutral-500" />;
+      return <FolderOpen className="h-5 w-5 text-neutral-500" />;
     }
-    return <FileText className="w-5 h-5 text-neutral-500" />;
+    return <FileText className="h-5 w-5 text-neutral-500" />;
   };
 
   if (isLoading) {
     return (
       <div className="p-6">
-        <Skeleton className="h-8 w-64 mb-4" />
-        <Skeleton className="h-4 w-96 mb-8" />
+        <Skeleton className="mb-4 h-8 w-64" />
+        <Skeleton className="mb-8 h-4 w-96" />
         <div className="space-y-4">
           {[...Array(5)].map((_, i) => (
             <Skeleton key={i} className="h-20" />
@@ -152,7 +152,7 @@ export default function RoomTrashPage() {
         ]}
         actions={
           <Button variant="outline" onClick={() => router.push(`/rooms/${roomId}`)}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Room
           </Button>
         }
@@ -163,12 +163,12 @@ export default function RoomTrashPage() {
         <Card className="mb-6 border-warning-200 bg-warning-50">
           <CardContent className="py-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-warning-600 mt-0.5" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-warning-600" />
               <div>
                 <p className="text-sm font-medium text-warning-900">
                   Documents are permanently deleted after {trashData?.retentionDays ?? 30} days
                 </p>
-                <p className="text-sm text-warning-700 mt-1">
+                <p className="mt-1 text-sm text-warning-700">
                   Restore documents before they are permanently removed. This action cannot be
                   undone.
                 </p>
@@ -180,9 +180,9 @@ export default function RoomTrashPage() {
         {/* Deleted Documents */}
         {!trashData || trashData.documents.length === 0 ? (
           <Card className="p-12 text-center">
-            <Trash2 className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-            <h3 className="text-lg font-semibold text-neutral-900 mb-2">Trash is empty</h3>
-            <p className="text-neutral-500 max-w-sm mx-auto">
+            <Trash2 className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900">Trash is empty</h3>
+            <p className="mx-auto max-w-sm text-neutral-500">
               Deleted documents will appear here. They can be restored within{' '}
               {trashData?.retentionDays ?? 30} days.
             </p>
@@ -191,8 +191,8 @@ export default function RoomTrashPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-neutral-100 flex items-center justify-center">
-                  <Trash2 className="w-5 h-5 text-neutral-600" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100">
+                  <Trash2 className="h-5 w-5 text-neutral-600" />
                 </div>
                 <div>
                   <CardTitle>Deleted Documents</CardTitle>
@@ -208,23 +208,23 @@ export default function RoomTrashPage() {
                 {trashData.documents.map((doc) => (
                   <div
                     key={doc.id}
-                    className="flex items-center gap-4 p-4 border rounded-lg hover:bg-neutral-50 transition-colors"
+                    className="flex items-center gap-4 rounded-lg border p-4 transition-colors hover:bg-neutral-50"
                   >
-                    <div className="w-10 h-10 rounded-lg bg-neutral-100 flex items-center justify-center">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100">
                       {getFileIcon(doc.mimeType)}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{doc.name}</p>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-neutral-500">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{doc.name}</p>
+                      <div className="mt-1 flex items-center gap-3 text-xs text-neutral-500">
                         <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
+                          <Clock className="h-3 w-3" />
                           Deleted {formatDate(doc.deletedAt)}
                         </span>
                         {doc.folder && (
                           <>
                             <span>•</span>
                             <span className="flex items-center gap-1">
-                              <FolderOpen className="w-3 h-3" />
+                              <FolderOpen className="h-3 w-3" />
                               {doc.folder.name}
                             </span>
                           </>
@@ -246,7 +246,7 @@ export default function RoomTrashPage() {
                         onClick={() => handleRestore(doc.id)}
                         disabled={restoringIds.has(doc.id)}
                       >
-                        <RotateCcw className="w-4 h-4 mr-1" />
+                        <RotateCcw className="mr-1 h-4 w-4" />
                         {restoringIds.has(doc.id) ? 'Restoring...' : 'Restore'}
                       </Button>
                     </div>

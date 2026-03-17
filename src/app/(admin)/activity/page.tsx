@@ -21,7 +21,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -157,7 +163,7 @@ export default function ActivityPage() {
         description="Track all actions across your organization"
         actions={
           <Button variant="outline" onClick={handleExport}>
-            <Download className="w-4 h-4 mr-2" />
+            <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
         }
@@ -165,9 +171,9 @@ export default function ActivityPage() {
 
       <div className="p-6">
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
             <Input
               placeholder="Search by user or target..."
               value={searchQuery}
@@ -177,7 +183,7 @@ export default function ActivityPage() {
           </div>
           <Select value={eventType} onValueChange={setEventType}>
             <SelectTrigger className="w-[200px]">
-              <Filter className="w-4 h-4 mr-2" />
+              <Filter className="mr-2 h-4 w-4" />
               <SelectValue placeholder="Filter by type" />
             </SelectTrigger>
             <SelectContent>
@@ -195,20 +201,20 @@ export default function ActivityPage() {
         {isLoading ? (
           <div className="space-y-4">
             {[...Array(10)].map((_, i) => (
-              <div key={i} className="flex items-start gap-4 p-4 border rounded-lg">
+              <div key={i} className="flex items-start gap-4 rounded-lg border p-4">
                 <Skeleton className="h-10 w-10 rounded-full" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2 mt-2" />
+                  <Skeleton className="mt-2 h-3 w-1/2" />
                 </div>
               </div>
             ))}
           </div>
         ) : events.length === 0 ? (
           <Card className="p-12 text-center">
-            <Activity className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-            <h3 className="text-lg font-semibold text-neutral-900 mb-2">No activity yet</h3>
-            <p className="text-neutral-500 max-w-sm mx-auto">
+            <Activity className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No activity yet</h3>
+            <p className="mx-auto max-w-sm text-neutral-500">
               Activity will appear here as users interact with your data rooms.
             </p>
           </Card>
@@ -221,12 +227,12 @@ export default function ActivityPage() {
               return (
                 <div
                   key={event.id}
-                  className="flex items-start gap-4 p-4 border rounded-lg hover:bg-neutral-50 transition-colors"
+                  className="flex items-start gap-4 rounded-lg border p-4 transition-colors hover:bg-neutral-50"
                 >
-                  <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center flex-shrink-0">
-                    <Icon className="w-5 h-5 text-neutral-600" />
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-neutral-100">
+                    <Icon className="h-5 w-5 text-neutral-600" />
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm">
                       {event.actor ? (
                         <>
@@ -245,7 +251,7 @@ export default function ActivityPage() {
                         </>
                       )}
                     </p>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-neutral-400">
+                    <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
                       <span>{formatDate(event.createdAt)}</span>
                       {event.roomName && (
                         <>
@@ -271,7 +277,7 @@ export default function ActivityPage() {
 
         {/* Load More */}
         {events.length > 0 && events.length >= 50 && (
-          <div className="text-center mt-6">
+          <div className="mt-6 text-center">
             <Button variant="outline">Load More</Button>
           </div>
         )}

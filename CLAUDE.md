@@ -10,6 +10,18 @@ VaultSpace is an open-source, self-hosted secure Virtual Data Room (VDR) platfor
 
 **Status:** Specification complete. Implementation not started.
 
+## ⚠️ AZURE-ONLY OPERATION
+
+**VaultSpace runs exclusively in Azure. Local execution is not permitted.**
+
+- **Runtime:** Azure Container Apps only
+- **Database:** Azure PostgreSQL only
+- **Storage:** Azure Blob Storage only
+- **Cache:** Azure Cache for Redis only
+- **Testing:** Against Azure-hosted services only
+
+The application includes guardrails that block local execution. Any attempt to run locally or test against localhost will fail with a clear error message.
+
 ## Before Writing Any Code
 
 **Read AI_BUILD_PLAYBOOK.md first.** It defines the mandatory reading order, precedence rules, build phases, and MVP stop conditions.
@@ -98,23 +110,26 @@ VaultSpace is an open-source, self-hosted secure Virtual Data Room (VDR) platfor
 ## Key Commands
 
 ```bash
-# Development
-docker compose up                    # Start all services
-npm run dev                          # Next.js dev server
-npm run db:migrate                   # Run Prisma migrations
-npm run db:seed                      # Seed demo data (Series A Funding Room)
+# ⚠️ AZURE-ONLY - Local execution is blocked
 
-# Testing
-npm run test                         # Unit tests + security tests (Tier 1)
-npm run test:integration             # Integration tests against Docker (Tier 2)
-npm run test:e2e                     # End-to-end user journey (Tier 3)
+# Static Analysis (runs locally, no runtime)
 npm run type-check                   # TypeScript type checking
 npm run lint                         # ESLint
+npm run test                         # Unit tests (no database required)
 
-# Workers
-npm run worker                       # Start all workers
-npm run worker -- --queue=preview    # Start preview worker only
-npm run worker -- --queue=scan       # Start scan worker only
+# Integration Testing (requires Azure PostgreSQL)
+DATABASE_URL=<azure-postgres-url> npm run test:integration
+
+# Deployment (Azure Container Apps)
+az containerapp up ...               # Deploy to Azure
+
+# Database Migrations (run against Azure PostgreSQL)
+DATABASE_URL=<azure-postgres-url> npm run db:migrate
+
+# ❌ NOT SUPPORTED - Local execution is blocked:
+# npm run dev                        # Blocked by Azure guard
+# docker compose up                  # Not for VaultSpace
+# npm run worker                     # Must run in Azure
 ```
 
 ## Project Structure
@@ -125,13 +140,14 @@ src/
   components/             # React components (TailwindCSS)
   services/               # CoreService Layer (business logic, event emission)
   providers/              # Provider/Adapter implementations
-  lib/                    # Shared utilities (PermissionEngine, EventBus, etc.)
+  lib/                    # Shared utilities (PermissionEngine, EventBus, azure-guard)
   workers/                # Background worker entry points
+  instrumentation.ts      # Azure-only runtime guard
 prisma/
   schema.prisma           # Database schema
   migrations/             # Migration files
   seed.ts                 # Demo seed data
-docker-compose.yml        # Local development stack
+infra/                    # Azure deployment configuration
 ```
 
 ## Operational Rules for AI Code Generation

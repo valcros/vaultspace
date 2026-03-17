@@ -18,7 +18,12 @@ export interface SupportedFileType {
 
 export type FileCategory = 'PDF' | 'Office' | 'OfficeLegacy' | 'Image' | 'Text' | 'Data';
 
-export type ConversionTool = 'gotenberg' | 'imagemagick' | 'wkhtmltopdf' | 'libreoffice' | 'inkscape';
+export type ConversionTool =
+  | 'gotenberg'
+  | 'imagemagick'
+  | 'wkhtmltopdf'
+  | 'libreoffice'
+  | 'inkscape';
 
 /**
  * All supported file types for the VDR platform

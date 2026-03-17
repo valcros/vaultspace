@@ -21,11 +21,7 @@ export function AppShell({ children, user }: AppShellProps) {
     <div className="flex h-screen overflow-hidden bg-neutral-50">
       {/* Desktop Sidebar */}
       <div className="hidden lg:flex">
-        <Sidebar
-          user={user}
-          collapsed={sidebarCollapsed}
-          onCollapsedChange={setSidebarCollapsed}
-        />
+        <Sidebar user={user} collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} />
       </div>
 
       {/* Mobile Sidebar Overlay */}
@@ -43,13 +39,8 @@ export function AppShell({ children, user }: AppShellProps) {
 
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Header
-          user={user}
-          onMenuClick={() => setMobileMenuOpen(true)}
-        />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          {children}
-        </main>
+        <Header user={user} onMenuClick={() => setMobileMenuOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>
     </div>
   );

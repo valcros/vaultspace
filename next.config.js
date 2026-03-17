@@ -2,7 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Enable instrumentation for Azure-only runtime guard
   experimental: {
+    instrumentationHook: true,
     serverActions: {
       bodySizeLimit: '500mb',
     },

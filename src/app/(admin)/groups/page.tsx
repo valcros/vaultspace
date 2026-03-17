@@ -106,7 +106,7 @@ export default function GroupsPage() {
         description="Organize users into groups for easier permission management"
         actions={
           <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="mr-2 h-4 w-4" />
             Create Group
           </Button>
         }
@@ -114,8 +114,8 @@ export default function GroupsPage() {
 
       <div className="p-6">
         {/* Search */}
-        <div className="relative max-w-md mb-6">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+        <div className="relative mb-6 max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <Input
             placeholder="Search groups..."
             value={searchQuery}
@@ -131,7 +131,7 @@ export default function GroupsPage() {
               <Card key={i}>
                 <CardHeader>
                   <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-4 w-1/2 mt-2" />
+                  <Skeleton className="mt-2 h-4 w-1/2" />
                 </CardHeader>
                 <CardContent>
                   <Skeleton className="h-4 w-full" />
@@ -141,26 +141,26 @@ export default function GroupsPage() {
           </div>
         ) : groups.length === 0 ? (
           <Card className="p-12 text-center">
-            <Users className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-            <h3 className="text-lg font-semibold text-neutral-900 mb-2">No groups yet</h3>
-            <p className="text-neutral-500 mb-6 max-w-sm mx-auto">
+            <Users className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No groups yet</h3>
+            <p className="mx-auto mb-6 max-w-sm text-neutral-500">
               Create groups to organize users and manage permissions more efficiently.
             </p>
             <Button onClick={() => setShowCreateDialog(true)}>
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="mr-2 h-4 w-4" />
               Create your first group
             </Button>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredGroups.map((group) => (
-              <Card key={group.id} className="hover:border-primary-200 transition-colors">
+              <Card key={group.id} className="transition-colors hover:border-primary-200">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <CardTitle className="text-base">{group.name}</CardTitle>
                       {group.description && (
-                        <CardDescription className="line-clamp-2 mt-1">
+                        <CardDescription className="mt-1 line-clamp-2">
                           {group.description}
                         </CardDescription>
                       )}
@@ -173,16 +173,16 @@ export default function GroupsPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem>
-                          <Edit className="w-4 h-4 mr-2" />
+                          <Edit className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem>
-                          <Users className="w-4 h-4 mr-2" />
+                          <Users className="mr-2 h-4 w-4" />
                           Manage Members
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem className="text-danger-600">
-                          <Trash2 className="w-4 h-4 mr-2" />
+                          <Trash2 className="mr-2 h-4 w-4" />
                           Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -192,11 +192,11 @@ export default function GroupsPage() {
                 <CardContent>
                   <div className="flex items-center gap-4 text-sm text-neutral-500">
                     <div className="flex items-center gap-1">
-                      <Users className="w-4 h-4" />
+                      <Users className="h-4 w-4" />
                       <span>{group.memberCount} members</span>
                     </div>
                   </div>
-                  <p className="text-xs text-neutral-400 mt-3">
+                  <p className="mt-3 text-xs text-neutral-400">
                     Created {formatDate(group.createdAt)}
                   </p>
                 </CardContent>

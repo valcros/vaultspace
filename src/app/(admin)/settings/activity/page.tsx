@@ -19,7 +19,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -27,13 +33,16 @@ interface ActivityEvent {
   id: string;
   eventType: string;
   actorType: string;
-  actor: {
-    id: string;
-    name: string;
-    email: string;
-  } | {
-    email: string;
-  } | null;
+  actor:
+    | {
+        id: string;
+        name: string;
+        email: string;
+      }
+    | {
+        email: string;
+      }
+    | null;
   room: {
     id: string;
     name: string;
@@ -195,18 +204,15 @@ export default function SettingsActivityPage() {
       <PageHeader
         title="Activity Log"
         description="Track organization-wide activity and security events"
-        breadcrumbs={[
-          { label: 'Settings', href: '/settings' },
-          { label: 'Activity' },
-        ]}
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Activity' }]}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={handleExport}>
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="mr-2 h-4 w-4" />
               Export CSV
             </Button>
             <Button variant="outline" onClick={() => router.push('/settings')}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
+              <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Settings
             </Button>
           </div>
@@ -215,10 +221,13 @@ export default function SettingsActivityPage() {
 
       <div className="p-6">
         {/* Filters */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="mb-6 flex items-center gap-4">
           <Select
             value={eventTypeFilter}
-            onValueChange={(value) => { setEventTypeFilter(value); setPage(1); }}
+            onValueChange={(value) => {
+              setEventTypeFilter(value);
+              setPage(1);
+            }}
           >
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Filter by type" />
@@ -242,20 +251,20 @@ export default function SettingsActivityPage() {
         {isLoading ? (
           <div className="space-y-4">
             {[...Array(10)].map((_, i) => (
-              <div key={i} className="flex items-start gap-4 p-4 border rounded-lg">
+              <div key={i} className="flex items-start gap-4 rounded-lg border p-4">
                 <Skeleton className="h-10 w-10 rounded-full" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2 mt-2" />
+                  <Skeleton className="mt-2 h-3 w-1/2" />
                 </div>
               </div>
             ))}
           </div>
         ) : events.length === 0 ? (
           <Card className="p-12 text-center">
-            <Activity className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-            <h3 className="text-lg font-semibold text-neutral-900 mb-2">No activity yet</h3>
-            <p className="text-neutral-500 max-w-sm mx-auto">
+            <Activity className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No activity yet</h3>
+            <p className="mx-auto max-w-sm text-neutral-500">
               Activity will appear here as changes are made to your organization.
             </p>
           </Card>
@@ -263,22 +272,28 @@ export default function SettingsActivityPage() {
           <div className="space-y-2">
             {events.map((event) => {
               const Icon = eventIcons[event.eventType] || Activity;
-              const label = eventLabels[event.eventType] || event.eventType.replace(/_/g, ' ').toLowerCase();
-              const isSecurityEvent = event.eventType.includes('SECURITY') || event.eventType.includes('ALERT');
+              const label =
+                eventLabels[event.eventType] || event.eventType.replace(/_/g, ' ').toLowerCase();
+              const isSecurityEvent =
+                event.eventType.includes('SECURITY') || event.eventType.includes('ALERT');
 
               return (
                 <div
                   key={event.id}
-                  className={`flex items-start gap-4 p-4 border rounded-lg hover:bg-neutral-50 transition-colors ${
+                  className={`flex items-start gap-4 rounded-lg border p-4 transition-colors hover:bg-neutral-50 ${
                     isSecurityEvent ? 'border-warning-200 bg-warning-50' : ''
                   }`}
                 >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    isSecurityEvent ? 'bg-warning-100' : 'bg-neutral-100'
-                  }`}>
-                    <Icon className={`w-5 h-5 ${isSecurityEvent ? 'text-warning-600' : 'text-neutral-600'}`} />
+                  <div
+                    className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${
+                      isSecurityEvent ? 'bg-warning-100' : 'bg-neutral-100'
+                    }`}
+                  >
+                    <Icon
+                      className={`h-5 w-5 ${isSecurityEvent ? 'text-warning-600' : 'text-neutral-600'}`}
+                    />
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm">
                       <span className="font-medium">{getActorName(event.actor)}</span>
                       <span className="text-neutral-500"> {label}</span>
@@ -290,9 +305,9 @@ export default function SettingsActivityPage() {
                       )}
                     </p>
                     {event.description && (
-                      <p className="text-sm text-neutral-600 mt-1">{event.description}</p>
+                      <p className="mt-1 text-sm text-neutral-600">{event.description}</p>
                     )}
-                    <div className="flex items-center gap-3 mt-1 text-xs text-neutral-400">
+                    <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
                       <span>{formatDate(event.createdAt)}</span>
                       {event.ipAddress && (
                         <>
@@ -303,7 +318,9 @@ export default function SettingsActivityPage() {
                       {isSecurityEvent && (
                         <>
                           <span>•</span>
-                          <Badge variant="warning" className="text-xs">Security</Badge>
+                          <Badge variant="warning" className="text-xs">
+                            Security
+                          </Badge>
                         </>
                       )}
                     </div>
@@ -316,11 +333,10 @@ export default function SettingsActivityPage() {
 
         {/* Pagination */}
         {pagination && pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between mt-6">
+          <div className="mt-6 flex items-center justify-between">
             <p className="text-sm text-neutral-500">
-              Showing {((page - 1) * pagination.limit) + 1} to{' '}
-              {Math.min(page * pagination.limit, pagination.total)} of{' '}
-              {pagination.total} events
+              Showing {(page - 1) * pagination.limit + 1} to{' '}
+              {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} events
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -331,7 +347,7 @@ export default function SettingsActivityPage() {
               >
                 Previous
               </Button>
-              <span className="text-sm text-neutral-500 px-2">
+              <span className="px-2 text-sm text-neutral-500">
                 Page {page} of {pagination.totalPages}
               </span>
               <Button

@@ -30,12 +30,7 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
     <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-neutral-200 bg-white px-4 lg:px-6">
       {/* Mobile menu button */}
       {onMenuClick && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="lg:hidden"
-          onClick={onMenuClick}
-        >
+        <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}>
           <Menu className="h-5 w-5" />
           <span className="sr-only">Toggle menu</span>
         </Button>
@@ -46,11 +41,7 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
         <div className="hidden flex-1 md:flex md:max-w-md">
           <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-            <Input
-              type="search"
-              placeholder="Search rooms, documents..."
-              className="pl-9"
-            />
+            <Input type="search" placeholder="Search rooms, documents..." className="pl-9" />
           </div>
         </div>
       )}
@@ -83,9 +74,7 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">{user.name}</p>
-                <p className="text-xs leading-none text-neutral-500">
-                  {user.email}
-                </p>
+                <p className="text-xs leading-none text-neutral-500">{user.email}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

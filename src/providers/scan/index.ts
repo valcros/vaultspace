@@ -12,13 +12,32 @@ import { PassthroughScanProvider } from './PassthroughScanProvider';
 
 /**
  * Create a scan provider based on configuration
+ *
+ * In production, auto-detects ClamAV if CLAMAV_HOST is configured.
+ * Explicit SCAN_ENGINE setting always takes precedence.
  */
 export function createScanProvider(): ScanProvider {
-  const scanEngine = process.env['SCAN_ENGINE'] ?? 'passthrough';
+  const isProduction = process.env['NODE_ENV'] === 'production';
+  const explicitEngine = process.env['SCAN_ENGINE'];
+  const clamavHost = process.env['CLAMAV_HOST'];
+
+  // Determine which engine to use:
+  // 1. Explicit SCAN_ENGINE always wins
+  // 2. In production with CLAMAV_HOST, default to ClamAV
+  // 3. Otherwise passthrough
+  let scanEngine: string;
+  if (explicitEngine) {
+    scanEngine = explicitEngine;
+  } else if (isProduction && clamavHost) {
+    scanEngine = 'clamav';
+    console.log('[ScanProvider] Auto-detected ClamAV configuration for production');
+  } else {
+    scanEngine = 'passthrough';
+  }
 
   switch (scanEngine) {
     case 'clamav': {
-      const host = process.env['CLAMAV_HOST'] ?? 'localhost';
+      const host = clamavHost ?? 'localhost';
       const port = parseInt(process.env['CLAMAV_PORT'] ?? '3310', 10);
       const timeout = parseInt(process.env['CLAMAV_TIMEOUT'] ?? '30000', 10);
 
@@ -33,9 +52,10 @@ export function createScanProvider(): ScanProvider {
 
     case 'passthrough':
     default: {
-      if (process.env['NODE_ENV'] === 'production') {
+      if (isProduction) {
         console.warn(
-          '[ScanProvider] WARNING: Passthrough scanner in production - files are NOT being scanned!'
+          '[ScanProvider] WARNING: Passthrough scanner in production - files are NOT being scanned! ' +
+            'Set CLAMAV_HOST to enable virus scanning.'
         );
       }
       return new PassthroughScanProvider();

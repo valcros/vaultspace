@@ -5,7 +5,13 @@
  * All providers are singletons within the application lifecycle.
  */
 
-import type { CacheProvider, EmailProvider, JobProvider, Providers, StorageProvider } from './types';
+import type {
+  CacheProvider,
+  EmailProvider,
+  JobProvider,
+  Providers,
+  StorageProvider,
+} from './types';
 
 import { InMemoryCacheProvider } from './cache/InMemoryCacheProvider';
 import { RedisCacheProvider } from './cache/RedisCacheProvider';
@@ -15,6 +21,7 @@ import { SmtpEmailProvider } from './email/SmtpEmailProvider';
 import { BullMQJobProvider } from './job/BullMQJobProvider';
 import { LocalStorageProvider } from './storage/LocalStorageProvider';
 import { AzureBlobStorageProvider } from './storage/AzureBlobStorageProvider';
+import { S3StorageProvider } from './storage/S3StorageProvider';
 import { createOCRProvider } from './ocr';
 import { createScanProvider } from './scan';
 import { createPreviewProvider } from './preview';
@@ -74,7 +81,43 @@ function createStorageProvider(): StorageProvider {
         accountKey,
       });
     }
-    // S3 provider would be added here for AWS deployments
+    case 's3': {
+      // Support documented VaultSpace vars with AWS SDK vars as fallback
+      // Documented: STORAGE_REGION, STORAGE_KEY_ID, STORAGE_SECRET_KEY, STORAGE_BUCKET
+      // Fallback: AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (standard AWS SDK)
+      const region =
+        process.env['STORAGE_REGION'] ??
+        process.env['AWS_REGION'] ??
+        process.env['AWS_DEFAULT_REGION'] ??
+        'us-east-1';
+      const accessKeyId = process.env['STORAGE_KEY_ID'] ?? process.env['AWS_ACCESS_KEY_ID'];
+      const secretAccessKey =
+        process.env['STORAGE_SECRET_KEY'] ?? process.env['AWS_SECRET_ACCESS_KEY'];
+      const endpoint = process.env['STORAGE_ENDPOINT'] ?? process.env['S3_ENDPOINT'];
+      const forcePathStyle = process.env['S3_FORCE_PATH_STYLE'] === 'true';
+
+      // STORAGE_BUCKET is the actual bucket name (documented contract)
+      // S3_BUCKET_PREFIX is legacy multi-bucket mode
+      const bucket = process.env['STORAGE_BUCKET'];
+      const bucketPrefix = process.env['S3_BUCKET_PREFIX'];
+
+      console.log(`[StorageProvider] Using S3 storage in region ${region}`);
+      if (bucket) {
+        console.log(`[StorageProvider] Single bucket mode: ${bucket}`);
+      } else if (bucketPrefix) {
+        console.log(`[StorageProvider] Multi-bucket mode with prefix: ${bucketPrefix}`);
+      }
+
+      return new S3StorageProvider({
+        region,
+        accessKeyId,
+        secretAccessKey,
+        endpoint,
+        forcePathStyle,
+        bucket,
+        bucketPrefix,
+      });
+    }
     default:
       throw new Error(`Unknown storage provider: ${provider}`);
   }

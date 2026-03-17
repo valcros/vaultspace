@@ -7,12 +7,14 @@
 ## Milestone Definition
 
 This repository has reached **backend-complete** status, meaning:
+
 - All MVP API routes are implemented
 - Core services, providers, and infrastructure are in place
 - Job queue, event bus, and permissions are functional
 - Test scaffolding exists
 
 However, **MVP is not complete** because the docs explicitly require:
+
 - Full admin web UI (dataroom-feature-matrix-v6.md line 13)
 - Branded viewer UI
 - No API-only phase
@@ -20,6 +22,7 @@ However, **MVP is not complete** because the docs explicitly require:
 ## What's Done
 
 ### API Surface (30+ routes)
+
 - Room management: CRUD, templates, settings, analytics
 - Document management: upload, versions, restore, trash
 - User management: invite, groups, permissions
@@ -28,12 +31,14 @@ However, **MVP is not complete** because the docs explicitly require:
 - Health check
 
 ### Core Infrastructure
+
 - **PermissionEngine** (14-layer, SEC-001 through SEC-016 ready)
 - **EventBus** (database-backed, partitioning-ready)
 - **Rate limiting** (per-IP, per-user)
 - **Session management** (cookie-based, secure)
 
 ### Providers (all with interfaces + defaults)
+
 - StorageProvider (local filesystem)
 - EmailProvider (SMTP/nodemailer)
 - CacheProvider (Redis/in-memory)
@@ -45,11 +50,13 @@ However, **MVP is not complete** because the docs explicitly require:
 - OCRProvider (Tesseract.js, lazy-loaded)
 
 ### Background Jobs
+
 - Worker infrastructure (general, preview, scan, report)
 - Notification queueing (document uploaded, document viewed)
 - Email processor
 
 ### Test Infrastructure
+
 - Unit tests: 34 passing (Vitest)
 - Integration tests: scaffolded (requires Docker)
 - E2E tests: scaffolded (requires Playwright browsers)
@@ -57,6 +64,7 @@ However, **MVP is not complete** because the docs explicitly require:
 - ESLint: no warnings
 
 ### Supporting Scripts
+
 - `scripts/gdpr-export.ts` - GDPR Article 20 data export (F052)
 - `prisma/seed.ts` - Series A Funding demo room
 
@@ -65,27 +73,32 @@ However, **MVP is not complete** because the docs explicitly require:
 Per AI_BUILD_PLAYBOOK.md and dataroom-feature-matrix-v6.md:
 
 ### Required Admin Pages (not built)
-| Feature | ID | Expected Path |
-|---------|-----|---------------|
+
+| Feature                  | ID   | Expected Path                                   |
+| ------------------------ | ---- | ----------------------------------------------- |
 | Room Analytics Dashboard | F121 | `app/(admin)/rooms/[roomId]/analytics/page.tsx` |
-| Room Settings UI | F130 | `app/(admin)/rooms/[roomId]/settings/page.tsx` |
-| Admin Activity Log | F040 | `app/(admin)/settings/activity/page.tsx` |
-| Notification Preferences | F043 | `app/(admin)/settings/notifications/page.tsx` |
-| Setup Wizard | F128 | First-run onboarding flow |
+| Room Settings UI         | F130 | `app/(admin)/rooms/[roomId]/settings/page.tsx`  |
+| Admin Activity Log       | F040 | `app/(admin)/settings/activity/page.tsx`        |
+| Notification Preferences | F043 | `app/(admin)/settings/notifications/page.tsx`   |
+| Setup Wizard             | F128 | First-run onboarding flow                       |
 
 ### Required Viewer Pages (not built)
+
 - Branded document viewer
 - Public link access UI
 - Login/authentication pages
 
 ### Current Page Surface
+
 Only exists:
+
 - `src/app/page.tsx` (placeholder)
 - `src/app/layout.tsx` (root layout)
 
 ## Build Verification
 
 Build passes in this environment:
+
 ```
 Node: v22.17.1
 npm: 11.5.1
@@ -95,6 +108,7 @@ Exit code: 0
 
 **Note:** Build reproducibility across environments not yet verified in CI.
 If build fails in another environment, try:
+
 ```bash
 rm -rf .next node_modules
 npm install
@@ -110,13 +124,13 @@ npm run build
 
 ## Test Validation Status
 
-| Test Type | Status | Notes |
-|-----------|--------|-------|
-| Unit tests | Passing | 34 tests via `npm run test` |
-| Type check | Passing | `npm run type-check` |
-| Lint | Passing | `npm run lint` |
+| Test Type   | Status     | Notes                            |
+| ----------- | ---------- | -------------------------------- |
+| Unit tests  | Passing    | 34 tests via `npm run test`      |
+| Type check  | Passing    | `npm run type-check`             |
+| Lint        | Passing    | `npm run lint`                   |
 | Integration | Scaffolded | Requires Docker (Postgres/Redis) |
-| E2E | Scaffolded | Requires Playwright browsers |
+| E2E         | Scaffolded | Requires Playwright browsers     |
 
 ## Next Steps
 

@@ -385,6 +385,14 @@ model Room {
   allowDownloads    Boolean @default(true)
   defaultExpiryDays Int?
 
+  // NDA configuration - F130 (UI ready, F018 implements gate)
+  requiresNda Boolean @default(false)
+  ndaContent  String? @db.Text // Rich text NDA content
+
+  // Watermark configuration - F130 (UI ready, F023 implements render)
+  enableWatermark   Boolean @default(false)
+  watermarkTemplate String? @db.VarChar(500) // Template with placeholders: {viewer_email}, {viewer_name}, {timestamp}, {ip}
+
   // Lifecycle tracking
   archivedAt DateTime?
   closedAt   DateTime?

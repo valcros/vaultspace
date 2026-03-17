@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -27,41 +27,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
-    }
-
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
-
-    // Get current document
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -75,23 +41,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
           { status: 400 }
         );
       }
-
-      // Check for duplicate Bates numbers in the same room
-      const existing = await db.document.findFirst({
-        where: {
-          roomId,
-          organizationId: session.organizationId,
-          batesNumber,
-          id: { not: documentId },
-        },
-      });
-
-      if (existing) {
-        return NextResponse.json(
-          { error: 'Bates number already in use in this room' },
-          { status: 400 }
-        );
-      }
     }
 
     // Validate display order
@@ -102,22 +51,69 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Update document
-    const updatedDocument = await db.document.update({
-      where: { id: documentId },
-      data: {
-        ...(batesNumber !== undefined && { batesNumber }),
-        ...(displayOrder !== undefined && { displayOrder }),
-      },
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get current document
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      // Check for duplicate Bates numbers in the same room (if provided)
+      if (batesNumber !== undefined && batesNumber !== null) {
+        const existing = await tx.document.findFirst({
+          where: {
+            roomId,
+            organizationId: session.organizationId,
+            batesNumber,
+            id: { not: documentId },
+          },
+        });
+
+        if (existing) {
+          return { error: 'Bates number already in use in this room', status: 400 };
+        }
+      }
+
+      // Update document
+      const updatedDocument = await tx.document.update({
+        where: { id: documentId },
+        data: {
+          ...(batesNumber !== undefined && { batesNumber }),
+          ...(displayOrder !== undefined && { displayOrder }),
+        },
+      });
+
+      return { document: updatedDocument };
     });
 
-    return NextResponse.json({ document: updatedDocument });
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    return NextResponse.json({ document: result.document });
   } catch (error) {
     console.error('[DocumentIndexAPI] POST error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update document index' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update document index' }, { status: 500 });
   }
 }
 
@@ -130,56 +126,59 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const session = await requireAuth();
     const { roomId } = await context.params;
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get the highest Bates start number in the room
+      const maxDoc = await tx.document.findFirst({
+        where: {
+          roomId,
+          organizationId: session.organizationId,
+          batesStartNumber: { not: null },
+        },
+        orderBy: { batesStartNumber: 'desc' },
+        select: { batesStartNumber: true },
+      });
+
+      const nextNumber = (maxDoc?.batesStartNumber ?? 0) + 1;
+
+      // Get the highest display order
+      const maxOrderDoc = await tx.document.findFirst({
+        where: {
+          roomId,
+          organizationId: session.organizationId,
+        },
+        orderBy: { displayOrder: 'desc' },
+        select: { displayOrder: true },
+      });
+
+      const nextDisplayOrder = (maxOrderDoc?.displayOrder ?? 0) + 1;
+
+      return { nextNumber, nextDisplayOrder };
     });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    // Get the highest Bates start number in the room
-    const maxDoc = await db.document.findFirst({
-      where: {
-        roomId,
-        organizationId: session.organizationId,
-        batesStartNumber: { not: null },
-      },
-      orderBy: { batesStartNumber: 'desc' },
-      select: { batesStartNumber: true },
-    });
-
-    const nextNumber = (maxDoc?.batesStartNumber ?? 0) + 1;
-
-    // Get the highest display order
-    const maxOrderDoc = await db.document.findFirst({
-      where: {
-        roomId,
-        organizationId: session.organizationId,
-      },
-      orderBy: { displayOrder: 'desc' },
-      select: { displayOrder: true },
-    });
-
-    const nextDisplayOrder = (maxOrderDoc?.displayOrder ?? 0) + 1;
-
     return NextResponse.json({
-      nextBatesNumber: nextNumber,
-      suggestedBatesFormat: String(nextNumber).padStart(4, '0'),
-      nextDisplayOrder,
+      nextBatesNumber: result.nextNumber,
+      suggestedBatesFormat: String(result.nextNumber).padStart(4, '0'),
+      nextDisplayOrder: result.nextDisplayOrder,
     });
   } catch (error) {
     console.error('[DocumentIndexAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get next index' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get next index' }, { status: 500 });
   }
 }

@@ -1,9 +1,26 @@
 /**
  * VaultSpace Worker Entry Point
  *
+ * AZURE-ONLY: Workers must run in Azure infrastructure.
+ *
  * Bootstraps background workers based on WORKER_TYPE environment variable.
  * Worker types: general, preview, scan, report
  */
+
+import { enforceAzureOnly, validateAzureConfig } from '@/lib/azure-guard';
+
+// Block local execution - must be first
+enforceAzureOnly();
+
+// Validate Azure configuration - fail fast if not properly configured
+const { valid, errors } = validateAzureConfig();
+if (!valid) {
+  console.error('[VaultSpace Worker] ❌ STARTUP BLOCKED - Missing required Azure configuration:');
+  errors.forEach((err) => console.error(`  - ${err}`));
+  console.error('\nVaultSpace workers require properly configured Azure services.');
+  console.error('See DEPLOYMENT.md for Azure configuration requirements.\n');
+  process.exit(1);
+}
 
 import { Worker, type ConnectionOptions, type Job } from 'bullmq';
 
@@ -12,6 +29,7 @@ import {
   processDocumentUploadedNotification,
   processDocumentViewedNotification,
   processPreviewJob,
+  processRoomExportJob,
   processScanJob,
   processSearchIndexJob,
   processTextExtractJob,
@@ -27,12 +45,13 @@ console.log(`[VaultSpace Worker] Starting ${workerType} worker...`);
 console.log(`[VaultSpace Worker] Environment: ${process.env['NODE_ENV'] ?? 'development'}`);
 
 // Build Redis connection options
-function getConnectionOptions(): ConnectionOptions | undefined {
+function getConnectionOptions(): ConnectionOptions {
   const redisUrl = process.env['REDIS_URL'];
 
   if (!redisUrl) {
-    console.log('[VaultSpace Worker] No REDIS_URL configured, workers disabled');
-    return undefined;
+    console.error('[VaultSpace Worker] ❌ REDIS_URL is required for workers');
+    console.error('Workers cannot run without Azure Cache for Redis.');
+    process.exit(1);
   }
 
   const url = new URL(redisUrl);
@@ -83,6 +102,10 @@ async function processJob(job: Job): Promise<void> {
       await processDocumentViewedNotification(job);
       break;
 
+    case JOB_NAMES.ROOM_EXPORT:
+      await processRoomExportJob(job);
+      break;
+
     default:
       console.warn(`[VaultSpace Worker] Unknown job type: ${jobName}`);
   }
@@ -117,14 +140,6 @@ const WORKER_CONFIGS: Record<WorkerType, WorkerConfig> = {
 
 async function main() {
   const connection = getConnectionOptions();
-
-  if (!connection) {
-    console.log('[VaultSpace Worker] Running in stub mode (no Redis)');
-    // Keep process alive but do nothing
-    await new Promise(() => {});
-    return;
-  }
-
   const config = WORKER_CONFIGS[workerType];
   const workers: Worker[] = [];
   const prefix = process.env['JOB_QUEUE_PREFIX'] ?? 'vaultspace:jobs:';

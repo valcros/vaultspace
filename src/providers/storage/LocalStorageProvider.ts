@@ -108,12 +108,7 @@ export class LocalStorageProvider implements StorageProvider {
   /**
    * Validate a signed URL
    */
-  validateSignedUrl(
-    bucket: string,
-    key: string,
-    expires: string,
-    signature: string
-  ): boolean {
+  validateSignedUrl(bucket: string, key: string, expires: string, signature: string): boolean {
     const expiresAt = parseInt(expires, 10);
     const now = Math.floor(Date.now() / 1000);
 

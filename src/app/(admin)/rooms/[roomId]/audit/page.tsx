@@ -21,7 +21,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -196,15 +202,15 @@ export default function RoomAuditPage() {
   if (isLoading && page === 1) {
     return (
       <div className="p-6">
-        <Skeleton className="h-8 w-64 mb-4" />
-        <Skeleton className="h-4 w-96 mb-8" />
+        <Skeleton className="mb-4 h-8 w-64" />
+        <Skeleton className="mb-8 h-4 w-96" />
         <div className="space-y-4">
           {[...Array(10)].map((_, i) => (
-            <div key={i} className="flex items-start gap-4 p-4 border rounded-lg">
+            <div key={i} className="flex items-start gap-4 rounded-lg border p-4">
               <Skeleton className="h-10 w-10 rounded-full" />
               <div className="flex-1">
                 <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/2 mt-2" />
+                <Skeleton className="mt-2 h-3 w-1/2" />
               </div>
             </div>
           ))}
@@ -226,11 +232,11 @@ export default function RoomAuditPage() {
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={handleExport}>
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="mr-2 h-4 w-4" />
               Export CSV
             </Button>
             <Button variant="outline" onClick={() => router.push(`/rooms/${roomId}`)}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
+              <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Room
             </Button>
           </div>
@@ -239,12 +245,18 @@ export default function RoomAuditPage() {
 
       <div className="p-6">
         {/* Filters */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="mb-6 flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-neutral-500" />
+            <Filter className="h-4 w-4 text-neutral-500" />
             <span className="text-sm text-neutral-500">Filter:</span>
           </div>
-          <Select value={eventType} onValueChange={(value) => { setEventType(value); setPage(1); }}>
+          <Select
+            value={eventType}
+            onValueChange={(value) => {
+              setEventType(value);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="All events" />
             </SelectTrigger>
@@ -264,9 +276,9 @@ export default function RoomAuditPage() {
         {/* Audit Events */}
         {!auditData || auditData.events.length === 0 ? (
           <Card className="p-12 text-center">
-            <Activity className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-            <h3 className="text-lg font-semibold text-neutral-900 mb-2">No audit events</h3>
-            <p className="text-neutral-500 max-w-sm mx-auto">
+            <Activity className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No audit events</h3>
+            <p className="mx-auto max-w-sm text-neutral-500">
               Activity in this room will be recorded here for compliance and security purposes.
             </p>
           </Card>
@@ -280,16 +292,14 @@ export default function RoomAuditPage() {
                 return (
                   <div
                     key={event.id}
-                    className="flex items-start gap-4 p-4 border rounded-lg hover:bg-neutral-50 transition-colors"
+                    className="flex items-start gap-4 rounded-lg border p-4 transition-colors hover:bg-neutral-50"
                   >
-                    <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-5 h-5 text-neutral-600" />
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-neutral-100">
+                      <Icon className="h-5 w-5 text-neutral-600" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant={getEventVariant(event.eventType)}>
-                          {label}
-                        </Badge>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={getEventVariant(event.eventType)}>{label}</Badge>
                         {event.actor ? (
                           <span className="text-sm font-medium">
                             {event.actor.firstName} {event.actor.lastName}
@@ -301,15 +311,15 @@ export default function RoomAuditPage() {
                         )}
                       </div>
                       {event.description && (
-                        <p className="text-sm text-neutral-600 mt-1">{event.description}</p>
+                        <p className="mt-1 text-sm text-neutral-600">{event.description}</p>
                       )}
-                      <div className="flex items-center gap-3 mt-1 text-xs text-neutral-400">
+                      <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
                         <span>{formatDate(event.createdAt)}</span>
                         {event.ipAddress && (
                           <>
                             <span>•</span>
                             <span className="flex items-center gap-1">
-                              <Shield className="w-3 h-3" />
+                              <Shield className="h-3 w-3" />
                               {event.ipAddress}
                             </span>
                           </>
@@ -329,9 +339,9 @@ export default function RoomAuditPage() {
 
             {/* Pagination */}
             {auditData.pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6">
+              <div className="mt-6 flex items-center justify-between">
                 <p className="text-sm text-neutral-500">
-                  Showing {((page - 1) * auditData.pagination.limit) + 1} to{' '}
+                  Showing {(page - 1) * auditData.pagination.limit + 1} to{' '}
                   {Math.min(page * auditData.pagination.limit, auditData.pagination.total)} of{' '}
                   {auditData.pagination.total} events
                 </p>
@@ -344,7 +354,7 @@ export default function RoomAuditPage() {
                   >
                     Previous
                   </Button>
-                  <span className="text-sm text-neutral-500 px-2">
+                  <span className="px-2 text-sm text-neutral-500">
                     Page {page} of {auditData.pagination.totalPages}
                   </span>
                   <Button

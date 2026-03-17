@@ -64,7 +64,7 @@ export async function getSessionFromRequest(request: NextRequest): Promise<Sessi
     const cookieHeader = request.headers.get('cookie');
     if (cookieHeader) {
       const parsedCookies = Object.fromEntries(
-        cookieHeader.split('; ').map(c => {
+        cookieHeader.split('; ').map((c) => {
           const [key, ...val] = c.split('=');
           return [key, val.join('=')];
         })
@@ -185,11 +185,18 @@ export async function clearSessionCookie(): Promise<void> {
 /**
  * Resolve organization from custom domain headers (F001)
  * Used by routes that need to handle custom domain/subdomain scenarios
+ *
+ * PRE-RLS BOOTSTRAP: This function intentionally uses the global db client
+ * without org context, as we're resolving which organization based on domain/slug
+ * BEFORE the org context can be established. The RLS policy `org_bootstrap_lookup`
+ * allows SELECT on organizations when no org context is set.
+ *
+ * Security: Only minimal public fields (id, slug) are selected. Active check is enforced.
  */
 export async function resolveOrganizationFromHeaders(
   customDomain: CustomDomainContext
 ): Promise<{ organizationId: string; organizationSlug: string } | null> {
-  // Try org slug from subdomain first
+  // PRE-RLS BOOTSTRAP: Lookup org by slug (no org context yet)
   if (customDomain.orgSlug) {
     const org = await db.organization.findFirst({
       where: {
@@ -203,7 +210,7 @@ export async function resolveOrganizationFromHeaders(
     }
   }
 
-  // Try custom domain lookup
+  // PRE-RLS BOOTSTRAP: Lookup org by custom domain (no org context yet)
   if (customDomain.customHost) {
     const org = await db.organization.findFirst({
       where: {

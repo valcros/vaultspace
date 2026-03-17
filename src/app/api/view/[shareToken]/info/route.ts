@@ -16,14 +16,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const { shareToken } = await context.params;
 
+    // PRE-RLS BOOTSTRAP: Public link info lookup by slug
+    // This is intentionally unauthenticated - returns minimal public info
+    // to display the access gate (password/email requirements, branding)
     const link = await db.link.findFirst({
       where: {
         slug: shareToken,
         isActive: true,
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: new Date() } },
-        ],
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
       include: {
         room: {
@@ -41,10 +41,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
 
     if (!link) {
-      return NextResponse.json(
-        { error: 'This link is invalid or has expired' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'This link is invalid or has expired' }, { status: 404 });
     }
 
     // Determine access type based on room/link settings
@@ -71,9 +68,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
   } catch (error) {
     console.error('[ViewerInfoAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to load link information' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to load link information' }, { status: 500 });
   }
 }

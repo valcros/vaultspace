@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { EventType } from '@prisma/client';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -28,25 +28,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
-    }
-
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     // Parse query parameters
@@ -59,51 +41,49 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const dateTo = searchParams.get('dateTo');
     const format = searchParams.get('format');
 
-    // Build where clause
-    const where = {
-      organizationId: session.organizationId,
-      roomId,
-      ...(eventType && { eventType }),
-      ...(actorId && { actorId }),
-      ...(dateFrom || dateTo
-        ? {
-            createdAt: {
-              ...(dateFrom && { gte: new Date(dateFrom) }),
-              ...(dateTo && { lte: new Date(dateTo) }),
-            },
-          }
-        : {}),
-    };
-
-    // Get total count
-    const total = await db.event.count({ where });
-
-    // Get events
-    const events = await db.event.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-      include: {
-        actor: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
         },
-      },
-    });
+      });
 
-    // Export as CSV if requested
-    if (format === 'csv') {
-      const allEvents = await db.event.findMany({
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Build where clause
+      const where = {
+        organizationId: session.organizationId,
+        roomId,
+        ...(eventType && { eventType }),
+        ...(actorId && { actorId }),
+        ...(dateFrom || dateTo
+          ? {
+              createdAt: {
+                ...(dateFrom && { gte: new Date(dateFrom) }),
+                ...(dateTo && { lte: new Date(dateTo) }),
+              },
+            }
+          : {}),
+      };
+
+      // Get total count
+      const total = await tx.event.count({ where });
+
+      // Get events
+      const events = await tx.event.findMany({
         where,
         orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
         include: {
           actor: {
             select: {
+              id: true,
               firstName: true,
               lastName: true,
               email: true,
@@ -112,12 +92,40 @@ export async function GET(request: NextRequest, context: RouteContext) {
         },
       });
 
+      // Export as CSV if requested
+      if (format === 'csv') {
+        const allEvents = await tx.event.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            actor: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        });
+
+        return { csv: true, allEvents, roomId };
+      }
+
+      return { events, total, page, limit };
+    });
+
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    // Handle CSV export
+    if ('csv' in result && result.csv) {
       const csvRows = [
         ['Timestamp', 'Event Type', 'Actor', 'Actor Email', 'Description', 'IP Address'].join(','),
-        ...allEvents.map((event) => {
+        ...result.allEvents.map((event) => {
           const actorName = event.actor
             ? `${event.actor.firstName} ${event.actor.lastName}`
-            : event.actorEmail ?? 'System';
+            : (event.actorEmail ?? 'System');
           return [
             event.createdAt.toISOString(),
             event.eventType,
@@ -134,25 +142,28 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return new NextResponse(csv, {
         headers: {
           'Content-Type': 'text/csv',
-          'Content-Disposition': `attachment; filename="audit-${roomId}-${new Date().toISOString().split('T')[0]}.csv"`,
+          'Content-Disposition': `attachment; filename="audit-${result.roomId}-${new Date().toISOString().split('T')[0]}.csv"`,
         },
       });
     }
 
+    // At this point, result must be the success case with events, total, page, limit
+    // TypeScript needs explicit checks due to union type
+    if (!('events' in result) || result.total === undefined || result.limit === undefined) {
+      return NextResponse.json({ error: 'Unexpected result format' }, { status: 500 });
+    }
+
     return NextResponse.json({
-      events,
+      events: result.events,
       pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        totalPages: Math.ceil(result.total / result.limit),
       },
     });
   } catch (error) {
     console.error('[AuditAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to list audit events' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to list audit events' }, { status: 500 });
   }
 }

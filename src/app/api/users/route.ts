@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuthFromRequest } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -22,50 +22,52 @@ export async function GET(request: NextRequest) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Get all users in the organization
-    const userOrgs = await db.userOrganization.findMany({
-      where: {
-        organizationId: session.organizationId,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-            createdAt: true,
-            lastLoginAt: true,
-            isActive: true,
+    // Use RLS context for org-scoped queries
+    const { userOrgs, invitations } = await withOrgContext(session.organizationId, async (tx) => {
+      // Get all users in the organization
+      const userOrgs = await tx.userOrganization.findMany({
+        where: {
+          organizationId: session.organizationId,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              createdAt: true,
+              lastLoginAt: true,
+              isActive: true,
+            },
           },
         },
-      },
-      orderBy: {
-        user: { firstName: 'asc' },
-      },
-    });
+        orderBy: {
+          user: { firstName: 'asc' },
+        },
+      });
 
-    // Also get pending invitations
-    const invitations = await db.invitation.findMany({
-      where: {
-        organizationId: session.organizationId,
-        status: 'PENDING',
-        expiresAt: { gt: new Date() },
-      },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        createdAt: true,
-        expiresAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
+      // Also get pending invitations
+      const invitations = await tx.invitation.findMany({
+        where: {
+          organizationId: session.organizationId,
+          status: 'PENDING',
+          expiresAt: { gt: new Date() },
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return { userOrgs, invitations };
     });
 
     return NextResponse.json({
@@ -89,9 +91,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('[UsersAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to list users' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to list users' }, { status: 500 });
   }
 }

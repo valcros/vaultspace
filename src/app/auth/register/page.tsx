@@ -73,12 +73,10 @@ function RegisterForm() {
 
   return (
     <>
-      <div className="text-center mb-6">
+      <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-neutral-900">Create an account</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          {inviteToken
-            ? 'Complete your registration to join'
-            : 'Get started with VaultSpace'}
+        <p className="mt-1 text-sm text-neutral-500">
+          {inviteToken ? 'Complete your registration to join' : 'Get started with VaultSpace'}
         </p>
       </div>
 
@@ -166,7 +164,7 @@ function RegisterForm() {
 
       <div className="mt-6 text-center text-sm text-neutral-500">
         Already have an account?{' '}
-        <Link href="/auth/login" className="text-primary-600 hover:text-primary-700 font-medium">
+        <Link href="/auth/login" className="font-medium text-primary-600 hover:text-primary-700">
           Sign in
         </Link>
       </div>
@@ -177,19 +175,19 @@ function RegisterForm() {
 function RegisterFormFallback() {
   return (
     <>
-      <div className="text-center mb-6">
+      <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-neutral-900">Create an account</h1>
-        <p className="text-sm text-neutral-500 mt-1">Get started with VaultSpace</p>
+        <p className="mt-1 text-sm text-neutral-500">Get started with VaultSpace</p>
       </div>
-      <div className="space-y-4 animate-pulse">
+      <div className="animate-pulse space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <div className="h-10 bg-neutral-200 rounded" />
-          <div className="h-10 bg-neutral-200 rounded" />
+          <div className="h-10 rounded bg-neutral-200" />
+          <div className="h-10 rounded bg-neutral-200" />
         </div>
-        <div className="h-10 bg-neutral-200 rounded" />
-        <div className="h-10 bg-neutral-200 rounded" />
-        <div className="h-10 bg-neutral-200 rounded" />
-        <div className="h-10 bg-neutral-200 rounded" />
+        <div className="h-10 rounded bg-neutral-200" />
+        <div className="h-10 rounded bg-neutral-200" />
+        <div className="h-10 rounded bg-neutral-200" />
+        <div className="h-10 rounded bg-neutral-200" />
       </div>
     </>
   );

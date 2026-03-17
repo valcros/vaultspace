@@ -7,12 +7,12 @@ export const metadata: Metadata = {
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-neutral-50 px-4 py-12">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 px-4 py-12">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="flex justify-center mb-8">
+        <div className="mb-8 flex justify-center">
           <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white font-bold text-xl">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-xl font-bold text-white">
               V
             </div>
             <span className="text-2xl font-bold text-neutral-900">VaultSpace</span>
@@ -20,7 +20,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         {/* Auth Card */}
-        <div className="bg-white rounded-lg shadow-md border border-neutral-200 p-8">
+        <div className="rounded-lg border border-neutral-200 bg-white p-8 shadow-md">
           {children}
         </div>
 

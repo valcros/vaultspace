@@ -179,21 +179,21 @@ export default function SetupWizardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
       <div className="w-full max-w-2xl">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary-600 text-white font-bold text-xl mb-4">
+        <div className="mb-8 text-center">
+          <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-primary-600 text-xl font-bold text-white">
             V
           </div>
           <h1 className="text-2xl font-bold text-neutral-900">VaultSpace Setup</h1>
-          <p className="text-neutral-500 mt-1">Configure your secure data room</p>
+          <p className="mt-1 text-neutral-500">Configure your secure data room</p>
         </div>
 
         {/* Progress */}
         <div className="mb-8">
           <Progress value={progress} className="h-2" />
-          <div className="flex justify-between mt-4">
+          <div className="mt-4 flex justify-between">
             {steps.map((step, index) => {
               const isActive = step.key === currentStep;
               const isComplete = index < currentStepIndex;
@@ -211,7 +211,7 @@ export default function SetupWizardPage() {
                   }`}
                 >
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+                    className={`mb-2 flex h-10 w-10 items-center justify-center rounded-full ${
                       isActive
                         ? 'bg-primary-100 text-primary-600'
                         : isComplete
@@ -219,9 +219,9 @@ export default function SetupWizardPage() {
                           : 'bg-neutral-100 text-neutral-400'
                     }`}
                   >
-                    {isComplete ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                    {isComplete ? <Check className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
                   </div>
-                  <span className="text-sm font-medium hidden sm:block">{step.label}</span>
+                  <span className="hidden text-sm font-medium sm:block">{step.label}</span>
                 </div>
               );
             })}
@@ -345,11 +345,11 @@ export default function SetupWizardPage() {
             )}
 
             {currentStep === 'complete' && (
-              <div className="text-center py-6">
-                <div className="mx-auto w-16 h-16 rounded-full bg-success-100 flex items-center justify-center mb-4">
-                  <Check className="w-8 h-8 text-success-600" />
+              <div className="py-6 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-success-100">
+                  <Check className="h-8 w-8 text-success-600" />
                 </div>
-                <p className="text-neutral-600 mb-4">
+                <p className="mb-4 text-neutral-600">
                   Your organization <strong>{data.organizationName}</strong> has been created
                   successfully.
                 </p>
@@ -360,10 +360,10 @@ export default function SetupWizardPage() {
             )}
 
             {/* Actions */}
-            <div className="flex justify-between mt-8">
+            <div className="mt-8 flex justify-between">
               {currentStep !== 'complete' && currentStepIndex > 0 && (
                 <Button variant="outline" onClick={handleBack} disabled={isLoading}>
-                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  <ArrowLeft className="mr-2 h-4 w-4" />
                   Back
                 </Button>
               )}
@@ -372,12 +372,12 @@ export default function SetupWizardPage() {
               {currentStep !== 'complete' ? (
                 <Button onClick={handleNext} loading={isLoading}>
                   {currentStep === 'security' ? 'Complete Setup' : 'Continue'}
-                  {currentStep !== 'security' && <ArrowRight className="w-4 h-4 ml-2" />}
+                  {currentStep !== 'security' && <ArrowRight className="ml-2 h-4 w-4" />}
                 </Button>
               ) : (
                 <Button onClick={handleFinish} className="mx-auto">
                   Go to Dashboard
-                  <ArrowRight className="w-4 h-4 ml-2" />
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               )}
             </div>

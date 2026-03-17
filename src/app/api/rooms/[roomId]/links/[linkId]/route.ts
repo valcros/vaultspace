@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -30,69 +30,66 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
 
-    // Get link
-    const link = await db.link.findFirst({
-      where: {
-        id: linkId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-      include: {
-        createdByUser: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
+      // Get link
+      const link = await tx.link.findFirst({
+        where: {
+          id: linkId,
+          roomId,
+          organizationId: session.organizationId,
+        },
+        include: {
+          createdByUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          visits: {
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+          },
+          _count: {
+            select: {
+              visits: true,
+            },
           },
         },
-        visits: {
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-        },
-        _count: {
-          select: {
-            visits: true,
-          },
-        },
-      },
+      });
+
+      if (!link) {
+        return { error: 'Link not found', status: 404 };
+      }
+
+      return { link };
     });
 
-    if (!link) {
-      return NextResponse.json(
-        { error: 'Link not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ link });
+    return NextResponse.json({ link: result.link });
   } catch (error) {
     console.error('[LinkAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get link' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get link' }, { status: 500 });
   }
 }
 
@@ -107,41 +104,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
-    }
-
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
-    }
-
-    // Get existing link
-    const existingLink = await db.link.findFirst({
-      where: {
-        id: linkId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!existingLink) {
-      return NextResponse.json(
-        { error: 'Link not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -159,7 +122,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     } = body;
 
     // Handle password update
-    let passwordData = {};
+    let passwordData: { requiresPassword?: boolean; passwordHash?: string | null } = {};
     if (removePassword) {
       passwordData = {
         requiresPassword: false,
@@ -172,29 +135,60 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       };
     }
 
-    // Update link
-    const updatedLink = await db.link.update({
-      where: { id: linkId },
-      data: {
-        ...(name !== undefined && { name: name?.trim() ?? null }),
-        ...(description !== undefined && { description: description?.trim() ?? null }),
-        ...(permission && { permission }),
-        ...passwordData,
-        ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
-        ...(allowedEmails !== undefined && { allowedEmails }),
-        ...(expiresAt !== undefined && { expiresAt: expiresAt ? new Date(expiresAt) : null }),
-        ...(maxViews !== undefined && { maxViews }),
-        ...(isActive !== undefined && { isActive }),
-      },
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get existing link
+      const existingLink = await tx.link.findFirst({
+        where: {
+          id: linkId,
+          roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!existingLink) {
+        return { error: 'Link not found', status: 404 };
+      }
+
+      // Update link
+      const updatedLink = await tx.link.update({
+        where: { id: linkId },
+        data: {
+          ...(name !== undefined && { name: name?.trim() ?? null }),
+          ...(description !== undefined && { description: description?.trim() ?? null }),
+          ...(permission && { permission }),
+          ...passwordData,
+          ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
+          ...(allowedEmails !== undefined && { allowedEmails }),
+          ...(expiresAt !== undefined && { expiresAt: expiresAt ? new Date(expiresAt) : null }),
+          ...(maxViews !== undefined && { maxViews }),
+          ...(isActive !== undefined && { isActive }),
+        },
+      });
+
+      return { link: updatedLink };
     });
 
-    return NextResponse.json({ link: updatedLink });
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    return NextResponse.json({ link: result.link });
   } catch (error) {
     console.error('[LinkAPI] PATCH error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update link' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update link' }, { status: 500 });
   }
 }
 
@@ -209,55 +203,52 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
+    // Use RLS context for org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Verify room access
+      const room = await tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!room) {
+        return { error: 'Room not found', status: 404 };
+      }
+
+      // Get existing link
+      const existingLink = await tx.link.findFirst({
+        where: {
+          id: linkId,
+          roomId,
+          organizationId: session.organizationId,
+        },
+      });
+
+      if (!existingLink) {
+        return { error: 'Link not found', status: 404 };
+      }
+
+      // Deactivate rather than hard delete
+      await tx.link.update({
+        where: { id: linkId },
+        data: { isActive: false },
+      });
+
+      return { success: true };
     });
 
-    if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
-
-    // Get existing link
-    const existingLink = await db.link.findFirst({
-      where: {
-        id: linkId,
-        roomId,
-        organizationId: session.organizationId,
-      },
-    });
-
-    if (!existingLink) {
-      return NextResponse.json(
-        { error: 'Link not found' },
-        { status: 404 }
-      );
-    }
-
-    // Deactivate rather than hard delete
-    await db.link.update({
-      where: { id: linkId },
-      data: { isActive: false },
-    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[LinkAPI] DELETE error:', error);
-    return NextResponse.json(
-      { error: 'Failed to revoke link' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to revoke link' }, { status: 500 });
   }
 }

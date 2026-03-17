@@ -1,15 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import {
-  Search,
-  MoreHorizontal,
-  Mail,
-  Shield,
-  Eye,
-  Trash2,
-  UserPlus,
-} from 'lucide-react';
+import { Search, MoreHorizontal, Mail, Shield, Eye, Trash2, UserPlus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,7 +24,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -53,7 +51,10 @@ export default function UsersPage() {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showInviteDialog, setShowInviteDialog] = React.useState(false);
   const [isInviting, setIsInviting] = React.useState(false);
-  const [inviteData, setInviteData] = React.useState<{ email: string; role: 'ADMIN' | 'VIEWER' }>({ email: '', role: 'VIEWER' });
+  const [inviteData, setInviteData] = React.useState<{ email: string; role: 'ADMIN' | 'VIEWER' }>({
+    email: '',
+    role: 'VIEWER',
+  });
   const [inviteError, setInviteError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -134,7 +135,7 @@ export default function UsersPage() {
         description="Manage organization members and their access"
         actions={
           <Button onClick={() => setShowInviteDialog(true)}>
-            <UserPlus className="w-4 h-4 mr-2" />
+            <UserPlus className="mr-2 h-4 w-4" />
             Invite User
           </Button>
         }
@@ -142,8 +143,8 @@ export default function UsersPage() {
 
       <div className="p-6">
         {/* Search */}
-        <div className="relative max-w-md mb-6">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+        <div className="relative mb-6 max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <Input
             placeholder="Search users..."
             value={searchQuery}
@@ -156,38 +157,38 @@ export default function UsersPage() {
         {isLoading ? (
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-4 p-4 border rounded-lg">
+              <div key={i} className="flex items-center gap-4 rounded-lg border p-4">
                 <Skeleton className="h-10 w-10 rounded-full" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-48" />
-                  <Skeleton className="h-3 w-32 mt-2" />
+                  <Skeleton className="mt-2 h-3 w-32" />
                 </div>
               </div>
             ))}
           </div>
         ) : users.length === 0 ? (
           <Card className="p-12 text-center">
-            <UserPlus className="w-12 h-12 mx-auto text-neutral-400 mb-4" />
-            <h3 className="text-lg font-semibold text-neutral-900 mb-2">No users yet</h3>
-            <p className="text-neutral-500 mb-6 max-w-sm mx-auto">
+            <UserPlus className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No users yet</h3>
+            <p className="mx-auto mb-6 max-w-sm text-neutral-500">
               Invite team members to collaborate in your data rooms.
             </p>
             <Button onClick={() => setShowInviteDialog(true)}>
-              <UserPlus className="w-4 h-4 mr-2" />
+              <UserPlus className="mr-2 h-4 w-4" />
               Invite your first user
             </Button>
           </Card>
         ) : (
-          <div className="border rounded-lg overflow-hidden">
+          <div className="overflow-hidden rounded-lg border">
             <table className="w-full">
-              <thead className="bg-neutral-50 border-b">
+              <thead className="border-b bg-neutral-50">
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">User</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">Role</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">
+                  <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">User</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">Role</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                     Last Active
                   </th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-neutral-500">
+                  <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                     Joined
                   </th>
                   <th className="w-10"></th>
@@ -198,12 +199,9 @@ export default function UsersPage() {
                   <tr key={user.id} className="border-b last:border-0 hover:bg-neutral-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <UserAvatar
-                          name={`${user.firstName} ${user.lastName}`}
-                          size="sm"
-                        />
+                        <UserAvatar name={`${user.firstName} ${user.lastName}`} size="sm" />
                         <div>
-                          <div className="font-medium flex items-center gap-2">
+                          <div className="flex items-center gap-2 font-medium">
                             {user.firstName} {user.lastName}
                             {!user.isActive && (
                               <Badge variant="secondary" className="text-xs">
@@ -218,9 +216,9 @@ export default function UsersPage() {
                     <td className="px-4 py-3">
                       <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'}>
                         {user.role === 'ADMIN' ? (
-                          <Shield className="w-3 h-3 mr-1" />
+                          <Shield className="mr-1 h-3 w-3" />
                         ) : (
-                          <Eye className="w-3 h-3 mr-1" />
+                          <Eye className="mr-1 h-3 w-3" />
                         )}
                         {user.role.toLowerCase()}
                       </Badge>
@@ -240,13 +238,13 @@ export default function UsersPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem>
-                            <Mail className="w-4 h-4 mr-2" />
+                            <Mail className="mr-2 h-4 w-4" />
                             Send Email
                           </DropdownMenuItem>
                           <DropdownMenuItem>Change Role</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-danger-600">
-                            <Trash2 className="w-4 h-4 mr-2" />
+                            <Trash2 className="mr-2 h-4 w-4" />
                             Remove
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -261,12 +259,15 @@ export default function UsersPage() {
       </div>
 
       {/* Invite User Dialog */}
-      <Dialog open={showInviteDialog} onOpenChange={(open) => {
-        setShowInviteDialog(open);
-        if (!open) {
-          setInviteError(null);
-        }
-      }}>
+      <Dialog
+        open={showInviteDialog}
+        onOpenChange={(open) => {
+          setShowInviteDialog(open);
+          if (!open) {
+            setInviteError(null);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite User</DialogTitle>
@@ -276,7 +277,7 @@ export default function UsersPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             {inviteError && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">
                 {inviteError}
               </div>
             )}
@@ -308,13 +309,13 @@ export default function UsersPage() {
                 <SelectContent>
                   <SelectItem value="ADMIN">
                     <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4" />
+                      <Shield className="h-4 w-4" />
                       Admin - Full access to all rooms and settings
                     </div>
                   </SelectItem>
                   <SelectItem value="VIEWER">
                     <div className="flex items-center gap-2">
-                      <Eye className="w-4 h-4" />
+                      <Eye className="h-4 w-4" />
                       Viewer - View access to assigned rooms
                     </div>
                   </SelectItem>
@@ -326,11 +327,7 @@ export default function UsersPage() {
             <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleInvite}
-              loading={isInviting}
-              disabled={!inviteData.email.trim()}
-            >
+            <Button onClick={handleInvite} loading={isInviting} disabled={!inviteData.email.trim()}>
               Send Invitation
             </Button>
           </DialogFooter>

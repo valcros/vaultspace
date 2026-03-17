@@ -3,6 +3,15 @@
  *
  * Resolves custom domains to organization context.
  * Used by Next.js middleware to set organization context.
+ *
+ * PRE-RLS BOOTSTRAP: This module intentionally uses the global db client
+ * without org context, as we're resolving which organization based on
+ * domain/subdomain BEFORE the org context can be established.
+ *
+ * The RLS policy `org_bootstrap_lookup` allows SELECT on organizations
+ * when no org context is set, enabling this bootstrap pattern.
+ *
+ * Security: Only minimal public fields (id, slug) are selected. Active check enforced.
  */
 
 import { db } from '@/lib/db';
@@ -17,9 +26,7 @@ export interface CustomDomainResult {
  * Resolve a hostname to an organization
  * Returns null if no matching organization found
  */
-export async function resolveCustomDomain(
-  hostname: string
-): Promise<CustomDomainResult | null> {
+export async function resolveCustomDomain(hostname: string): Promise<CustomDomainResult | null> {
   // Skip localhost and IP addresses
   if (
     hostname === 'localhost' ||
@@ -74,7 +81,7 @@ export async function resolveCustomDomain(
  */
 export function extractSubdomain(hostname: string): string | null {
   const mainDomains = (process.env['MAIN_DOMAINS'] || 'vaultspace.app,vaultspace.local').split(',');
-  
+
   for (const mainDomain of mainDomains) {
     if (hostname.endsWith(`.${mainDomain}`)) {
       const subdomain = hostname.replace(`.${mainDomain}`, '').split(':')[0];
@@ -83,16 +90,14 @@ export function extractSubdomain(hostname: string): string | null {
       }
     }
   }
-  
+
   return null;
 }
 
 /**
  * Resolve organization by subdomain
  */
-export async function resolveSubdomain(
-  hostname: string
-): Promise<CustomDomainResult | null> {
+export async function resolveSubdomain(hostname: string): Promise<CustomDomainResult | null> {
   const subdomain = extractSubdomain(hostname);
   if (!subdomain) {
     return null;

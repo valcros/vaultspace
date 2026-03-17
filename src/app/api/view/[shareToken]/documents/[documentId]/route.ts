@@ -7,12 +7,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
 }
 
+/**
+ * PRE-RLS BOOTSTRAP: Resolve viewer session from token
+ * Returns organizationId for subsequent RLS context
+ */
 async function getViewerSession(shareToken: string) {
   const cookieStore = await cookies();
   const viewerToken = cookieStore.get(`viewer_${shareToken}`)?.value;
@@ -25,7 +29,10 @@ async function getViewerSession(shareToken: string) {
     where: {
       sessionToken: viewerToken,
     },
-    include: {
+    select: {
+      organizationId: true,
+      visitorEmail: true,
+      ipAddress: true,
       link: {
         select: {
           scope: true,
@@ -36,6 +43,8 @@ async function getViewerSession(shareToken: string) {
         select: {
           id: true,
           allowDownloads: true,
+          enableWatermark: true,
+          watermarkTemplate: true,
         },
       },
     },
@@ -50,68 +59,77 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const session = await getViewerSession(shareToken);
 
     if (!session) {
-      return NextResponse.json(
-        { error: 'Session expired or invalid' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
     }
 
     // Check if document is allowed by link scope
     if (session.link?.scope === 'DOCUMENT' && session.link.scopedDocumentId !== documentId) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
-    const document = await db.document.findFirst({
-      where: {
-        id: documentId,
-        roomId: session.room.id,
-        status: 'ACTIVE',
-      },
-      select: {
-        id: true,
-        name: true,
-        mimeType: true,
-        allowDownload: true,
-        currentVersionId: true,
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          take: 1,
-          select: {
-            previewAssets: {
-              where: { assetType: 'RENDER' },
-              select: { pageNumber: true },
+    // Use RLS context for all org-scoped queries
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          roomId: session.room.id,
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          name: true,
+          mimeType: true,
+          allowDownload: true,
+          currentVersionId: true,
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 1,
+            select: {
+              previewAssets: {
+                where: { assetType: 'RENDER' },
+                select: { pageNumber: true },
+              },
             },
           },
         },
-      },
+      });
+
+      if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      // Update view count
+      await tx.document.update({
+        where: { id: document.id },
+        data: {
+          viewCount: { increment: 1 },
+          lastViewedAt: new Date(),
+        },
+      });
+
+      return { document };
     });
 
-    if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    // Update view count
-    await db.document.update({
-      where: { id: document.id },
-      data: {
-        viewCount: { increment: 1 },
-        lastViewedAt: new Date(),
-      },
-    });
+    const document = result.document;
 
     // Get page count from preview assets
     const pageCount = document.versions[0]?.previewAssets?.length || 1;
 
-    // Generate watermark text if session has email
-    let watermarkText = null;
-    if (session.visitorEmail) {
-      watermarkText = `${session.visitorEmail} • ${new Date().toISOString().split('T')[0]}`;
+    // Generate watermark text only if room has watermarks enabled (F130)
+    let watermarkText: string | null = null;
+    if (session.room.enableWatermark && session.visitorEmail) {
+      // Use room's template if configured, otherwise default format
+      const template = session.room.watermarkTemplate || '{{email}} • {{date}}';
+      const now = new Date().toISOString();
+      watermarkText = template
+        .replace('{{email}}', session.visitorEmail)
+        .replace('{{date}}', now.split('T')[0] ?? '')
+        .replace('{{time}}', now.split('T')[1]?.slice(0, 5) ?? '')
+        .replace('{{ip}}', session.ipAddress ?? '');
     }
 
     return NextResponse.json({
@@ -127,9 +145,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
   } catch (error) {
     console.error('[ViewerDocumentAPI] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to load document' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to load document' }, { status: 500 });
   }
 }

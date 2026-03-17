@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -28,37 +28,37 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Get room with settings
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        status: true,
-        requiresPassword: true,
-        requiresEmailVerification: true,
-        allowDownloads: true,
-        defaultExpiryDays: true,
-        archivedAt: true,
-        closedAt: true,
-      },
+    // Get room with settings using RLS context
+    const room = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          status: true,
+          requiresPassword: true,
+          requiresEmailVerification: true,
+          allowDownloads: true,
+          defaultExpiryDays: true,
+          requiresNda: true,
+          ndaContent: true,
+          enableWatermark: true,
+          watermarkTemplate: true,
+          archivedAt: true,
+          closedAt: true,
+        },
+      });
     });
 
     if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 });
     }
 
     return NextResponse.json({
@@ -71,16 +71,17 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         requiresEmailVerification: room.requiresEmailVerification,
         allowDownloads: room.allowDownloads,
         defaultExpiryDays: room.defaultExpiryDays,
+        requiresNda: room.requiresNda,
+        ndaContent: room.ndaContent,
+        enableWatermark: room.enableWatermark,
+        watermarkTemplate: room.watermarkTemplate,
         archivedAt: room.archivedAt,
         closedAt: room.closedAt,
       },
     });
   } catch (error) {
     console.error('[RoomSettingsAPI] GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get room settings' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to get room settings' }, { status: 500 });
   }
 }
 
@@ -95,25 +96,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Admin access required' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Verify room access
-    const room = await db.room.findFirst({
-      where: {
-        id: roomId,
-        organizationId: session.organizationId,
-      },
+    // Verify room access using RLS context
+    const room = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+      });
     });
 
     if (!room) {
-      return NextResponse.json(
-        { error: 'Room not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 });
     }
 
     const body = await request.json();
@@ -125,19 +122,24 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       requiresEmailVerification,
       allowDownloads,
       defaultExpiryDays,
+      requiresNda,
+      ndaContent,
+      enableWatermark,
+      watermarkTemplate,
     } = body;
 
     // Validate name if provided
     if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
-      return NextResponse.json(
-        { error: 'Invalid room name' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid room name' }, { status: 400 });
     }
 
     // Validate defaultExpiryDays
     if (defaultExpiryDays !== undefined && defaultExpiryDays !== null) {
-      if (typeof defaultExpiryDays !== 'number' || defaultExpiryDays < 1 || defaultExpiryDays > 365) {
+      if (
+        typeof defaultExpiryDays !== 'number' ||
+        defaultExpiryDays < 1 ||
+        defaultExpiryDays > 365
+      ) {
         return NextResponse.json(
           { error: 'Default expiry must be between 1 and 365 days' },
           { status: 400 }
@@ -171,23 +173,41 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (defaultExpiryDays !== undefined) {
       updateData['defaultExpiryDays'] = defaultExpiryDays;
     }
+    if (requiresNda !== undefined) {
+      updateData['requiresNda'] = Boolean(requiresNda);
+    }
+    if (ndaContent !== undefined) {
+      updateData['ndaContent'] = ndaContent?.trim() || null;
+    }
+    if (enableWatermark !== undefined) {
+      updateData['enableWatermark'] = Boolean(enableWatermark);
+    }
+    if (watermarkTemplate !== undefined) {
+      updateData['watermarkTemplate'] = watermarkTemplate?.trim() || null;
+    }
 
-    // Update room
-    const updatedRoom = await db.room.update({
-      where: { id: roomId },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        status: true,
-        requiresPassword: true,
-        requiresEmailVerification: true,
-        allowDownloads: true,
-        defaultExpiryDays: true,
-        archivedAt: true,
-        closedAt: true,
-      },
+    // Update room using RLS context
+    const updatedRoom = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.room.update({
+        where: { id: roomId },
+        data: updateData,
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          status: true,
+          requiresPassword: true,
+          requiresEmailVerification: true,
+          allowDownloads: true,
+          defaultExpiryDays: true,
+          requiresNda: true,
+          ndaContent: true,
+          enableWatermark: true,
+          watermarkTemplate: true,
+          archivedAt: true,
+          closedAt: true,
+        },
+      });
     });
 
     return NextResponse.json({
@@ -200,15 +220,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         requiresEmailVerification: updatedRoom.requiresEmailVerification,
         allowDownloads: updatedRoom.allowDownloads,
         defaultExpiryDays: updatedRoom.defaultExpiryDays,
+        requiresNda: updatedRoom.requiresNda,
+        ndaContent: updatedRoom.ndaContent,
+        enableWatermark: updatedRoom.enableWatermark,
+        watermarkTemplate: updatedRoom.watermarkTemplate,
         archivedAt: updatedRoom.archivedAt,
         closedAt: updatedRoom.closedAt,
       },
     });
   } catch (error) {
     console.error('[RoomSettingsAPI] PATCH error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update room settings' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update room settings' }, { status: 500 });
   }
 }

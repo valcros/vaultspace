@@ -46,11 +46,9 @@ export default function LoginPage() {
 
   return (
     <>
-      <div className="text-center mb-6">
+      <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-neutral-900">Welcome back</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Sign in to your account to continue
-        </p>
+        <p className="mt-1 text-sm text-neutral-500">Sign in to your account to continue</p>
       </div>
 
       {error && (
@@ -101,7 +99,7 @@ export default function LoginPage() {
             checked={rememberMe}
             onCheckedChange={(checked) => setRememberMe(checked === true)}
           />
-          <Label htmlFor="remember" className="text-sm font-normal cursor-pointer">
+          <Label htmlFor="remember" className="cursor-pointer text-sm font-normal">
             Remember me for 30 days
           </Label>
         </div>
@@ -113,7 +111,7 @@ export default function LoginPage() {
 
       <div className="mt-6 text-center text-sm text-neutral-500">
         Don&apos;t have an account?{' '}
-        <Link href="/auth/register" className="text-primary-600 hover:text-primary-700 font-medium">
+        <Link href="/auth/register" className="font-medium text-primary-600 hover:text-primary-700">
           Sign up
         </Link>
       </div>

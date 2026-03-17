@@ -92,7 +92,9 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
         { priority: 'high' }
       );
     } else {
-      console.log(`[ScanProcessor] Document ${documentId} is INFECTED: ${scanResult.threats?.join(', ')}`);
+      console.log(
+        `[ScanProcessor] Document ${documentId} is INFECTED: ${scanResult.threats?.join(', ')}`
+      );
 
       await db.documentVersion.update({
         where: {

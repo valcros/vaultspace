@@ -13,24 +13,27 @@
 - [Monitoring and Observability](#monitoring-and-observability)
 - [Upgrade Strategy](#upgrade-strategy)
 - [Troubleshooting](#troubleshooting)
+- [Appendix A: Non-Azure Reference Configurations](#appendix-a-non-azure-reference-configurations) _(unsupported)_
 
 ---
 
 ## Overview
 
-VaultSpace deployment philosophy prioritizes **simplicity by default** and **scalability when needed**. The platform is built with a **Docker-first, cloud-agnostic** approach that supports:
+> **⚠️ AZURE-ONLY:** VaultSpace runs exclusively in Azure. Local development is not supported on this branch.
+> Use Azure Container Apps (dev/staging) or AKS (production) for all deployments.
 
-- **Local development**: Single `docker-compose up` on developer laptops
-- **Small production**: Single-server self-hosted deployment
-- **Large production**: Kubernetes (AKS, EKS, GKE) with horizontal scaling
+VaultSpace deployment philosophy prioritizes **security by default** and **scalability when needed**. The platform is built for Azure with:
+
+- **Development/Staging**: Azure Container Apps (simple, cost-effective)
+- **Production**: Azure Kubernetes Service (AKS) with horizontal scaling
 
 ### Key Principles
 
-1. **Stateless application layer** - Multiple app instances can run behind a load balancer with zero coordination
-2. **Background workers** - Heavy lifting (preview generation, virus scanning, exports) runs in dedicated worker processes
-3. **Private infrastructure** - Database, Redis, and workers are never publicly exposed
-4. **Standard container practices** - Multi-stage Dockerfiles, secrets via environment variables, health checks
-5. **Cloud-agnostic primitives** - S3-compatible storage, managed PostgreSQL, Redis, standard observability
+1. **Azure-only infrastructure** - All components must run on Azure services
+2. **Stateless application layer** - Multiple app instances can run behind a load balancer with zero coordination
+3. **Background workers** - Heavy lifting (preview generation, virus scanning, exports) runs in dedicated worker processes
+4. **Private infrastructure** - Database, Redis, and workers are never publicly exposed
+5. **Standard container practices** - Multi-stage Dockerfiles, secrets via environment variables, health checks
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) and [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) for system design details.
 
@@ -38,41 +41,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [DATABASE_SCHEMA.md](./DATABASE_SCH
 
 ## Deployment Stages
 
-### 1. Local Development
-
-**Use case:** Developers, feature testing, demo installations.
-
-**Components:**
-
-- Next.js app (dev mode with hot reload)
-- PostgreSQL 15+ (local container)
-- Redis (local container)
-- Optional: Gotenberg/LibreOffice for preview generation
-- Optional: ClamAV for virus scanning
-- Optional: Meilisearch for search indexing
-
-**Starting point:**
-
-```bash
-git clone https://github.com/yourorg/vaultspace
-cd vaultspace
-cp .env.example .env
-docker compose up
-# App runs at http://localhost:3000
-```
-
-Benefits:
-
-- No cloud account required
-- Full feature set available
-- Complete, realistic environment
-- Minimal configuration needed
-
-**Performance expectations:** Suitable for teams up to 10 people, document rooms under 10K documents.
-
----
-
-### 2. Cloud Dev / Testing
+### 1. Development / Staging (Azure Container Apps)
 
 **Use case:** Integration testing, staging environment, cloud-native evaluation.
 
@@ -139,6 +108,9 @@ Benefits:
 ---
 
 ## Docker Configuration
+
+> **Note:** These Dockerfiles are used to build container images for deployment to Azure Container Apps or AKS.
+> They are not intended for local execution. Build images locally, push to Azure Container Registry, then deploy to Azure.
 
 ### Dockerfile (Application)
 
@@ -254,303 +226,21 @@ EXPOSE 2002
 CMD ["soffice", "--headless", "--accept=socket,host=0.0.0.0,port=2002;urp;", "--norestore", "--nolockcheck"]
 ```
 
-### docker-compose.yml (Production Reference)
+### Service Dependencies Reference
 
-Complete, production-ready Docker Compose for local development or single-server deployment:
+For Azure Container Apps deployment, VaultSpace requires these services:
 
-```yaml
-version: '3.9'
+| Service      | Azure Service                                 | Purpose                     |
+| ------------ | --------------------------------------------- | --------------------------- |
+| PostgreSQL   | Azure Database for PostgreSQL Flexible Server | Primary database            |
+| Redis        | Azure Cache for Redis                         | Job queue and caching       |
+| Blob Storage | Azure Blob Storage                            | Document storage            |
+| Gotenberg    | Container Apps sidecar                        | Document preview generation |
+| ClamAV       | Container Apps sidecar                        | Virus scanning              |
 
-services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: vaultspace-postgres
-    environment:
-      POSTGRES_USER: vaultspace
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-change-me}
-      POSTGRES_DB: vaultspace
-    ports:
-      - "${DATABASE_PORT:-5432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vaultspace"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+See [Azure Reference Architecture](#azure-reference-architecture) for deployment patterns and the [Container Apps Deployment](#container-apps-deployment) section for specific Azure CLI commands.
 
-  # Redis Cache and Job Queue
-  redis:
-    image: redis:7-alpine
-    container_name: vaultspace-redis
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-change-me}
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    restart: unless-stopped
-
-  # Gotenberg (Document Preview Service)
-  # Optional: remove if using LibreOffice in-process
-  gotenberg:
-    image: gotenberg/gotenberg:8.0
-    container_name: vaultspace-gotenberg
-    ports:
-      - "3001:3000"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
-    environment:
-      LOG_LEVEL: info
-
-  # ClamAV (Virus Scanning)
-  # Optional: can disable in dev with SCAN_PROVIDER=none
-  clamav:
-    image: clamav/clamav:latest
-    container_name: vaultspace-clamav
-    ports:
-      - "3310:3310"
-    volumes:
-      - clamav_data:/var/lib/clamav
-    environment:
-      FRESHCLAM_CHECKS: 12
-    healthcheck:
-      test: ["CMD", "clamscan", "--version"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
-
-  # Main Application
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: vaultspace-app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    ports:
-      - "${APP_PORT:-3000}:3000"
-    environment:
-      # Core
-      NODE_ENV: production
-      APP_URL: ${APP_URL:-http://localhost:3000}
-      SESSION_SECRET: ${SESSION_SECRET}
-      APP_URL: ${APP_URL:-http://localhost:3000}
-
-      # Database
-      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
-      DATABASE_POOL_SIZE: 10
-
-      # Redis
-      REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
-
-      # Storage
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
-      STORAGE_LOCAL_PATH: /app/storage
-
-      # Email
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
-      SMTP_FROM: ${SMTP_FROM:-noreply@vaultspace.local}
-
-      # Preview
-      PREVIEW_PROVIDER: ${PREVIEW_PROVIDER:-gotenberg}
-      GOTENBERG_URL: http://gotenberg:3000
-
-      # Virus Scanning
-      SCAN_PROVIDER: ${SCAN_PROVIDER:-clamav}
-      CLAMAV_HOST: clamav
-      CLAMAV_PORT: 3310
-
-      # Search
-      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-postgres}
-
-      # Encryption
-      ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-aes}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-
-      # App Configuration
-      APP_NAME: ${APP_NAME:-VaultSpace}
-      DEFAULT_ORG_NAME: ${DEFAULT_ORG_NAME:-My Organization}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-
-    volumes:
-      - ./storage:/app/storage
-      - ./uploads:/app/uploads
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
-
-  # General Worker
-  worker-general:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-general
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      WORKER_TYPE: general
-      NODE_ENV: production
-      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
-      DATABASE_POOL_SIZE: 5
-      REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
-      STORAGE_LOCAL_PATH: /app/storage
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
-      SMTP_FROM: ${SMTP_FROM:-noreply@vaultspace.local}
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
-      ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-aes}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    volumes:
-      - ./storage:/app/storage
-    restart: unless-stopped
-
-  # Preview Worker (CPU-intensive)
-  worker-preview:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-preview
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      gotenberg:
-        condition: service_healthy
-    environment:
-      WORKER_TYPE: preview
-      NODE_ENV: production
-      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
-      DATABASE_POOL_SIZE: 3
-      REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
-      STORAGE_LOCAL_PATH: /app/storage
-      PREVIEW_PROVIDER: ${PREVIEW_PROVIDER:-gotenberg}
-      GOTENBERG_URL: http://gotenberg:3000
-      ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-aes}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    volumes:
-      - ./storage:/app/storage
-    restart: unless-stopped
-
-  # Scan Worker (I/O-intensive)
-  worker-scan:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-scan
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      clamav:
-        condition: service_healthy
-    environment:
-      WORKER_TYPE: scan
-      NODE_ENV: production
-      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
-      DATABASE_POOL_SIZE: 3
-      REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
-      STORAGE_LOCAL_PATH: /app/storage
-      SCAN_PROVIDER: ${SCAN_PROVIDER:-clamav}
-      CLAMAV_HOST: clamav
-      CLAMAV_PORT: 3310
-      ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-aes}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    volumes:
-      - ./storage:/app/storage
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-  clamav_data:
-    driver: local
-
-networks:
-  default:
-    name: vaultspace-network
-```
-
-### docker-compose.dev.yml (Development Overrides)
-
-Override compose file for development with additional debugging tools:
-
-```yaml
-version: '3.9'
-
-services:
-  app:
-    environment:
-      NODE_ENV: development
-      LOG_LEVEL: debug
-    command: npm run dev
-    ports:
-      - '3000:3000'
-      - '9229:9229' # Node debugging
-
-  postgres:
-    ports:
-      - '5432:5432' # Direct access for debugging
-
-  redis:
-    ports:
-      - '6379:6379' # Direct access for debugging
-    command: redis-server --requirepass ${REDIS_PASSWORD:-change-me} --loglevel debug
-
-  # Meilisearch (optional, for search testing)
-  meilisearch:
-    image: getmeili/meilisearch:v1.8
-    ports:
-      - '7700:7700'
-    environment:
-      MEILI_MASTER_KEY: dev-key
-```
-
-**Usage:**
-
-```bash
-# Production-like environment
-docker compose up
-
-# Development environment with debugging
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-```
+> **Note:** A Docker Compose reference file showing service relationships is available in [Appendix A](#appendix-a-non-azure-reference-configurations) for those migrating from other platforms.
 
 ---
 
@@ -580,26 +270,25 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 #### Redis
 
-| Variable    | Required | Default | Example                            | Description                                                                        |
-| ----------- | -------- | ------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
-| `REDIS_URL` | Yes      | —       | `redis://:password@localhost:6379` | Redis connection string. Format: `redis[s]://[:password@]host[:port][/db]`         |
-| `REDIS_TLS` | No       | `false` | `true`                             | Enable TLS for Redis connection. Required if using Azure Cache for Redis with SSL. |
+| Variable    | Required | Default | Example                                                 | Description                                                                              |
+| ----------- | -------- | ------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `REDIS_URL` | Yes      | —       | `rediss://:key@yourserver.redis.cache.windows.net:6380` | Azure Cache for Redis connection string. Format: `rediss://[:password@]host[:port][/db]` |
+| `REDIS_TLS` | No       | `false` | `true`                                                  | Enable TLS for Redis connection. Required if using Azure Cache for Redis with SSL.       |
 
 #### Storage
 
-| Variable                     | Required    | Default     | Example                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------------------------- | ----------- | ----------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `STORAGE_PROVIDER`           | Yes         | `local`     | `local`, `s3`, `azure`                           | Storage backend. `local` for development; `s3` or `azure` for production.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `STORAGE_LOCAL_PATH`         | Conditional | `./storage` | `/data/storage`                                  | Local filesystem path for `STORAGE_PROVIDER=local`. Must have write permissions. Not used for cloud providers.                                                                                                                                                                                                                                                                                                                                                                                |
-| `STORAGE_BUCKET`             | Conditional | —           | `vaultspace-prod`                                | Bucket/container name. Required for `s3` or `azure`.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `STORAGE_REGION`             | Conditional | —           | `us-east-1`                                      | AWS region. Required for `STORAGE_PROVIDER=s3`.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `STORAGE_ENDPOINT`           | No          | —           | `https://minio.example.com`                      | Custom S3-compatible endpoint. Use for MinIO, Backblaze B2, DigitalOcean Spaces, etc.                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `STORAGE_KEY_ID`             | Conditional | —           | `AKIAIOSFODNN7EXAMPLE`                           | AWS access key ID. Required for `STORAGE_PROVIDER=s3`.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `STORAGE_SECRET_KEY`         | Conditional | —           | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`       | AWS secret access key. Required for `STORAGE_PROVIDER=s3`.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `AZURE_STORAGE_ACCOUNT_NAME` | Conditional | —           | `myaccount`                                      | Azure storage account name. Required for `STORAGE_PROVIDER=azure`.                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `AZURE_STORAGE_ACCOUNT_KEY`  | Conditional | —           | `DefaultEndpointsProtocol=https;AccountName=...` | Azure storage account key or full connection string. Required for `STORAGE_PROVIDER=azure`.                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `STORAGE_PUBLIC_URLS`        | No          | `false`     | `true`                                           | **WARNING: This setting applies ONLY to non-document static assets (logos, branding).** Document blobs MUST NEVER be served via public URLs. Document access is exclusively via signed URLs with 5-minute expiry (previews) or 1-hour expiry (downloads). Setting this to `true` does NOT make documents public. If you need to serve static branding assets from storage without signing, enable this. For all document operations, this setting is ignored and signed URLs are always used. |
-| `STORAGE_CLEANUP_DAYS`       | No          | `30`        | `90`                                             | Days before permanent deletion of soft-deleted documents.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Variable                     | Required    | Default | Example                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------- | ----------- | ------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| `STORAGE_PROVIDER`           | Yes         | `azure` | `azure`                                          | Storage backend. Must be `azure` (Azure Blob Storage) for Azure-only deployment.                                                                                                                                                                                                                                                                                                                                                                                                              |     |
+| `STORAGE_BUCKET`             | Conditional | —       | `vaultspace-prod`                                | Bucket/container name. Required for `s3` or `azure`.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `STORAGE_REGION`             | Conditional | —       | `us-east-1`                                      | AWS region. Required for `STORAGE_PROVIDER=s3`.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `STORAGE_ENDPOINT`           | No          | —       | `https://minio.example.com`                      | Custom S3-compatible endpoint. Use for MinIO, Backblaze B2, DigitalOcean Spaces, etc.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `STORAGE_KEY_ID`             | Conditional | —       | `AKIAIOSFODNN7EXAMPLE`                           | AWS access key ID. Required for `STORAGE_PROVIDER=s3`.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `STORAGE_SECRET_KEY`         | Conditional | —       | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`       | AWS secret access key. Required for `STORAGE_PROVIDER=s3`.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `AZURE_STORAGE_ACCOUNT_NAME` | Conditional | —       | `myaccount`                                      | Azure storage account name. Required for `STORAGE_PROVIDER=azure`.                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `AZURE_STORAGE_ACCOUNT_KEY`  | Conditional | —       | `DefaultEndpointsProtocol=https;AccountName=...` | Azure storage account key or full connection string. Required for `STORAGE_PROVIDER=azure`.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `STORAGE_PUBLIC_URLS`        | No          | `false` | `true`                                           | **WARNING: This setting applies ONLY to non-document static assets (logos, branding).** Document blobs MUST NEVER be served via public URLs. Document access is exclusively via signed URLs with 5-minute expiry (previews) or 1-hour expiry (downloads). Setting this to `true` does NOT make documents public. If you need to serve static branding assets from storage without signing, enable this. For all document operations, this setting is ignored and signed URLs are always used. |
+| `STORAGE_CLEANUP_DAYS`       | No          | `30`    | `90`                                             | Days before permanent deletion of soft-deleted documents.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 #### Email
 
@@ -650,13 +339,13 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 #### Virus & Malware Scanning
 
-| Variable               | Required    | Default        | Example                 | Description                                                                                                 |
-| ---------------------- | ----------- | -------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `SCAN_PROVIDER`        | No          | `clamav`       | `clamav`, `none`        | Virus scanner backend. `clamav` for ClamAV; `none` to disable scanning. **Never use `none` in production.** |
-| `CLAMAV_HOST`          | Conditional | —              | `clamav` or `127.0.0.1` | ClamAV daemon hostname. Required for `SCAN_PROVIDER=clamav`.                                                |
-| `CLAMAV_PORT`          | Conditional | `3310`         | `3310`                  | ClamAV daemon port. Required for `SCAN_PROVIDER=clamav`.                                                    |
-| `SCAN_TIMEOUT_SECONDS` | No          | `30`           | `60`                    | Timeout for scan jobs. Increase if scanning is slow.                                                        |
-| `SCAN_QUARANTINE_PATH` | No          | `./quarantine` | `/secure/quarantine`    | Local path to store quarantined files. Keep on encrypted storage.                                           |
+| Variable               | Required    | Default        | Example               | Description                                                                                                 |
+| ---------------------- | ----------- | -------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `SCAN_PROVIDER`        | No          | `clamav`       | `clamav`, `none`      | Virus scanner backend. `clamav` for ClamAV; `none` to disable scanning. **Never use `none` in production.** |
+| `CLAMAV_HOST`          | Conditional | —              | `localhost` (sidecar) | ClamAV daemon hostname. Use `localhost` for sidecar container in Azure Container Apps.                      |
+| `CLAMAV_PORT`          | Conditional | `3310`         | `3310`                | ClamAV daemon port. Required for `SCAN_PROVIDER=clamav`.                                                    |
+| `SCAN_TIMEOUT_SECONDS` | No          | `30`           | `60`                  | Timeout for scan jobs. Increase if scanning is slow.                                                        |
+| `SCAN_QUARANTINE_PATH` | No          | `./quarantine` | `/secure/quarantine`  | Local path to store quarantined files. Keep on encrypted storage.                                           |
 
 #### Search Indexing
 
@@ -951,6 +640,9 @@ VaultSpace uses **dedicated worker processes** for background tasks, separated f
 
 ### Worker Types
 
+> **Azure Deployment:** Deploy workers as separate Azure Container Apps with the `WORKER_TYPE` environment variable.
+> The examples below show the container configuration patterns.
+
 #### 1. General Worker (`WORKER_TYPE=general`)
 
 **Responsibilities:**
@@ -964,14 +656,18 @@ VaultSpace uses **dedicated worker processes** for background tasks, separated f
 
 **Recommended concurrency:** 10–20 (I/O-bound)
 
-**Scaling:** Add more replicas as email/webhook volume increases. Monitor queue depth: `REDIS_URL` → `LLEN vaultspace:queue:general`
+**Scaling:** Add more replicas as email/webhook volume increases. Monitor queue depth via Azure Cache for Redis.
+
+**Azure Container Apps deployment:**
 
 ```bash
-docker run \
-  -e WORKER_TYPE=general \
-  -e DATABASE_URL=... \
-  -e REDIS_URL=... \
-  vaultspace:latest npm run worker
+az containerapp create \
+  --name worker-general \
+  --resource-group <rg> \
+  --environment <env> \
+  --image myregistry.azurecr.io/vaultspace:latest \
+  --env-vars WORKER_TYPE=general DATABASE_URL=secretref:db-url REDIS_URL=secretref:redis-url \
+  --min-replicas 1 --max-replicas 4
 ```
 
 #### 2. Preview Worker (`WORKER_TYPE=preview`)
@@ -999,13 +695,17 @@ docker run \
 - Use large-instance nodes with high single-threaded performance
 - Consider Gotenberg auto-scaling if using containerized preview service
 
+**Azure Container Apps deployment:**
+
 ```bash
-docker run \
-  -e WORKER_TYPE=preview \
-  -e DATABASE_URL=... \
-  -e REDIS_URL=... \
-  -e GOTENBERG_URL=http://gotenberg:3000 \
-  vaultspace:latest npm run worker
+az containerapp create \
+  --name worker-preview \
+  --resource-group <rg> \
+  --environment <env> \
+  --image myregistry.azurecr.io/vaultspace:latest \
+  --env-vars WORKER_TYPE=preview DATABASE_URL=secretref:db-url REDIS_URL=secretref:redis-url GOTENBERG_URL=http://gotenberg:3000 \
+  --cpu 2 --memory 4Gi \
+  --min-replicas 1 --max-replicas 8
 ```
 
 #### 3. Scan Worker (`WORKER_TYPE=scan`)
@@ -1026,13 +726,16 @@ docker run \
 - Scan latency: ClamAV response time
 - False positive rate: Monitor quarantine logs
 
+**Azure Container Apps deployment:**
+
 ```bash
-docker run \
-  -e WORKER_TYPE=scan \
-  -e DATABASE_URL=... \
-  -e REDIS_URL=... \
-  -e CLAMAV_HOST=clamav \
-  vaultspace:latest npm run worker
+az containerapp create \
+  --name worker-scan \
+  --resource-group <rg> \
+  --environment <env> \
+  --image myregistry.azurecr.io/vaultspace:latest \
+  --env-vars WORKER_TYPE=scan DATABASE_URL=secretref:db-url REDIS_URL=secretref:redis-url CLAMAV_HOST=clamav \
+  --min-replicas 1 --max-replicas 4
 ```
 
 #### 4. Report Worker (`WORKER_TYPE=report`)
@@ -1050,12 +753,16 @@ docker run \
 
 **Scaling:** Lower priority; can use spot instances or scale down at night.
 
+**Azure Container Apps deployment:**
+
 ```bash
-docker run \
-  -e WORKER_TYPE=report \
-  -e DATABASE_URL=... \
-  -e REDIS_URL=... \
-  vaultspace:latest npm run worker
+az containerapp create \
+  --name worker-report \
+  --resource-group <rg> \
+  --environment <env> \
+  --image myregistry.azurecr.io/vaultspace:latest \
+  --env-vars WORKER_TYPE=report DATABASE_URL=secretref:db-url REDIS_URL=secretref:redis-url \
+  --min-replicas 0 --max-replicas 2
 ```
 
 ### Queue Definitions
@@ -1148,130 +855,30 @@ vaultspace_worker_uptime_seconds         # Restart detection
 
 ## Networking and Security
 
-### Reverse Proxy Configuration
+### Reverse Proxy / Load Balancing
 
-#### Caddy (Recommended for simplicity)
+**Azure Container Apps** handles TLS termination and load balancing automatically:
 
-Minimal TLS + reverse proxy:
-
-```caddy
-dataroom.example.com {
-  reverse_proxy localhost:3000 {
-    health_uri /api/health
-    health_interval 10s
-    health_timeout 5s
-  }
-
-  encode gzip
-
-  # Security headers
-  header {
-    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-    X-Content-Type-Options nosniff
-    X-Frame-Options DENY
-    X-XSS-Protection "1; mode=block"
-    Referrer-Policy "strict-origin-when-cross-origin"
-  }
-
-  # Rate limiting
-  rate_limit {
-    zone dynamic 100r/s
-  }
-}
-```
-
-**Run Caddy:**
+- TLS certificates: Managed automatically or bring your own via Azure Key Vault
+- Load balancing: Built-in with revision-based traffic splitting
+- Custom domains: Configure via Azure Portal or CLI
 
 ```bash
-caddy run --config Caddyfile
+# Add custom domain to Container App
+az containerapp hostname add \
+  --name vaultspace-app \
+  --resource-group <rg> \
+  --hostname dataroom.example.com
 
-# Or with Docker:
-docker run -d \
-  -v $(pwd)/Caddyfile:/etc/caddy/Caddyfile \
-  -p 80:80 -p 443:443 \
-  caddy:latest
+# Bind managed certificate
+az containerapp hostname bind \
+  --name vaultspace-app \
+  --resource-group <rg> \
+  --hostname dataroom.example.com \
+  --environment <env>
 ```
 
-#### Nginx (High-performance option)
-
-```nginx
-upstream vaultspace_app {
-  server localhost:3000 max_fails=3 fail_timeout=30s;
-  server localhost:3001 max_fails=3 fail_timeout=30s;  # second instance
-}
-
-server {
-  listen 80;
-  server_name dataroom.example.com;
-  return 301 https://$server_name$request_uri;  # Redirect to HTTPS
-}
-
-server {
-  listen 443 ssl http2;
-  server_name dataroom.example.com;
-
-  ssl_certificate /path/to/cert.pem;
-  ssl_certificate_key /path/to/key.pem;
-  ssl_protocols TLSv1.2 TLSv1.3;
-  ssl_ciphers HIGH:!aNULL:!MD5;
-  ssl_prefer_server_ciphers on;
-
-  # Security headers
-  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
-  add_header X-Content-Type-Options nosniff always;
-  add_header X-Frame-Options DENY always;
-  add_header X-XSS-Protection "1; mode=block" always;
-  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-  # Gzip compression
-  gzip on;
-  gzip_types text/plain text/css application/json application/javascript;
-
-  # Rate limiting (100 req/s per IP)
-  limit_req_zone $binary_remote_addr zone=apirlimit:10m rate=100r/s;
-  limit_req zone=apirlimit burst=200 nodelay;
-
-  # Reverse proxy
-  location / {
-    proxy_pass http://vaultspace_app;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_buffering off;
-    proxy_request_buffering off;
-  }
-
-  # Health check endpoint (no rate limit)
-  location /api/health {
-    proxy_pass http://vaultspace_app;
-    access_log off;
-  }
-}
-```
-
-#### Traefik (Kubernetes-friendly)
-
-```yaml
-apiVersion: traefik.containo.us/v1alpha1
-kind: IngressRoute
-metadata:
-  name: vaultspace
-spec:
-  entryPoints:
-    - websecure
-  routes:
-    - match: Host(`dataroom.example.com`)
-      kind: Rule
-      services:
-        - name: vaultspace-app
-          port: 3000
-  tls:
-    certResolver: letsencrypt
-    domains:
-      - main: dataroom.example.com
-```
+**For AKS deployments**, use Azure Application Gateway Ingress Controller (AGIC) or nginx-ingress. See [Appendix A](#appendix-a-non-azure-reference-configurations) for nginx/Caddy/Traefik configuration examples if migrating from other platforms.
 
 ### Private Network Architecture
 
@@ -1317,20 +924,31 @@ spec:
 
 ### Rate Limiting
 
-**Per-IP (prevents brute force):**
+**Azure Front Door / Application Gateway:**
 
-```nginx
-limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+Rate limiting is configured at the Azure infrastructure level:
 
-location /api/auth/login {
-  limit_req zone=login burst=10;
-  proxy_pass http://vaultspace_app;
-}
+```bash
+# Create WAF policy with rate limiting
+az network front-door waf-policy create \
+  --name vaultspace-waf \
+  --resource-group <rg> \
+  --mode Prevention
+
+# Add rate limit rule (100 requests per minute per IP)
+az network front-door waf-policy rule create \
+  --name RateLimitRule \
+  --policy-name vaultspace-waf \
+  --resource-group <rg> \
+  --rule-type RateLimitRule \
+  --rate-limit-threshold 100 \
+  --rate-limit-duration-in-minutes 1 \
+  --action Block
 ```
 
-**Per-user (prevents abuse):**
+**Per-user (application layer):**
 
-Implemented in application layer via Redis:
+Implemented in application layer via Azure Cache for Redis:
 
 ```typescript
 // app/lib/rateLimit.ts
@@ -1382,24 +1000,41 @@ export const handler = cors(corsOptions);
 
 ### TLS Certificate Management
 
-**Using Let's Encrypt with Caddy (automatic):**
+**Azure Container Apps (managed certificates):**
+
+Azure Container Apps handles TLS automatically for custom domains:
 
 ```bash
-caddy run --config Caddyfile
-# Caddy auto-renews certificates
+# Add custom domain with managed certificate
+az containerapp hostname add \
+  --name vaultspace-app \
+  --resource-group <rg> \
+  --hostname dataroom.example.com
+
+# Bind managed certificate (auto-renewed)
+az containerapp hostname bind \
+  --name vaultspace-app \
+  --resource-group <rg> \
+  --hostname dataroom.example.com \
+  --environment cae-vaultspace \
+  --validation-method CNAME
+
+# Verify certificate status
+az containerapp hostname list \
+  --name vaultspace-app \
+  --resource-group <rg>
 ```
 
-**Using Let's Encrypt with Nginx (manual):**
+**Azure Front Door (recommended for production):**
 
 ```bash
-# Install certbot
-apt-get install certbot python3-certbot-nginx
-
-# Get certificate
-certbot certonly --nginx -d dataroom.example.com
-
-# Auto-renew via cron
-0 2 * * * certbot renew --quiet
+# Front Door manages certificates automatically for custom domains
+az afd custom-domain create \
+  --custom-domain-name vaultspace-domain \
+  --profile-name vaultspace-fd \
+  --resource-group <rg> \
+  --host-name dataroom.example.com \
+  --certificate-type ManagedCertificate
 ```
 
 ---
@@ -1931,12 +1566,12 @@ import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 
 const traceExporter = new OTLPTraceExporter({
-  url: process.env.OTEL_ENDPOINT || 'http://localhost:4317/v1/traces',
+  url: process.env.OTEL_ENDPOINT, // REQUIRED: Set to Azure Monitor or OTEL collector endpoint
 });
 
 const metricReader = new PeriodicExportingMetricReader({
   exporter: new OTLPMetricExporter({
-    url: process.env.OTEL_ENDPOINT || 'http://localhost:4317/v1/metrics',
+    url: process.env.OTEL_ENDPOINT, // REQUIRED: Set to Azure Monitor or OTEL collector endpoint
   }),
 });
 
@@ -1998,21 +1633,39 @@ npx prisma migrate resolve --rolled-back 20240314120000_migration_name
 
 ### Blue-Green Deployment
 
-**Zero-downtime upgrade with load balancer:**
+**Azure Container Apps Traffic Splitting:**
 
-```
-1. Deploy new version (v2) to canary pool
-2. Health check passes
-3. Gradually shift traffic: 10% → v2, 90% → v1
-4. Monitor error rates and latency
-5. If all good: 100% → v2
-6. Remove v1 instances
+Azure Container Apps supports native traffic splitting between revisions for zero-downtime deployments:
 
-# Nginx config
-upstream vaultspace {
-  server app-v1:3000 weight=90;
-  server app-v2:3000 weight=10;
-}
+```bash
+# Deploy new revision (automatically created on update)
+az containerapp update \
+  --name vaultspace-app \
+  --resource-group <rg> \
+  --image <acr>.azurecr.io/vaultspace:v2
+
+# Split traffic: 90% to old revision, 10% to new
+az containerapp ingress traffic set \
+  --name vaultspace-app \
+  --resource-group <rg> \
+  --revision-weight <old-revision>=90 <new-revision>=10
+
+# Monitor metrics in Azure Portal or via CLI
+az monitor metrics list \
+  --resource /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.App/containerApps/vaultspace-app \
+  --metric "Requests" --interval PT1M
+
+# If healthy, shift 100% traffic to new revision
+az containerapp ingress traffic set \
+  --name vaultspace-app \
+  --resource-group <rg> \
+  --revision-weight <new-revision>=100
+
+# Deactivate old revision
+az containerapp revision deactivate \
+  --name vaultspace-app \
+  --resource-group <rg> \
+  --revision <old-revision>
 ```
 
 ### Rollback Plan
@@ -2020,11 +1673,11 @@ upstream vaultspace {
 **If new version has critical bug:**
 
 ```bash
-# Option 1: Immediate rollback
-kubectl rollout undo deployment/vaultspace-app
+# Option 1: Immediate rollback (Azure Container Apps)
+az containerapp revision activate --name vaultspace-app --resource-group <rg> --revision <previous-revision>
 
-# Option 2: Use previous Docker image
-docker run -e VERSION=1.2.0 myregistry.azurecr.io/vaultspace:1.2.0
+# Option 2: Rollback (AKS)
+kubectl rollout undo deployment/vaultspace-app
 
 # Option 3: Restore from database backup
 az postgres flexible-server restore \
@@ -2043,82 +1696,76 @@ az postgres flexible-server restore \
 
 **Causes:** App is down, unhealthy, or not responding.
 
-**Debug:**
+**Debug (Azure Container Apps):**
 
 ```bash
-# Check app logs
-docker logs vaultspace-app
+# Check app logs via Azure CLI
+az containerapp logs show --name vaultspace-app --resource-group <rg>
 
-# Test health endpoint
-curl http://localhost:3000/api/health
+# Test health endpoint (use your Azure URL)
+curl https://your-app.azurecontainerapps.io/api/health
 
-# Check if app is listening on correct port
-netstat -tuln | grep 3000
+# Check Azure Cache for Redis connectivity
+az redis show --name <redis-name> --resource-group <rg>
 
-# Check if Redis is reachable
-redis-cli -h redis -p 6379 ping
-
-# Check if database is reachable
-PGPASSWORD=... psql -h postgres -U vaultspace -d vaultspace -c "SELECT 1"
+# Check Azure PostgreSQL connectivity
+az postgres flexible-server show --name <server-name> --resource-group <rg>
 ```
 
 **Solution:**
 
-- Ensure `.env` has correct connection strings
-- Check resource limits (memory, CPU)
-- Restart container: `docker restart vaultspace-app`
+- Verify Azure connection strings in Container App environment
+- Check resource limits in Container App scaling settings
+- Restart revision: `az containerapp revision restart --name vaultspace-app --resource-group <rg>`
 
 #### Document upload fails silently
 
 **Causes:** Storage misconfigured, permission denied, or quota exceeded.
 
-**Debug:**
+**Debug (Azure):**
 
 ```bash
-# Check storage logs
-docker logs vaultspace-app | grep -i storage
+# Check storage logs via Azure CLI
+az containerapp logs show --name vaultspace-app --resource-group <rg> --follow | grep -i storage
 
-# Test S3 connection
-aws s3 ls s3://my-bucket
-
-# Test Azure Blob
+# Test Azure Blob connectivity
 az storage blob list --account-name myaccount --container-name documents
 
 # Check storage quota
 az storage account show \
   --name stavaultspace \
-  --query "{Quota: properties.primaryEndpoints, Used: storageAccount.usageInBytes}"
+  --query "{Quota: properties.primaryEndpoints}"
 ```
 
 **Solution:**
 
-- Verify `STORAGE_PROVIDER` is correctly set
-- Check IAM permissions (S3 access key, Azure credentials)
+- Verify `STORAGE_PROVIDER=azure` and Azure credentials are set
+- Check Azure RBAC permissions for storage account
 - Increase storage quota or purge old files
 
 #### Preview generation stuck / slow
 
 **Causes:** Gotenberg overloaded, insufficient resources, or large/complex documents.
 
-**Debug:**
+**Debug (Azure):**
 
 ```bash
-# Check queue depth
-REDIS_URL=... redis-cli LLEN vaultspace:queue:preview
+# Check queue depth via Azure Cache for Redis
+az redis console --name <redis-name> --resource-group <rg> --command "LLEN vaultspace:queue:preview"
 
-# Check Gotenberg health
-curl http://gotenberg:3000/health
+# Check Gotenberg health (internal service)
+az containerapp exec --name vaultspace-app --resource-group <rg> --command "curl http://gotenberg:3000/health"
 
 # Check preview worker logs
-docker logs vaultspace-worker-preview
+az containerapp logs show --name worker-preview --resource-group <rg> --follow
 
-# Monitor CPU/memory
-docker stats vaultspace-worker-preview
+# Monitor CPU/memory via Azure Portal or CLI
+az monitor metrics list --resource <container-app-resource-id> --metric "CpuPercent" "MemoryPercent"
 ```
 
 **Solution:**
 
-- Scale up preview workers: `docker-compose up -d --scale worker-preview=4`
+- Scale up preview workers via Azure: `az containerapp update --name worker-preview --resource-group <rg> --min-replicas 4`
 - Reduce `PREVIEW_WORKER_CONCURRENCY` if CPU-bound
 - Increase `PREVIEW_TIMEOUT_SECONDS` for large documents
 - Disable preview for very large files (> 500MB)
@@ -2127,23 +1774,23 @@ docker stats vaultspace-worker-preview
 
 **Causes:** Long-running connections, unreleased resources, or memory bloat.
 
-**Debug:**
+**Debug (Azure):**
 
 ```bash
-# Monitor memory usage over time
-docker stats vaultspace-app --no-stream
+# Monitor memory usage via Azure Monitor
+az monitor metrics list --resource <container-app-resource-id> --metric "MemoryPercent" --interval PT1M
 
-# Check for open connections
-# In DB:
-SELECT count(*) FROM pg_stat_activity;
+# Check for open connections in Azure PostgreSQL
+az postgres flexible-server execute --name <server> --admin-user <user> --admin-password <pass> \
+  --database-name vaultspace --querytext "SELECT count(*) FROM pg_stat_activity;"
 
-# In Redis:
-REDIS_URL=... redis-cli INFO stats | grep connected_clients
+# Check Redis connections
+az redis console --name <redis-name> --resource-group <rg> --command "INFO stats" | grep connected_clients
 ```
 
 **Solution:**
 
-- Restart container periodically: `docker-compose restart app`
+- Restart container via Azure: `az containerapp revision restart --name vaultspace-app --resource-group <rg>`
 - Reduce `DATABASE_POOL_SIZE` if too many connections
 - Enable garbage collection profiling: `NODE_OPTIONS="--expose-gc"`
 - Check for large arrays/objects being retained in memory
@@ -2164,7 +1811,7 @@ SELECT * FROM "DocumentACL" WHERE document_id = 'yyy';
 SELECT * FROM "GroupMember" WHERE group_id = 'zzz';
 
 # Use explainPermission() endpoint (if implemented)
-curl "http://localhost:3000/api/permissions/explain?userId=xxx&documentId=yyy&action=download"
+curl "https://your-app.azurecontainerapps.io/api/permissions/explain?userId=xxx&documentId=yyy&action=download"
 ```
 
 **Solution:**
@@ -2177,11 +1824,11 @@ curl "http://localhost:3000/api/permissions/explain?userId=xxx&documentId=yyy&ac
 
 **Causes:** Network unreachable, endpoint down, or signature mismatch.
 
-**Debug:**
+**Debug (Azure):**
 
 ```bash
-# Check webhook logs
-docker logs vaultspace-worker-general | grep webhook
+# Check webhook logs via Azure CLI
+az containerapp logs show --name worker-general --resource-group <rg> --follow | grep webhook
 
 # Test webhook endpoint manually
 curl -X POST \
@@ -2190,8 +1837,9 @@ curl -X POST \
   -d '{"event": "test"}' \
   https://your-webhook-endpoint.com/webhook
 
-# Check webhook configuration in DB
-SELECT * FROM "Webhook" WHERE enabled = true;
+# Check webhook configuration in Azure PostgreSQL
+az postgres flexible-server execute --name <server> --admin-user <user> --admin-password <pass> \
+  --database-name vaultspace --querytext "SELECT * FROM \"Webhook\" WHERE enabled = true;"
 ```
 
 **Solution:**
@@ -2214,6 +1862,124 @@ SELECT * FROM "Webhook" WHERE enabled = true;
 
 ---
 
-**Deployment documentation version: 1.0**
-**Last updated:** 2026-03-14
+## Appendix A: Non-Azure Reference Configurations
+
+> **⚠️ UNSUPPORTED:** The configurations in this appendix are provided as reference material only.
+> VaultSpace on this branch runs exclusively in Azure. These examples may be useful for:
+>
+> - Understanding service dependencies when migrating from other platforms
+> - AKS deployments requiring custom ingress configuration
+> - Debugging service communication patterns
+
+### A.1 Docker Compose Service Reference
+
+This Docker Compose file shows VaultSpace service dependencies and internal networking patterns.
+**Do not run locally** - use Azure Container Apps for all deployments.
+
+```yaml
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: vaultspace
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: vaultspace
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vaultspace']
+      interval: 10s
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+
+  gotenberg:
+    image: gotenberg/gotenberg:8.0
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
+
+  clamav:
+    image: clamav/clamav:latest
+    healthcheck:
+      test: ['CMD', 'clamscan', '--version']
+
+  app:
+    build: { context: ., dockerfile: Dockerfile }
+    depends_on: [postgres, redis]
+    environment:
+      APP_URL: ${APP_URL} # REQUIRED
+      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD}@postgres:5432/vaultspace
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      GOTENBERG_URL: http://gotenberg:3000
+      CLAMAV_HOST: clamav
+```
+
+### A.2 Reverse Proxy Examples
+
+These configurations are for non-Azure deployments (self-hosted VMs, other cloud providers).
+
+#### Caddy
+
+```caddy
+dataroom.example.com {
+  reverse_proxy app:3000 {
+    health_uri /api/health
+  }
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options nosniff
+    X-Frame-Options DENY
+  }
+}
+```
+
+#### Nginx
+
+```nginx
+upstream vaultspace_app {
+  server app:3000 max_fails=3 fail_timeout=30s;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name dataroom.example.com;
+
+  ssl_certificate /path/to/cert.pem;
+  ssl_certificate_key /path/to/key.pem;
+
+  location / {
+    proxy_pass http://vaultspace_app;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+#### Traefik (Kubernetes)
+
+```yaml
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vaultspace
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`dataroom.example.com`)
+      services:
+        - name: vaultspace-app
+          port: 3000
+  tls:
+    certResolver: letsencrypt
+```
+
+---
+
+**Deployment documentation version: 1.1**
+**Last updated:** 2026-03-16
 **Corresponds to:** Feature F155 (DEPLOYMENT.md) in feature matrix
