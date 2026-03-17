@@ -127,6 +127,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       const data = await storage.get(bucket, key);
 
       // Return file with inline headers for preview
+      // X-Frame-Options: SAMEORIGIN allows iframe embedding within same origin for preview dialogs
       return new NextResponse(new Uint8Array(data), {
         status: 200,
         headers: {
@@ -134,6 +135,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           'Content-Length': data.length.toString(),
           'Content-Disposition': `inline; filename="${encodeURIComponent(document.name)}"`,
           'Cache-Control': 'private, max-age=300',
+          'X-Frame-Options': 'SAMEORIGIN',
         },
       });
     }
@@ -154,6 +156,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             'Content-Length': data.length.toString(),
             'Content-Disposition': `inline; filename="${encodeURIComponent(document.name)}.pdf"`,
             'Cache-Control': 'private, max-age=300',
+            'X-Frame-Options': 'SAMEORIGIN',
           },
         });
       }

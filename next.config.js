@@ -13,6 +13,8 @@ const nextConfig = {
   // Standalone output for Docker
   output: 'standalone',
   // Headers for security
+  // Note: Preview routes override X-Frame-Options to SAMEORIGIN in their route handlers
+  // to allow iframe embedding for document preview dialogs
   async headers() {
     return [
       {
