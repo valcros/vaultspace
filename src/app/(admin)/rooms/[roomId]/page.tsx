@@ -127,7 +127,7 @@ export default function RoomDetailPage() {
   const [documents, setDocuments] = React.useState<Document[]>([]);
   const [folders, setFolders] = React.useState<FolderItem[]>([]);
   const [currentFolderId, setCurrentFolderId] = React.useState<string | null>(null);
-const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([
+  const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([
     { id: null, name: 'Root' },
   ]);
   const [admins, setAdmins] = React.useState<Admin[]>([]);
@@ -327,7 +327,7 @@ const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([
   }, []);
 
   // Navigate via breadcrumb
-const handleBreadcrumbClick = React.useCallback(
+  const handleBreadcrumbClick = React.useCallback(
     (index: number) => {
       const item = breadcrumbs[index];
       if (item) {
