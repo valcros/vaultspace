@@ -1,0 +1,42 @@
+properties:
+  template:
+    containers:
+      - name: ca-vaultspace-web
+        image: acrvaultspacestaging.azurecr.io/vaultspace-web:latest
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: NODE_ENV
+            value: production
+          - name: APP_URL
+            value: https://ca-vaultspace-web.victoriousglacier-374689f2.eastus.azurecontainerapps.io
+          - name: SESSION_SECRET
+            secretRef: sessionsecret
+          - name: DATABASE_URL
+            secretRef: databaseurl
+          - name: REDIS_URL
+            secretRef: redisurl
+          - name: STORAGE_PROVIDER
+            value: azure
+          - name: AZURE_STORAGE_ACCOUNT_NAME
+            value: stvaultspacestaging
+          - name: AZURE_STORAGE_ACCOUNT_KEY
+            secretRef: azurestoragekey
+          - name: SCAN_ENGINE
+            value: passthrough
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          - type: Readiness
+            httpGet:
+              path: /api/health?deep=true
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3

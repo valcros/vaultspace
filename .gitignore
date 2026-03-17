@@ -49,8 +49,13 @@ prisma/migrations/.migration_lock.toml
 # Local development
 .tmp/
 uploads/
+/storage/
 *.pem
 *.key
+
+# Playwright
+playwright-report/
+test-results/
 
 # TypeScript
 *.tsbuildinfo

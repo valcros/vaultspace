@@ -1,0 +1,54 @@
+# === Build stage ===
+FROM node:20-slim AS builder
+WORKDIR /app
+
+# Install OpenSSL for Prisma
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+# Copy package files and Prisma schema first
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma
+
+# Install dependencies (postinstall will run prisma generate)
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Build TypeScript
+RUN npm run build
+
+# === Runtime stage ===
+FROM node:20-slim AS runner
+WORKDIR /app
+
+# Install dumb-init and OpenSSL for Prisma
+RUN apt-get update && apt-get install -y dumb-init openssl && rm -rf /var/lib/apt/lists/*
+
+# Set production environment
+ENV NODE_ENV=production
+
+# Create non-root user
+RUN groupadd --system --gid 1001 nodejs
+RUN useradd --system --uid 1001 --gid nodejs worker
+
+# Copy built app from builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/src ./src
+
+# Create storage directory
+RUN mkdir -p storage && chown -R worker:nodejs storage
+
+# Switch to non-root user
+USER worker
+
+# Set worker type via environment variable (general, preview, scan, report)
+ENV WORKER_TYPE=general
+
+# Run with dumb-init to handle signals
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["npm", "run", "worker"]
