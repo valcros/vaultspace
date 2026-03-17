@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { createHash } from 'crypto';
 import { sanitizeFilename } from '@/lib/fileTypes';

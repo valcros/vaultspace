@@ -34,7 +34,7 @@ const AZURE_ONLY_ERROR = `
  * Check if a URL points to localhost
  */
 function isLocalhost(url: string | undefined): boolean {
-  if (!url) return false;
+  if (!url) {return false;}
   const lower = url.toLowerCase();
   return (
     lower.includes('localhost') ||

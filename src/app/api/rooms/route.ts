@@ -11,7 +11,7 @@ import { requireAuthFromRequest } from '@/lib/middleware';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 
 /**
  * GET /api/rooms

@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const sessionToken = randomBytes(32).toString('base64url');
 
     // Now we have organizationId - use RLS context for all writes
-    const viewSession = await withOrgContext(link.organizationId, async (tx) => {
+    const _viewSession = await withOrgContext(link.organizationId, async (tx) => {
       // Create view session
       const viewSession = await tx.viewSession.create({
         data: {
