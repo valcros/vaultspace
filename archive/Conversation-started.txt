@@ -1,0 +1,307 @@
+This is the text of the converation that led to wanting to develop a open source data room project. Want a platform that is truly open source, open license, and no commercial payment needed to use the core. 
+
+CONVERSATION:I need a cheap and easy to use website to use as a data room for investors to access documents. Prefer to have revision checking, update notification, and other features. What are the options?Mar 12Synthesized affordable data room solutions matching investor requirementsSynthesized affordable data room solutions matching investor requirementsHere are the best budget-friendly investor data room options, ranked by cost and feature set:
+
+Free / Very Low Cost
+PlatformPriceKey FeaturesPeonyFree / $20-$40/user/moPage-level analytics, e-signatures, AI organization, screenshot protectionPapermarkFree tier / paid plansPage-by-page analytics, version tracking, custom domain, open-source/self-hostableVisible VCFree starterInvestor relations focus, access controls, audit trails
+
+Budget Mid-Tier ($15-$250/mo)
+PlatformPriceKey FeaturesDocSend~$45/moDocument tracking, viewer analytics, link-based sharingDigify~$99/moDRM controls, watermarking, access expiry, notificationsSecureDocs~$250/mo flatUnlimited users, audit trail, due diligence checklists
+
+Key Feature Notes for Your Use Case
+
+Revision/version control: Papermark and Peony both handle document versioning well. SecureDocs includes audit trail reporting.
+Update notifications: DocSend and Digify send real-time alerts when documents are accessed or updated. Peony and Papermark also offer activity alerts.
+Ease of setup: All of the above claim under 5-minute setup, unlike enterprise platforms (Datasite, Intralinks) that require onboarding calls.
+
+
+Recommendation
+For a startup-stage investor data room on a tight budget, Papermark (open-source, self-hostable) or Peony (free tier is genuinely feature-rich) are the strongest starting points. If DocSend-style link tracking and notification polish matter more, DocSend is the proven standard at a reasonable price.
+Avoid Google Drive or Dropbox for this purpose as they lack audit trails, watermarking, and granular permission controls that investors and legal advisors expect.You indicate that Papermark is self hostable. What is required?Mar 13Assembled comprehensive details on self-hosting requirementsAssembled comprehensive details on self-hosting requirementsHere is a full breakdown of what self-hosting Papermark requires:
+
+Core Prerequisites
+Node GitHub.js (v18.17.0 or higher), a PostgreSQL database, blob storage (AWS S3 or Vercel Blob), and Resend for transactional email.
+
+Tech Stack
+The application is built on Next.js (framework), TypeScript, Tailwind CSS, Prisma (ORM), PostgreSQL (database), NextAuth.js (authentication), Tinybird (analytics), and Resend (email). GitHub
+
+Analytics Setup (Tinybird)
+Tinybird requires its CLI installed via pipenv, with data sources and endpoints pushed to the Tinybird platform. A TINYBIRD_TOKEN environment variable must be set. GitHub
+
+Docker/Production Deployment
+A community-maintained Docker Swarm deployment exists. It uses Traefik as a reverse proxy with SSL, PostgreSQL for the database, Redis for caching, and S3-compatible storage (AWS S3, MinIO, or Backblaze B2). GitHub
+
+Licensing Caveat (Important)
+Personal self-hosting is free but does not include access to data rooms or advanced security features. For team or company usage, a commercial self-hosting license is required, which adds enterprise features, support, and regular updates. Papermark Without that license, the core investor data room functionality you need is not included in the self-hosted free tier.
+
+Documentation Warning
+The official help article references comprehensive step-by-step documentation on GitHub, but community reports indicate that documentation is incomplete, with the README covering prerequisites but lacking a full deployment guide. GitHub
+
+Bottom Line for Your Use Case
+Given that you need data room features specifically (not just document sharing), the self-hosted free tier will not be sufficient. You would either need their commercial license (contact required for pricing) or use the SaaS hosted plan instead. For a low-friction investor data room, the SaaS free/paid tier is the more practical path unless you specifically need data sovereignty.does Papermark support custom domain names such as dataroom.customdomain.comMar 13Located existing answer without requiring additional researchLocated existing answer without requiring additional researchYes. Papermark supports custom domains, allowing you to share your data room using your own domain name such as dataroom.yourcompany.com, creating a seamless brand experience for investors Papermark. Complete white-labeling options allow customization of logos, colors, and branding elements to match your company's visual identity.
+However, based on the earlier research, custom domain support is a paid feature. It is available on the Pro plan ($20/user/month) and above on the SaaS version, and would require a commercial license on a self-hosted instance.what is defined as a user? Is every investor a user or only company users? We will have about 5 potential investors active at any one time. And maybe 2 company users who maintain the system. Based on this, the features desired including a custom domain, revise your listMar 13Clarified user definitions and recalibrated pricing tiers accordinglyClarified user definitions and recalibrated pricing tiers accordinglyThe key clarification is that on Papermark and most similar platforms, investors are "viewers" and are unlimited and free. "Users Ellty" refers to your internal team members who manage the platform and access analytics. Your 5 investors do not add to the cost.
+For your scenario of 2 internal admin users with custom domain, data room features, version tracking, and update notifications, here is the revised list:
+
+Papermark
+The Pro plan is single-user at $39/month. The Business plan supports multiple team members at $79/month for up to 3 users. Ellty At 2 admin users, Business is your fit. It includes document versioning tracking, email notifications, screenshot protection, dynamic watermarking, user group permissions, and unlimited documents. Papermark Custom domain is included. This is the strongest value match for your requirements.
+Estimated cost: ~$79/month
+
+DocSend
+Charges per internal seat. Investors access via links and are not billed as users. Includes document analytics, version tracking, and access notifications. Custom domain available on higher tiers. Well-established and polished but more expensive per seat than Papermark.
+Estimated cost: ~$90-150/month for 2 users
+
+Digify
+Flat monthly pricing rather than per-seat, which works in your favor at small team sizes. Includes DRM controls, watermarking, expiry dates, access notifications, and version control. Custom domain supported.
+Estimated cost: ~$99/month flat
+
+Recommendation
+For your specific scenario, Papermark Business is the best fit. Two admin users, unlimited investor viewers, custom domain, version tracking, and notifications at $79/month covers everything you described. Digify is a reasonable flat-rate alternative if you prefer not to think about per-seat costs as the team grows.All of these apps seem to have great features and also overlap in many ways. Which is these apps or apps like them are on a public repo that are open source of any that could be improved upon?Mar 13Identified open source VDR projects and evaluated improvement opportunitiesIdentified open source VDR projects and evaluated improvement opportunitiesHere is a breakdown of the genuinely open source projects with active public repos that are relevant to this use case:
+
+Papermark
+Repo: github.com/mfts/papermark
+8,100 stars, 1,100 forks. Built on Next.js and TypeScript with Prisma/PostgreSQL. GitHub The most feature-complete open source VDR option. Actively maintained with regular commits. The caveat already noted applies: data room features require a commercial license on self-hosted instances.
+Best for: Forking and building a custom investor data room. The stack (Next.js/TypeScript/PostgreSQL) is modern and widely understood.
+
+Pydio Cells
+Repo: github.com/pydio/cells
+192 forks, active on 295 of the last 365 days, averaging 155 new pull requests per month. LFX Insights Written in Go with a microservice architecture and a ReactJS frontend. Requires Go v1.21+ and MySQL/MariaDB. GitHub More of an enterprise file collaboration platform than a pure VDR, but it includes data room capabilities, access controls, and audit trails. Licensed under AGPLv3. Pydio
+Best for: Organizations wanting a self-hosted, enterprise-grade platform with a strong open source community and no commercial license requirement for core features. More complex to deploy and extend than Papermark.
+
+Notable but Not Recommended
+github.com/ankoma88/VDR and github.com/aa-dhaar/virtual-data-room both exist but have minimal stars, little to no recent activity, and lack documentation. Not viable bases for a production system.
+
+Summary Assessment
+ProjectStarsLanguageVDR-SpecificLicenseImprovablePapermark8,100TypeScript/Next.jsYesBSL/commercialYes, strong foundationPydio Cells~1,100Go/ReactPartialAGPLv3Yes, more complexankoma88/VDRMinimalUnknownBasicUnknownNo
+For your specific situation, Papermark is the more practical fork target given its modern stack, large community, and purpose-built VDR feature set. Pydio Cells is worth considering if you want a fully open licensed codebase with no commercial restrictions and have Go development capability.Are there any licensing limitations to using the open source code of papermark? Can you download and use the core and build your own data room features to not pay the license when self hosted?Mar 13Synthesized licensing constraints and self-hosting implicationsSynthesized licensing constraints and self-hosting implicationsThe answer is clearly no. Here is the full picture:
+
+Papermark is NOT truly open source
+The FOSSA BSL is a source-available license, not an open source license. It allows anyone to view, use, modify, and copy the code for non-production purposes, but restricts commercial production use unless explicitly granted by the licensor.
+Papermark markets itself as "open source" but this is technically inaccurate under the Open Source Initiative definition.
+
+What Papermark's License Actually Allows
+Self-hosting for personal, non-commercial use is free, but does not include access to data rooms or advanced security features. For team or company usage requiring advanced security features and data rooms, a commercial self-hosting license is required, starting from $500/month. Papermark
+So to directly answer your question: you cannot legally use the open source codebase to build your own data room features and avoid the license for commercial production use. The data room functionality is explicitly withheld from the free self-hosted tier.
+
+Can You Fork and Build Your Own Features?
+You are free to use, redistribute, copy, modify, and create derivative works of BSL-licensed code for non-production purposes. For production use, you must either have an Additional Use Grant from the licensor or purchase a commercial license. FOSSA
+Building your own data room features on top of Papermark's codebase and deploying it commercially would still constitute production use and require a license.
+
+Practical Alternatives if You Want True Freedom
+If avoiding license restrictions entirely is the goal, the genuinely open source options are:
+Pydio Cells (AGPLv3) - No production use restrictions. You can self-host, modify, and build on it commercially without paying a license fee. The AGPLv3 requirement is that any modifications you distribute must also be released under AGPLv3, but for internal company use this rarely matters.
+Build from scratch - Using commodity components (Next.js, PostgreSQL, AWS S3) you already know, a basic investor data room with document versioning, access controls, and email notifications is a relatively contained project given your Linux and development background.
+
+Bottom Line
+Papermark's self-hosted commercial license at $500/month is actually more expensive than their SaaS Business plan at $79/month. For your use case, the SaaS plan is both cheaper and less work. If you want zero licensing cost and full control, Pydio Cells is the only credible open source option in this space.Ok. So I want to build my own then. Let’s do a feature review starting with the features I mentioned and start a list of other popular features that have been requested in data room apps. My goal is to create an open source public domain data room application that is full featured and anyone can download and use on their own hosting. It may even have some optional Microsoft azure specific features since we will look to develop on Azure.Mar 13Synthesized user requirements and compiled comprehensive open-source data room feature listSynthesized user requirements and compiled comprehensive open-source data room feature listThis is a solid project concept. Let me build a structured feature inventory as a starting point for your backlog.
+
+Core Features (Your Original Requirements)
+
+Custom domain support (e.g., dataroom.yourdomain.com)
+Document version control with revision history
+Update notifications (email alerts when documents are viewed or updated)
+Role separation: admin users vs. unlimited viewers/investors
+Per-document and per-folder access controls
+
+
+Document Management
+
+Bulk upload with folder structure preservation
+Drag-and-drop upload
+PDF viewer (in-browser, no download required)
+Support for common formats (PDF, DOCX, XLSX, PPTX, images)
+Document indexing and auto-numbering
+Full-text search across documents
+Document expiry dates
+Replace document without changing the share link
+Download enable/disable per document
+Print enable/disable per document
+
+
+Access Control and Security
+
+Email verification before access
+Password-protected rooms and links
+NDA/agreement gate before room access
+Per-user and per-group permission levels (view, download, print)
+IP allowlist/blocklist
+Time-limited access with auto-revocation
+Dynamic watermarking (viewer email/IP on every page)
+Screenshot protection
+Remote access revocation (even for already-downloaded files, where possible)
+Audit trail of all user activity
+Two-factor authentication for admin users
+
+
+Analytics and Reporting
+
+Page-level engagement tracking (time per page, drop-off points)
+Per-viewer activity dashboard
+Document view heatmaps
+Notification when a specific investor opens/revisits documents
+Exportable activity reports (CSV/PDF)
+Aggregate vs. individual viewer analytics
+
+
+Investor/Viewer Experience
+
+Clean branded viewer with no third-party branding
+Mobile-responsive document viewer
+No account required for investors (link-based access)
+Optional investor login portal for persistent access
+Q&A module (investors submit questions, routed to team)
+Document request tracking
+
+
+Administration and Team
+
+Multi-admin support
+Activity log for admin actions
+Room duplication (clone room for new deal)
+Multiple simultaneous data rooms from one account
+Team member invite and role assignment
+Notification preferences per admin user
+
+
+Azure-Specific Optional Features
+
+Azure Blob Storage as document backend (instead of S3)
+Azure Active Directory / Entra ID for admin SSO
+Azure Key Vault for secret/key management
+Azure CDN for global document delivery
+Deployment via Azure App Service or Azure Container Apps
+Azure Application Insights for monitoring and telemetry
+SendGrid (Azure-integrated) for transactional email
+
+
+Compliance and Legal
+
+GDPR-compliant data handling and deletion
+Data residency selection (EU, US, etc.)
+SOC 2 aligned audit logging
+Legally timestamped NDA acceptance records
+Configurable data retention policies
+
+
+Integration and Extensibility
+
+REST API for programmatic room/document management
+Webhook support (notify external systems on events)
+Email integration (Resend, SendGrid, SMTP)
+Optional Slack/Teams notification integration
+Open API spec (Swagger/OpenAPI) for community extension
+
+
+Deployment and Self-Hosting
+
+Docker Compose single-command deployment
+Environment variable-based configuration
+PostgreSQL or MySQL support
+S3-compatible storage (AWS S3, Azure Blob, MinIO, Backblaze)
+SMTP-agnostic email (any provider)
+Reverse proxy ready (Nginx, Caddy, Traefik)
+Health check endpoints
+Automated database migrations on upgrade
+
+
+This gives you a solid foundation for a public domain feature backlog. The next logical step would be to prioritize these into MVP, V1, and V2 tiers, then map the tech stack. Given your existing Azure, Node.js, and Linux background, the stack decisions should be relatively straightforward.
+Do you want to move into stack selection and architecture next, or work through feature prioritization first?Let’s work through the prioritization of features. What are you thoughts on this. You have about 10 master categories and features listed underneath. Can you turn that into a table with the category, feature, priority. Also some features are dependent upon other features being present or developed so we should have some sort of dependency column. Which then we should have a feature reference in a column to know what features an additional feature may be dependent upon.Mar 13Architected comprehensive feature prioritization framework with dependenciesArchitected comprehensive feature prioritization framework with dependenciesThis warrants an artifact given the size. Let me build it with feature IDs to make dependency mapping clean.Created a file, read a fileCreated a file, read a file69 features across 10 categories, each with an ID, priority, and explicit dependency mapping.
+A few dependency chains worth calling out:
+Critical path for MVP: F062 (Docker) and F064 (PostgreSQL) are foundation-level with no dependencies of their own. Almost everything else traces back through them. F004 (role separation) and F006 (bulk upload) are the next critical nodes since roughly 30 other features depend on one or both of them.
+Long dependency chains to plan carefully:
+
+Analytics chain: F025 → F027 → F028 → F029/F031/F032. You cannot deliver meaningful analytics without the audit trail in place first.
+Azure chain: F006 → F045 → F047/F048/F053, meaning Azure Blob Storage should come before Key Vault, CDN, or data residency features.
+NDA/compliance chain: F016 → F018 → F055, meaning email verification must precede the NDA gate which must precede legally timestamped records.
+
+One thing to revisit: F001 (custom domain) is listed as MVP but depends on F041 and F042, which are V1. That dependency relationship is actually inverted in terms of priority. Custom domain support is infrastructure-level and should be decoupled from those features. Worth flagging before you lock the backlog.
+Want to move into stack selection and architecture next?Dataroom feature matrixDocument · MD Open in XcodeBefore I review the matrix, I’m thinking about the Microsoft specific items. While we will build on Microsoft, if my goal is a truly public down open source project then it should not be tied to a specific hyperscaler or cloud service. Some users will want to host on their own and still have the ability to use all the features. But I will want to host on Microsoft and possibly utilize Microsoft specific features. Given that we should likely build generic first and get a full MVP functional then add in optional Microsoft specific features which can be connected or unbundled by the users whose clone and use the software.Mar 13Validated cloud-agnostic architecture with optional Microsoft integrationsValidated cloud-agnostic architecture with optional Microsoft integrationsThis is exactly the right architectural thinking, and it maps to a well-established pattern in open source projects. Here is how to frame it:
+
+The Plugin/Adapter Pattern
+The core application should define interfaces (abstractions) for each external dependency, with concrete implementations provided separately. For example:
+
+A StorageProvider interface with implementations for local disk, S3-compatible, and Azure Blob
+An EmailProvider interface with implementations for SMTP, SendGrid, Resend, and Azure Communication Services
+An AuthProvider interface with implementations for built-in auth, LDAP, and Azure Entra ID
+A MonitoringProvider interface with implementations for logging to stdout, and optionally Azure Application Insights
+
+Users self-hosting on bare metal or with AWS/GCP simply configure the generic adapters. Your Azure deployment uses the Microsoft-specific adapters. Same codebase, different configuration.
+
+What This Means for the Feature Matrix
+The Azure category should be restructured into two groups:
+Generic equivalents (MVP/V1 alongside core):
+
+S3-compatible storage (covers AWS, MinIO, Backblaze, and Azure Blob via S3 compatibility layer)
+SMTP-agnostic email (any provider)
+OIDC/OAuth2 SSO (covers Entra ID, Google, Okta, Auth0 generically)
+OpenTelemetry for monitoring (vendor-neutral, works with Azure Monitor, Datadog, Grafana, etc.)
+Docker/OCI container deployment (works on any host)
+
+Azure-specific optional adapters (V2/V3, maintained in same repo but opt-in):
+
+Native Azure Blob Storage SDK adapter (performance/cost optimized vs. S3 compat layer)
+Azure Entra ID specific adapter (beyond generic OIDC)
+Azure Key Vault adapter
+Azure CDN adapter
+Azure Application Insights adapter
+Azure Bicep/ARM deployment templates alongside generic Docker Compose
+
+
+Practical Implementation
+In Node.js/TypeScript this is straightforward using dependency injection or simple factory patterns driven by environment variables:
+STORAGE_PROVIDER=s3          # generic S3-compatible
+STORAGE_PROVIDER=azure-blob  # native Azure adapter
+STORAGE_PROVIDER=local       # local disk for dev/small installs
+
+EMAIL_PROVIDER=smtp
+EMAIL_PROVIDER=sendgrid
+EMAIL_PROVIDER=azure-comms
+
+AUTH_SSO_PROVIDER=oidc       # generic OIDC
+AUTH_SSO_PROVIDER=entra      # Azure-specific
+
+Impact on the Matrix
+The Azure category should be split:
+
+Move the generic counterparts (S3-compatible storage, SMTP, OIDC SSO, OpenTelemetry) into their natural home categories at MVP/V1 priority since they are already there in some form.
+Rename the Azure category to Cloud Adapters (Optional) and repopulate it with only the provider-specific implementations at V2/V3.
+Add a new column to the matrix: Adapter Type with values of Core, Generic, or Cloud-Specific.
+
+
+This also makes the project significantly more attractive to the open source community. Projects that are hyperscaler-agnostic get broader adoption, more contributors, and more community trust. The Azure-specific adapters become a value-add for your own deployment rather than a requirement that alienates self-hosters.
+Want me to update the feature matrix with this restructuring before you do your full review?Yes update the feature matrix with this as the focus pushing cloud provider specific features lower on the list to be implemented after we get the full MVP functional and possibly even some additional features.Mar 13Reorganized feature matrix to defer cloud-specific implementations post-MVPReorganized feature matrix to defer cloud-specific implementations post-MVPKey changes from v1:
+Structural changes:
+
+Azure features split out into three cloud adapter categories (Azure, AWS, GCP) and all moved to V3
+New SSO & Identity category added at V1/V2 using generic OIDC/OAuth2, not provider-specific
+Local disk storage adapter (F070) added as MVP for dev and small installs
+OpenTelemetry (F071) added at V1 as the vendor-neutral monitoring hook
+
+The Generic Interface table at the bottom is worth paying attention to during architecture. Those five interfaces need to be defined correctly in MVP even if only the default adapter is implemented. If you define them as afterthoughts at V1, retrofitting the codebase gets expensive.
+AWS and GCP adapters added at V3 alongside Azure. If the project goes truly public domain, the community will likely contribute those anyway. Having the interface defined makes it straightforward for contributors to add them without touching core code.
+
+You never mentioned Nextcloud or seafile or Mayan EDMS or Paperless-ngx? why not?
+
+3:06 PM
+
+Evaluated why those platforms weren't purpose-built for data rooms
+Evaluated why those platforms weren't purpose-built for data rooms
+Good challenge. The honest answer is that I anchored too narrowly on purpose-built VDR products and filtered those out mentally because they serve different primary use cases. That was a gap worth addressing directly.
+
+Here is why each was omitted and whether they deserve reconsideration:
+
+Nextcloud A general-purpose file sync and share platform. Think self-hosted Google Drive. It has document sharing, access controls, and a plugin ecosystem, but it lacks investor-specific features like page-level analytics, NDA gates, link-based access without accounts, and branded viewer experiences. Could serve as a base platform with significant customization, but you would be fighting the architecture rather than building with it.
+
+Seafile Similar positioning to Nextcloud but lighter weight and faster for large file volumes. Strong on sync and encryption. Same gap applies: no VDR-specific features out of the box. Better suited as a storage backend than an application foundation.
+
+Mayan EDMS Enterprise document management focused on internal workflows, OCR, metadata tagging, and document classification. Built for internal document governance rather than external investor-facing sharing. The feature set overlaps significantly with what you want to build internally, but the outward-facing investor experience is absent.
+
+Paperless-ngx Primarily a document scanning, OCR, and archiving system. It is the furthest from your use case of the four. Designed to replace physical filing cabinets, not to host investor data rooms.
+
+Should any of them influence the build?
+
+Mayan EDMS is worth studying for its document metadata and indexing architecture, which maps well to F010 and F011 in your matrix. Nextcloud's plugin/app architecture is a reasonable reference model for how you could structure your own adapter pattern for cloud providers.
+
+None of them are suitable as a fork target for what you are building. They would require more modification than building clean. Pydio Cells remains the most relevant open source reference point for your specific use case, and your own greenfield build is still the right path given the public domain licensing goal.
+
+Worth adding them to a reference/prior art section in your project documentation though.
+

@@ -1,0 +1,242 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: vaultspace-postgres
+    environment:
+      POSTGRES_USER: vaultspace
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-change-me}
+      POSTGRES_DB: vaultspace
+    ports:
+      - '${DATABASE_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U vaultspace']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache and Job Queue
+  redis:
+    image: redis:7-alpine
+    container_name: vaultspace-redis
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-change-me}
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD:-change-me}', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # Gotenberg (Document Preview Service)
+  gotenberg:
+    image: gotenberg/gotenberg:8.0
+    container_name: vaultspace-gotenberg
+    ports:
+      - '3001:3000'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: info
+
+  # ClamAV (Virus Scanning)
+  clamav:
+    image: clamav/clamav:latest
+    container_name: vaultspace-clamav
+    ports:
+      - '3310:3310'
+    volumes:
+      - clamav_data:/var/lib/clamav
+    environment:
+      FRESHCLAM_CHECKS: 12
+    healthcheck:
+      test: ['CMD', 'clamdscan', '--version']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Main Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vaultspace-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '${APP_PORT:-3000}:3000'
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      APP_NAME: ${APP_NAME:-VaultSpace}
+      DEFAULT_ORG_NAME: ${DEFAULT_ORG_NAME:-My Organization}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # Database
+      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
+      DATABASE_POOL_SIZE: 10
+
+      # Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
+
+      # Storage
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: /app/storage
+      SIGNED_URL_EXPIRY_SECONDS: ${SIGNED_URL_EXPIRY_SECONDS:-300}
+
+      # Email
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_TLS: ${SMTP_TLS:-true}
+      SMTP_FROM: ${SMTP_FROM:-noreply@vaultspace.local}
+
+      # Preview
+      PREVIEW_PROVIDER: ${PREVIEW_PROVIDER:-gotenberg}
+      GOTENBERG_URL: http://gotenberg:3000
+
+      # Virus Scanning
+      SCAN_PROVIDER: ${SCAN_PROVIDER:-clamav}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+
+      # Search
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-postgres}
+
+      # Encryption
+      ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
+
+    volumes:
+      - ./storage:/app/storage
+      - ./uploads:/app/uploads
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # General Worker
+  worker-general:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: vaultspace-worker-general
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      WORKER_TYPE: general
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
+      DATABASE_POOL_SIZE: 5
+      REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: /app/storage
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_TLS: ${SMTP_TLS:-true}
+      SMTP_FROM: ${SMTP_FROM:-noreply@vaultspace.local}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GENERAL_WORKER_CONCURRENCY: ${GENERAL_WORKER_CONCURRENCY:-10}
+    volumes:
+      - ./storage:/app/storage
+    restart: unless-stopped
+
+  # Preview Worker (CPU-intensive)
+  worker-preview:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: vaultspace-worker-preview
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+    environment:
+      WORKER_TYPE: preview
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
+      DATABASE_POOL_SIZE: 3
+      REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: /app/storage
+      PREVIEW_PROVIDER: ${PREVIEW_PROVIDER:-gotenberg}
+      GOTENBERG_URL: http://gotenberg:3000
+      ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PREVIEW_WORKER_CONCURRENCY: ${PREVIEW_WORKER_CONCURRENCY:-2}
+    volumes:
+      - ./storage:/app/storage
+    restart: unless-stopped
+
+  # Scan Worker (I/O-intensive)
+  worker-scan:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: vaultspace-worker-scan
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    environment:
+      WORKER_TYPE: scan
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
+      DATABASE_POOL_SIZE: 3
+      REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: /app/storage
+      SCAN_PROVIDER: ${SCAN_PROVIDER:-clamav}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+      ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SCAN_WORKER_CONCURRENCY: ${SCAN_WORKER_CONCURRENCY:-5}
+    volumes:
+      - ./storage:/app/storage
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  clamav_data:
+    driver: local
+
+networks:
+  default:
+    name: vaultspace-network

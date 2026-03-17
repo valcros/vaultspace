@@ -1,0 +1,500 @@
+feedback on the revised version 4.
+
+ Overall Evaluation
+
+This revision shows mature architectural thinking. The following decisions significantly improved the design:
+
+Major improvements in this version:
+
+Permission engine abstraction
+
+Multi-tenant schema from day one
+
+EventBus formalization
+
+Preview pipeline design
+
+Job system classification
+
+Governance documents included
+
+Backup/restore moved to MVP
+
+Malware scanning moved to MVP
+
+Those changes address the most common failure points in early infrastructure projects.
+
+Overall score
+Category	Rating
+Architecture	9.5 / 10
+Feature coverage	9.5 / 10
+OSS readiness	10 / 10
+Roadmap clarity	9 / 10
+Operational maturity	9 / 10
+
+This document now resembles something between:
+
+GitLab CE early design docs
+
+Sentry architecture planning
+
+Plausible Analytics spec
+
+Which is exactly the level needed for a credible open-source platform.
+
+1. Architectural Decisions That Are Excellent
+EventBus as a core primitive
+
+This is the single best architectural choice in the document.
+
+The system now explicitly states:
+
+All state changes emit events. Database-backed event log.
+
+Event schema defined:
+
+event_id
+event_type
+timestamp
+actor_id
+actor_type
+organization_id
+room_id
+document_id
+metadata_json
+ip_address
+user_agent
+
+This allows:
+
+audit logs
+
+analytics
+
+webhooks
+
+notifications
+
+compliance exports
+
+chain of custody reports
+
+to all be built on the same data model.
+
+That dramatically reduces complexity.
+
+Suggestion
+
+Add:
+
+request_id
+session_id
+
+This allows grouping events across a single request.
+
+Extremely useful for debugging and security forensics.
+
+2. PermissionEngine is critical and correctly added
+
+Adding F141 centralized permission evaluation was a major improvement.
+
+Centralizing permissions prevents the classic issue where:
+
+UI
+
+API
+
+background jobs
+
+all evaluate permissions differently.
+
+Your model:
+
+canUserAccessDocument(user, document, action)
+
+is the correct design.
+
+Suggestion
+
+Add permission explanation capability.
+
+Example:
+
+explainPermission(user, document, action)
+
+Returns something like:
+
+Allowed because:
+- user belongs to group "Investors"
+- group has read permission on folder
+- document does not override ACL
+- link policy allows view
+
+Admins frequently ask:
+
+"Why can this person see this document?"
+
+This tool solves that.
+
+3. Multi-tenant from day one is extremely important
+
+This was a very smart decision.
+
+Every database entity includes organization_id.
+
+Many projects start single-tenant then regret it later.
+
+Your approach:
+
+organization_id on all entities
+
+allows:
+
+SaaS later
+
+organization isolation
+
+multi-room multi-org hosting
+
+with zero migration.
+
+Excellent decision.
+
+4. Preview pipeline architecture is strong
+
+The pipeline design:
+
+scan
+convert
+extract text
+generate thumbnails
+index metadata
+
+is exactly how enterprise document platforms operate.
+
+Your decision to apply watermark at render time instead of baking it is also correct.
+
+Benefits:
+
+viewer-specific watermark
+
+dynamic overlays
+
+less storage duplication
+
+5. Job system classification
+
+Job priority classes were added:
+
+High
+Normal
+Low
+Scheduled
+
+This is important because:
+
+Preview generation must never block:
+
+email dispatch
+
+analytics jobs
+
+cleanup jobs
+
+Correct design.
+
+6. Backup and restore moved to MVP
+
+This change was critical.
+
+Backup and restore tooling promoted to MVP.
+
+Admins will not trust a data room without backups.
+
+Good move.
+
+7. Malware scanning promoted to MVP
+
+Also a good call.
+
+Data rooms are high-trust environments.
+
+Having:
+
+ScanProvider
+ClamAV
+
+in MVP is correct.
+
+8. Governance documents included
+
+Adding these to MVP is excellent:
+
+CONTRIBUTING.md
+SECURITY.md
+ARCHITECTURE.md
+CODE_OF_CONDUCT.md
+
+This signals a real open-source project, not just a code dump.
+
+Architecture Areas That Could Still Improve
+1. Search architecture should be more explicit
+
+Currently search is:
+
+Postgres FTS (MVP)
+Meilisearch (V1)
+OpenSearch/Elastic (V2)
+
+But search will eventually require:
+
+separate service
+separate indexing jobs
+schema versioning
+
+Recommendation:
+
+Create a SearchIndex model separate from documents.
+
+Example:
+
+search_index
+-------------
+document_id
+version_id
+organization_id
+text
+metadata
+vector_embedding
+
+This allows search engines to be swapped without reprocessing documents.
+
+2. Document object model should be clarified
+
+Right now documents include:
+
+version
+hash
+preview
+metadata
+
+But it would help to explicitly separate:
+
+Document
+DocumentVersion
+FileBlob
+PreviewAsset
+ExtractedText
+
+Typical structure:
+
+Document
+ ├ DocumentVersion
+ │   ├ FileBlob
+ │   ├ PreviewAssets
+ │   ├ ExtractedText
+ │   └ Hash
+
+This prevents version history from becoming messy.
+
+3. Event log storage strategy
+
+The event bus writes to the database.
+
+That’s good initially.
+
+But event tables grow extremely fast.
+
+You should plan for:
+
+partitioning
+retention policies
+event archiving
+
+Example approach:
+
+events_2026_01
+events_2026_02
+
+Postgres partitioning helps.
+
+4. Preview generation scaling
+
+Preview generation can become the largest CPU consumer.
+
+The system should support:
+
+multiple preview workers
+job concurrency control
+
+Example:
+
+preview-worker
+scan-worker
+email-worker
+analytics-worker
+
+Even if implemented later.
+
+5. Encryption architecture
+
+Feature:
+
+EncryptionProvider
+AES-256 file-level encryption
+
+But encryption design should answer:
+
+Where are keys stored?
+
+Options:
+
+env variable
+config file
+vault
+cloud KMS
+
+Recommended MVP:
+
+AES256 key from env
+
+Later:
+
+external KMS adapters
+Feature Roadmap Feedback
+
+The roadmap is strong, but a few features could shift.
+
+Features I would move earlier
+Document export (ZIP)
+
+Currently V1:
+
+F113
+
+This might belong in MVP.
+
+Admins often want:
+
+download entire room
+Room templates
+
+Also V1.
+
+But templates dramatically improve usability.
+
+Consider:
+
+MVP or early V1
+Features I would move later
+Screenshot protection
+
+This is always weak.
+
+It provides only UI-level deterrence.
+
+Good for V2.
+
+Missing Features Worth Considering
+
+The matrix is already very thorough, but a few features might be useful.
+
+Document binder / index export
+
+In M&A data rooms, buyers often want:
+
+PDF binder with numbered sections
+
+Example:
+
+Room → binder export
+Legal hold
+
+Useful for compliance.
+
+Example:
+
+Prevent deletion of documents during investigation
+External organization model
+
+Currently users are individual viewers.
+
+But many rooms involve:
+
+firm access
+
+Example:
+
+Goldman Sachs
+McKinsey
+PwC
+
+Could introduce:
+
+OrganizationParticipant
+Operational Recommendations
+
+To make the project easy to adopt:
+
+Include:
+
+docker compose up
+
+demo environment.
+
+Your demo seed room feature already helps here.
+
+Documentation Recommendations
+
+Beyond governance docs, also add:
+
+DATABASE_SCHEMA.md
+EVENT_MODEL.md
+PERMISSION_MODEL.md
+DEPLOYMENT.md
+
+These will dramatically help contributors.
+
+Long-Term Potential of This Project
+
+If executed well, DataRoomPlus could become:
+
+open-source alternative to:
+Datasite
+Intralinks
+Firmex
+DocSend
+
+But with advantages:
+
+self-hostable
+open source
+extensible
+API-first
+
+It could also power:
+
+secure customer portals
+compliance evidence vaults
+legal discovery exchanges
+board portals
+vendor security review rooms
+Final Verdict
+
+This revision is very close to production-grade design documentation.
+
+The biggest strengths now are:
+
+Event-driven architecture
+
+Centralized permissions
+
+Multi-tenant schema
+
+Preview pipeline
+
+Clear feature dependency chains
+
+OSS governance readiness
+
+Very few early projects have this level of architectural clarity.
