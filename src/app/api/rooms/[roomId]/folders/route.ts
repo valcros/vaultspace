@@ -6,9 +6,18 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma, Folder } from '@prisma/client';
 
-import { requireAuth, getRequestContext } from '@/lib/middleware';
-import { db, withOrgContext } from '@/lib/db';
+// Type for folder with include counts
+type FolderWithCounts = Folder & {
+  _count: {
+    children: number;
+    documents: number;
+  };
+};
+
+import { requireAuth } from '@/lib/middleware';
+import { withOrgContext } from '@/lib/db';
 import { HTTP_STATUS } from '@/lib/constants';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -65,7 +74,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     // Use RLS context for all org-scoped queries
-    const result = await withOrgContext(session.organizationId, async (tx) => {
+    const result = await withOrgContext(session.organizationId, async (tx: Prisma.TransactionClient) => {
       // Verify room access
       const room = await tx.room.findFirst({
         where: {
@@ -171,7 +180,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const parentId = searchParams.get('parentId') || undefined;
 
     // Use RLS context for all org-scoped queries
-    const result = await withOrgContext(session.organizationId, async (tx) => {
+    const result = await withOrgContext(session.organizationId, async (tx: Prisma.TransactionClient) => {
       // Verify room access
       const room = await tx.room.findFirst({
         where: {
@@ -214,7 +223,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
-      folders: result.folders.map((f) => ({
+      folders: result.folders.map((f: FolderWithCounts) => ({
         id: f.id,
         name: f.name,
         path: f.path,

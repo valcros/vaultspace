@@ -233,7 +233,9 @@ export default function RoomDetailPage() {
 
   // Handle folder creation
   const handleCreateFolder = React.useCallback(async () => {
-    if (!newFolderName.trim()) return;
+    if (!newFolderName.trim()) {
+      return;
+    }
 
     setIsCreatingFolder(true);
     try {
