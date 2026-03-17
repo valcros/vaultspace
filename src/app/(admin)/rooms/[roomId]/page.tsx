@@ -127,7 +127,9 @@ export default function RoomDetailPage() {
   const [documents, setDocuments] = React.useState<Document[]>([]);
   const [folders, setFolders] = React.useState<FolderItem[]>([]);
   const [currentFolderId, setCurrentFolderId] = React.useState<string | null>(null);
-  const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([{ id: null, name: 'Root' }]);
+  const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([
+    { id: null, name: 'Root' },
+  ]);
   const [admins, setAdmins] = React.useState<Admin[]>([]);
   const [links, setLinks] = React.useState<ShareLink[]>([]);
   const [activity, setActivity] = React.useState<ActivityEvent[]>([]);
@@ -325,13 +327,16 @@ export default function RoomDetailPage() {
   }, []);
 
   // Navigate via breadcrumb
-  const handleBreadcrumbClick = React.useCallback((index: number) => {
-    const item = breadcrumbs[index];
-    if (item) {
-      setCurrentFolderId(item.id);
-      setBreadcrumbs((prev) => prev.slice(0, index + 1));
-    }
-  }, [breadcrumbs]);
+  const handleBreadcrumbClick = React.useCallback(
+    (index: number) => {
+      const item = breadcrumbs[index];
+      if (item) {
+        setCurrentFolderId(item.id);
+        setBreadcrumbs((prev) => prev.slice(0, index + 1));
+      }
+    },
+    [breadcrumbs]
+  );
 
   if (isLoading) {
     return (
