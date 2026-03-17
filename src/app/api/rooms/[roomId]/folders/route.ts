@@ -19,6 +19,7 @@ type FolderWithCounts = Folder & {
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { HTTP_STATUS } from '@/lib/constants';
+import { getPermissionEngine } from '@/lib/permissions';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -35,14 +36,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const session = await requireAuth();
     const { roomId } = await context.params;
-
-    // Require ADMIN role to create folders
-    if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Admin access required' } },
-        { status: HTTP_STATUS.FORBIDDEN }
-      );
-    }
 
     const body = await request.json();
     const { name, parentId } = body;
@@ -85,16 +78,33 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const result = await withOrgContext(
       session.organizationId,
       async (tx: Prisma.TransactionClient) => {
-        // Verify room access
+        // Check room-scoped admin permission (same as document upload)
+        const permissionEngine = getPermissionEngine();
+        const canManage = await permissionEngine.can(
+          { userId: session.userId, role: session.organization.role },
+          'admin',
+          { type: 'ROOM', organizationId: session.organizationId, roomId },
+          tx
+        );
+
+        if (!canManage) {
+          return {
+            error: 'You do not have permission to create folders in this room',
+            status: HTTP_STATUS.FORBIDDEN,
+          };
+        }
+
+        // Verify room exists and is active
         const room = await tx.room.findFirst({
           where: {
             id: roomId,
             organizationId: session.organizationId,
+            status: 'ACTIVE',
           },
         });
 
         if (!room) {
-          return { error: 'Room not found', status: HTTP_STATUS.NOT_FOUND };
+          return { error: 'Room not found or not active', status: HTTP_STATUS.NOT_FOUND };
         }
 
         // If parentId provided, verify it exists and belongs to this room
@@ -194,7 +204,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const result = await withOrgContext(
       session.organizationId,
       async (tx: Prisma.TransactionClient) => {
-        // Verify room access
+        // Check room-scoped view permission
+        const permissionEngine = getPermissionEngine();
+        const canView = await permissionEngine.can(
+          { userId: session.userId, role: session.organization.role },
+          'view',
+          { type: 'ROOM', organizationId: session.organizationId, roomId },
+          tx
+        );
+
+        if (!canView) {
+          return {
+            error: 'You do not have permission to view this room',
+            status: HTTP_STATUS.FORBIDDEN,
+          };
+        }
+
+        // Verify room exists
         const room = await tx.room.findFirst({
           where: {
             id: roomId,
