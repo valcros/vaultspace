@@ -213,7 +213,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       scanStatus: doc.latestVersion?.scanStatus ?? null,
       previewStatus: doc.latestVersion?.previewStatus ?? null,
       mimeType: doc.mimeType,
-      fileSize: Number(doc.fileSize),
+      size: Number(doc.fileSize),
       tags: doc.tags,
       folderId: doc.folderId,
       createdAt: doc.createdAt.toISOString(),

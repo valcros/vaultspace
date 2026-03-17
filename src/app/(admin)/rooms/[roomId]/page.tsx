@@ -516,9 +516,9 @@ export default function RoomDetailPage() {
                                 Open
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-danger-600">
+                              <DropdownMenuItem disabled className="text-neutral-400">
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
+                                Delete (Coming soon)
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -561,18 +561,18 @@ export default function RoomDetailPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem>
+                              <DropdownMenuItem disabled className="text-neutral-400">
                                 <Eye className="mr-2 h-4 w-4" />
-                                Preview
+                                Preview (Coming soon)
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem disabled className="text-neutral-400">
                                 <Download className="mr-2 h-4 w-4" />
-                                Download
+                                Download (Coming soon)
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-danger-600">
+                              <DropdownMenuItem disabled className="text-neutral-400">
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
+                                Delete (Coming soon)
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -846,7 +846,9 @@ export default function RoomDetailPage() {
             <Button variant="outline" onClick={() => setShowMemberDialog(false)}>
               Cancel
             </Button>
-            <Button>Add Member</Button>
+            <Button disabled title="Coming soon">
+              Add Member (Coming soon)
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -883,7 +885,9 @@ export default function RoomDetailPage() {
             <Button variant="outline" onClick={() => setShowLinkDialog(false)}>
               Cancel
             </Button>
-            <Button>Create Link</Button>
+            <Button disabled title="Coming soon">
+              Create Link (Coming soon)
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
