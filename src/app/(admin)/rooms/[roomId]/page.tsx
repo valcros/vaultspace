@@ -408,7 +408,9 @@ export default function RoomDetailPage() {
 
   // Confirm delete
   const confirmDelete = React.useCallback(async () => {
-    if (!selectedDocument) return;
+    if (!selectedDocument) {
+      return;
+    }
 
     setIsDeleting(true);
     try {
