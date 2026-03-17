@@ -193,10 +193,9 @@ export function UploadZone({
           if (folderId) {
             formData.append('folderId', folderId);
           }
-          // folderPath is for preserving folder structure from drag-dropped folders
-          if (uploadFile.path !== '/') {
-            formData.append('folderPath', uploadFile.path);
-          }
+          // Note: uploadFile.path is available from drag-dropped folder structures
+          // but backend folder auto-creation is not yet implemented for MVP.
+          // Files are uploaded to the current folderId instead.
 
           const response = await fetch(`/api/rooms/${roomId}/documents`, {
             method: 'POST',

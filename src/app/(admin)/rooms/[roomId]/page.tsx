@@ -11,6 +11,7 @@ import {
   Upload,
   Plus,
   FolderPlus,
+  Folder,
   MoreHorizontal,
   Download,
   Eye,
@@ -19,6 +20,7 @@ import {
   Mail,
   BarChart3,
   History,
+  ChevronRight,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -74,6 +76,21 @@ interface Document {
   createdAt: string;
 }
 
+interface FolderItem {
+  id: string;
+  name: string;
+  path: string;
+  parentId: string | null;
+  childCount: number;
+  documentCount: number;
+  createdAt: string;
+}
+
+interface BreadcrumbItem {
+  id: string | null;
+  name: string;
+}
+
 interface Admin {
   id: string;
   firstName: string;
@@ -108,6 +125,9 @@ export default function RoomDetailPage() {
 
   const [room, setRoom] = React.useState<Room | null>(null);
   const [documents, setDocuments] = React.useState<Document[]>([]);
+  const [folders, setFolders] = React.useState<FolderItem[]>([]);
+  const [currentFolderId, setCurrentFolderId] = React.useState<string | null>(null);
+  const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([{ id: null, name: 'Root' }]);
   const [admins, setAdmins] = React.useState<Admin[]>([]);
   const [links, setLinks] = React.useState<ShareLink[]>([]);
   const [activity, setActivity] = React.useState<ActivityEvent[]>([]);
@@ -140,7 +160,10 @@ export default function RoomDetailPage() {
 
   const fetchDocuments = React.useCallback(async () => {
     try {
-      const response = await fetch(`/api/rooms/${roomId}/documents`);
+      const url = currentFolderId
+        ? `/api/rooms/${roomId}/documents?folderId=${currentFolderId}`
+        : `/api/rooms/${roomId}/documents`;
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setDocuments(data.documents || []);
@@ -148,7 +171,22 @@ export default function RoomDetailPage() {
     } catch (error) {
       console.error('Failed to fetch documents:', error);
     }
-  }, [roomId]);
+  }, [roomId, currentFolderId]);
+
+  const fetchFolders = React.useCallback(async () => {
+    try {
+      const url = currentFolderId
+        ? `/api/rooms/${roomId}/folders?parentId=${currentFolderId}`
+        : `/api/rooms/${roomId}/folders`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setFolders(data.folders || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch folders:', error);
+    }
+  }, [roomId, currentFolderId]);
 
   const fetchAdmins = React.useCallback(async () => {
     try {
@@ -195,6 +233,7 @@ export default function RoomDetailPage() {
       switch (activeTab) {
         case 'documents':
           fetchDocuments();
+          fetchFolders();
           break;
         case 'members':
           fetchAdmins();
@@ -207,7 +246,15 @@ export default function RoomDetailPage() {
           break;
       }
     }
-  }, [activeTab, room, fetchDocuments, fetchAdmins, fetchLinks, fetchActivity]);
+  }, [activeTab, room, fetchDocuments, fetchFolders, fetchAdmins, fetchLinks, fetchActivity]);
+
+  // Refetch when navigating folders
+  React.useEffect(() => {
+    if (room && activeTab === 'documents') {
+      fetchDocuments();
+      fetchFolders();
+    }
+  }, [currentFolderId, room, activeTab, fetchDocuments, fetchFolders]);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) {
@@ -248,13 +295,16 @@ export default function RoomDetailPage() {
       const response = await fetch(`/api/rooms/${roomId}/folders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newFolderName.trim() }),
+        body: JSON.stringify({
+          name: newFolderName.trim(),
+          parentId: currentFolderId,
+        }),
       });
 
       if (response.ok) {
         setShowFolderDialog(false);
         setNewFolderName('');
-        fetchDocuments(); // Refresh to show new folder
+        fetchFolders(); // Refresh folders for immediate visibility
       } else {
         const error = await response.json();
         console.error('Failed to create folder:', error);
@@ -266,7 +316,22 @@ export default function RoomDetailPage() {
     } finally {
       setIsCreatingFolder(false);
     }
-  }, [roomId, newFolderName, fetchDocuments]);
+  }, [roomId, newFolderName, currentFolderId, fetchFolders]);
+
+  // Navigate into a folder
+  const handleFolderClick = React.useCallback((folder: FolderItem) => {
+    setCurrentFolderId(folder.id);
+    setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
+  }, []);
+
+  // Navigate via breadcrumb
+  const handleBreadcrumbClick = React.useCallback((index: number) => {
+    const item = breadcrumbs[index];
+    if (item) {
+      setCurrentFolderId(item.id);
+      setBreadcrumbs((prev) => prev.slice(0, index + 1));
+    }
+  }, [breadcrumbs]);
 
   if (isLoading) {
     return (
@@ -344,6 +409,27 @@ export default function RoomDetailPage() {
 
           {/* Documents Tab */}
           <TabsContent value="documents" className="mt-6">
+            {/* Breadcrumb navigation */}
+            {breadcrumbs.length > 1 && (
+              <div className="mb-4 flex items-center gap-1 text-sm">
+                {breadcrumbs.map((crumb, index) => (
+                  <React.Fragment key={crumb.id ?? 'root'}>
+                    {index > 0 && <ChevronRight className="h-4 w-4 text-neutral-400" />}
+                    <button
+                      onClick={() => handleBreadcrumbClick(index)}
+                      className={`rounded px-2 py-1 hover:bg-neutral-100 ${
+                        index === breadcrumbs.length - 1
+                          ? 'font-medium text-neutral-900'
+                          : 'text-neutral-500 hover:text-neutral-900'
+                      }`}
+                    >
+                      {crumb.name}
+                    </button>
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Button onClick={() => setShowUploadDialog(true)}>
@@ -357,7 +443,7 @@ export default function RoomDetailPage() {
               </div>
             </div>
 
-            {documents.length === 0 ? (
+            {folders.length === 0 && documents.length === 0 ? (
               <Card className="p-12 text-center">
                 <FileText className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
                 <h3 className="mb-2 text-lg font-semibold text-neutral-900">No documents yet</h3>
@@ -390,6 +476,51 @@ export default function RoomDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Render folders first */}
+                    {folders.map((folder) => (
+                      <tr
+                        key={folder.id}
+                        className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
+                        onClick={() => handleFolderClick(folder)}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <Folder className="h-5 w-5 text-yellow-500" />
+                            <span className="font-medium">{folder.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-neutral-500">
+                          {folder.documentCount} files, {folder.childCount} folders
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant="secondary">folder</Badge>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-neutral-500">
+                          {formatDate(folder.createdAt)}
+                        </td>
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                Open
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-danger-600">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Render documents */}
                     {documents.map((doc) => (
                       <tr key={doc.id} className="border-b last:border-0 hover:bg-neutral-50">
                         <td className="px-4 py-3">
@@ -668,6 +799,7 @@ export default function RoomDetailPage() {
           <div className="py-4">
             <UploadZone
               roomId={roomId}
+              folderId={currentFolderId ?? undefined}
               onUploadComplete={handleUploadComplete}
               onUploadError={(error) => console.error('Upload error:', error)}
             />

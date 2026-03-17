@@ -36,6 +36,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const session = await requireAuth();
     const { roomId } = await context.params;
 
+    // Require ADMIN role to create folders
+    if (session.organization.role !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Admin access required' } },
+        { status: HTTP_STATUS.FORBIDDEN }
+      );
+    }
+
     const body = await request.json();
     const { name, parentId } = body;
 
