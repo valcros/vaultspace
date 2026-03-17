@@ -12,34 +12,8 @@ const nextConfig = {
   },
   // Standalone output for Docker
   output: 'standalone',
-  // Headers for security
-  // Note: Preview routes override X-Frame-Options to SAMEORIGIN in their route handlers
-  // to allow iframe embedding for document preview dialogs
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin',
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-        ],
-      },
-    ];
-  },
+  // Security headers are set in middleware.ts instead of here
+  // This allows dynamic X-Frame-Options based on route (SAMEORIGIN for preview, DENY for others)
 };
 
 module.exports = nextConfig;
