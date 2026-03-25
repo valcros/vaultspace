@@ -79,8 +79,7 @@ function addSecurityHeaders(response: NextResponse, pathname: string): NextRespo
 
   // X-Frame-Options: SAMEORIGIN for preview routes to allow iframe embedding
   // DENY for all other routes to prevent clickjacking
-  const isPreviewRoute =
-    pathname.includes('/documents/') && pathname.endsWith('/preview');
+  const isPreviewRoute = pathname.includes('/documents/') && pathname.endsWith('/preview');
   response.headers.set('X-Frame-Options', isPreviewRoute ? 'SAMEORIGIN' : 'DENY');
 
   // Content Security Policy (basic)

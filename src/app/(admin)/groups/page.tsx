@@ -47,8 +47,12 @@ export default function GroupsPage() {
   const [editForm, setEditForm] = React.useState({ name: '', description: '' });
   const [showMembersDialog, setShowMembersDialog] = React.useState(false);
   const [membersGroupId, setMembersGroupId] = React.useState<string | null>(null);
-  const [members, setMembers] = React.useState<Array<{ id: string; firstName: string; lastName: string; email: string }>>([]);
-  const [allUsers, setAllUsers] = React.useState<Array<{ id: string; firstName: string; lastName: string; email: string }>>([]);
+  const [members, setMembers] = React.useState<
+    Array<{ id: string; firstName: string; lastName: string; email: string }>
+  >([]);
+  const [allUsers, setAllUsers] = React.useState<
+    Array<{ id: string; firstName: string; lastName: string; email: string }>
+  >([]);
   const [isLoadingMembers, setIsLoadingMembers] = React.useState(false);
 
   React.useEffect(() => {
@@ -285,7 +289,10 @@ export default function GroupsPage() {
                           Manage Members
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-danger-600" onClick={() => handleDeleteGroup(group)}>
+                        <DropdownMenuItem
+                          className="text-danger-600"
+                          onClick={() => handleDeleteGroup(group)}
+                        >
                           <Trash2 className="mr-2 h-4 w-4" />
                           Delete
                         </DropdownMenuItem>
@@ -387,7 +394,11 @@ export default function GroupsPage() {
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveEdit} loading={isSavingEdit} disabled={!editForm.name.trim()}>
+            <Button
+              onClick={handleSaveEdit}
+              loading={isSavingEdit}
+              disabled={!editForm.name.trim()}
+            >
               Save Changes
             </Button>
           </DialogFooter>
@@ -420,12 +431,21 @@ export default function GroupsPage() {
                   ) : (
                     <div className="max-h-48 space-y-2 overflow-y-auto">
                       {members.map((member) => (
-                        <div key={member.id} className="flex items-center justify-between rounded border p-2">
+                        <div
+                          key={member.id}
+                          className="flex items-center justify-between rounded border p-2"
+                        >
                           <div>
-                            <p className="text-sm font-medium">{member.firstName} {member.lastName}</p>
+                            <p className="text-sm font-medium">
+                              {member.firstName} {member.lastName}
+                            </p>
                             <p className="text-xs text-neutral-500">{member.email}</p>
                           </div>
-                          <Button variant="ghost" size="sm" onClick={() => handleRemoveMember(member.id)}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveMember(member.id)}
+                          >
                             <Trash2 className="h-4 w-4 text-danger-600" />
                           </Button>
                         </div>
@@ -444,12 +464,21 @@ export default function GroupsPage() {
                       <p className="mb-2 text-sm font-medium text-neutral-700">Add Members</p>
                       <div className="max-h-48 space-y-2 overflow-y-auto">
                         {nonMembers.map((user) => (
-                          <div key={user.id} className="flex items-center justify-between rounded border p-2">
+                          <div
+                            key={user.id}
+                            className="flex items-center justify-between rounded border p-2"
+                          >
                             <div>
-                              <p className="text-sm font-medium">{user.firstName} {user.lastName}</p>
+                              <p className="text-sm font-medium">
+                                {user.firstName} {user.lastName}
+                              </p>
                               <p className="text-xs text-neutral-500">{user.email}</p>
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => handleAddMember(user.id)}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAddMember(user.id)}
+                            >
                               Add
                             </Button>
                           </div>

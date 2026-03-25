@@ -174,7 +174,8 @@ async function testCreateFolder() {
   }
 
   if (!response.ok) {
-    const errorMsg = typeof data.error === 'object' ? JSON.stringify(data.error) : (data.error || response.status);
+    const errorMsg =
+      typeof data.error === 'object' ? JSON.stringify(data.error) : data.error || response.status;
     throw new Error(`Create folder failed: ${errorMsg}`);
   }
 
@@ -350,8 +351,8 @@ async function main() {
   await cleanupTestRoom();
 
   // Summary
-  const passed = results.filter(r => r.passed).length;
-  const failed = results.filter(r => !r.passed).length;
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.filter((r) => !r.passed).length;
   const totalDuration = results.reduce((sum, r) => sum + r.duration, 0);
 
   console.log('\n╔══════════════════════════════════════════╗');
@@ -364,9 +365,11 @@ async function main() {
 
   if (failed > 0) {
     console.log('\n--- Failed Tests ---');
-    results.filter(r => !r.passed).forEach(r => {
-      console.log(`❌ ${r.name}: ${r.error}`);
-    });
+    results
+      .filter((r) => !r.passed)
+      .forEach((r) => {
+        console.log(`❌ ${r.name}: ${r.error}`);
+      });
     process.exit(1);
   }
 

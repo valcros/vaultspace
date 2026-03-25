@@ -5,6 +5,7 @@ Post-MVP enhancements and technical debt items.
 ## High Priority
 
 ### Document Preview Enhancements
+
 - **Add support for additional file type previews**
   - XLSX (Excel spreadsheets) - consider libraries like SheetJS or server-side rendering
   - PPTX (PowerPoint) - consider pdf.js conversion or dedicated viewer
