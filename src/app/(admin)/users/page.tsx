@@ -252,8 +252,9 @@ export default function UsersPage() {
                                 !window.confirm(
                                   `Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`
                                 )
-                              )
+                              ) {
                                 return;
+                              }
                               try {
                                 const res = await fetch(`/api/users/${user.id}`, {
                                   method: 'PATCH',
@@ -261,7 +262,9 @@ export default function UsersPage() {
                                   body: JSON.stringify({ role: newRole }),
                                   credentials: 'include',
                                 });
-                                if (res.ok) fetchUsers();
+                                if (res.ok) {
+                                  fetchUsers();
+                                }
                               } catch (err) {
                                 console.error('Failed to change role:', err);
                               }
@@ -278,14 +281,17 @@ export default function UsersPage() {
                                 !window.confirm(
                                   `Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`
                                 )
-                              )
+                              ) {
                                 return;
+                              }
                               try {
                                 const res = await fetch(`/api/users/${user.id}`, {
                                   method: 'DELETE',
                                   credentials: 'include',
                                 });
-                                if (res.ok) fetchUsers();
+                                if (res.ok) {
+                                  fetchUsers();
+                                }
                               } catch (err) {
                                 console.error('Failed to remove user:', err);
                               }
