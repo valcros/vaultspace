@@ -24,6 +24,7 @@ Default:  Deny access
 ```
 
 ### Permission Levels
+
 ```typescript
 type PermissionLevel = 'NONE' | 'VIEW' | 'DOWNLOAD' | 'ADMIN';
 
@@ -40,6 +41,7 @@ const actionRequirements = {
 ### Key Finding: Admin Users Have Full Access
 
 **Organization ADMINs** (Layer 1) and **Room ADMINs** (Layer 2) automatically have `ADMIN` level access, which grants ALL actions including:
+
 - view
 - download
 - admin
@@ -51,13 +53,14 @@ const actionRequirements = {
 ### Permission Check Pattern
 
 All APIs should follow this pattern:
+
 ```typescript
 const permissionEngine = getPermissionEngine();
 const canPerform = await permissionEngine.can(
   { userId: session.userId, role: session.organization.role },
-  'admin',  // or 'view', 'download', 'delete'
+  'admin', // or 'view', 'download', 'delete'
   { type: 'ROOM', organizationId, roomId },
-  tx  // Pass transaction for RLS context
+  tx // Pass transaction for RLS context
 );
 ```
 
@@ -67,27 +70,27 @@ const canPerform = await permissionEngine.can(
 
 ### Features Implemented (Backend) but Not Wired (UI)
 
-| Feature | API Status | UI Status | MVP Feature ID |
-|---------|------------|-----------|----------------|
-| Document Preview | ✅ Implemented | ✅ Just wired | F008 |
-| Document Download | ✅ Implemented | ✅ Just wired | F014 |
-| Document Delete | ✅ Implemented | ✅ Just wired | F114 |
-| Share Link Create | ✅ Implemented | ❌ UI disabled | F116 |
-| Share Link List | ✅ Implemented | ✅ Shows in UI | F116 |
-| Team Invite | ✅ Implemented | ❌ UI disabled | F044 |
-| Folder Create | ✅ Implemented | ✅ Working | F006 |
-| Folder List | ✅ Implemented | ✅ Working | F006 |
+| Feature           | API Status     | UI Status      | MVP Feature ID |
+| ----------------- | -------------- | -------------- | -------------- |
+| Document Preview  | ✅ Implemented | ✅ Just wired  | F008           |
+| Document Download | ✅ Implemented | ✅ Just wired  | F014           |
+| Document Delete   | ✅ Implemented | ✅ Just wired  | F114           |
+| Share Link Create | ✅ Implemented | ❌ UI disabled | F116           |
+| Share Link List   | ✅ Implemented | ✅ Shows in UI | F116           |
+| Team Invite       | ✅ Implemented | ❌ UI disabled | F044           |
+| Folder Create     | ✅ Implemented | ✅ Working     | F006           |
+| Folder List       | ✅ Implemented | ✅ Working     | F006           |
 
 ### Features Missing (Backend + UI)
 
-| Feature | API Status | UI Status | MVP Feature ID |
-|---------|------------|-----------|----------------|
-| Folder Delete | ❌ Missing | ❌ Disabled | F114 |
-| Folder Rename | ❌ Missing | ❌ Not shown | F006 |
-| Share Link Delete | ❌ Missing | ❌ Disabled | F116 |
-| Share Link Edit | ❌ Missing | ❌ Disabled | F116 |
-| Room Member Add | Partial (room admins API exists) | ❌ Disabled | F044 |
-| Room Member Remove | ✅ Exists | ❌ Not shown | F044 |
+| Feature            | API Status                       | UI Status    | MVP Feature ID |
+| ------------------ | -------------------------------- | ------------ | -------------- |
+| Folder Delete      | ❌ Missing                       | ❌ Disabled  | F114           |
+| Folder Rename      | ❌ Missing                       | ❌ Not shown | F006           |
+| Share Link Delete  | ❌ Missing                       | ❌ Disabled  | F116           |
+| Share Link Edit    | ❌ Missing                       | ❌ Disabled  | F116           |
+| Room Member Add    | Partial (room admins API exists) | ❌ Disabled  | F044           |
+| Room Member Remove | ✅ Exists                        | ❌ Not shown | F044           |
 
 ---
 
@@ -96,12 +99,14 @@ const canPerform = await permissionEngine.can(
 ### Phase 1: Folder Operations (F114, F006)
 
 **1.1 Create Folder Delete API**
+
 - Path: `src/app/api/rooms/[roomId]/folders/[folderId]/route.ts`
 - Methods: DELETE, PATCH (for rename)
 - Permission: Requires `admin` action on ROOM
 - Behavior: Soft delete (recursive) - move folder and all contents to DELETED status
 
 **1.2 Update Room Page UI**
+
 - Enable folder delete in dropdown menu
 - Add confirmation dialog
 - Wire to DELETE API
@@ -109,11 +114,13 @@ const canPerform = await permissionEngine.can(
 ### Phase 2: Share Link Operations (F116)
 
 **2.1 Create Share Link Management API**
+
 - Path: `src/app/api/rooms/[roomId]/links/[linkId]/route.ts`
 - Methods: PATCH (edit), DELETE
 - Permission: Organization ADMIN only
 
 **2.2 Update Room Page UI**
+
 - Enable "Create Link" button in dialog
 - Wire to POST `/api/rooms/:roomId/links`
 - Add edit/delete actions to link cards
@@ -121,12 +128,14 @@ const canPerform = await permissionEngine.can(
 ### Phase 3: Member Management (F044)
 
 **3.1 Wire Room Admin Management**
+
 - Existing APIs:
   - GET `/api/rooms/:roomId/admins` - List room admins
   - POST `/api/rooms/:roomId/admins` - Add room admin
   - DELETE `/api/rooms/:roomId/admins/:userId` - Remove room admin
 
 **3.2 Update Room Page UI**
+
 - Enable "Add Admin" button
 - Wire to POST API
 - Enable remove action in member list
@@ -184,6 +193,7 @@ export async function PATCH(request, context) {
 ### 4.3 UI Wiring Pattern
 
 For each feature, the pattern is:
+
 1. Add state for dialog/loading
 2. Add handler function that calls API
 3. Remove `disabled` from menu item
@@ -209,6 +219,7 @@ For each feature, the pattern is:
 ### Audit Trail
 
 All mutations emit events via EventBus:
+
 ```typescript
 await eventBus.emit('FOLDER_DELETED', {
   roomId,
@@ -238,10 +249,12 @@ await eventBus.emit('FOLDER_DELETED', {
 ## Part 7: Files to Create/Modify
 
 ### New Files:
+
 - `src/app/api/rooms/[roomId]/folders/[folderId]/route.ts`
 - `src/app/api/rooms/[roomId]/links/[linkId]/route.ts`
 
 ### Files to Modify:
+
 - `src/app/(admin)/rooms/[roomId]/page.tsx` (wire all UI actions)
 
 ---

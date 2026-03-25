@@ -266,7 +266,11 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(`Are you sure you want to delete "${room.name}"? This action cannot be undone.`)) {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete "${room.name}"? This action cannot be undone.`
+      )
+    ) {
       return;
     }
     setIsDeleting(true);
@@ -290,7 +294,9 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
 
   return (
     <Link href={`/rooms/${room.id}`}>
-      <Card className={`cursor-pointer transition-all hover:border-primary-200 hover:shadow-md ${isDeleting ? 'opacity-50' : ''}`}>
+      <Card
+        className={`cursor-pointer transition-all hover:border-primary-200 hover:shadow-md ${isDeleting ? 'opacity-50' : ''}`}
+      >
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
             <div className="min-w-0 flex-1">

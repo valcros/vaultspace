@@ -272,8 +272,22 @@ export default function RoomAnalyticsPage() {
                         })}
                       </div>
                       <div className="mt-2 flex justify-between text-xs text-neutral-400">
-                        <span>{data[0] ? new Date(data[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
-                        <span>{data[data.length - 1] ? new Date(data[data.length - 1]!.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
+                        <span>
+                          {data[0]
+                            ? new Date(data[0].date).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                              })
+                            : ''}
+                        </span>
+                        <span>
+                          {data[data.length - 1]
+                            ? new Date(data[data.length - 1]!.date).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                              })
+                            : ''}
+                        </span>
                       </div>
                     </div>
                   );

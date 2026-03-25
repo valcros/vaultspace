@@ -248,7 +248,12 @@ export default function UsersPage() {
                           <DropdownMenuItem
                             onClick={async () => {
                               const newRole = user.role === 'ADMIN' ? 'VIEWER' : 'ADMIN';
-                              if (!window.confirm(`Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`)) return;
+                              if (
+                                !window.confirm(
+                                  `Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`
+                                )
+                              )
+                                return;
                               try {
                                 const res = await fetch(`/api/users/${user.id}`, {
                                   method: 'PATCH',
@@ -269,7 +274,12 @@ export default function UsersPage() {
                           <DropdownMenuItem
                             className="text-danger-600"
                             onClick={async () => {
-                              if (!window.confirm(`Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`)) return;
+                              if (
+                                !window.confirm(
+                                  `Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`
+                                )
+                              )
+                                return;
                               try {
                                 const res = await fetch(`/api/users/${user.id}`, {
                                   method: 'DELETE',

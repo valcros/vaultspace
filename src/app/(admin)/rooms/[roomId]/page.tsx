@@ -363,9 +363,7 @@ export default function RoomDetailPage() {
   const handleDownload = React.useCallback(
     async (doc: Document) => {
       try {
-        const response = await fetch(
-          `/api/rooms/${roomId}/documents/${doc.id}/download`
-        );
+        const response = await fetch(`/api/rooms/${roomId}/documents/${doc.id}/download`);
         if (!response.ok) {
           throw new Error('Download failed');
         }
@@ -413,13 +411,10 @@ export default function RoomDetailPage() {
   );
 
   // Handle document delete
-  const handleDelete = React.useCallback(
-    async (doc: Document) => {
-      setSelectedDocument(doc);
-      setShowDeleteDialog(true);
-    },
-    []
-  );
+  const handleDelete = React.useCallback(async (doc: Document) => {
+    setSelectedDocument(doc);
+    setShowDeleteDialog(true);
+  }, []);
 
   // Confirm delete
   const confirmDelete = React.useCallback(async () => {
@@ -429,10 +424,9 @@ export default function RoomDetailPage() {
 
     setIsDeleting(true);
     try {
-      const response = await fetch(
-        `/api/rooms/${roomId}/documents/${selectedDocument.id}`,
-        { method: 'DELETE' }
-      );
+      const response = await fetch(`/api/rooms/${roomId}/documents/${selectedDocument.id}`, {
+        method: 'DELETE',
+      });
 
       if (response.ok) {
         setShowDeleteDialog(false);
@@ -464,10 +458,9 @@ export default function RoomDetailPage() {
 
     setIsDeletingFolder(true);
     try {
-      const response = await fetch(
-        `/api/rooms/${roomId}/folders/${selectedFolder.id}`,
-        { method: 'DELETE' }
-      );
+      const response = await fetch(`/api/rooms/${roomId}/folders/${selectedFolder.id}`, {
+        method: 'DELETE',
+      });
 
       if (response.ok) {
         setShowFolderDeleteDialog(false);
@@ -542,27 +535,30 @@ export default function RoomDetailPage() {
   }, []);
 
   // Handle delete link
-  const handleDeleteLink = React.useCallback(async (link: ShareLink) => {
-    if (!confirm(`Are you sure you want to delete the link "${link.name}"?`)) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/links/${link.id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        fetchLinks();
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to delete link');
+  const handleDeleteLink = React.useCallback(
+    async (link: ShareLink) => {
+      if (!confirm(`Are you sure you want to delete the link "${link.name}"?`)) {
+        return;
       }
-    } catch (error) {
-      console.error('Delete link error:', error);
-      alert('Failed to delete link');
-    }
-  }, [roomId, fetchLinks]);
+
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/links/${link.id}`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          fetchLinks();
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Failed to delete link');
+        }
+      } catch (error) {
+        console.error('Delete link error:', error);
+        alert('Failed to delete link');
+      }
+    },
+    [roomId, fetchLinks]
+  );
 
   // Handle add member (room admin)
   const handleAddMember = React.useCallback(async () => {
@@ -599,27 +595,34 @@ export default function RoomDetailPage() {
   }, [roomId, newMemberEmail, fetchAdmins]);
 
   // Handle remove member
-  const handleRemoveMember = React.useCallback(async (admin: Admin) => {
-    if (!confirm(`Are you sure you want to remove ${admin.firstName} ${admin.lastName} as a room admin?`)) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/admins/${admin.id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        fetchAdmins();
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to remove admin');
+  const handleRemoveMember = React.useCallback(
+    async (admin: Admin) => {
+      if (
+        !confirm(
+          `Are you sure you want to remove ${admin.firstName} ${admin.lastName} as a room admin?`
+        )
+      ) {
+        return;
       }
-    } catch (error) {
-      console.error('Remove member error:', error);
-      alert('Failed to remove admin');
-    }
-  }, [roomId, fetchAdmins]);
+
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/admins/${admin.id}`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          fetchAdmins();
+        } else {
+          const error = await response.json();
+          alert(error.error || 'Failed to remove admin');
+        }
+      } catch (error) {
+        console.error('Remove member error:', error);
+        alert('Failed to remove admin');
+      }
+    },
+    [roomId, fetchAdmins]
+  );
 
   if (isLoading) {
     return (
@@ -990,11 +993,15 @@ export default function RoomDetailPage() {
                         <div>
                           <CardTitle className="text-base">{link.name || 'Unnamed Link'}</CardTitle>
                           <CardDescription className="mt-1 flex items-center gap-2">
-                            <Badge variant={link.permission === 'DOWNLOAD' ? 'default' : 'secondary'}>
+                            <Badge
+                              variant={link.permission === 'DOWNLOAD' ? 'default' : 'secondary'}
+                            >
                               {link.permission === 'DOWNLOAD' ? 'View & Download' : 'View Only'}
                             </Badge>
                             {link.requiresPassword && <Badge variant="warning">Password</Badge>}
-                            {link.requiresEmailVerification && <Badge variant="secondary">Email Required</Badge>}
+                            {link.requiresEmailVerification && (
+                              <Badge variant="secondary">Email Required</Badge>
+                            )}
                             {!link.isActive && <Badge variant="danger">Disabled</Badge>}
                           </CardDescription>
                         </div>
@@ -1024,7 +1031,9 @@ export default function RoomDetailPage() {
                     <CardContent>
                       <div className="flex items-center gap-6 text-sm text-neutral-500">
                         <div>
-                          <span className="font-medium text-neutral-900">{link._count?.visits || 0}</span>{' '}
+                          <span className="font-medium text-neutral-900">
+                            {link._count?.visits || 0}
+                          </span>{' '}
                           visits
                         </div>
                         <div>Created {formatDate(link.createdAt)}</div>
@@ -1141,10 +1150,7 @@ export default function RoomDetailPage() {
             >
               Cancel
             </Button>
-            <Button
-              onClick={handleAddMember}
-              disabled={isAddingMember || !newMemberEmail.trim()}
-            >
+            <Button onClick={handleAddMember} disabled={isAddingMember || !newMemberEmail.trim()}>
               {isAddingMember ? 'Adding...' : 'Add Admin'}
             </Button>
           </DialogFooter>
@@ -1202,10 +1208,7 @@ export default function RoomDetailPage() {
             >
               Cancel
             </Button>
-            <Button
-              onClick={handleCreateLink}
-              disabled={isCreatingLink || !newLinkName.trim()}
-            >
+            <Button onClick={handleCreateLink} disabled={isCreatingLink || !newLinkName.trim()}>
               {isCreatingLink ? 'Creating...' : 'Create Link'}
             </Button>
           </DialogFooter>
@@ -1277,11 +1280,7 @@ export default function RoomDetailPage() {
             >
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDelete}
-              disabled={isDeleting}
-            >
+            <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
               {isDeleting ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogFooter>
@@ -1308,11 +1307,7 @@ export default function RoomDetailPage() {
             >
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmFolderDelete}
-              disabled={isDeletingFolder}
-            >
+            <Button variant="destructive" onClick={confirmFolderDelete} disabled={isDeletingFolder}>
               {isDeletingFolder ? 'Deleting...' : 'Delete Folder'}
             </Button>
           </DialogFooter>
@@ -1363,7 +1358,7 @@ export default function RoomDetailPage() {
             ) : (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
-                  <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600 mx-auto" />
+                  <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
                   <p className="text-neutral-500">Loading preview...</p>
                 </div>
               </div>

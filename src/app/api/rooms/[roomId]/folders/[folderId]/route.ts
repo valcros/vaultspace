@@ -96,11 +96,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     // Validate folder name
     if (newName.length > 255) {
-      return NextResponse.json({ error: 'Folder name too long (max 255 characters)' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Folder name too long (max 255 characters)' },
+        { status: 400 }
+      );
     }
 
     if (/[<>:"/\\|?*]/.test(newName)) {
-      return NextResponse.json({ error: 'Folder name contains invalid characters' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Folder name contains invalid characters' },
+        { status: 400 }
+      );
     }
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
@@ -238,7 +244,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
         select: { id: true },
       });
 
-      const folderIds = [folderId, ...descendantFolders.map(f => f.id)];
+      const folderIds = [folderId, ...descendantFolders.map((f) => f.id)];
 
       // Soft delete all documents in these folders
       await tx.document.updateMany({
