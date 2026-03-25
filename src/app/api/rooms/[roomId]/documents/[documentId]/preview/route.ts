@@ -170,15 +170,18 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     // No preview available - return metadata about the document
-    return jsonResponse({
-      message: 'Preview not available for this file type',
-      document: {
-        id: document.id,
-        name: document.name,
-        mimeType: document.mimeType,
-        canPreview: false,
+    return jsonResponse(
+      {
+        message: 'Preview not available for this file type',
+        document: {
+          id: document.id,
+          name: document.name,
+          mimeType: document.mimeType,
+          canPreview: false,
+        },
       },
-    }, 200);
+      200
+    );
   } catch (error) {
     console.error('[AdminPreviewAPI] Error:', error);
     return jsonResponse({ error: 'Failed to get preview' }, 500);
