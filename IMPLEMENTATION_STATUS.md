@@ -1,158 +1,112 @@
 # VaultSpace Implementation Status
 
-> **Current Milestone:** Backend-Complete (API-Complete)
-> **Last Updated:** 2026-03-15
-> **MVP Status:** Not complete per current docs
+> **Current Milestone:** Sprint 1 — UI Wiring Complete
+> **Last Updated:** 2026-03-25
+> **MVP Status:** In progress — see MASTER_PLAN.md for full sprint plan
 
-## Milestone Definition
+## Current State
 
-This repository has reached **backend-complete** status, meaning:
+The application is **deployed and operational** on Azure Container Apps with all backend services healthy. The admin UI is substantially built with all pages wired to their APIs. CI pipeline passes (Lint, Type Check, Test, Build).
 
-- All MVP API routes are implemented
-- Core services, providers, and infrastructure are in place
-- Job queue, event bus, and permissions are functional
-- Test scaffolding exists
+### Live Site
 
-However, **MVP is not complete** because the docs explicitly require:
-
-- Full admin web UI (dataroom-feature-matrix-v6.md line 13)
-- Branded viewer UI
-- No API-only phase
+- **URL:** Azure Container Apps (East US)
+- **Health:** Database, Cache, Storage all healthy
+- **Auth:** Login, registration, password reset all functional
+- **Demo:** Seed data with "Due Diligence Package" room, 3 folders, sample documents
 
 ## What's Done
 
-### API Surface (30+ routes)
+### API Surface (61 route files)
 
-- Room management: CRUD, templates, settings, analytics
-- Document management: upload, versions, restore, trash
-- User management: invite, groups, permissions
-- Links: public access, password/email verification
-- Organization: branding, activity log
-- Health check
+- **Auth:** login, register, logout, forgot-password, reset-password
+- **Rooms:** CRUD, templates, settings, analytics, audit, trash, admins, permissions, export
+- **Documents:** CRUD, upload, preview, download, versions, restore, text indexing
+- **Folders:** CRUD (list, create, get, update, delete)
+- **Share Links:** CRUD (list, create, get, update, delete) + public access
+- **Users:** list, get, delete, invite, role change, notification preferences
+- **Groups:** CRUD + member management
+- **Organization:** branding, activity log, public branding
+- **Public Viewer:** access validation, document list, preview, download, logout
+- **System:** health check, setup wizard, storage download
+
+### UI Pages (All Built and Wired)
+
+| Page                          | Status   | API Integration                                                      |
+| ----------------------------- | -------- | -------------------------------------------------------------------- |
+| Landing page                  | Complete | —                                                                    |
+| Login                         | Complete | POST /api/auth/login                                                 |
+| Registration                  | Complete | POST /api/auth/register                                              |
+| Forgot/Reset Password         | Complete | POST /api/auth/forgot-password, reset-password                       |
+| Setup Wizard                  | Complete | POST /api/setup                                                      |
+| Rooms List                    | Complete | GET/POST/PATCH/DELETE /api/rooms                                     |
+| Room Detail (Documents tab)   | Complete | Documents CRUD, folder navigation, upload, preview, download, delete |
+| Room Detail (Members tab)     | Complete | GET/POST/DELETE /api/rooms/:id/admins                                |
+| Room Detail (Share Links tab) | Complete | GET/POST/DELETE /api/rooms/:id/links                                 |
+| Room Detail (Activity tab)    | Complete | GET /api/rooms/:id/audit                                             |
+| Room Settings                 | Complete | GET/PATCH /api/rooms/:id, DELETE (with confirmation)                 |
+| Room Analytics                | Complete | GET /api/rooms/:id/analytics (bar chart visualization)               |
+| Room Audit Trail              | Complete | GET /api/rooms/:id/audit (pagination, CSV export)                    |
+| Room Trash                    | Complete | GET /api/rooms/:id/trash, POST restore                               |
+| Users Management              | Complete | GET /api/users, PATCH role, DELETE user, POST invite                 |
+| Groups Management             | Complete | CRUD + manage members dialog                                         |
+| Activity Log                  | Complete | GET /api/organization/activity (search, filter, CSV export)          |
+| Settings Hub                  | Complete | Navigation to 4 subsections                                          |
+| Organization Settings         | Complete | GET/PATCH branding + logo upload                                     |
+| Notification Preferences      | Complete | GET/PATCH /api/users/me/notifications                                |
+| Settings Activity Log         | Complete | GET /api/organization/activity (paginated, CSV export)               |
+| Public Viewer (access gate)   | Complete | GET /api/view/:token/info, POST access                               |
+| Public Viewer (document list) | Complete | GET /api/view/:token/documents                                       |
+| Public Viewer (document view) | Complete | GET /api/view/:token/documents/:id/preview                           |
 
 ### Core Infrastructure
 
-- **PermissionEngine** (14-layer, SEC-001 through SEC-016 ready)
-- **EventBus** (database-backed, partitioning-ready)
-- **Rate limiting** (per-IP, per-user)
-- **Session management** (cookie-based, secure)
+- **PermissionEngine** — 14-layer authorization (610 lines, 11 unit tests)
+- **EventBus** — immutable audit trail (308 lines, 11 unit tests)
+- **Rate Limiting** — per-IP, per-user (122 lines, 12 unit tests)
+- **Session Management** — DB-backed, Redis-cached, cookie-based
+- **Azure Guard** — runtime enforcement of Azure-only operation
+- **Security Headers** — middleware-based, SAMEORIGIN for preview iframes, DENY for all else
 
-### Providers (all with interfaces + defaults)
+### Providers (9 categories)
 
-- StorageProvider (local filesystem)
-- EmailProvider (SMTP/nodemailer)
-- CacheProvider (Redis/in-memory)
-- JobProvider (BullMQ/in-memory)
-- ScanProvider (ClamAV stub)
-- PreviewProvider (LibreOffice/Gotenberg stub)
-- SearchProvider (PostgreSQL full-text)
-- EncryptionProvider (AES-256-GCM)
-- OCRProvider (Tesseract.js, lazy-loaded)
+- Storage: Local, S3, Azure Blob
+- Email: Console, SMTP, Azure Communication Services
+- Cache: In-Memory, Redis
+- Jobs: BullMQ
+- Preview: Sharp (image thumbnails)
+- OCR: Tesseract.js
+- Scan: ClamAV, Passthrough
+- Search: PostgreSQL FTS (stub)
+- Encryption: (stub)
 
-### Background Jobs
+### Workers (5 processors)
 
-- Worker infrastructure (general, preview, scan, report)
-- Notification queueing (document uploaded, document viewed)
-- Email processor
+- Email, Preview, Scan, Text extraction, Export
 
-### Test Infrastructure
+### Tests & CI
 
-- Unit tests: 34 passing (Vitest)
-- Integration tests: scaffolded (requires Docker)
-- E2E tests: scaffolded (requires Playwright browsers)
-- TypeScript: strict, no errors
-- ESLint: no warnings
+| Check               | Status                                          |
+| ------------------- | ----------------------------------------------- |
+| Unit tests          | 34 passing (Vitest)                             |
+| Type check          | Passing (tsc --noEmit)                          |
+| ESLint              | Passing (no errors)                             |
+| Prettier            | Passing (all files formatted)                   |
+| CI (GitHub Actions) | All 4 jobs green: Lint, Test, Type Check, Build |
+| Integration tests   | Scaffolded (requires Docker)                    |
+| E2E tests           | Scaffolded (requires Playwright)                |
 
-### Supporting Scripts
+## What Remains for MVP
 
-- `scripts/gdpr-export.ts` - GDPR Article 20 data export (F052)
-- `prisma/seed.ts` - Series A Funding demo room
+See **MASTER_PLAN.md** for the full sprint plan. Summary:
 
-## What's Missing for MVP
+1. **Sprint 2:** Integration tests, E2E tests, security tests (SEC-001–016)
+2. **Sprint 3:** CI/CD pipeline with auto-deploy to staging
+3. **Sprint 4:** Security hardening, performance, UX polish, accessibility
+4. **Sprint 5:** Seed data, documentation, release prep
 
-Per AI_BUILD_PLAYBOOK.md and dataroom-feature-matrix-v6.md:
+## Custom Domain Status (F001)
 
-### Required Admin Pages (not built)
-
-| Feature                  | ID   | Expected Path                                   |
-| ------------------------ | ---- | ----------------------------------------------- |
-| Room Analytics Dashboard | F121 | `app/(admin)/rooms/[roomId]/analytics/page.tsx` |
-| Room Settings UI         | F130 | `app/(admin)/rooms/[roomId]/settings/page.tsx`  |
-| Admin Activity Log       | F040 | `app/(admin)/settings/activity/page.tsx`        |
-| Notification Preferences | F043 | `app/(admin)/settings/notifications/page.tsx`   |
-| Setup Wizard             | F128 | First-run onboarding flow                       |
-
-### Required Viewer Pages (not built)
-
-- Branded document viewer
-- Public link access UI
-- Login/authentication pages
-
-### Current Page Surface
-
-Only exists:
-
-- `src/app/page.tsx` (placeholder)
-- `src/app/layout.tsx` (root layout)
-
-## Build Verification
-
-Build passes in this environment:
-
-```
-Node: v22.17.1
-npm: 11.5.1
-OS: Darwin 23.6.0
-Exit code: 0
-```
-
-**Note:** Build reproducibility across environments not yet verified in CI.
-If build fails in another environment, try:
-
-```bash
-rm -rf .next node_modules
-npm install
-npm run build
-```
-
-## Custom Domain Status
-
-- `resolveOrganizationFromHeaders()` exists and is callable
-- Currently only used by `/api/public/branding` endpoint
-- Wider org-aware routing not yet implemented
-- MVP intent for F001 needs clarification
-
-## Test Validation Status
-
-| Test Type   | Status     | Notes                            |
-| ----------- | ---------- | -------------------------------- |
-| Unit tests  | Passing    | 34 tests via `npm run test`      |
-| Type check  | Passing    | `npm run type-check`             |
-| Lint        | Passing    | `npm run lint`                   |
-| Integration | Scaffolded | Requires Docker (Postgres/Redis) |
-| E2E         | Scaffolded | Requires Playwright browsers     |
-
-## Next Steps
-
-1. **Decide scope source of truth:**
-   - If API-first milestone is acceptable, update docs
-   - If docs remain as written, build MVP UI
-
-2. **If building MVP UI:**
-   - Admin layout and navigation
-   - Room analytics page (consuming `/api/rooms/[roomId]/analytics`)
-   - Room settings page (consuming `/api/rooms/[roomId]/settings`)
-   - Org activity log (consuming `/api/organization/activity`)
-   - Notification preferences (consuming `/api/users/me/notifications`)
-   - Setup wizard
-   - Auth pages (login, logout, password reset)
-   - Branded document viewer
-
-3. **CI/CD:**
-   - Add build verification to CI
-   - Run integration tests with Docker services
-   - Run E2E tests with Playwright
-
-4. **Clarify custom domain MVP scope:**
-   - Document whether F001 is just public branding lookup
-   - Or full org-aware domain behavior
+- `resolveOrganizationFromHeaders()` exists in middleware
+- Public branding endpoint works
+- Full org-aware routing scope TBD (stakeholder decision)
