@@ -105,7 +105,9 @@ export default function GroupsPage() {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingGroup || !editForm.name.trim()) return;
+    if (!editingGroup || !editForm.name.trim()) {
+      return;
+    }
     setIsSavingEdit(true);
     try {
       const response = await fetch(`/api/users/groups/${editingGroup.id}`, {
@@ -126,12 +128,16 @@ export default function GroupsPage() {
   };
 
   const handleDeleteGroup = async (group: Group) => {
-    if (!window.confirm(`Delete group "${group.name}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete group "${group.name}"? This cannot be undone.`)) {
+      return;
+    }
     try {
       const response = await fetch(`/api/users/groups/${group.id}`, {
         method: 'DELETE',
       });
-      if (response.ok) fetchGroups();
+      if (response.ok) {
+        fetchGroups();
+      }
     } catch (error) {
       console.error('Failed to delete group:', error);
     }
@@ -162,7 +168,9 @@ export default function GroupsPage() {
   };
 
   const handleAddMember = async (userId: string) => {
-    if (!membersGroupId) return;
+    if (!membersGroupId) {
+      return;
+    }
     try {
       const response = await fetch(`/api/users/groups/${membersGroupId}/members`, {
         method: 'POST',
@@ -179,7 +187,9 @@ export default function GroupsPage() {
   };
 
   const handleRemoveMember = async (userId: string) => {
-    if (!membersGroupId) return;
+    if (!membersGroupId) {
+      return;
+    }
     try {
       const response = await fetch(`/api/users/groups/${membersGroupId}/members/${userId}`, {
         method: 'DELETE',
@@ -458,7 +468,9 @@ export default function GroupsPage() {
                 {(() => {
                   const memberIds = new Set(members.map((m) => m.id));
                   const nonMembers = allUsers.filter((u) => !memberIds.has(u.id));
-                  if (nonMembers.length === 0) return null;
+                  if (nonMembers.length === 0) {
+                    return null;
+                  }
                   return (
                     <div>
                       <p className="mb-2 text-sm font-medium text-neutral-700">Add Members</p>
