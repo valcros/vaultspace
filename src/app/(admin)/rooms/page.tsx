@@ -249,6 +249,8 @@ export default function RoomsPage() {
 }
 
 function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
   const handleArchive = async () => {
     try {
       await fetch(`/api/rooms/${room.id}`, {
@@ -263,9 +265,32 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete "${room.name}"? This action cannot be undone.`)) {
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/rooms/${room.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (response.ok) {
+        onRefresh();
+      } else {
+        const data = await response.json();
+        console.error('Failed to delete room:', data.error);
+      }
+    } catch (error) {
+      console.error('Failed to delete room:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <Link href={`/rooms/${room.id}`}>
-      <Card className="cursor-pointer transition-all hover:border-primary-200 hover:shadow-md">
+      <Card className={`cursor-pointer transition-all hover:border-primary-200 hover:shadow-md ${isDeleting ? 'opacity-50' : ''}`}>
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
             <div className="min-w-0 flex-1">
@@ -291,7 +316,13 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
                   {room.status === 'ACTIVE' ? 'Archive' : 'Unarchive'}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={(e) => e.preventDefault()} className="text-danger-600">
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleDelete();
+                  }}
+                  className="text-danger-600"
+                >
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete
                 </DropdownMenuItem>

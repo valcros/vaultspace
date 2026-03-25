@@ -23,6 +23,7 @@ interface OrganizationSettings {
 
 export default function OrganizationSettingsPage() {
   const router = useRouter();
+  const logoInputRef = React.useRef<HTMLInputElement>(null);
   const [settings, setSettings] = React.useState<OrganizationSettings>({
     name: '',
     slug: '',
@@ -32,12 +33,50 @@ export default function OrganizationSettingsPage() {
   });
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
 
   React.useEffect(() => {
     fetchSettings();
   }, []);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file (PNG, SVG, JPG)');
+      return;
+    }
+
+    // Validate file size (2MB max)
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Logo must be under 2MB');
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    setError(null);
+    try {
+      // Convert to data URL for storage (simple approach for MVP)
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const dataUrl = event.target?.result as string;
+        setSettings((prev) => ({ ...prev, logoUrl: dataUrl }));
+        setIsUploadingLogo(false);
+      };
+      reader.onerror = () => {
+        setError('Failed to read logo file');
+        setIsUploadingLogo(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setError('Failed to upload logo');
+      setIsUploadingLogo(false);
+    }
+  };
 
   const fetchSettings = async () => {
     try {
@@ -153,7 +192,19 @@ export default function OrganizationSettingsPage() {
                   )}
                 </div>
                 <div>
-                  <Button variant="outline" size="sm">
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/png,image/svg+xml,image/jpeg"
+                    className="hidden"
+                    onChange={handleLogoUpload}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => logoInputRef.current?.click()}
+                    loading={isUploadingLogo}
+                  >
                     <Upload className="mr-2 h-4 w-4" />
                     Upload Logo
                   </Button>
