@@ -237,13 +237,50 @@ export default function UsersPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              window.location.href = `mailto:${user.email}`;
+                            }}
+                          >
                             <Mail className="mr-2 h-4 w-4" />
                             Send Email
                           </DropdownMenuItem>
-                          <DropdownMenuItem>Change Role</DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              const newRole = user.role === 'ADMIN' ? 'VIEWER' : 'ADMIN';
+                              if (!window.confirm(`Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`)) return;
+                              try {
+                                const res = await fetch(`/api/users/${user.id}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ role: newRole }),
+                                  credentials: 'include',
+                                });
+                                if (res.ok) fetchUsers();
+                              } catch (err) {
+                                console.error('Failed to change role:', err);
+                              }
+                            }}
+                          >
+                            <Shield className="mr-2 h-4 w-4" />
+                            Change to {user.role === 'ADMIN' ? 'Viewer' : 'Admin'}
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-danger-600">
+                          <DropdownMenuItem
+                            className="text-danger-600"
+                            onClick={async () => {
+                              if (!window.confirm(`Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`)) return;
+                              try {
+                                const res = await fetch(`/api/users/${user.id}`, {
+                                  method: 'DELETE',
+                                  credentials: 'include',
+                                });
+                                if (res.ok) fetchUsers();
+                              } catch (err) {
+                                console.error('Failed to remove user:', err);
+                              }
+                            }}
+                          >
                             <Trash2 className="mr-2 h-4 w-4" />
                             Remove
                           </DropdownMenuItem>

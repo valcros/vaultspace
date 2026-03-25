@@ -41,6 +41,15 @@ export default function GroupsPage() {
   const [showCreateDialog, setShowCreateDialog] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [newGroup, setNewGroup] = React.useState({ name: '', description: '' });
+  const [editingGroup, setEditingGroup] = React.useState<Group | null>(null);
+  const [showEditDialog, setShowEditDialog] = React.useState(false);
+  const [isSavingEdit, setIsSavingEdit] = React.useState(false);
+  const [editForm, setEditForm] = React.useState({ name: '', description: '' });
+  const [showMembersDialog, setShowMembersDialog] = React.useState(false);
+  const [membersGroupId, setMembersGroupId] = React.useState<string | null>(null);
+  const [members, setMembers] = React.useState<Array<{ id: string; firstName: string; lastName: string; email: string }>>([]);
+  const [allUsers, setAllUsers] = React.useState<Array<{ id: string; firstName: string; lastName: string; email: string }>>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = React.useState(false);
 
   React.useEffect(() => {
     fetchGroups();
@@ -82,6 +91,101 @@ export default function GroupsPage() {
       console.error('Failed to create group:', error);
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleEditGroup = (group: Group) => {
+    setEditingGroup(group);
+    setEditForm({ name: group.name, description: group.description || '' });
+    setShowEditDialog(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingGroup || !editForm.name.trim()) return;
+    setIsSavingEdit(true);
+    try {
+      const response = await fetch(`/api/users/groups/${editingGroup.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      if (response.ok) {
+        setShowEditDialog(false);
+        setEditingGroup(null);
+        fetchGroups();
+      }
+    } catch (error) {
+      console.error('Failed to update group:', error);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleDeleteGroup = async (group: Group) => {
+    if (!window.confirm(`Delete group "${group.name}"? This cannot be undone.`)) return;
+    try {
+      const response = await fetch(`/api/users/groups/${group.id}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) fetchGroups();
+    } catch (error) {
+      console.error('Failed to delete group:', error);
+    }
+  };
+
+  const handleManageMembers = async (groupId: string) => {
+    setMembersGroupId(groupId);
+    setShowMembersDialog(true);
+    setIsLoadingMembers(true);
+    try {
+      const [membersRes, usersRes] = await Promise.all([
+        fetch(`/api/users/groups/${groupId}/members`),
+        fetch('/api/users'),
+      ]);
+      if (membersRes.ok) {
+        const data = await membersRes.json();
+        setMembers(data.members || []);
+      }
+      if (usersRes.ok) {
+        const data = await usersRes.json();
+        setAllUsers(data.users || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch members:', error);
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  };
+
+  const handleAddMember = async (userId: string) => {
+    if (!membersGroupId) return;
+    try {
+      const response = await fetch(`/api/users/groups/${membersGroupId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      if (response.ok) {
+        handleManageMembers(membersGroupId);
+        fetchGroups();
+      }
+    } catch (error) {
+      console.error('Failed to add member:', error);
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!membersGroupId) return;
+    try {
+      const response = await fetch(`/api/users/groups/${membersGroupId}/members/${userId}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        handleManageMembers(membersGroupId);
+        fetchGroups();
+      }
+    } catch (error) {
+      console.error('Failed to remove member:', error);
     }
   };
 
@@ -172,16 +276,16 @@ export default function GroupsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEditGroup(group)}>
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleManageMembers(group.id)}>
                           <Users className="mr-2 h-4 w-4" />
                           Manage Members
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-danger-600">
+                        <DropdownMenuItem className="text-danger-600" onClick={() => handleDeleteGroup(group)}>
                           <Trash2 className="mr-2 h-4 w-4" />
                           Delete
                         </DropdownMenuItem>
@@ -247,6 +351,119 @@ export default function GroupsPage() {
               disabled={!newGroup.name.trim()}
             >
               Create Group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Group Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Group</DialogTitle>
+            <DialogDescription>Update group name and description.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editGroupName">Group Name</Label>
+              <Input
+                id="editGroupName"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editGroupDescription">Description (optional)</Label>
+              <Textarea
+                id="editGroupDescription"
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} loading={isSavingEdit} disabled={!editForm.name.trim()}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Members Dialog */}
+      <Dialog open={showMembersDialog} onOpenChange={setShowMembersDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Manage Members</DialogTitle>
+            <DialogDescription>Add or remove users from this group.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {isLoadingMembers ? (
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : (
+              <>
+                {/* Current Members */}
+                <div className="mb-4">
+                  <p className="mb-2 text-sm font-medium text-neutral-700">
+                    Current Members ({members.length})
+                  </p>
+                  {members.length === 0 ? (
+                    <p className="text-sm text-neutral-500">No members in this group yet.</p>
+                  ) : (
+                    <div className="max-h-48 space-y-2 overflow-y-auto">
+                      {members.map((member) => (
+                        <div key={member.id} className="flex items-center justify-between rounded border p-2">
+                          <div>
+                            <p className="text-sm font-medium">{member.firstName} {member.lastName}</p>
+                            <p className="text-xs text-neutral-500">{member.email}</p>
+                          </div>
+                          <Button variant="ghost" size="sm" onClick={() => handleRemoveMember(member.id)}>
+                            <Trash2 className="h-4 w-4 text-danger-600" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Add Members */}
+                {(() => {
+                  const memberIds = new Set(members.map((m) => m.id));
+                  const nonMembers = allUsers.filter((u) => !memberIds.has(u.id));
+                  if (nonMembers.length === 0) return null;
+                  return (
+                    <div>
+                      <p className="mb-2 text-sm font-medium text-neutral-700">Add Members</p>
+                      <div className="max-h-48 space-y-2 overflow-y-auto">
+                        {nonMembers.map((user) => (
+                          <div key={user.id} className="flex items-center justify-between rounded border p-2">
+                            <div>
+                              <p className="text-sm font-medium">{user.firstName} {user.lastName}</p>
+                              <p className="text-xs text-neutral-500">{user.email}</p>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={() => handleAddMember(user.id)}>
+                              Add
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowMembersDialog(false)}>
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>

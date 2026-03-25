@@ -244,14 +244,40 @@ export default function RoomAnalyticsPage() {
                 No activity data available
               </p>
             ) : (
-              <div className="flex h-64 items-center justify-center text-neutral-400">
-                <div className="text-center">
-                  <BarChart3 className="mx-auto mb-4 h-12 w-12" />
-                  <p className="text-sm">Chart visualization coming soon</p>
-                  <p className="mt-2 text-xs">
-                    {analytics.viewTimeline.length} days of data available
-                  </p>
-                </div>
+              <div className="h-64">
+                {(() => {
+                  const data = analytics.viewTimeline;
+                  const maxCount = Math.max(...data.map((d) => d.count), 1);
+                  const barWidth = Math.max(Math.floor(100 / data.length), 2);
+                  return (
+                    <div className="flex h-full flex-col">
+                      <div className="flex flex-1 items-end gap-px">
+                        {data.map((point, i) => {
+                          const height = Math.max((point.count / maxCount) * 100, 2);
+                          return (
+                            <div
+                              key={i}
+                              className="group relative flex-1"
+                              style={{ minWidth: `${barWidth}%`, maxWidth: '3rem' }}
+                            >
+                              <div
+                                className="w-full rounded-t bg-primary-500 transition-colors hover:bg-primary-600"
+                                style={{ height: `${height}%` }}
+                              />
+                              <div className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 rounded bg-neutral-800 px-2 py-1 text-xs text-white group-hover:block">
+                                {point.count} views
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-2 flex justify-between text-xs text-neutral-400">
+                        <span>{data[0] ? new Date(data[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
+                        <span>{data[data.length - 1] ? new Date(data[data.length - 1]!.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </CardContent>

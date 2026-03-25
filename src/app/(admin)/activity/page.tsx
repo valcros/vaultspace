@@ -152,8 +152,28 @@ export default function ActivityPage() {
   };
 
   const handleExport = () => {
-    // TODO: Implement CSV export
-    void 0; // placeholder
+    const headers = ['Date', 'User', 'Email', 'Action', 'Target', 'Room', 'IP Address'];
+    const rows = filteredEvents.map((event) => [
+      new Date(event.createdAt).toISOString(),
+      event.actor ? `${event.actor.firstName} ${event.actor.lastName}` : 'System',
+      event.actor?.email || '',
+      event.type.replace(/_/g, ' '),
+      event.targetName || '',
+      event.roomName || '',
+      event.ipAddress || '',
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `activity-log-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
