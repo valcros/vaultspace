@@ -60,6 +60,12 @@ test-results/
 # TypeScript
 *.tsbuildinfo
 
+# Private configuration (not committed to public repo)
+.private/
+
+# Claude Code
+.claude/
+
 # Misc
 .vercel/
 .turbo/
