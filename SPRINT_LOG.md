@@ -188,3 +188,65 @@ The deploy pipeline needs these GitHub secrets configured:
 - `AZURE_CREDENTIALS` — Azure service principal JSON
 - `ACR_USERNAME` / `ACR_PASSWORD` — Azure Container Registry credentials
 - `DATABASE_URL` — Azure PostgreSQL connection string (for migrations)
+
+### Sprint 3 Summary
+
+- **Commits:** 1 pushed to main
+- **Sprint status:** COMPLETE (pending secret configuration)
+
+---
+
+## Sprint 4: "Harden & Polish" — 2026-03-26
+
+### Goal
+
+Security hardening, UX polish, and production readiness.
+
+### 4.1 Toast Notification System (Commit: `f421fdf`)
+
+| File                                      | Change                                                                       |
+| ----------------------------------------- | ---------------------------------------------------------------------------- |
+| `src/components/ui/use-toast.ts`          | Created useToast hook with global state, auto-dismiss (5s), max 3 visible    |
+| `src/components/ui/toaster.tsx`           | Created Toaster component rendering toast queue                              |
+| `src/app/layout.tsx`                      | Added Toaster to root layout                                                 |
+| `src/app/(admin)/rooms/[roomId]/page.tsx` | Replaced 21 alert() calls with toast() — success, error, validation variants |
+
+### 4.2 Security Audit (already in place)
+
+- X-Frame-Options: SAMEORIGIN for preview, DENY for all else
+- Security headers in middleware (CSP, nosniff, XSS, referrer)
+- Session: HttpOnly, Secure, SameSite=Lax
+- Password: bcrypt 12 rounds
+- Cross-tenant: 404 not 403
+- Rate limiting: per-IP, per-user
+- npm audit in CI
+
+### Sprint 4 Summary
+
+- **Commits:** 2 pushed to main
+- **alert() calls eliminated:** 21 (0 remaining in app)
+- **Sprint status:** COMPLETE
+
+---
+
+## Sprint 5: "MVP Launch" — 2026-03-26
+
+### Goal
+
+Documentation, demo polish, release preparation.
+
+### 5.1 README Rewrite
+
+- Expanded from 42 lines to full project README
+- Added: feature list, tech stack table, quick start, demo credentials, architecture overview, documentation index
+- Kept concise and actionable
+
+### 5.2 Status Updates
+
+- IMPLEMENTATION_STATUS.md: complete rewrite (done in Sprint 1)
+- MASTER_PLAN.md: all sprints marked with completion status
+- SPRINT_LOG.md: full audit trail of all work
+
+### Sprint 5 Summary
+
+- **Sprint status:** COMPLETE
