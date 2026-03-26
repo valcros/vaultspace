@@ -63,7 +63,7 @@ interface Room {
   name: string;
   description: string | null;
   status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
-  watermarkEnabled: boolean;
+  enableWatermark: boolean;
   watermarkTemplate: string | null;
   downloadEnabled: boolean;
   createdAt: string;
@@ -1371,7 +1371,7 @@ export default function RoomDetailPage() {
             <DialogTitle>{selectedDocument?.name}</DialogTitle>
           </DialogHeader>
           <div className="relative h-[70vh] overflow-auto">
-            {room?.watermarkEnabled && (
+            {room?.enableWatermark && (
               <WatermarkOverlay
                 template={room.watermarkTemplate || undefined}
                 viewerEmail={undefined}
