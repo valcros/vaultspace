@@ -82,6 +82,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
             size="icon"
             onClick={() => onCollapsedChange(true)}
             className="h-8 w-8"
+            aria-label="Collapse sidebar"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -122,6 +123,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
             size="icon"
             onClick={() => onCollapsedChange(false)}
             className="mx-auto flex h-8 w-8"
+            aria-label="Expand sidebar"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -145,6 +147,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
             size="icon"
             className="h-8 w-8 text-neutral-500 hover:text-neutral-900"
             title="Log out"
+            aria-label="Log out"
             onClick={handleLogout}
           >
             <LogOut className="h-4 w-4" />

@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface Group {
   id: string;
@@ -54,6 +55,7 @@ export default function GroupsPage() {
     Array<{ id: string; firstName: string; lastName: string; email: string }>
   >([]);
   const [isLoadingMembers, setIsLoadingMembers] = React.useState(false);
+  const [deleteGroup, setDeleteGroup] = React.useState<Group | null>(null);
 
   React.useEffect(() => {
     fetchGroups();
@@ -128,9 +130,6 @@ export default function GroupsPage() {
   };
 
   const handleDeleteGroup = async (group: Group) => {
-    if (!window.confirm(`Delete group "${group.name}"? This cannot be undone.`)) {
-      return;
-    }
     try {
       const response = await fetch(`/api/users/groups/${group.id}`, {
         method: 'DELETE',
@@ -285,7 +284,12 @@ export default function GroupsPage() {
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          aria-label="Actions"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -301,7 +305,7 @@ export default function GroupsPage() {
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-danger-600"
-                          onClick={() => handleDeleteGroup(group)}
+                          onClick={() => setDeleteGroup(group)}
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
                           Delete
@@ -414,6 +418,28 @@ export default function GroupsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={!!deleteGroup}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteGroup(null);
+          }
+        }}
+        title="Delete Group"
+        description={
+          deleteGroup ? `Delete group "${deleteGroup.name}"? This cannot be undone.` : ''
+        }
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={async () => {
+          if (deleteGroup) {
+            await handleDeleteGroup(deleteGroup);
+            setDeleteGroup(null);
+          }
+        }}
+      />
 
       {/* Manage Members Dialog */}
       <Dialog open={showMembersDialog} onOpenChange={setShowMembersDialog}>

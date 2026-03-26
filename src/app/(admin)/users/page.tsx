@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface User {
   id: string;
@@ -50,6 +51,11 @@ export default function UsersPage() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showInviteDialog, setShowInviteDialog] = React.useState(false);
+  const [confirmAction, setConfirmAction] = React.useState<{
+    title: string;
+    description: string;
+    onConfirm: () => Promise<void>;
+  } | null>(null);
   const [isInviting, setIsInviting] = React.useState(false);
   const [inviteData, setInviteData] = React.useState<{ email: string; role: 'ADMIN' | 'VIEWER' }>({
     email: '',
@@ -232,7 +238,12 @@ export default function UsersPage() {
                     <td className="px-4 py-3">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            aria-label="Actions"
+                          >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -246,28 +257,27 @@ export default function UsersPage() {
                             Send Email
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={async () => {
+                            onClick={() => {
                               const newRole = user.role === 'ADMIN' ? 'VIEWER' : 'ADMIN';
-                              if (
-                                !window.confirm(
-                                  `Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`
-                                )
-                              ) {
-                                return;
-                              }
-                              try {
-                                const res = await fetch(`/api/users/${user.id}`, {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ role: newRole }),
-                                  credentials: 'include',
-                                });
-                                if (res.ok) {
-                                  fetchUsers();
-                                }
-                              } catch (err) {
-                                console.error('Failed to change role:', err);
-                              }
+                              setConfirmAction({
+                                title: 'Change Role',
+                                description: `Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`,
+                                onConfirm: async () => {
+                                  try {
+                                    const res = await fetch(`/api/users/${user.id}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ role: newRole }),
+                                      credentials: 'include',
+                                    });
+                                    if (res.ok) {
+                                      fetchUsers();
+                                    }
+                                  } catch (err) {
+                                    console.error('Failed to change role:', err);
+                                  }
+                                },
+                              });
                             }}
                           >
                             <Shield className="mr-2 h-4 w-4" />
@@ -276,25 +286,24 @@ export default function UsersPage() {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-danger-600"
-                            onClick={async () => {
-                              if (
-                                !window.confirm(
-                                  `Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`
-                                )
-                              ) {
-                                return;
-                              }
-                              try {
-                                const res = await fetch(`/api/users/${user.id}`, {
-                                  method: 'DELETE',
-                                  credentials: 'include',
-                                });
-                                if (res.ok) {
-                                  fetchUsers();
-                                }
-                              } catch (err) {
-                                console.error('Failed to remove user:', err);
-                              }
+                            onClick={() => {
+                              setConfirmAction({
+                                title: 'Remove User',
+                                description: `Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`,
+                                onConfirm: async () => {
+                                  try {
+                                    const res = await fetch(`/api/users/${user.id}`, {
+                                      method: 'DELETE',
+                                      credentials: 'include',
+                                    });
+                                    if (res.ok) {
+                                      fetchUsers();
+                                    }
+                                  } catch (err) {
+                                    console.error('Failed to remove user:', err);
+                                  }
+                                },
+                              });
                             }}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
@@ -386,6 +395,26 @@ export default function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmAction(null);
+          }
+        }}
+        title={confirmAction?.title ?? ''}
+        description={confirmAction?.description ?? ''}
+        confirmLabel={confirmAction?.title === 'Remove User' ? 'Remove' : 'Confirm'}
+        variant={confirmAction?.title === 'Remove User' ? 'destructive' : 'default'}
+        onConfirm={async () => {
+          if (confirmAction) {
+            await confirmAction.onConfirm();
+            setConfirmAction(null);
+          }
+        }}
+      />
     </>
   );
 }
