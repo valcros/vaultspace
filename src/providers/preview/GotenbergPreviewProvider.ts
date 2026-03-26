@@ -79,7 +79,7 @@ export class GotenbergPreviewProvider implements PreviewProvider {
   private timeoutMs: number;
 
   constructor(gotenbergUrl?: string, timeoutMs?: number) {
-    this.gotenbergUrl = gotenbergUrl ?? process.env['GOTENBERG_URL'] ?? 'http://gotenberg:3000';
+    this.gotenbergUrl = gotenbergUrl ?? process.env['GOTENBERG_URL'] ?? 'http://localhost:3001';
     this.timeoutMs = timeoutMs ?? 30000;
   }
 
