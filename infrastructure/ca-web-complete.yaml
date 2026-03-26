@@ -4,8 +4,8 @@ properties:
       - name: ca-vaultspace-web
         image: acrvaultspacestaging.azurecr.io/vaultspace-web:latest
         resources:
-          cpu: 0.5
-          memory: 1Gi
+          cpu: 0.25
+          memory: 0.5Gi
         env:
           - name: NODE_ENV
             value: production
@@ -28,7 +28,7 @@ properties:
           - name: PREVIEW_ENGINE
             value: gotenberg
           - name: GOTENBERG_URL
-            value: http://localhost:3000
+            value: http://localhost:3001
         probes:
           - type: Liveness
             httpGet:
@@ -44,3 +44,18 @@ properties:
             initialDelaySeconds: 15
             periodSeconds: 30
             failureThreshold: 3
+
+      # Gotenberg sidecar — document conversion (LibreOffice + Chromium)
+      # Runs alongside the web container, communicates via localhost:3001
+      # When real users arrive, split to separate container with scale-to-zero
+      - name: gotenberg
+        image: gotenberg/gotenberg:8
+        resources:
+          cpu: 0.25
+          memory: 0.5Gi
+        command:
+          - gotenberg
+          - --api-port=3001
+          - --api-timeout=30s
+          - --libreoffice-restart-after=10
+          - --log-level=warn
