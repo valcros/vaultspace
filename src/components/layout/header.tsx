@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Menu, Bell, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,14 @@ interface HeaderProps {
 }
 
 export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/auth/login');
+    router.refresh();
+  };
+
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-neutral-200 bg-white px-4 lg:px-6">
       {/* Mobile menu button */}
@@ -88,10 +97,8 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
               <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/auth/logout" className="text-danger-600">
-                Log out
-              </Link>
+            <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-danger-600">
+              Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

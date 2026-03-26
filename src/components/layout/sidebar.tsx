@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   FolderOpen,
   Users,
@@ -44,6 +44,13 @@ interface SidebarProps {
 
 export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/auth/login');
+    router.refresh();
+  };
 
   return (
     <aside
@@ -138,11 +145,9 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
             size="icon"
             className="h-8 w-8 text-neutral-500 hover:text-neutral-900"
             title="Log out"
-            asChild
+            onClick={handleLogout}
           >
-            <Link href="/auth/logout">
-              <LogOut className="h-4 w-4" />
-            </Link>
+            <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </div>
