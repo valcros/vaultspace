@@ -97,7 +97,13 @@ export default function RoomSettingsPage() {
       const response = await fetch(`/api/rooms/${roomId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+          enableWatermark: formData.watermarkEnabled,
+          watermarkTemplate: formData.watermarkTemplate,
+          allowDownloads: formData.downloadEnabled,
+        }),
       });
 
       if (!response.ok) {
