@@ -10,6 +10,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
+import { TextPreviewRenderer } from './TextPreviewRenderer';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 
@@ -62,7 +63,20 @@ export function DocumentViewer({
   });
 
   const isPdf = mimeType === 'application/pdf';
-  const isImage = mimeType.startsWith('image/');
+  const isImage = mimeType.startsWith('image/') && mimeType !== 'image/svg+xml';
+  const isTextPreview =
+    mimeType === 'image/svg+xml' ||
+    mimeType === 'text/markdown' ||
+    mimeType === 'text/csv' ||
+    mimeType === 'text/html' ||
+    mimeType === 'text/yaml' ||
+    mimeType === 'text/plain' ||
+    mimeType === 'application/json' ||
+    mimeType === 'application/xml' ||
+    mimeType === 'text/xml' ||
+    /\.(md|csv|json|ya?ml|xml|html?|svg|js|jsx|ts|tsx|py|rb|go|rs|java|sh|sql|c|cpp|h|php|swift|kt|cs|r|lua|toml|ini|dockerfile|makefile)$/i.test(
+      documentName
+    );
 
   // Handle PDF load success
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
@@ -247,6 +261,18 @@ export function DocumentViewer({
       );
     }
 
+    // Text-based formats — fetch content and render client-side
+    if (isTextPreview) {
+      return (
+        <TextPreviewFetcher
+          previewUrl={previewUrl}
+          mimeType={mimeType}
+          fileName={documentName}
+          onLoad={() => setState((prev) => ({ ...prev, isLoading: false, numPages: 1 }))}
+        />
+      );
+    }
+
     // Unsupported format
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center">
@@ -281,6 +307,7 @@ export function DocumentViewer({
     state.scale,
     isPdf,
     isImage,
+    isTextPreview,
     previewUrl,
     documentName,
     allowDownload,
@@ -421,4 +448,53 @@ export function DocumentViewer({
       )}
     </div>
   );
+}
+
+/**
+ * Helper component that fetches text content then renders via TextPreviewRenderer
+ */
+function TextPreviewFetcher({
+  previewUrl,
+  mimeType,
+  fileName,
+  onLoad,
+}: {
+  previewUrl: string;
+  mimeType: string;
+  fileName: string;
+  onLoad: () => void;
+}) {
+  const [content, setContent] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    async function fetchContent() {
+      try {
+        const response = await fetch(previewUrl);
+        if (!response.ok) {
+          throw new Error('Failed to load file');
+        }
+        const text = await response.text();
+        setContent(text);
+        onLoad();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load');
+      }
+    }
+    fetchContent();
+  }, [previewUrl, onLoad]);
+
+  if (error) {
+    return <div className="flex h-full items-center justify-center text-neutral-500">{error}</div>;
+  }
+
+  if (content === null) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-500" />
+      </div>
+    );
+  }
+
+  return <TextPreviewRenderer content={content} mimeType={mimeType} fileName={fileName} />;
 }
