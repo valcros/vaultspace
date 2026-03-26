@@ -54,6 +54,11 @@ const SUPPORTED_MIME_TYPES = new Set([
   'text/csv',
   'text/markdown',
   'text/html',
+  // Data
+  'application/json',
+  'application/xml',
+  'text/xml',
+  'text/yaml',
 ]);
 
 /**
