@@ -52,7 +52,7 @@ function RegisterForm() {
           lastName: formData.lastName,
           email: formData.email,
           password: formData.password,
-          inviteToken,
+          inviteToken: inviteToken || undefined,
         }),
       });
 
