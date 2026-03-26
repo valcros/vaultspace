@@ -4,19 +4,14 @@
       "order": 0,
       "parts": [
         {
-          "position": {
-            "x": 0,
-            "y": 0,
-            "colSpan": 6,
-            "rowSpan": 4
-          },
+          "position": { "x": 0, "y": 0, "colSpan": 6, "rowSpan": 4 },
           "metadata": {
             "type": "Extension/HubsExtension/PartType/MarkdownPart",
             "inputs": [],
             "settings": {
               "content": {
                 "settings": {
-                  "content": "# VaultSpace Staging\n\n**Application Status:**\n- Web: [<web-container-app>](https://<web-container-app>.<azure-container-app-suffix>.eastus.azurecontainerapps.io)\n- Health: [API Health Check](https://<web-container-app>.<azure-container-app-suffix>.eastus.azurecontainerapps.io/api/health?deep=true)\n\n**Resources:**\n- Container Apps Environment\n- PostgreSQL Flexible Server\n- Azure Cache for Redis\n- Azure Blob Storage\n- Key Vault",
+                  "content": "# VaultSpace Staging\n\n**Application Status:**\n- Web: Container App\n- Health: /api/health?deep=true\n\n**Resources:**\n- Container Apps Environment\n- PostgreSQL Flexible Server\n- Azure Cache for Redis\n- Azure Blob Storage\n- Key Vault",
                   "title": "VaultSpace Dashboard",
                   "subtitle": "Staging Environment"
                 }
@@ -25,18 +20,13 @@
           }
         },
         {
-          "position": {
-            "x": 6,
-            "y": 0,
-            "colSpan": 6,
-            "rowSpan": 4
-          },
+          "position": { "x": 6, "y": 0, "colSpan": 6, "rowSpan": 4 },
           "metadata": {
             "type": "Extension/HubsExtension/PartType/ResourceGroupMapPinnedPart",
             "inputs": [
               {
                 "name": "resourceGroup",
-                "value": "/subscriptions/<azure-subscription-id>/resourceGroups/<azure-resource-group>"
+                "value": "/subscriptions/<subscription-id>/resourceGroups/<resource-group>"
               }
             ]
           }
@@ -44,7 +34,5 @@
       ]
     }
   ],
-  "metadata": {
-    "model": {}
-  }
+  "metadata": { "model": {} }
 }
