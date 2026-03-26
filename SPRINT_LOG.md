@@ -98,4 +98,48 @@
 
 Automated test coverage for all critical paths: integration tests, E2E tests, security tests (SEC-001–016), unit test expansion.
 
-### Session continues below...
+### 2.1 Test Infrastructure Audit
+
+- Reviewed vitest.config.ts, vitest.integration.config.ts, playwright.config.ts
+- Cataloged existing 7 test files (3 unit, 2 integration, 2 E2E)
+- Identified mocking patterns: `vi.mock('../db')`, `vi.mocked(db, true)`, `as never` casts
+- Noted CI runs unit tests with PostgreSQL + Redis service containers
+- Integration tests require Azure DB (blocked localhost by design)
+
+### 2.2 New Unit Tests (Commit: `b1c149a`)
+
+| File                                                    | Tests | Coverage                                                                                                                                                                                                             |
+| ------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/services/RoomService.test.ts`                      | 12    | create (validation, slug conflicts, defaults), getById (found, not found), list (pagination, status filter, search, org scoping)                                                                                     |
+| `src/lib/permissions/PermissionEngine.security.test.ts` | 12    | SEC-001 (cross-tenant), SEC-006 (header spoofing), SEC-007 (unauth), SEC-010 (expired link), SEC-011 (inactive link), SEC-013 (event immutability), default deny, admin boundaries, permission levels, system bypass |
+
+### 2.3 New E2E Tests (Playwright)
+
+| File                      | Tests | Coverage                                                                                                             |
+| ------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------- |
+| `tests/e2e/auth.test.ts`  | 6     | Login page render, register page render, invalid credentials, valid login redirect, unauth redirect, forgot password |
+| `tests/e2e/rooms.test.ts` | 6     | Rooms dashboard, room detail tabs, folder navigation, members tab, share links tab, room settings                    |
+| `tests/e2e/api.test.ts`   | 5     | Health endpoint, deep health, login API, unauth 401, security headers                                                |
+
+### 2.4 Test Count Progress
+
+| Metric                  | Before   | After    |
+| ----------------------- | -------- | -------- |
+| Unit test files         | 3        | 5        |
+| Unit test cases         | 34       | 58       |
+| E2E test files          | 2        | 5        |
+| E2E test cases          | 5        | 22       |
+| Security tests (SEC-\*) | 0 (unit) | 8 (unit) |
+
+### CI Status
+
+- Awaiting CI result for commit `b1c149a`
+
+### Remaining Sprint 2 Items
+
+- [ ] GroupService unit tests
+- [ ] DocumentService unit tests
+- [ ] API route handler tests
+- [ ] Run E2E tests against live staging
+- [ ] Integration test CI enablement (add Azure DB to CI secrets)
+- [ ] Test coverage report generation
