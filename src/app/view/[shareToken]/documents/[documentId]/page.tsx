@@ -14,6 +14,8 @@ import {
   X,
 } from 'lucide-react';
 
+import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
+
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -279,24 +281,12 @@ export default function ViewerDocumentPage() {
             onContextMenu={(e) => e.preventDefault()}
           />
 
-          {/* Watermark Overlay */}
+          {/* Watermark Overlay (F023) */}
           {document.watermarkText && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
-              <div
-                className="-rotate-45 transform select-none whitespace-nowrap text-4xl font-bold text-neutral-400/20"
-                style={{
-                  textShadow: '0 0 20px rgba(0,0,0,0.1)',
-                }}
-              >
-                {Array(10)
-                  .fill(document.watermarkText)
-                  .map((text, i) => (
-                    <div key={i} className="py-16">
-                      {text}
-                    </div>
-                  ))}
-              </div>
-            </div>
+            <WatermarkOverlay
+              template={document.watermarkText}
+              viewerEmail={document.watermarkText}
+            />
           )}
         </div>
       </div>
