@@ -82,6 +82,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       defaultExpiryDays,
       requiresPassword,
       requiresEmailVerification,
+      enableWatermark,
+      watermarkTemplate,
     } = body;
 
     // Use RLS context for org-scoped queries
@@ -125,6 +127,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           ...(defaultExpiryDays !== undefined && { defaultExpiryDays }),
           ...(requiresPassword !== undefined && { requiresPassword }),
           ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
+          ...(enableWatermark !== undefined && { enableWatermark }),
+          ...(watermarkTemplate !== undefined && { watermarkTemplate }),
         },
       });
 
