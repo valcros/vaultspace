@@ -74,11 +74,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Update Container App - Web
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ env.CONTAINER_APP_NAME }}
-          imageToDeploy: ${{ env.ACR_SERVER }}/vaultspace-web:${{ github.sha }}
+        run: |
+          az containerapp update \
+            --name $CONTAINER_APP_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --container-name ca-vaultspace-web \
+            --image $ACR_SERVER/vaultspace-web:${{ github.sha }}
 
       - name: Health check
         run: |
