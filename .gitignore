@@ -63,6 +63,9 @@ test-results/
 # Private configuration (not committed to public repo)
 .private/
 
+# Test upload files (not committed)
+Sample Upload Files/
+
 # Claude Code
 .claude/
 

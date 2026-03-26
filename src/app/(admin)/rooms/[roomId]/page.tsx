@@ -54,6 +54,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
 import { UploadZone } from '@/components/documents/UploadZone';
+import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
 import { toast } from '@/components/ui/use-toast';
 
 interface Room {
@@ -401,13 +402,23 @@ export default function RoomDetailPage() {
       setPreviewError(null);
       setShowPreviewDialog(true);
 
-      // For PDFs and images, we can preview directly
+      // Types that can be previewed (inline or via client-side renderer)
       const previewableTypes = [
         'application/pdf',
         'image/jpeg',
         'image/png',
         'image/gif',
         'image/webp',
+        'image/tiff',
+        'image/svg+xml',
+        'text/plain',
+        'text/csv',
+        'text/markdown',
+        'text/html',
+        'text/yaml',
+        'text/xml',
+        'application/json',
+        'application/xml',
       ];
 
       if (previewableTypes.includes(doc.mimeType)) {
@@ -1376,7 +1387,8 @@ export default function RoomDetailPage() {
                   className="h-full w-full border-0"
                   title={selectedDocument?.name}
                 />
-              ) : selectedDocument?.mimeType.startsWith('image/') ? (
+              ) : selectedDocument?.mimeType.startsWith('image/') &&
+                selectedDocument?.mimeType !== 'image/svg+xml' ? (
                 <div className="flex h-full items-center justify-center">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -1386,10 +1398,10 @@ export default function RoomDetailPage() {
                   />
                 </div>
               ) : (
-                <iframe
-                  src={previewUrl}
-                  className="h-full w-full border-0"
-                  title={selectedDocument?.name}
+                <TextPreviewFetcher
+                  url={previewUrl}
+                  mimeType={selectedDocument?.mimeType ?? 'text/plain'}
+                  fileName={selectedDocument?.name ?? 'file'}
                 />
               )
             ) : (
@@ -1414,4 +1426,46 @@ export default function RoomDetailPage() {
       </Dialog>
     </>
   );
+}
+
+/**
+ * Fetches text content from a URL then renders via TextPreviewRenderer
+ */
+function TextPreviewFetcher({
+  url,
+  mimeType,
+  fileName,
+}: {
+  url: string;
+  mimeType: string;
+  fileName: string;
+}) {
+  const [content, setContent] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error('Failed to load');
+        }
+        return res.text();
+      })
+      .then(setContent)
+      .catch((err) => setError(err.message));
+  }, [url]);
+
+  if (error) {
+    return <div className="flex h-full items-center justify-center text-neutral-500">{error}</div>;
+  }
+
+  if (content === null) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+      </div>
+    );
+  }
+
+  return <TextPreviewRenderer content={content} mimeType={mimeType} fileName={fileName} />;
 }
