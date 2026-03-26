@@ -4,30 +4,46 @@ Post-MVP enhancements and technical debt items.
 
 ## High Priority
 
-### Document Preview Enhancements
+### Document Preview Enhancements ✅ IMPLEMENTED
 
-- **Add support for additional file type previews**
-  - XLSX (Excel spreadsheets) - consider libraries like SheetJS or server-side rendering
-  - PPTX (PowerPoint) - consider pdf.js conversion or dedicated viewer
-  - DOCX (Word documents) - consider mammoth.js or LibreOffice conversion
-  - CSV with formatting/table view
-  - Markdown rendering
-  - Code syntax highlighting for source files
+Implemented via two-tier architecture (see DOCUMENT_PREVIEW_PLAN.md):
 
-  **Options to explore:**
-  1. Client-side viewers (SheetJS, mammoth.js, pptx-viewer)
-  2. Server-side conversion to PDF (LibreOffice, unoconv)
-  3. Third-party preview services (Box View, Google Docs Viewer)
-  4. Generate preview images/thumbnails during upload
+**Phase 1 — Gotenberg (server-side conversion to PDF):**
+
+- DOCX, XLSX, PPTX, DOC, XLS, PPT (Microsoft Office)
+- ODT, ODS, ODP, ODG (OpenDocument/Google)
+- VSDX, VSD (Visio — limited fidelity)
+- RTF, EPUB, HTML
+
+**Phase 2 — Client-side rendering (no conversion needed):**
+
+- Markdown (markdown-it → styled HTML)
+- Code files (highlight.js — 40+ languages)
+- JSON, YAML, XML (syntax highlighted)
+- CSV (papaparse → formatted table)
+- SVG (native browser, sanitized with DOMPurify)
+
+**Requires:** Gotenberg Docker sidecar (`gotenberg/gotenberg:8`) + `PREVIEW_ENGINE=gotenberg` env var
+
+### Remaining Preview Items
+
+- **Phase 3 formats** (deferred): EPS/AI (Ghostscript), DXF (dxf-parser), DWG (ODA converter)
+- **PDF page rasterization**: Sharp with poppler support for high-fidelity page renders (currently uses placeholders if poppler unavailable)
+- **highlight.js CDN dependency**: Bundle CSS locally instead of CDN link
 
 ## Medium Priority
 
-(Add items here)
+- Replace remaining `window.confirm()` calls with proper confirmation dialogs
+- Accessibility audit (WCAG 2.1 AA)
+- Production deployment workflow (tag-based)
 
 ## Low Priority
 
-(Add items here)
+- OnlyOffice integration for collaborative editing
+- Dark mode theme
+- Keyboard shortcuts documentation page
 
 ## Technical Debt
 
-(Add items here)
+- Update GitHub Actions to Node.js 24 (deprecation warning)
+- Azure CLI Python 3.14 compatibility (az ad sp create-for-rbac broken)
