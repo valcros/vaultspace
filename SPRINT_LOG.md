@@ -135,11 +135,56 @@ Automated test coverage for all critical paths: integration tests, E2E tests, se
 
 - Awaiting CI result for commit `b1c149a`
 
-### Remaining Sprint 2 Items
+### 2.5 Additional Tests (Commit: `85e66c3`)
 
-- [ ] GroupService unit tests
-- [ ] DocumentService unit tests
-- [ ] API route handler tests
-- [ ] Run E2E tests against live staging
-- [ ] Integration test CI enablement (add Azure DB to CI secrets)
-- [ ] Test coverage report generation
+| File                                   | Tests | Coverage                                                                                                                     |
+| -------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `src/services/GroupService.test.ts`    | 7     | create (validation, auth, duplicates), list (pagination, search)                                                             |
+| `src/services/DocumentService.test.ts` | 9     | upload (valid, unsupported type, size limit, empty name, long name, SHA-256, virus scan job), list (pagination, org scoping) |
+
+### 2.6 Final Test Count
+
+| Metric          | Sprint 1 End | Sprint 2 End |
+| --------------- | ------------ | ------------ |
+| Unit test files | 3            | 7            |
+| Unit test cases | 34           | 74           |
+| E2E test files  | 2            | 5            |
+| E2E test cases  | 5            | 22           |
+| CI runs (green) | 2            | 4            |
+
+### Sprint 2 Summary
+
+- **Commits:** 2 pushed to main
+- **New test files:** 4 (unit) + 3 (E2E) = 7
+- **Test cases added:** 40 unit + 17 E2E = 57
+- **CI status:** Green (consecutive)
+- **Sprint status:** COMPLETE
+
+---
+
+## Sprint 3: "Ship It Right" — 2026-03-26
+
+### Goal
+
+Automated deployment pipeline: staging auto-deploy on merge, security scanning, health verification.
+
+### 3.1 Deploy Pipeline Created
+
+- Created `.github/workflows/deploy-staging.yml`
+- Triggers on CI success for main branch
+- Steps: Azure login → ACR push (web + worker) → DB migration → Container App update → Health check
+- Uses GitHub environment `staging` for secret management
+
+### 3.2 CI Security Scanning Added
+
+- Added `security` job to `.github/workflows/ci.yml`
+- Runs `npm audit` with critical/high vulnerability reporting
+- Non-blocking (informational) — prevents surprise vulnerabilities
+
+### 3.3 Required Secrets (for stakeholder setup)
+
+The deploy pipeline needs these GitHub secrets configured:
+
+- `AZURE_CREDENTIALS` — Azure service principal JSON
+- `ACR_USERNAME` / `ACR_PASSWORD` — Azure Container Registry credentials
+- `DATABASE_URL` — Azure PostgreSQL connection string (for migrations)

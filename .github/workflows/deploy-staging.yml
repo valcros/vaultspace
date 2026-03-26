@@ -1,0 +1,80 @@
+name: Deploy to Staging
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    branches: [main]
+    types: [completed]
+
+# Only deploy if CI passed
+jobs:
+  deploy:
+    name: Deploy to Azure Staging
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v2
+        with:
+          login-server: acrvaultspacestaging.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push web image
+        run: |
+          docker build -t acrvaultspacestaging.azurecr.io/vaultspace-web:${{ github.sha }} -t acrvaultspacestaging.azurecr.io/vaultspace-web:latest -f Dockerfile .
+          docker push acrvaultspacestaging.azurecr.io/vaultspace-web:${{ github.sha }}
+          docker push acrvaultspacestaging.azurecr.io/vaultspace-web:latest
+
+      - name: Build and push worker image
+        run: |
+          docker build -t acrvaultspacestaging.azurecr.io/vaultspace-worker:${{ github.sha }} -t acrvaultspacestaging.azurecr.io/vaultspace-worker:latest -f Dockerfile.worker .
+          docker push acrvaultspacestaging.azurecr.io/vaultspace-worker:${{ github.sha }}
+          docker push acrvaultspacestaging.azurecr.io/vaultspace-worker:latest
+
+      - name: Run database migrations
+        run: |
+          az containerapp exec \
+            --name ca-vaultspace-web \
+            --resource-group rg-vaultspace-staging \
+            --command "npx prisma migrate deploy" \
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Update Container App - Web
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: rg-vaultspace-staging
+          containerAppName: ca-vaultspace-web
+          imageToDeploy: acrvaultspacestaging.azurecr.io/vaultspace-web:${{ github.sha }}
+
+      - name: Health check
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+          HEALTH_URL="https://ca-vaultspace-web.victoriousglacier-374689f2.eastus.azurecontainerapps.io/api/health"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "Health check failed with status $HTTP_CODE"
+            exit 1
+          fi
+          echo "Health check passed (HTTP $HTTP_CODE)"
+
+      - name: Post deployment summary
+        run: |
+          echo "## Staging Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** acrvaultspacestaging.azurecr.io/vaultspace-web:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** https://ca-vaultspace-web.victoriousglacier-374689f2.eastus.azurecontainerapps.io" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health:** Verified" >> $GITHUB_STEP_SUMMARY
