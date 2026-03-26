@@ -25,6 +25,10 @@ properties:
             secretRef: azurestoragekey
           - name: SCAN_ENGINE
             value: passthrough
+          - name: PREVIEW_ENGINE
+            value: gotenberg
+          - name: GOTENBERG_URL
+            value: http://localhost:3000
         probes:
           - type: Liveness
             httpGet:

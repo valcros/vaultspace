@@ -21,24 +21,39 @@ import type { PaginatedResult, PaginationOptions, ServiceContext } from './types
  * Supported MIME types for upload
  */
 const SUPPORTED_MIME_TYPES = new Set([
-  // Documents
+  // Documents - PDF
   'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // Documents - Microsoft Office (modern)
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
+  // Documents - Microsoft Office (legacy)
+  'application/msword', // DOC
+  'application/vnd.ms-excel', // XLS
+  'application/vnd.ms-powerpoint', // PPT
+  // Documents - OpenDocument
+  'application/vnd.oasis.opendocument.text', // ODT
+  'application/vnd.oasis.opendocument.spreadsheet', // ODS
+  'application/vnd.oasis.opendocument.presentation', // ODP
+  'application/vnd.oasis.opendocument.graphics', // ODG
+  // Documents - Visio
+  'application/vnd.ms-visio.drawing.main+xml', // VSDX
+  'application/vnd.visio', // VSD
+  // Documents - Other
+  'application/rtf', // RTF
+  'application/epub+zip', // EPUB
   // Images
   'image/jpeg',
   'image/png',
   'image/gif',
   'image/webp',
   'image/tiff',
+  'image/svg+xml', // SVG
   // Text
   'text/plain',
   'text/csv',
   'text/markdown',
+  'text/html',
 ]);
 
 /**
