@@ -7,6 +7,7 @@
 
 import type { PreviewProvider, PreviewResult } from '../types';
 
+import { GotenbergPreviewProvider } from './GotenbergPreviewProvider';
 import { SharpPreviewProvider } from './SharpPreviewProvider';
 
 /**
@@ -16,6 +17,11 @@ export function createPreviewProvider(): PreviewProvider {
   const previewEngine = process.env['PREVIEW_ENGINE'] ?? 'sharp';
 
   switch (previewEngine) {
+    case 'gotenberg': {
+      const gotenbergUrl = process.env['GOTENBERG_URL'] ?? 'http://gotenberg:3000';
+      console.log(`[PreviewProvider] Using Gotenberg preview generator (${gotenbergUrl})`);
+      return new GotenbergPreviewProvider(gotenbergUrl);
+    }
     case 'sharp':
     default: {
       console.log('[PreviewProvider] Using Sharp-based preview generator');
@@ -47,4 +53,5 @@ export function createStubPreviewProvider(): PreviewProvider {
   };
 }
 
+export { GotenbergPreviewProvider } from './GotenbergPreviewProvider';
 export { SharpPreviewProvider } from './SharpPreviewProvider';

@@ -20,12 +20,14 @@ interface RouteContext {
 }
 
 // MIME types that can be previewed inline
+// Types that can be served inline without conversion
 const PREVIEWABLE_MIME_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
   'image/png',
   'image/gif',
   'image/webp',
+  'image/svg+xml',
   'text/plain',
   'text/csv',
 ]);
