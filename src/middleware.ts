@@ -45,11 +45,15 @@ export async function middleware(request: NextRequest) {
   }
 
   // Check for custom domain or subdomain
-  const mainDomains = (process.env['MAIN_DOMAINS'] || 'vaultspace.app,vaultspace.local').split(',');
-  const isMainDomain = mainDomains.some((d) => hostname === d || hostname === 'www.' + d);
+  const mainDomains = (
+    process.env['MAIN_DOMAINS'] || 'vaultspace.org,vaultspace.app,vaultspace.local'
+  ).split(',');
+  const isMainDomain = mainDomains.some(
+    (d) => hostname === d || hostname === 'www.' + d || hostname.includes('azurecontainerapps.io')
+  );
 
   if (!isMainDomain) {
-    // This could be a custom domain or subdomain
+    // This could be a custom domain or subdomain (e.g., clientname.vaultspace.org)
     // Set header for downstream handlers to resolve organization
     response.headers.set('x-custom-host', hostname);
 
@@ -59,6 +63,13 @@ export async function middleware(request: NextRequest) {
         const subdomain = hostname.replace('.' + mainDomain, '').split(':')[0];
         if (subdomain && subdomain !== 'www') {
           response.headers.set('x-org-slug', subdomain);
+
+          // For subdomain requests to the root, redirect to the org's public viewer
+          if (pathname === '/' || pathname === '') {
+            const url = request.nextUrl.clone();
+            url.pathname = `/org/${subdomain}`;
+            return NextResponse.rewrite(url);
+          }
         }
         break;
       }
