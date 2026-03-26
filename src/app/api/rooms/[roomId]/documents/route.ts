@@ -17,6 +17,9 @@ import { getProviders } from '@/providers';
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 
+// Allow large file uploads (default is 4MB in Next.js)
+export const maxDuration = 60; // seconds
+
 interface RouteContext {
   params: Promise<{ roomId: string }>;
 }
