@@ -69,3 +69,6 @@ test-results/
 # Misc
 .vercel/
 .turbo/
+
+# Private configuration (gist)
+.private/
