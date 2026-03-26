@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import DOMPurify from 'dompurify';
+import 'highlight.js/styles/github.css';
 
 /**
  * TextPreviewRenderer
@@ -187,10 +188,6 @@ function CodeRenderer({ content, language }: { content: string; language: string
 
   return (
     <div className="overflow-auto bg-neutral-50">
-      <link
-        rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css"
-      />
       <pre className="p-6 text-sm leading-relaxed">
         <code
           className={`hljs language-${language}`}

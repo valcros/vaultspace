@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface Room {
   id: string;
@@ -250,6 +251,7 @@ export default function RoomsPage() {
 
 function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
   const [isDeleting, setIsDeleting] = React.useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 
   const handleArchive = async () => {
     try {
@@ -266,13 +268,6 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
   };
 
   const handleDelete = async () => {
-    if (
-      !window.confirm(
-        `Are you sure you want to delete "${room.name}"? This action cannot be undone.`
-      )
-    ) {
-      return;
-    }
     setIsDeleting(true);
     try {
       const response = await fetch(`/api/rooms/${room.id}`, {
@@ -293,71 +288,86 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
   };
 
   return (
-    <Link href={`/rooms/${room.id}`}>
-      <Card
-        className={`cursor-pointer transition-all hover:border-primary-200 hover:shadow-md ${isDeleting ? 'opacity-50' : ''}`}
-      >
-        <CardHeader className="pb-2">
-          <div className="flex items-start justify-between">
-            <div className="min-w-0 flex-1">
-              <CardTitle className="truncate text-base">{room.name}</CardTitle>
-              {room.description && (
-                <CardDescription className="mt-1 line-clamp-2">{room.description}</CardDescription>
-              )}
+    <>
+      <Link href={`/rooms/${room.id}`}>
+        <Card
+          className={`cursor-pointer transition-all hover:border-primary-200 hover:shadow-md ${isDeleting ? 'opacity-50' : ''}`}
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-start justify-between">
+              <div className="min-w-0 flex-1">
+                <CardTitle className="truncate text-base">{room.name}</CardTitle>
+                {room.description && (
+                  <CardDescription className="mt-1 line-clamp-2">
+                    {room.description}
+                  </CardDescription>
+                )}
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleArchive();
+                    }}
+                  >
+                    <Archive className="mr-2 h-4 w-4" />
+                    {room.status === 'ACTIVE' ? 'Archive' : 'Unarchive'}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setShowDeleteConfirm(true);
+                    }}
+                    className="text-danger-600"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleArchive();
-                  }}
-                >
-                  <Archive className="mr-2 h-4 w-4" />
-                  {room.status === 'ACTIVE' ? 'Archive' : 'Unarchive'}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleDelete();
-                  }}
-                  className="text-danger-600"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4 text-sm text-neutral-500">
-            <div className="flex items-center gap-1">
-              <FolderOpen className="h-4 w-4" />
-              <span>{room.documentCount}</span>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4 text-sm text-neutral-500">
+              <div className="flex items-center gap-1">
+                <FolderOpen className="h-4 w-4" />
+                <span>{room.documentCount}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Users className="h-4 w-4" />
+                <span>{room.memberCount}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <LinkIcon className="h-4 w-4" />
+                <span>{room.linkCount}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <Users className="h-4 w-4" />
-              <span>{room.memberCount}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <LinkIcon className="h-4 w-4" />
-              <span>{room.linkCount}</span>
-            </div>
-          </div>
-          {room.status === 'ARCHIVED' && (
-            <Badge variant="secondary" className="mt-3">
-              Archived
-            </Badge>
-          )}
-        </CardContent>
-      </Card>
-    </Link>
+            {room.status === 'ARCHIVED' && (
+              <Badge variant="secondary" className="mt-3">
+                Archived
+              </Badge>
+            )}
+          </CardContent>
+        </Card>
+      </Link>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Room"
+        description={`Are you sure you want to delete "${room.name}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDelete}
+        loading={isDeleting}
+      />
+    </>
   );
 }
