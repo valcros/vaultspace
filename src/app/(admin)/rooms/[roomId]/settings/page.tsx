@@ -29,6 +29,7 @@ interface RoomSettings {
   description: string | null;
   status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
   watermarkEnabled: boolean;
+  watermarkTemplate: string | null;
   downloadEnabled: boolean;
   ndaRequired: boolean;
   ndaText: string | null;
@@ -52,6 +53,7 @@ export default function RoomSettingsPage() {
     name: '',
     description: '',
     watermarkEnabled: true,
+    watermarkTemplate: '{viewer_email} | {timestamp}',
     downloadEnabled: false,
     ndaRequired: false,
     ndaText: '',
@@ -67,6 +69,7 @@ export default function RoomSettingsPage() {
           name: data.room.name,
           description: data.room.description || '',
           watermarkEnabled: data.room.watermarkEnabled,
+          watermarkTemplate: data.room.watermarkTemplate || '{viewer_email} | {timestamp}',
           downloadEnabled: data.room.downloadEnabled,
           ndaRequired: data.room.ndaRequired || false,
           ndaText: data.room.ndaText || '',
@@ -240,6 +243,22 @@ export default function RoomSettingsPage() {
                 }
               />
             </div>
+
+            {formData.watermarkEnabled && (
+              <div className="space-y-2 rounded-md bg-neutral-50 p-4">
+                <Label htmlFor="watermarkTemplate">Watermark Text Template</Label>
+                <Input
+                  id="watermarkTemplate"
+                  value={formData.watermarkTemplate}
+                  onChange={(e) => setFormData({ ...formData, watermarkTemplate: e.target.value })}
+                  placeholder="{viewer_email} | {timestamp}"
+                />
+                <p className="text-xs text-neutral-400">
+                  Available placeholders: {'{viewer_email}'}, {'{viewer_name}'}, {'{timestamp}'},
+                  {'{date}'}, {'{viewer_ip}'}, {'{room_name}'}
+                </p>
+              </div>
+            )}
 
             <Separator />
 
