@@ -59,7 +59,7 @@ function getConnectionOptions(): ConnectionOptions {
   return {
     host: url.hostname,
     port: parseInt(url.port || (useTls ? '6380' : '6379'), 10),
-    password: url.password || undefined,
+    password: url.password ? decodeURIComponent(url.password) : undefined,
     tls: useTls ? {} : undefined,
     maxRetriesPerRequest: null,
   };
