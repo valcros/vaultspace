@@ -50,7 +50,7 @@ function resolveTemplate(template: string, props: WatermarkOverlayProps): string
 export function WatermarkOverlay(props: WatermarkOverlayProps) {
   const {
     template = DEFAULT_TEMPLATE,
-    opacity = 0.08,
+    opacity = 0.12,
     fontSize = 16,
     angle = -30,
     color = '#888888',
