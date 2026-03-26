@@ -55,10 +55,12 @@ function getConnectionOptions(): ConnectionOptions {
   }
 
   const url = new URL(redisUrl);
+  const useTls = url.protocol === 'rediss:';
   return {
     host: url.hostname,
-    port: parseInt(url.port || '6379', 10),
+    port: parseInt(url.port || (useTls ? '6380' : '6379'), 10),
     password: url.password || undefined,
+    tls: useTls ? {} : undefined,
     maxRetriesPerRequest: null,
   };
 }
