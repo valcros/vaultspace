@@ -54,6 +54,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
 import { UploadZone } from '@/components/documents/UploadZone';
+import { toast } from '@/components/ui/use-toast';
 
 interface Room {
   id: string;
@@ -331,11 +332,15 @@ export default function RoomDetailPage() {
       } else {
         const error = await response.json();
         console.error('Failed to create folder:', error);
-        alert(error.error?.message || 'Failed to create folder');
+        toast({
+          title: 'Error',
+          description: error.error?.message || 'Failed to create folder',
+          variant: 'destructive',
+        });
       }
     } catch (error) {
       console.error('Failed to create folder:', error);
-      alert('Failed to create folder');
+      toast({ title: 'Error', description: 'Failed to create folder', variant: 'destructive' });
     } finally {
       setIsCreatingFolder(false);
     }
@@ -378,7 +383,11 @@ export default function RoomDetailPage() {
         document.body.removeChild(a);
       } catch (error) {
         console.error('Download error:', error);
-        alert('Failed to download document');
+        toast({
+          title: 'Error',
+          description: 'Failed to download document',
+          variant: 'destructive',
+        });
       }
     },
     [roomId]
@@ -434,11 +443,15 @@ export default function RoomDetailPage() {
         fetchDocuments(); // Refresh the list
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to delete document');
+        toast({
+          title: 'Error',
+          description: error.error || 'Failed to delete document',
+          variant: 'destructive',
+        });
       }
     } catch (error) {
       console.error('Delete error:', error);
-      alert('Failed to delete document');
+      toast({ title: 'Error', description: 'Failed to delete document', variant: 'destructive' });
     } finally {
       setIsDeleting(false);
     }
@@ -469,11 +482,15 @@ export default function RoomDetailPage() {
         fetchDocuments(); // Documents may have been deleted too
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to delete folder');
+        toast({
+          title: 'Error',
+          description: error.error || 'Failed to delete folder',
+          variant: 'destructive',
+        });
       }
     } catch (error) {
       console.error('Folder delete error:', error);
-      alert('Failed to delete folder');
+      toast({ title: 'Error', description: 'Failed to delete folder', variant: 'destructive' });
     } finally {
       setIsDeletingFolder(false);
     }
@@ -482,7 +499,7 @@ export default function RoomDetailPage() {
   // Handle share link creation
   const handleCreateLink = React.useCallback(async () => {
     if (!newLinkName.trim()) {
-      alert('Please enter a link name');
+      toast({ title: 'Required', description: 'Please enter a link name' });
       return;
     }
 
@@ -507,15 +524,23 @@ export default function RoomDetailPage() {
         // Copy link URL to clipboard
         if (data.link?.url) {
           await navigator.clipboard.writeText(data.link.url);
-          alert('Link created and copied to clipboard!');
+          toast({
+            title: 'Success',
+            description: 'Link created and copied to clipboard!',
+            variant: 'success',
+          });
         }
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to create link');
+        toast({
+          title: 'Error',
+          description: error.error || 'Failed to create link',
+          variant: 'destructive',
+        });
       }
     } catch (error) {
       console.error('Create link error:', error);
-      alert('Failed to create link');
+      toast({ title: 'Error', description: 'Failed to create link', variant: 'destructive' });
     } finally {
       setIsCreatingLink(false);
     }
@@ -527,10 +552,10 @@ export default function RoomDetailPage() {
     const linkUrl = `${baseUrl}/r/${link.slug}`;
     try {
       await navigator.clipboard.writeText(linkUrl);
-      alert('Link copied to clipboard!');
+      toast({ title: 'Copied', description: 'Link copied to clipboard!', variant: 'success' });
     } catch (error) {
       console.error('Copy error:', error);
-      alert('Failed to copy link');
+      toast({ title: 'Error', description: 'Failed to copy link', variant: 'destructive' });
     }
   }, []);
 
@@ -550,11 +575,15 @@ export default function RoomDetailPage() {
           fetchLinks();
         } else {
           const error = await response.json();
-          alert(error.error || 'Failed to delete link');
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to delete link',
+            variant: 'destructive',
+          });
         }
       } catch (error) {
         console.error('Delete link error:', error);
-        alert('Failed to delete link');
+        toast({ title: 'Error', description: 'Failed to delete link', variant: 'destructive' });
       }
     },
     [roomId, fetchLinks]
@@ -563,7 +592,7 @@ export default function RoomDetailPage() {
   // Handle add member (room admin)
   const handleAddMember = React.useCallback(async () => {
     if (!newMemberEmail.trim()) {
-      alert('Please enter an email address');
+      toast({ title: 'Required', description: 'Please enter an email address' });
       return;
     }
 
@@ -581,14 +610,18 @@ export default function RoomDetailPage() {
         setShowMemberDialog(false);
         setNewMemberEmail('');
         fetchAdmins();
-        alert('Admin added successfully!');
+        toast({ title: 'Success', description: 'Admin added successfully!', variant: 'success' });
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to add admin');
+        toast({
+          title: 'Error',
+          description: error.error || 'Failed to add admin',
+          variant: 'destructive',
+        });
       }
     } catch (error) {
       console.error('Add member error:', error);
-      alert('Failed to add admin');
+      toast({ title: 'Error', description: 'Failed to add admin', variant: 'destructive' });
     } finally {
       setIsAddingMember(false);
     }
@@ -614,11 +647,15 @@ export default function RoomDetailPage() {
           fetchAdmins();
         } else {
           const error = await response.json();
-          alert(error.error || 'Failed to remove admin');
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to remove admin',
+            variant: 'destructive',
+          });
         }
       } catch (error) {
         console.error('Remove member error:', error);
-        alert('Failed to remove admin');
+        toast({ title: 'Error', description: 'Failed to remove admin', variant: 'destructive' });
       }
     },
     [roomId, fetchAdmins]
