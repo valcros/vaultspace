@@ -250,3 +250,51 @@ Documentation, demo polish, release preparation.
 ### Sprint 5 Summary
 
 - **Sprint status:** COMPLETE
+
+---
+
+## Document Preview Expansion — 2026-03-26
+
+### Phase 1: Gotenberg Integration
+
+| File                                                | Change                                                                                         |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `src/providers/preview/GotenbergPreviewProvider.ts` | New provider: LibreOffice + Chromium conversion via Gotenberg HTTP API                         |
+| `src/providers/preview/index.ts`                    | Added gotenberg case to factory                                                                |
+| `src/services/DocumentService.ts`                   | Added 15 new MIME types (ODT, ODS, ODP, ODG, VSDX, VSD, RTF, EPUB, SVG, HTML, JSON, XML, YAML) |
+| `src/app/api/.../preview/route.ts`                  | Added SVG to inline-previewable types                                                          |
+| `infrastructure/ca-web-complete.yaml`               | Added Gotenberg sidecar container                                                              |
+
+### Phase 2: Client-Side Renderers
+
+| File                                               | Change                                                   |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| `src/components/documents/TextPreviewRenderer.tsx` | New: Markdown, code, JSON, YAML, XML, CSV, SVG renderers |
+| `src/components/documents/DocumentViewer.tsx`      | Added text format detection + TextPreviewFetcher         |
+| `package.json`                                     | Added markdown-it, highlight.js, papaparse, dompurify    |
+
+### Infrastructure
+
+| Action                     | Result                                             |
+| -------------------------- | -------------------------------------------------- |
+| Deployed Gotenberg sidecar | Both containers running (0.5 vCPU / 1 GB each)     |
+| Upload zone help text      | Updated with all supported formats                 |
+| Deploy pipeline fix        | --container-name required for multi-container apps |
+| Upload timeout fix         | Added maxDuration=60 to document upload route      |
+
+### QA Findings
+
+| Test                 | Result                                                       |
+| -------------------- | ------------------------------------------------------------ |
+| PDF preview          | Working (inline viewer with controls)                        |
+| Health check         | Healthy (all services)                                       |
+| File upload via curl | 504 timeout — Azure Blob Storage writes hanging              |
+| Root cause           | Investigating — container restart + maxDuration fix deployed |
+
+### Repo Security Audit
+
+- Sanitized infrastructure files (replaced real Azure names with placeholders)
+- Created .private/ directory (gitignored) for deployment config
+- Set up private gist sync between development machines
+- Moved deploy workflow to GitHub variables (ACR_SERVER, RESOURCE_GROUP, etc.)
+- Domain decision documented: vaultspace.org primary, future subdomains V1
