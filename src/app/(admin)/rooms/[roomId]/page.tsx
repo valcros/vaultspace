@@ -55,6 +55,7 @@ import {
 import { PageHeader } from '@/components/layout/page-header';
 import { UploadZone } from '@/components/documents/UploadZone';
 import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
+import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { toast } from '@/components/ui/use-toast';
 
 interface Room {
@@ -63,6 +64,7 @@ interface Room {
   description: string | null;
   status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
   watermarkEnabled: boolean;
+  watermarkTemplate: string | null;
   downloadEnabled: boolean;
   createdAt: string;
 }
@@ -1368,7 +1370,15 @@ export default function RoomDetailPage() {
           <DialogHeader>
             <DialogTitle>{selectedDocument?.name}</DialogTitle>
           </DialogHeader>
-          <div className="h-[70vh] overflow-auto">
+          <div className="relative h-[70vh] overflow-auto">
+            {room?.watermarkEnabled && (
+              <WatermarkOverlay
+                template={room.watermarkTemplate || undefined}
+                viewerEmail={undefined}
+                viewerName="Admin Preview"
+                roomName={room.name}
+              />
+            )}
             {previewError ? (
               <div className="flex h-full flex-col items-center justify-center text-center">
                 <FileText className="mb-4 h-16 w-16 text-neutral-300" />
