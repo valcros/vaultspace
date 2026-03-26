@@ -37,10 +37,12 @@ export class BullMQJobProvider implements JobProvider {
     if (options.redisUrl) {
       // Parse Redis URL for BullMQ connection
       const url = new URL(options.redisUrl);
+      const useTls = url.protocol === 'rediss:';
       this.connectionOptions = {
         host: url.hostname,
-        port: parseInt(url.port || '6379', 10),
+        port: parseInt(url.port || (useTls ? '6380' : '6379'), 10),
         password: url.password || undefined,
+        tls: useTls ? {} : undefined,
         maxRetriesPerRequest: null,
       };
     } else if (options.redisOptions) {
