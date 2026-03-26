@@ -1,8 +1,15 @@
+# VaultSpace Container App — Web + Gotenberg Sidecar
+#
+# Replace placeholders with your actual Azure resource names.
+# See .private/azure-staging.md for real values (gitignored).
+#
+# Apply: az containerapp update --name <app-name> --resource-group <rg> --yaml infrastructure/ca-web-complete.yaml
+
 properties:
   template:
     containers:
-      - name: ca-vaultspace-web
-        image: acrvaultspacestaging.azurecr.io/vaultspace-web:latest
+      - name: vaultspace-web
+        image: <your-acr>.azurecr.io/vaultspace-web:latest
         resources:
           cpu: 0.25
           memory: 0.5Gi
@@ -10,7 +17,7 @@ properties:
           - name: NODE_ENV
             value: production
           - name: APP_URL
-            value: https://ca-vaultspace-web.victoriousglacier-374689f2.eastus.azurecontainerapps.io
+            value: https://<your-container-app-url>
           - name: SESSION_SECRET
             secretRef: sessionsecret
           - name: DATABASE_URL
@@ -20,7 +27,7 @@ properties:
           - name: STORAGE_PROVIDER
             value: azure
           - name: AZURE_STORAGE_ACCOUNT_NAME
-            value: stvaultspacestaging
+            value: <your-storage-account>
           - name: AZURE_STORAGE_ACCOUNT_KEY
             secretRef: azurestoragekey
           - name: SCAN_ENGINE
