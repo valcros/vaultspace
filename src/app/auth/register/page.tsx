@@ -7,6 +7,32 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+const RELATIONSHIP_TYPES = [
+  { value: 'investor', label: 'Investor' },
+  { value: 'legal_advisor', label: 'Legal Advisor' },
+  { value: 'financial_advisor', label: 'Financial Advisor' },
+  { value: 'business_advisor', label: 'Business Advisor' },
+  { value: 'board_member', label: 'Board Member' },
+  { value: 'auditor', label: 'Auditor' },
+  { value: 'consultant', label: 'Consultant' },
+  { value: 'partner', label: 'Partner' },
+  { value: 'employee', label: 'Employee' },
+  { value: 'other', label: 'Other' },
+];
+
+interface InviteInfo {
+  email: string;
+  role: string;
+  organizationName: string;
+}
 
 function RegisterForm() {
   const router = useRouter();
@@ -19,9 +45,37 @@ function RegisterForm() {
     email: '',
     password: '',
     confirmPassword: '',
+    title: '',
+    relationship: '',
   });
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [inviteInfo, setInviteInfo] = React.useState<InviteInfo | null>(null);
+  const [inviteLoading, setInviteLoading] = React.useState(!!inviteToken);
+
+  // Fetch invitation details to pre-populate email
+  React.useEffect(() => {
+    if (!inviteToken) {
+      return;
+    }
+    fetch(`/api/invitations/${inviteToken}`)
+      .then((res) => {
+        if (res.ok) {
+          return res.json();
+        }
+        throw new Error('Invalid invitation');
+      })
+      .then((data: InviteInfo) => {
+        setInviteInfo(data);
+        setFormData((prev) => ({ ...prev, email: data.email }));
+      })
+      .catch(() => {
+        setError('This invitation is invalid or has expired.');
+      })
+      .finally(() => {
+        setInviteLoading(false);
+      });
+  }, [inviteToken]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -53,6 +107,8 @@ function RegisterForm() {
           email: formData.email,
           password: formData.password,
           inviteToken: inviteToken || undefined,
+          title: formData.title || undefined,
+          relationship: formData.relationship || undefined,
         }),
       });
 
@@ -76,9 +132,19 @@ function RegisterForm() {
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-neutral-900">Create an account</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          {inviteToken ? 'Complete your registration to join' : 'Get started with VaultSpace'}
+          {inviteInfo
+            ? `You've been invited to join ${inviteInfo.organizationName}`
+            : inviteToken
+              ? 'Complete your registration to join'
+              : 'Get started with VaultSpace'}
         </p>
       </div>
+
+      {inviteLoading && (
+        <div className="mb-6 flex justify-center">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
+        </div>
+      )}
 
       {error && (
         <Alert variant="destructive" className="mb-6">
@@ -126,7 +192,14 @@ function RegisterForm() {
             onChange={handleChange}
             required
             autoComplete="email"
+            readOnly={!!inviteInfo}
+            className={inviteInfo ? 'bg-neutral-50 text-neutral-600' : ''}
           />
+          {inviteInfo && (
+            <p className="text-xs text-neutral-400">
+              Email is set from your invitation and cannot be changed
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -156,6 +229,41 @@ function RegisterForm() {
             autoComplete="new-password"
           />
         </div>
+
+        {inviteInfo && (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="title">Title / Position</Label>
+              <Input
+                id="title"
+                name="title"
+                placeholder="e.g., Managing Partner, VP of Finance"
+                value={formData.title}
+                onChange={handleChange}
+                autoComplete="organization-title"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="relationship">Relationship to Organization</Label>
+              <Select
+                value={formData.relationship}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, relationship: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select your role..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {RELATIONSHIP_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
 
         <Button type="submit" className="w-full" loading={isLoading}>
           Create account
