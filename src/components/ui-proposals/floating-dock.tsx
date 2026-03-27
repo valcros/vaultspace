@@ -166,8 +166,9 @@ function useDragToPosition(
       e.preventDefault();
       setIsDragging(true);
 
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      const touch = 'touches' in e ? e.touches[0] : null;
+      const clientX = touch ? touch.clientX : (e as React.MouseEvent).clientX;
+      const clientY = touch ? touch.clientY : (e as React.MouseEvent).clientY;
 
       if (dockRef.current) {
         const rect = dockRef.current.getBoundingClientRect();
@@ -186,8 +187,9 @@ function useDragToPosition(
     }
 
     const handleMove = (e: MouseEvent | TouchEvent) => {
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      const touch = 'touches' in e ? e.touches[0] : null;
+      const clientX = touch ? touch.clientX : (e as MouseEvent).clientX;
+      const clientY = touch ? touch.clientY : (e as MouseEvent).clientY;
 
       const windowWidth = window.innerWidth;
       const windowHeight = window.innerHeight;
