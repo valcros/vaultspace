@@ -33,19 +33,18 @@ import { PageHeader } from '@/components/layout/page-header';
 
 interface ActivityEvent {
   id: string;
-  type: string;
+  eventType: string;
+  actorType?: string;
   actor: {
-    id: string;
-    firstName: string;
-    lastName: string;
+    id?: string;
+    name?: string;
     email: string;
   } | null;
-  targetType: string | null;
-  targetId: string | null;
-  targetName: string | null;
-  roomId: string | null;
-  roomName: string | null;
-  metadata: Record<string, unknown>;
+  room: {
+    id: string;
+    name: string;
+  } | null;
+  description: string | null;
   ipAddress: string | null;
   createdAt: string;
 }
@@ -115,11 +114,10 @@ export default function ActivityPage() {
     }
     const query = searchQuery.toLowerCase();
     return (
-      event.actor?.firstName.toLowerCase().includes(query) ||
-      event.actor?.lastName.toLowerCase().includes(query) ||
-      event.actor?.email.toLowerCase().includes(query) ||
-      event.targetName?.toLowerCase().includes(query) ||
-      event.roomName?.toLowerCase().includes(query)
+      event.actor?.name?.toLowerCase().includes(query) ||
+      event.actor?.email?.toLowerCase().includes(query) ||
+      event.description?.toLowerCase().includes(query) ||
+      event.room?.name?.toLowerCase().includes(query)
     );
   });
 
@@ -152,14 +150,14 @@ export default function ActivityPage() {
   };
 
   const handleExport = () => {
-    const headers = ['Date', 'User', 'Email', 'Action', 'Target', 'Room', 'IP Address'];
+    const headers = ['Date', 'User', 'Email', 'Action', 'Description', 'Room', 'IP Address'];
     const rows = filteredEvents.map((event) => [
       new Date(event.createdAt).toISOString(),
-      event.actor ? `${event.actor.firstName} ${event.actor.lastName}` : 'System',
+      event.actor?.name || 'System',
       event.actor?.email || '',
-      event.type.replace(/_/g, ' '),
-      event.targetName || '',
-      event.roomName || '',
+      event.eventType.replace(/_/g, ' '),
+      event.description || '',
+      event.room?.name || '',
       event.ipAddress || '',
     ]);
 
@@ -241,8 +239,8 @@ export default function ActivityPage() {
         ) : (
           <div className="space-y-2">
             {filteredEvents.map((event) => {
-              const Icon = eventIcons[event.type] || Activity;
-              const label = eventLabels[event.type] || event.type.replace(/_/g, ' ');
+              const Icon = eventIcons[event.eventType] || Activity;
+              const label = eventLabels[event.eventType] || event.eventType.replace(/_/g, ' ');
 
               return (
                 <div
@@ -257,27 +255,27 @@ export default function ActivityPage() {
                       {event.actor ? (
                         <>
                           <span className="font-medium">
-                            {event.actor.firstName} {event.actor.lastName}
+                            {event.actor.name || event.actor.email}
                           </span>
                           <span className="text-neutral-500"> {label}</span>
                         </>
                       ) : (
                         <span className="text-neutral-500">System {label}</span>
                       )}
-                      {event.targetName && (
+                      {event.description && (
                         <>
                           <span className="text-neutral-500">: </span>
-                          <span className="font-medium">{event.targetName}</span>
+                          <span className="font-medium">{event.description}</span>
                         </>
                       )}
                     </p>
                     <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
                       <span>{formatDate(event.createdAt)}</span>
-                      {event.roomName && (
+                      {event.room && (
                         <>
                           <span>•</span>
                           <Badge variant="outline" className="text-xs">
-                            {event.roomName}
+                            {event.room.name}
                           </Badge>
                         </>
                       )}
