@@ -163,6 +163,8 @@ export default function RoomDetailPage() {
   // Link create states
   const [newLinkName, setNewLinkName] = React.useState('');
   const [newLinkPermission, setNewLinkPermission] = React.useState<'VIEW' | 'DOWNLOAD'>('VIEW');
+  const [newLinkPassword, setNewLinkPassword] = React.useState('');
+  const [newLinkExpiry, setNewLinkExpiry] = React.useState('');
   const [isCreatingLink, setIsCreatingLink] = React.useState(false);
 
   // Member add states
@@ -543,6 +545,8 @@ export default function RoomDetailPage() {
           name: newLinkName.trim(),
           permission: newLinkPermission,
           scope: 'ENTIRE_ROOM',
+          ...(newLinkPassword && { password: newLinkPassword }),
+          ...(newLinkExpiry && { expiresAt: new Date(newLinkExpiry).toISOString() }),
         }),
       });
 
@@ -551,6 +555,8 @@ export default function RoomDetailPage() {
         setShowLinkDialog(false);
         setNewLinkName('');
         setNewLinkPermission('VIEW');
+        setNewLinkPassword('');
+        setNewLinkExpiry('');
         fetchLinks();
         // Copy link URL to clipboard
         if (data.link?.url) {
@@ -575,7 +581,7 @@ export default function RoomDetailPage() {
     } finally {
       setIsCreatingLink(false);
     }
-  }, [roomId, newLinkName, newLinkPermission, fetchLinks]);
+  }, [roomId, newLinkName, newLinkPermission, newLinkPassword, newLinkExpiry, fetchLinks]);
 
   // Handle copy link
   const handleCopyLink = React.useCallback(async (link: ShareLink) => {
@@ -1263,6 +1269,25 @@ export default function RoomDetailPage() {
                   <SelectItem value="DOWNLOAD">View & Download</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="linkPassword">Password Protection (optional)</Label>
+              <Input
+                id="linkPassword"
+                type="password"
+                placeholder="Leave blank for no password"
+                value={newLinkPassword}
+                onChange={(e) => setNewLinkPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="linkExpiry">Expiration Date (optional)</Label>
+              <Input
+                id="linkExpiry"
+                type="datetime-local"
+                value={newLinkExpiry}
+                onChange={(e) => setNewLinkExpiry(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter>
