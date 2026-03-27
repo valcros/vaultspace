@@ -147,7 +147,7 @@ export default function ViewerDocumentPage() {
           </div>
         </div>
         <div className="flex flex-1 items-center justify-center">
-          <Skeleton className="h-[800px] w-[600px] bg-neutral-800" />
+          <Skeleton className="h-[80vh] w-full max-w-[600px] bg-neutral-800" />
         </div>
       </div>
     );
@@ -162,20 +162,23 @@ export default function ViewerDocumentPage() {
       {/* Header */}
       <div className="sticky top-0 z-20 border-b border-neutral-700 bg-neutral-800">
         <div className="mx-auto max-w-screen-2xl px-4 py-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             {/* Left: Back & Title */}
-            <div className="flex min-w-0 items-center gap-4">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleBack}
                 className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                aria-label="Go back"
               >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back
+                <ArrowLeft className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Back</span>
               </Button>
-              <div className="h-6 w-px bg-neutral-600" />
-              <h1 className="truncate font-medium text-white">{document.name}</h1>
+              <div className="hidden h-6 w-px bg-neutral-600 sm:block" />
+              <h1 className="max-w-[120px] truncate font-medium text-white sm:max-w-none">
+                {document.name}
+              </h1>
             </div>
 
             {/* Center: Page Navigation */}
@@ -205,34 +208,40 @@ export default function ViewerDocumentPage() {
 
             {/* Right: Controls */}
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleZoomOut}
-                disabled={zoom <= 50}
-                className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
-              >
-                <ZoomOut className="h-4 w-4" />
-              </Button>
-              <span className="min-w-[50px] text-center text-sm text-neutral-300">{zoom}%</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleZoomIn}
-                disabled={zoom >= 200}
-                className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
-              >
-                <ZoomIn className="h-4 w-4" />
-              </Button>
-              <div className="mx-2 h-6 w-px bg-neutral-600" />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRotate}
-                className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
-              >
-                <RotateCw className="h-4 w-4" />
-              </Button>
+              {/* Zoom controls hidden on mobile */}
+              <div className="hidden items-center gap-1 sm:flex">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleZoomOut}
+                  disabled={zoom <= 50}
+                  className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+                  aria-label="Zoom out"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <span className="min-w-[50px] text-center text-sm text-neutral-300">{zoom}%</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleZoomIn}
+                  disabled={zoom >= 200}
+                  className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+                  aria-label="Zoom in"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <div className="mx-2 h-6 w-px bg-neutral-600" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRotate}
+                  className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                  aria-label="Rotate"
+                >
+                  <RotateCw className="h-4 w-4" />
+                </Button>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
@@ -275,8 +284,7 @@ export default function ViewerDocumentPage() {
           <img
             src={`${document.previewUrl}?page=${currentPage}`}
             alt={`Page ${currentPage} of ${document.name}`}
-            className="max-w-none"
-            style={{ width: '800px' }}
+            className="w-full max-w-[800px]"
             draggable={false}
             onContextMenu={(e) => e.preventDefault()}
           />
