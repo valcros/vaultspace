@@ -12,7 +12,7 @@
 import * as React from 'react';
 import { EnhancedCommandMenu, useCommandMenu } from '@/components/ui-proposals/command-menu';
 import { cn } from '@/components/ui-proposals/utils';
-import { Search, Bell, Command, ArrowLeft } from 'lucide-react';
+import { Bell, Command, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 export default function OptionBPage() {
