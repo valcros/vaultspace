@@ -9,10 +9,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Dialog,
-  DialogContent,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { cn } from './utils';
 import {
   Home,
@@ -25,7 +22,7 @@ import {
   UserPlus,
   Search,
   Clock,
-  Star,
+  Star as _Star,
   ArrowRight,
   type LucideIcon,
 } from 'lucide-react';
@@ -50,7 +47,7 @@ export function EnhancedCommandMenu({
   open,
   onOpenChange,
   recentRooms = [],
-  favoriteRooms = [],
+  favoriteRooms: _favoriteRooms = [],
 }: EnhancedCommandMenuProps) {
   const router = useRouter();
   const [search, setSearch] = React.useState('');
@@ -101,7 +98,9 @@ export function EnhancedCommandMenu({
   // Handle keyboard navigation
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!open) return;
+      if (!open) {
+        return;
+      }
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -136,7 +135,7 @@ export function EnhancedCommandMenu({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg p-0 overflow-hidden">
+      <DialogContent className="max-w-lg overflow-hidden p-0">
         {/* Search Input */}
         <div className="flex items-center border-b px-4 py-3">
           <Search className="mr-3 h-5 w-5 text-gray-400" />
@@ -165,7 +164,7 @@ export function EnhancedCommandMenu({
               {/* Recent Rooms */}
               {filteredRecent.length > 0 && (
                 <div className="mb-2">
-                  <p className="px-2 py-1 text-xs font-medium text-gray-500 uppercase">Recent</p>
+                  <p className="px-2 py-1 text-xs font-medium uppercase text-gray-500">Recent</p>
                   {filteredRecent.slice(0, 3).map((room, i) => (
                     <button
                       key={room.id}
@@ -189,7 +188,9 @@ export function EnhancedCommandMenu({
               {/* Navigation */}
               {filteredNav.length > 0 && (
                 <div className="mb-2">
-                  <p className="px-2 py-1 text-xs font-medium text-gray-500 uppercase">Navigation</p>
+                  <p className="px-2 py-1 text-xs font-medium uppercase text-gray-500">
+                    Navigation
+                  </p>
                   {filteredNav.map((item, i) => {
                     const idx = filteredRecent.length + i;
                     return (
@@ -218,7 +219,9 @@ export function EnhancedCommandMenu({
               {/* Quick Actions */}
               {filteredActions.length > 0 && (
                 <div className="mb-2">
-                  <p className="px-2 py-1 text-xs font-medium text-gray-500 uppercase">Quick Actions</p>
+                  <p className="px-2 py-1 text-xs font-medium uppercase text-gray-500">
+                    Quick Actions
+                  </p>
                   {filteredActions.map((item, i) => {
                     const idx = filteredRecent.length + filteredNav.length + i;
                     return (
