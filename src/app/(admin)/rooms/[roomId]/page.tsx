@@ -405,7 +405,9 @@ export default function RoomDetailPage() {
       setShowPreviewDialog(true);
 
       // Types that can be previewed (inline or via client-side renderer)
+      // All types we can preview — inline, via Gotenberg conversion, or client-side rendering
       const previewableTypes = [
+        // Inline (served directly)
         'application/pdf',
         'image/jpeg',
         'image/png',
@@ -413,6 +415,7 @@ export default function RoomDetailPage() {
         'image/webp',
         'image/tiff',
         'image/svg+xml',
+        // Client-side rendered
         'text/plain',
         'text/csv',
         'text/markdown',
@@ -421,6 +424,21 @@ export default function RoomDetailPage() {
         'text/xml',
         'application/json',
         'application/xml',
+        // Gotenberg conversion (office formats → PDF)
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
+        'application/msword', // DOC
+        'application/vnd.ms-excel', // XLS
+        'application/vnd.ms-powerpoint', // PPT
+        'application/vnd.oasis.opendocument.text', // ODT
+        'application/vnd.oasis.opendocument.spreadsheet', // ODS
+        'application/vnd.oasis.opendocument.presentation', // ODP
+        'application/vnd.oasis.opendocument.graphics', // ODG
+        'application/vnd.ms-visio.drawing.main+xml', // VSDX
+        'application/vnd.visio', // VSD
+        'application/rtf',
+        'application/epub+zip',
       ];
 
       if (previewableTypes.includes(doc.mimeType)) {
