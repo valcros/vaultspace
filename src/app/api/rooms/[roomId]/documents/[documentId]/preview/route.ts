@@ -82,7 +82,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
                 },
               },
               previewAssets: {
-                where: { assetType: 'PDF' },
+                where: { assetType: { in: ['RENDER', 'PDF'] }, pageNumber: 1 },
                 take: 1,
               },
             },
@@ -149,11 +149,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       });
     }
 
-    // For non-previewable types, check if we have a PDF preview asset
-    const pdfPreview = latestVersion.previewAssets?.[0];
-    if (pdfPreview) {
+    // For non-previewable types, check if we have a generated preview asset
+    const previewAsset = latestVersion.previewAssets?.[0];
+    if (previewAsset) {
       const bucket = 'previews';
-      const key = pdfPreview.storageKey;
+      const key = previewAsset.storageKey;
+      const contentType = previewAsset.mimeType || 'image/png';
 
       const exists = await storage.exists(bucket, key);
       if (exists) {
@@ -161,9 +162,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return new NextResponse(new Uint8Array(data), {
           status: 200,
           headers: {
-            'Content-Type': 'application/pdf',
+            'Content-Type': contentType,
             'Content-Length': data.length.toString(),
-            'Content-Disposition': `inline; filename="${encodeURIComponent(document.name)}.pdf"`,
+            'Content-Disposition': `inline; filename="${encodeURIComponent(document.name)}.${contentType === 'application/pdf' ? 'pdf' : 'png'}"`,
             'Cache-Control': 'private, max-age=300',
             'X-Frame-Options': 'SAMEORIGIN',
           },
