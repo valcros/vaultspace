@@ -84,6 +84,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       requiresEmailVerification,
       enableWatermark,
       watermarkTemplate,
+      requiresNda,
+      ndaContent,
     } = body;
 
     // Use RLS context for org-scoped queries
@@ -129,6 +131,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
           ...(enableWatermark !== undefined && { enableWatermark }),
           ...(watermarkTemplate !== undefined && { watermarkTemplate }),
+          ...(requiresNda !== undefined && { requiresNda }),
+          ...(ndaContent !== undefined && { ndaContent }),
         },
       });
 

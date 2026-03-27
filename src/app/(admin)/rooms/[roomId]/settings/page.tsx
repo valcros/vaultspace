@@ -57,6 +57,7 @@ export default function RoomSettingsPage() {
     downloadEnabled: false,
     ndaRequired: false,
     ndaText: '',
+    defaultExpiryDays: '',
   });
 
   const fetchRoom = React.useCallback(async () => {
@@ -70,9 +71,10 @@ export default function RoomSettingsPage() {
           description: data.room.description || '',
           watermarkEnabled: data.room.watermarkEnabled,
           watermarkTemplate: data.room.watermarkTemplate || '{viewer_email} | {timestamp}',
-          downloadEnabled: data.room.downloadEnabled,
-          ndaRequired: data.room.ndaRequired || false,
-          ndaText: data.room.ndaText || '',
+          downloadEnabled: data.room.allowDownloads,
+          ndaRequired: data.room.requiresNda || false,
+          ndaText: data.room.ndaContent || '',
+          defaultExpiryDays: data.room.defaultExpiryDays?.toString() || '',
         });
       } else if (response.status === 404) {
         router.push('/rooms');
@@ -103,6 +105,11 @@ export default function RoomSettingsPage() {
           enableWatermark: formData.watermarkEnabled,
           watermarkTemplate: formData.watermarkTemplate,
           allowDownloads: formData.downloadEnabled,
+          requiresNda: formData.ndaRequired,
+          ndaContent: formData.ndaText,
+          defaultExpiryDays: formData.defaultExpiryDays
+            ? parseInt(formData.defaultExpiryDays, 10)
+            : null,
         }),
       });
 
@@ -312,6 +319,23 @@ export default function RoomSettingsPage() {
                 />
               </div>
             )}
+
+            <Separator />
+
+            <div className="space-y-2">
+              <Label htmlFor="defaultExpiry">Default Link Expiry (days)</Label>
+              <Input
+                id="defaultExpiry"
+                type="number"
+                min="0"
+                placeholder="No default expiry"
+                value={formData.defaultExpiryDays}
+                onChange={(e) => setFormData({ ...formData, defaultExpiryDays: e.target.value })}
+              />
+              <p className="text-xs text-neutral-500">
+                Set to 0 or leave blank for no default expiry on share links
+              </p>
+            </div>
           </CardContent>
         </Card>
 

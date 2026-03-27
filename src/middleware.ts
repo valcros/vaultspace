@@ -44,6 +44,29 @@ export async function middleware(request: NextRequest) {
     return addSecurityHeaders(response, pathname);
   }
 
+  // Setup wizard enforcement — redirect to /setup if no org exists
+  // Skip for setup page itself, API routes, and static assets
+  if (
+    !pathname.startsWith('/setup') &&
+    !pathname.startsWith('/api/') &&
+    !pathname.startsWith('/_next/') &&
+    !pathname.includes('.')
+  ) {
+    try {
+      const setupRes = await fetch(`${request.nextUrl.origin}/api/setup`, {
+        headers: { Cookie: request.headers.get('cookie') || '' },
+      });
+      if (setupRes.ok) {
+        const data = await setupRes.json();
+        if (data.needsSetup) {
+          return NextResponse.redirect(new URL('/setup', request.url));
+        }
+      }
+    } catch {
+      // If setup check fails, continue normally
+    }
+  }
+
   // Check for custom domain or subdomain
   const mainDomains = (
     process.env['MAIN_DOMAINS'] || 'vaultspace.org,vaultspace.app,vaultspace.local'
