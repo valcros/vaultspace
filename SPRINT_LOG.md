@@ -391,34 +391,34 @@ Replace the "generic DOS-era menu system" with modern, distinctive navigation pa
 
 ### Research & Analysis
 
-| Source | Insights |
-| ------ | -------- |
-| Context7 (shadcn/ui) | Command palette, sidebar variants, collapsible patterns |
-| Context7 (Radix) | Toolbar, navigation menu, accessibility primitives |
-| Web search | Floating dock components, command-k patterns, 2026 dashboard trends |
-| Aceternity UI | Floating dock with magnification effect |
-| Magic UI | Dock component implementation |
+| Source               | Insights                                                            |
+| -------------------- | ------------------------------------------------------------------- |
+| Context7 (shadcn/ui) | Command palette, sidebar variants, collapsible patterns             |
+| Context7 (Radix)     | Toolbar, navigation menu, accessibility primitives                  |
+| Web search           | Floating dock components, command-k patterns, 2026 dashboard trends |
+| Aceternity UI        | Floating dock with magnification effect                             |
+| Magic UI             | Dock component implementation                                       |
 
 ### Options Proposed
 
-| Option | Name | Description | Status |
-| ------ | ---- | ----------- | ------ |
-| A | Floating Dock | macOS-style bottom dock with magnification | Demo ready |
-| B | Command Palette | ⌘K as primary navigation (Spotlight-style) | Demo ready |
-| C | Widget Dashboard | Customizable widgets + slide-in panels | Demo ready |
-| D | **Hybrid Rail** ⭐ | Thin icon rail + command palette (recommended) | Demo ready |
+| Option | Name               | Description                                    | Status     |
+| ------ | ------------------ | ---------------------------------------------- | ---------- |
+| A      | Floating Dock      | macOS-style bottom dock with magnification     | Demo ready |
+| B      | Command Palette    | ⌘K as primary navigation (Spotlight-style)     | Demo ready |
+| C      | Widget Dashboard   | Customizable widgets + slide-in panels         | Demo ready |
+| D      | **Hybrid Rail** ⭐ | Thin icon rail + command palette (recommended) | Demo ready |
 
 ### Files Created
 
-| File | Purpose |
-| ---- | ------- |
+| File                                | Purpose                                  |
+| ----------------------------------- | ---------------------------------------- |
 | `docs/UI_MODERNIZATION_PROPOSAL.md` | Full proposal with mockups and rationale |
-| `src/components/ui-proposals/` | Prototype components (6 files) |
-| `src/app/demo/page.tsx` | Landing page with links to all options |
-| `src/app/demo/option-a/` | Floating dock demo |
-| `src/app/demo/option-b/` | Command palette demo |
-| `src/app/demo/option-c/` | Widget dashboard demo |
-| `src/app/demo/option-d/` | Hybrid rail demo (recommended) |
+| `src/components/ui-proposals/`      | Prototype components (6 files)           |
+| `src/app/demo/page.tsx`             | Landing page with links to all options   |
+| `src/app/demo/option-a/`            | Floating dock demo                       |
+| `src/app/demo/option-b/`            | Command palette demo                     |
+| `src/app/demo/option-c/`            | Widget dashboard demo                    |
+| `src/app/demo/option-d/`            | Hybrid rail demo (recommended)           |
 
 ### Branch Strategy
 
@@ -428,13 +428,13 @@ Replace the "generic DOS-era menu system" with modern, distinctive navigation pa
 
 ### Preview URLs (after deployment)
 
-| URL | Description |
-| --- | ----------- |
-| `/demo` | Landing page with all options |
-| `/demo/option-a` | Floating dock demo |
-| `/demo/option-b` | Command palette demo |
-| `/demo/option-c` | Widget dashboard demo |
-| `/demo/option-d` | Hybrid rail demo |
+| URL              | Description                   |
+| ---------------- | ----------------------------- |
+| `/demo`          | Landing page with all options |
+| `/demo/option-a` | Floating dock demo            |
+| `/demo/option-b` | Command palette demo          |
+| `/demo/option-c` | Widget dashboard demo         |
+| `/demo/option-d` | Hybrid rail demo              |
 
 ### Next Steps
 

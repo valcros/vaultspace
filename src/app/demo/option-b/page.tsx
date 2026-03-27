@@ -77,11 +77,7 @@ export default function OptionBPage() {
       </main>
 
       {/* Command Menu */}
-      <EnhancedCommandMenu
-        open={open}
-        onOpenChange={setOpen}
-        recentRooms={recentRooms}
-      />
+      <EnhancedCommandMenu open={open} onOpenChange={setOpen} recentRooms={recentRooms} />
 
       {/* Option Info Banner */}
       <div className="fixed left-6 top-20 z-40 max-w-xs rounded-lg border border-purple-200 bg-purple-50 p-3 shadow-lg dark:border-purple-900 dark:bg-purple-950">
@@ -89,7 +85,8 @@ export default function OptionBPage() {
           Option B: Command Palette Primary
         </p>
         <p className="mt-1 text-xs text-purple-700 dark:text-purple-300">
-          Press ⌘K to open the command palette. All navigation flows through search and keyboard shortcuts.
+          Press ⌘K to open the command palette. All navigation flows through search and keyboard
+          shortcuts.
         </p>
       </div>
     </div>
@@ -98,10 +95,38 @@ export default function OptionBPage() {
 
 function CommandPrimaryContent({ onOpenSearch }: { onOpenSearch: () => void }) {
   const rooms = [
-    { id: '1', name: 'Due Diligence Package', status: 'active', documents: 47, members: 12, lastActivity: '2 hours ago' },
-    { id: '2', name: 'Board Materials Q4', status: 'active', documents: 23, members: 8, lastActivity: '1 day ago' },
-    { id: '3', name: 'Series A Funding', status: 'draft', documents: 15, members: 5, lastActivity: '3 days ago' },
-    { id: '4', name: 'Legal Review', status: 'archived', documents: 89, members: 15, lastActivity: '2 weeks ago' },
+    {
+      id: '1',
+      name: 'Due Diligence Package',
+      status: 'active',
+      documents: 47,
+      members: 12,
+      lastActivity: '2 hours ago',
+    },
+    {
+      id: '2',
+      name: 'Board Materials Q4',
+      status: 'active',
+      documents: 23,
+      members: 8,
+      lastActivity: '1 day ago',
+    },
+    {
+      id: '3',
+      name: 'Series A Funding',
+      status: 'draft',
+      documents: 15,
+      members: 5,
+      lastActivity: '3 days ago',
+    },
+    {
+      id: '4',
+      name: 'Legal Review',
+      status: 'archived',
+      documents: 89,
+      members: 15,
+      lastActivity: '2 weeks ago',
+    },
   ];
 
   const statusColors: Record<string, string> = {
@@ -114,12 +139,8 @@ function CommandPrimaryContent({ onOpenSearch }: { onOpenSearch: () => void }) {
     <div className="mx-auto max-w-6xl space-y-8">
       {/* Welcome Hero */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-          Welcome back, John
-        </h1>
-        <p className="mt-2 text-gray-500">
-          You have 3 rooms with recent activity
-        </p>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Welcome back, John</h1>
+        <p className="mt-2 text-gray-500">You have 3 rooms with recent activity</p>
         <button
           onClick={onOpenSearch}
           className="mt-4 inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200"
@@ -145,9 +166,7 @@ function CommandPrimaryContent({ onOpenSearch }: { onOpenSearch: () => void }) {
             className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
           >
             <p className="text-sm text-gray-500">{stat.label}</p>
-            <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-gray-100">
-              {stat.value}
-            </p>
+            <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-gray-100">{stat.value}</p>
           </div>
         ))}
       </div>
@@ -155,9 +174,7 @@ function CommandPrimaryContent({ onOpenSearch }: { onOpenSearch: () => void }) {
       {/* Recent Rooms */}
       <div>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Recent Rooms
-          </h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Rooms</h2>
           <button
             onClick={onOpenSearch}
             className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
@@ -173,18 +190,23 @@ function CommandPrimaryContent({ onOpenSearch }: { onOpenSearch: () => void }) {
                 'group rounded-xl border border-gray-200 bg-white p-5',
                 'dark:border-gray-800 dark:bg-gray-900',
                 'hover:border-blue-300 hover:shadow-lg dark:hover:border-blue-700',
-                'transition-all duration-200 cursor-pointer'
+                'cursor-pointer transition-all duration-200'
               )}
             >
               <div className="flex items-start justify-between">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
                   <span className="text-lg font-bold">{room.name[0]}</span>
                 </div>
-                <span className={cn('rounded-full px-2 py-1 text-xs font-medium capitalize', statusColors[room.status])}>
+                <span
+                  className={cn(
+                    'rounded-full px-2 py-1 text-xs font-medium capitalize',
+                    statusColors[room.status]
+                  )}
+                >
                   {room.status}
                 </span>
               </div>
-              <h3 className="mt-3 font-semibold text-gray-900 dark:text-gray-100 group-hover:text-blue-600">
+              <h3 className="mt-3 font-semibold text-gray-900 group-hover:text-blue-600 dark:text-gray-100">
                 {room.name}
               </h3>
               <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
@@ -198,9 +220,7 @@ function CommandPrimaryContent({ onOpenSearch }: { onOpenSearch: () => void }) {
 
       {/* Keyboard Shortcuts Reference */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
-        <h3 className="mb-4 font-semibold text-gray-900 dark:text-gray-100">
-          Keyboard Shortcuts
-        </h3>
+        <h3 className="mb-4 font-semibold text-gray-900 dark:text-gray-100">Keyboard Shortcuts</h3>
         <div className="grid grid-cols-4 gap-4 text-sm">
           {[
             { keys: '⌘K', action: 'Open command palette' },
@@ -213,7 +233,7 @@ function CommandPrimaryContent({ onOpenSearch }: { onOpenSearch: () => void }) {
             { keys: '↵', action: 'Select item' },
           ].map(({ keys, action }) => (
             <div key={keys} className="flex items-center gap-2">
-              <kbd className="rounded bg-gray-100 px-2 py-1 text-xs font-mono dark:bg-gray-800">
+              <kbd className="rounded bg-gray-100 px-2 py-1 font-mono text-xs dark:bg-gray-800">
                 {keys}
               </kbd>
               <span className="text-gray-500">{action}</span>
