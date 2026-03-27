@@ -7,32 +7,29 @@ This file tracks in-progress work to help team members avoid conflicts.
 
 ## Currently Active
 
+_No active work in progress._
+
+---
+
+## Recently Completed
+
 ### Floating Dock Enhancements
 
 - **Developer:** Claude Code (Machine 1)
-- **Branch:** `feature/floating-dock-enhancements`
-- **Started:** 2026-03-27
-- **Status:** In Progress
+- **Merged:** 2026-03-27
+- **PR:** #5
 
-**Files being modified:**
-
-- `src/components/ui-proposals/floating-dock.tsx` - Major enhancements
-- `src/app/demo/option-a/page.tsx` - Demo page updates
-
-**Changes being made:**
+**Changes made:**
 
 1. Auto-hide on scroll - Dock hides when scrolling down, reappears on scroll up
 2. Drag-to-position - Users can drag dock to any screen edge (top/bottom/left/right)
 3. Touch-friendly mode - Detects touch devices, shows labels, removes hover magnification
 4. Visible search FAB - Floating search button for tablet/touch users without keyboards
 
-**ETA:** Should be merged within a few hours.
+**Files modified:**
 
-**Notes:** These changes are isolated to the `/demo` prototype pages and `ui-proposals` components. Should not affect main application functionality.
-
----
-
-## Recently Completed
+- `src/components/ui-proposals/floating-dock.tsx`
+- `src/app/demo/option-a/page.tsx`
 
 ### UI Modernization Demo Pages
 
