@@ -250,6 +250,12 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
         },
       });
 
+      // Decrement room document count
+      await tx.room.update({
+        where: { id: roomId },
+        data: { totalDocuments: { decrement: 1 } },
+      });
+
       return { success: true };
     });
 

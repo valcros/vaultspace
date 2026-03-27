@@ -91,7 +91,7 @@ export default function ActivityPage() {
     try {
       const params = new URLSearchParams();
       if (eventType !== 'all') {
-        params.set('type', eventType);
+        params.set('eventType', eventType);
       }
       const response = await fetch(`/api/organization/activity?${params}`);
       const data = await response.json();

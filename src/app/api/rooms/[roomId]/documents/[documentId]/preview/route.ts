@@ -114,6 +114,21 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return jsonResponse({ error: result.error }, result.status || 500);
     }
 
+    // Queue document view notification (non-blocking)
+    try {
+      const providers = getProviders();
+      providers.job
+        .addJob('normal', 'notify-document-viewed', {
+          organizationId: session.organizationId,
+          roomId,
+          documentId,
+          viewerId: session.userId,
+        })
+        .catch(() => {}); // Fire and forget
+    } catch {
+      // Non-critical — don't block preview
+    }
+
     const { document, latestVersion } = result;
     const mimeType = document.mimeType || 'application/octet-stream';
 
