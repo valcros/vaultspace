@@ -139,7 +139,7 @@ export class GotenbergPreviewProvider implements PreviewProvider {
   private async convertViaGotenbergOffice(
     data: Buffer,
     mimeType: string,
-    maxPages: number
+    _maxPages: number
   ): Promise<PreviewResult> {
     const extension = MIME_TO_EXTENSION[mimeType] ?? '.bin';
     const filename = `document${extension}`;
@@ -162,8 +162,22 @@ export class GotenbergPreviewProvider implements PreviewProvider {
       throw new Error(`Gotenberg conversion failed (${response.status}): ${errorText}`);
     }
 
+    // Return the converted PDF directly as a single-page preview asset
+    // The browser's PDF viewer or react-pdf will render it — no Sharp rasterization needed
     const pdfBuffer = Buffer.from(await response.arrayBuffer());
-    return this.convertPdfToPages(pdfBuffer, maxPages);
+    return {
+      pages: [
+        {
+          pageNumber: 1,
+          data: pdfBuffer,
+          width: 800,
+          height: 1100,
+          mimeType: 'application/pdf',
+        },
+      ],
+      totalPages: 1,
+      mimeType: 'application/pdf',
+    };
   }
 
   /**
