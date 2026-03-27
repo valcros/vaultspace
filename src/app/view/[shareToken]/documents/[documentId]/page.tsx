@@ -91,24 +91,27 @@ export default function ViewerDocumentPage() {
 
   // Touch gesture handlers for mobile
   const handleTouchStart = React.useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, dist: 0 };
-    } else if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    if (e.touches.length === 1 && t0) {
+      touchStartRef.current = { x: t0.clientX, y: t0.clientY, dist: 0 };
+    } else if (e.touches.length === 2 && t0 && t1) {
+      const dx = t0.clientX - t1.clientX;
+      const dy = t0.clientY - t1.clientY;
       touchStartRef.current = { x: 0, y: 0, dist: Math.sqrt(dx * dx + dy * dy) };
     }
   }, []);
 
   const handleTouchEnd = React.useCallback(
     (e: React.TouchEvent) => {
-      if (!touchStartRef.current || !document) {
+      const ct = e.changedTouches[0];
+      if (!touchStartRef.current || !document || !ct) {
         return;
       }
       if (e.changedTouches.length === 1 && touchStartRef.current.dist === 0) {
-        const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
+        const dx = ct.clientX - touchStartRef.current.x;
         const absDx = Math.abs(dx);
-        const absDy = Math.abs(e.changedTouches[0].clientY - touchStartRef.current.y);
+        const absDy = Math.abs(ct.clientY - touchStartRef.current.y);
         // Swipe horizontally (min 50px, more horizontal than vertical)
         if (absDx > 50 && absDx > absDy * 1.5) {
           if (dx > 0) {
