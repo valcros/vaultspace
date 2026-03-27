@@ -29,9 +29,7 @@ export function DemoLayout({ children }: DemoLayoutProps) {
     { id: '3', name: 'Series A Funding' },
   ];
 
-  const favoriteRooms = [
-    { id: '1', name: 'Due Diligence Package' },
-  ];
+  const favoriteRooms = [{ id: '1', name: 'Due Diligence Package' }];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
@@ -44,9 +42,7 @@ export function DemoLayout({ children }: DemoLayoutProps) {
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-gray-200 bg-white/80 px-6 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-950/80">
           {/* Breadcrumb */}
           <nav className="flex items-center gap-2 text-sm">
-            <span className="font-semibold text-gray-900 dark:text-gray-100">
-              VaultSpace
-            </span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">VaultSpace</span>
             <ChevronRight className="h-4 w-4 text-gray-400" />
             <span className="text-gray-500">Rooms</span>
           </nav>
@@ -65,9 +61,7 @@ export function DemoLayout({ children }: DemoLayoutProps) {
           >
             <Search className="h-4 w-4" />
             <span className="flex-1 text-left">Search...</span>
-            <kbd className="rounded bg-gray-200 px-1.5 py-0.5 text-xs dark:bg-gray-700">
-              ⌘K
-            </kbd>
+            <kbd className="rounded bg-gray-200 px-1.5 py-0.5 text-xs dark:bg-gray-700">⌘K</kbd>
           </button>
 
           {/* Right Actions */}
@@ -147,14 +141,10 @@ export function DemoContent() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Data Rooms
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Manage your secure document rooms
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Data Rooms</h1>
+          <p className="mt-1 text-sm text-gray-500">Manage your secure document rooms</p>
         </div>
-        <button className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+        <button className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700">
           <span>+ Create Room</span>
         </button>
       </div>
@@ -172,9 +162,7 @@ export function DemoContent() {
             className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
           >
             <p className="text-sm text-gray-500">{stat.label}</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">
-              {stat.value}
-            </p>
+            <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{stat.value}</p>
             <p className="mt-1 text-xs text-gray-400">{stat.change}</p>
           </div>
         ))}
@@ -189,7 +177,7 @@ export function DemoContent() {
               'group rounded-xl border border-gray-200 bg-white p-5',
               'dark:border-gray-800 dark:bg-gray-900',
               'hover:border-blue-300 hover:shadow-lg dark:hover:border-blue-700',
-              'transition-all duration-200 cursor-pointer'
+              'cursor-pointer transition-all duration-200'
             )}
           >
             <div className="flex items-start justify-between">
@@ -206,7 +194,7 @@ export function DemoContent() {
               </span>
             </div>
 
-            <h3 className="mt-3 font-semibold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+            <h3 className="mt-3 font-semibold text-gray-900 group-hover:text-blue-600 dark:text-gray-100 dark:group-hover:text-blue-400">
               {room.name}
             </h3>
 
@@ -215,9 +203,7 @@ export function DemoContent() {
               <span>{room.members} members</span>
             </div>
 
-            <p className="mt-2 text-xs text-gray-400">
-              Last activity: {room.lastActivity}
-            </p>
+            <p className="mt-2 text-xs text-gray-400">Last activity: {room.lastActivity}</p>
           </div>
         ))}
       </div>
