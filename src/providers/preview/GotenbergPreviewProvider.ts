@@ -148,7 +148,7 @@ export class GotenbergPreviewProvider implements PreviewProvider {
     const boundary = `----GotenbergBoundary${Date.now()}`;
     const body = this.buildMultipartBody(boundary, filename, data);
 
-    const response = await fetch(`${this.gotenbergUrl}/forms/libreoffice/convert/pdf`, {
+    const response = await fetch(`${this.gotenbergUrl}/forms/libreoffice/convert`, {
       method: 'POST',
       headers: {
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
@@ -194,7 +194,7 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
     const boundary = `----GotenbergBoundary${Date.now()}`;
     const body = this.buildMultipartBody(boundary, 'index.html', Buffer.from(htmlContent, 'utf-8'));
 
-    const response = await fetch(`${this.gotenbergUrl}/forms/chromium/convert/pdf`, {
+    const response = await fetch(`${this.gotenbergUrl}/forms/chromium/convert/html`, {
       method: 'POST',
       headers: {
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
