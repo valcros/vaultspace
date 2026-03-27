@@ -19,12 +19,15 @@ const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   inviteToken: z.string().optional(),
+  title: z.string().max(255).optional(),
+  relationship: z.string().max(50).optional(),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { firstName, lastName, email, password, inviteToken } = registerSchema.parse(body);
+    const { firstName, lastName, email, password, inviteToken, title, relationship } =
+      registerSchema.parse(body);
 
     const normalizedEmail = email.toLowerCase();
 
@@ -84,6 +87,8 @@ export async function POST(request: NextRequest) {
           passwordHash,
           firstName,
           lastName,
+          title: title || null,
+          relationship: relationship || null,
           isActive: true,
         },
       });
