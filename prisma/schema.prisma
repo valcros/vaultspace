@@ -269,8 +269,10 @@ model User {
   passwordHash String @db.VarChar(255)
 
   // Profile
-  firstName String @db.VarChar(100)
-  lastName  String @db.VarChar(100)
+  firstName    String  @db.VarChar(100)
+  lastName     String  @db.VarChar(100)
+  title        String? @db.VarChar(255) // Job title (e.g., "Managing Partner")
+  relationship String? @db.VarChar(50)  // Relationship to org (e.g., "investor", "legal_advisor")
 
   // Session & security
   lastLoginAt     DateTime?
