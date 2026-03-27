@@ -79,7 +79,9 @@ export default function OptionCPage() {
                   { label: 'Pending Reviews', value: '8', trend: '3 urgent', color: 'amber' },
                 ].map((stat) => (
                   <div key={stat.label} className="text-center">
-                    <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{stat.value}</p>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                      {stat.value}
+                    </p>
                     <p className="text-sm text-gray-500">{stat.label}</p>
                     <p className={`text-xs text-${stat.color}-600`}>{stat.trend}</p>
                   </div>
@@ -137,7 +139,10 @@ export default function OptionCPage() {
                 ].map((item, i) => (
                   <div key={i} className="flex items-start gap-3">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-xs font-medium dark:bg-gray-700">
-                      {item.user.split(' ').map(n => n[0]).join('')}
+                      {item.user
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')}
                     </div>
                     <div>
                       <p className="text-sm text-gray-900 dark:text-gray-100">
@@ -186,7 +191,7 @@ export default function OptionCPage() {
                       'rounded-lg p-3 text-sm font-medium',
                       `bg-${action.color}-100 text-${action.color}-700`,
                       `dark:bg-${action.color}-900/30 dark:text-${action.color}-400`,
-                      'hover:opacity-80 transition-opacity'
+                      'transition-opacity hover:opacity-80'
                     )}
                   >
                     {action.label}
@@ -212,8 +217,8 @@ export default function OptionCPage() {
           </div>
           <div className="p-4">
             <p className="text-sm text-gray-500">
-              Contextual panel showing room details, documents, and actions.
-              Click outside or X to close.
+              Contextual panel showing room details, documents, and actions. Click outside or X to
+              close.
             </p>
           </div>
         </div>
@@ -225,8 +230,8 @@ export default function OptionCPage() {
           Option C: Widget Dashboard
         </p>
         <p className="mt-1 text-xs text-green-700 dark:text-green-300">
-          Customizable widgets with drag handles. Click a room to see the slide-in panel.
-          Full implementation would include drag-and-drop reordering.
+          Customizable widgets with drag handles. Click a room to see the slide-in panel. Full
+          implementation would include drag-and-drop reordering.
         </p>
       </div>
     </div>
