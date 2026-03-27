@@ -36,7 +36,14 @@ const defaultItems: RailItem[] = [
   { id: 'rooms', label: 'Rooms', icon: FolderOpen, href: '/rooms', badge: 3, position: 'top' },
   { id: 'users', label: 'Users', icon: Users, href: '/users', position: 'top' },
   { id: 'activity', label: 'Activity', icon: Activity, href: '/activity', position: 'top' },
-  { id: 'notifications', label: 'Notifications', icon: Bell, href: '#notifications', badge: 5, position: 'bottom' },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    icon: Bell,
+    href: '#notifications',
+    badge: 5,
+    position: 'bottom',
+  },
   { id: 'settings', label: 'Settings', icon: Settings, href: '/settings', position: 'bottom' },
   { id: 'help', label: 'Help & Support', icon: HelpCircle, href: '/help', position: 'bottom' },
 ];
@@ -47,11 +54,7 @@ interface IconRailProps {
   logo?: React.ReactNode;
 }
 
-export function IconRail({
-  items = defaultItems,
-  className,
-  logo,
-}: IconRailProps) {
+export function IconRail({ items = defaultItems, className, logo }: IconRailProps) {
   const pathname = usePathname();
 
   const topItems = items.filter((item) => item.position !== 'bottom');
@@ -78,22 +81,14 @@ export function IconRail({
       {/* Top Navigation */}
       <nav className="flex flex-1 flex-col items-center gap-1 px-2 py-3">
         {topItems.map((item) => (
-          <RailIcon
-            key={item.id}
-            item={item}
-            isActive={pathname?.startsWith(item.href) || false}
-          />
+          <RailIcon key={item.id} item={item} isActive={pathname?.startsWith(item.href) || false} />
         ))}
       </nav>
 
       {/* Bottom Navigation */}
       <nav className="flex flex-col items-center gap-1 border-t border-gray-200 px-2 py-3 dark:border-gray-800">
         {bottomItems.map((item) => (
-          <RailIcon
-            key={item.id}
-            item={item}
-            isActive={pathname?.startsWith(item.href) || false}
-          />
+          <RailIcon key={item.id} item={item} isActive={pathname?.startsWith(item.href) || false} />
         ))}
       </nav>
     </aside>
@@ -135,15 +130,17 @@ function RailIcon({ item, isActive }: RailIconProps) {
       )}
 
       {/* Tooltip */}
-      <span className={cn(
-        'absolute left-full ml-2 z-50',
-        'whitespace-nowrap rounded-lg bg-gray-900 px-2 py-1',
-        'text-xs font-medium text-white',
-        'opacity-0 group-hover:opacity-100',
-        'transition-opacity duration-200',
-        'pointer-events-none',
-        'dark:bg-gray-100 dark:text-gray-900'
-      )}>
+      <span
+        className={cn(
+          'absolute left-full z-50 ml-2',
+          'whitespace-nowrap rounded-lg bg-gray-900 px-2 py-1',
+          'text-xs font-medium text-white',
+          'opacity-0 group-hover:opacity-100',
+          'transition-opacity duration-200',
+          'pointer-events-none',
+          'dark:bg-gray-100 dark:text-gray-900'
+        )}
+      >
         {item.label}
         {item.badge && (
           <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-600 dark:bg-red-900/50 dark:text-red-400">

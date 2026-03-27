@@ -73,18 +73,14 @@ export function FloatingDock({
         'backdrop-blur-xl',
         'border border-gray-200/50 dark:border-gray-700/50',
         'rounded-2xl shadow-2xl',
-        'animate-in fade-in slide-in-from-bottom-4 duration-300',
+        'duration-300 animate-in fade-in slide-in-from-bottom-4',
         positionClasses[position],
         className
       )}
     >
       {/* Main Navigation Items */}
       {items.map((item) => (
-        <DockIcon
-          key={item.id}
-          item={item}
-          onClick={() => onItemClick?.(item)}
-        />
+        <DockIcon key={item.id} item={item} onClick={() => onItemClick?.(item)} />
       ))}
 
       {/* Separator */}
@@ -92,11 +88,7 @@ export function FloatingDock({
 
       {/* Quick Actions */}
       {actions.map((item) => (
-        <DockIcon
-          key={item.id}
-          item={item}
-          onClick={() => onItemClick?.(item)}
-        />
+        <DockIcon key={item.id} item={item} onClick={() => onItemClick?.(item)} />
       ))}
     </div>
   );
@@ -121,7 +113,7 @@ function DockIcon({ item, onClick }: DockIconProps) {
       }}
       className={cn(
         'relative flex items-center justify-center rounded-xl',
-        'w-12 h-12',
+        'h-12 w-12',
         'bg-gray-100 dark:bg-gray-800',
         'hover:bg-gray-200 dark:hover:bg-gray-700',
         'hover:scale-125 hover:shadow-lg',
@@ -139,15 +131,17 @@ function DockIcon({ item, onClick }: DockIconProps) {
       )}
 
       {/* Tooltip */}
-      <span className={cn(
-        'absolute -top-10 left-1/2 -translate-x-1/2',
-        'whitespace-nowrap rounded-lg bg-gray-900 px-2 py-1',
-        'text-xs text-white',
-        'opacity-0 group-hover:opacity-100',
-        'transition-opacity duration-200',
-        'pointer-events-none',
-        'dark:bg-gray-100 dark:text-gray-900'
-      )}>
+      <span
+        className={cn(
+          'absolute -top-10 left-1/2 -translate-x-1/2',
+          'whitespace-nowrap rounded-lg bg-gray-900 px-2 py-1',
+          'text-xs text-white',
+          'opacity-0 group-hover:opacity-100',
+          'transition-opacity duration-200',
+          'pointer-events-none',
+          'dark:bg-gray-100 dark:text-gray-900'
+        )}
+      >
         {item.label}
       </span>
     </Link>

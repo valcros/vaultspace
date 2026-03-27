@@ -1,3 +1,3 @@
--- Add title and relationship columns to User model
-ALTER TABLE "User" ADD COLUMN "title" VARCHAR(255);
-ALTER TABLE "User" ADD COLUMN "relationship" VARCHAR(50);
+-- Add title and relationship columns to users table
+ALTER TABLE "users" ADD COLUMN "title" VARCHAR(255);
+ALTER TABLE "users" ADD COLUMN "relationship" VARCHAR(50);
