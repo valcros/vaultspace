@@ -380,3 +380,65 @@ External QA audit identified 10 bugs + 3 gaps across 12 features.
 **Deferred (1 item):**
 
 - F114: Trash cleanup job — V1 scope per spec
+
+---
+
+## UI Modernization — 2026-03-26
+
+### Goal
+
+Replace the "generic DOS-era menu system" with modern, distinctive navigation patterns. Created interactive prototypes for stakeholder review.
+
+### Research & Analysis
+
+| Source | Insights |
+| ------ | -------- |
+| Context7 (shadcn/ui) | Command palette, sidebar variants, collapsible patterns |
+| Context7 (Radix) | Toolbar, navigation menu, accessibility primitives |
+| Web search | Floating dock components, command-k patterns, 2026 dashboard trends |
+| Aceternity UI | Floating dock with magnification effect |
+| Magic UI | Dock component implementation |
+
+### Options Proposed
+
+| Option | Name | Description | Status |
+| ------ | ---- | ----------- | ------ |
+| A | Floating Dock | macOS-style bottom dock with magnification | Demo ready |
+| B | Command Palette | ⌘K as primary navigation (Spotlight-style) | Demo ready |
+| C | Widget Dashboard | Customizable widgets + slide-in panels | Demo ready |
+| D | **Hybrid Rail** ⭐ | Thin icon rail + command palette (recommended) | Demo ready |
+
+### Files Created
+
+| File | Purpose |
+| ---- | ------- |
+| `docs/UI_MODERNIZATION_PROPOSAL.md` | Full proposal with mockups and rationale |
+| `src/components/ui-proposals/` | Prototype components (6 files) |
+| `src/app/demo/page.tsx` | Landing page with links to all options |
+| `src/app/demo/option-a/` | Floating dock demo |
+| `src/app/demo/option-b/` | Command palette demo |
+| `src/app/demo/option-c/` | Widget dashboard demo |
+| `src/app/demo/option-d/` | Hybrid rail demo (recommended) |
+
+### Branch Strategy
+
+- Created `feature/ui-modernization` branch to avoid conflicts
+- Main branch unchanged (other developer working on F110/F034)
+- PR #4 created for review
+
+### Preview URLs (after deployment)
+
+| URL | Description |
+| --- | ----------- |
+| `/demo` | Landing page with all options |
+| `/demo/option-a` | Floating dock demo |
+| `/demo/option-b` | Command palette demo |
+| `/demo/option-c` | Widget dashboard demo |
+| `/demo/option-d` | Hybrid rail demo |
+
+### Next Steps
+
+1. Deploy feature branch to staging
+2. Stakeholder review of all 4 options
+3. Select preferred approach
+4. Implement chosen option in main app
