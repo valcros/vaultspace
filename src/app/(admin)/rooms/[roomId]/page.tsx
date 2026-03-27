@@ -75,6 +75,7 @@ interface Document {
   mimeType: string;
   size: number;
   status: 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
+  tags: string[];
   uploadedBy: { firstName: string; lastName: string };
   createdAt: string;
 }
@@ -167,6 +168,10 @@ export default function RoomDetailPage() {
   const [newLinkExpiry, setNewLinkExpiry] = React.useState('');
   const [isCreatingLink, setIsCreatingLink] = React.useState(false);
 
+  // Tag editor states
+  const [editingTagsDoc, setEditingTagsDoc] = React.useState<Document | null>(null);
+  const [tagInput, setTagInput] = React.useState('');
+
   // Member add states
   const [newMemberEmail, setNewMemberEmail] = React.useState('');
   const [isAddingMember, setIsAddingMember] = React.useState(false);
@@ -201,6 +206,23 @@ export default function RoomDetailPage() {
       console.error('Failed to fetch documents:', error);
     }
   }, [roomId, currentFolderId]);
+
+  const handleSaveTags = React.useCallback(
+    async (doc: Document, tags: string[]) => {
+      try {
+        await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tags }),
+        });
+        fetchDocuments();
+        setEditingTagsDoc(null);
+      } catch (error) {
+        console.error('Failed to save tags:', error);
+      }
+    },
+    [roomId, fetchDocuments]
+  );
 
   const fetchFolders = React.useCallback(async () => {
     try {
@@ -898,7 +920,22 @@ export default function RoomDetailPage() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <FileText className="h-5 w-5 text-neutral-400" />
-                            <span className="font-medium">{doc.name}</span>
+                            <div>
+                              <span className="font-medium">{doc.name}</span>
+                              {doc.tags && doc.tags.length > 0 && (
+                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                  {doc.tags.map((tag) => (
+                                    <Badge
+                                      key={tag}
+                                      variant="outline"
+                                      className="px-1.5 py-0 text-xs"
+                                    >
+                                      {tag}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-neutral-500">
@@ -935,6 +972,15 @@ export default function RoomDetailPage() {
                               <DropdownMenuItem onClick={() => handleDownload(doc)}>
                                 <Download className="mr-2 h-4 w-4" />
                                 Download
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setEditingTagsDoc(doc);
+                                  setTagInput((doc.tags || []).join(', '));
+                                }}
+                              >
+                                <FileText className="mr-2 h-4 w-4" />
+                                Edit Tags
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -1226,6 +1272,62 @@ export default function RoomDetailPage() {
             </Button>
             <Button onClick={handleAddMember} disabled={isAddingMember || !newMemberEmail.trim()}>
               {isAddingMember ? 'Adding...' : 'Add Admin'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Tags Dialog */}
+      <Dialog
+        open={!!editingTagsDoc}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingTagsDoc(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Tags</DialogTitle>
+            <DialogDescription>
+              Add tags to &quot;{editingTagsDoc?.name}&quot;. Separate multiple tags with commas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              placeholder="confidential, financial, q4-2026"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && editingTagsDoc) {
+                  const tags = tagInput
+                    .split(',')
+                    .map((t) => t.trim())
+                    .filter(Boolean);
+                  handleSaveTags(editingTagsDoc, tags);
+                }
+              }}
+            />
+            <p className="mt-2 text-xs text-neutral-500">
+              Press Enter to save, or click Save Tags below
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingTagsDoc(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (editingTagsDoc) {
+                  const tags = tagInput
+                    .split(',')
+                    .map((t) => t.trim())
+                    .filter(Boolean);
+                  handleSaveTags(editingTagsDoc, tags);
+                }
+              }}
+            >
+              Save Tags
             </Button>
           </DialogFooter>
         </DialogContent>
