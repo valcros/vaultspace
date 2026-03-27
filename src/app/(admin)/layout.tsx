@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 
 import { db } from '@/lib/db';
 import { SESSION_CONFIG } from '@/lib/constants';
-import { AppShell } from '@/components/layout/app-shell';
+import { DockShell } from '@/components/layout/dock-shell';
 
 async function getSession() {
   const cookieStore = await cookies();
@@ -66,5 +66,5 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     email: session.user.email,
   };
 
-  return <AppShell user={user}>{children}</AppShell>;
+  return <DockShell user={user}>{children}</DockShell>;
 }
