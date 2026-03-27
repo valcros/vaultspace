@@ -7,6 +7,9 @@ on:
     branches: [main]
     types: [completed]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # OIDC token permissions for Azure login
 permissions:
   id-token: write
@@ -80,6 +83,14 @@ jobs:
             --resource-group $RESOURCE_GROUP \
             --container-name ca-vaultspace-web \
             --image $ACR_SERVER/vaultspace-web:${{ github.sha }}
+
+      - name: Update Container App - Worker
+        run: |
+          az containerapp update \
+            --name ca-vaultspace-worker \
+            --resource-group $RESOURCE_GROUP \
+            --container-name ca-vaultspace-worker \
+            --image $ACR_SERVER/vaultspace-worker:${{ github.sha }}
 
       - name: Health check
         run: |

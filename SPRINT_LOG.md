@@ -298,3 +298,53 @@ Documentation, demo polish, release preparation.
 - Set up private gist sync between development machines
 - Moved deploy workflow to GitHub variables (ACR_SERVER, RESOURCE_GROUP, etc.)
 - Domain decision documented: vaultspace.org primary, future subdomains V1
+
+---
+
+## Session 2: 2026-03-26/27 — Features, Fixes & Cleanup
+
+### Major Features Delivered
+
+| Feature                     | Description                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| Dynamic watermarking (F023) | CSS overlay with template system, per-room toggle, 6 placeholders             |
+| Custom subdomain routing    | \*.vaultspace.org wildcard SSL + middleware subdomain detection               |
+| Email delivery              | ACS configured on web + worker, invite emails verified                        |
+| Invite registration         | Email pre-population, relationship type selector, title field                 |
+| Quality bundle              | Accessibility (aria-labels, skip link), ConfirmDialog, highlight.js local CSS |
+
+### XLSX Preview Fix — 7 Bugs Deep
+
+| #   | Bug                                         | Layer            |
+| --- | ------------------------------------------- | ---------------- |
+| 1   | previewableTypes missing Office formats     | UI routing       |
+| 2   | Worker missing PREVIEW_ENGINE=gotenberg     | Container config |
+| 3   | Gotenberg API route /convert/pdf → /convert | Provider code    |
+| 4   | Preview API filtered assetType='PDF' only   | API query        |
+| 5   | Preview API hardcoded Content-Type          | API response     |
+| 6   | Preview dialog rendered binary as text      | UI rendering     |
+| 7   | Sharp can't rasterize PDF without poppler   | Preview approach |
+
+Final fix: serve Gotenberg-converted PDF directly via iframe (skip Sharp rasterization).
+
+### Upload 504 Timeout Fix
+
+Root cause: BullMQ Redis connection missing TLS (`rediss://` protocol) + URL-encoded password (`=` as `%3D`).
+
+### Infrastructure
+
+| Action                       | Result                                                        |
+| ---------------------------- | ------------------------------------------------------------- |
+| Wildcard SSL (Let's Encrypt) | \*.vaultspace.org cert issued, uploaded, bound                |
+| Gotenberg sidecar on worker  | Both web + worker have Gotenberg for document conversion      |
+| Worker deploy automation     | deploy-staging.yml now updates both web and worker containers |
+| GitHub Actions Node.js 24    | FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true in both workflows     |
+
+### Cleanup & Debt
+
+| Item                           | Status                                           |
+| ------------------------------ | ------------------------------------------------ |
+| User title/relationship fields | Prisma schema + migration + register API updated |
+| Duplicate test files           | 6 duplicates deleted                             |
+| Worker deploy automation       | Added to deploy-staging.yml                      |
+| Sprint log                     | Updated (this entry)                             |
