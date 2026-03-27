@@ -42,6 +42,7 @@ export default function ViewerDocumentPage() {
   const [rotation, setRotation] = React.useState(0);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const viewerRef = React.useRef<HTMLDivElement>(null);
+  const touchStartRef = React.useRef<{ x: number; y: number; dist: number } | null>(null);
 
   const fetchDocument = React.useCallback(async () => {
     try {
@@ -87,6 +88,56 @@ export default function ViewerDocumentPage() {
       setCurrentPage(Math.min(currentPage + 1, document.pageCount));
     }
   };
+
+  // Touch gesture handlers for mobile
+  const handleTouchStart = React.useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, dist: 0 };
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchStartRef.current = { x: 0, y: 0, dist: Math.sqrt(dx * dx + dy * dy) };
+    }
+  }, []);
+
+  const handleTouchEnd = React.useCallback(
+    (e: React.TouchEvent) => {
+      if (!touchStartRef.current || !document) {
+        return;
+      }
+      if (e.changedTouches.length === 1 && touchStartRef.current.dist === 0) {
+        const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(e.changedTouches[0].clientY - touchStartRef.current.y);
+        // Swipe horizontally (min 50px, more horizontal than vertical)
+        if (absDx > 50 && absDx > absDy * 1.5) {
+          if (dx > 0) {
+            handlePrevPage();
+          } else {
+            handleNextPage();
+          }
+        }
+      }
+      touchStartRef.current = null;
+    },
+    [document, handlePrevPage, handleNextPage]
+  );
+
+  const handleTouchMove = React.useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStartRef.current && touchStartRef.current.dist > 0) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const newDist = Math.sqrt(dx * dx + dy * dy);
+      const scale = newDist / touchStartRef.current.dist;
+      if (scale > 1.2) {
+        setZoom((z) => Math.min(z + 25, 200));
+        touchStartRef.current.dist = newDist;
+      } else if (scale < 0.8) {
+        setZoom((z) => Math.max(z - 25, 50));
+        touchStartRef.current.dist = newDist;
+      }
+    }
+  }, []);
 
   const handleFullscreen = () => {
     if (!isFullscreen && viewerRef.current) {
@@ -270,7 +321,12 @@ export default function ViewerDocumentPage() {
       </div>
 
       {/* Document Viewer */}
-      <div className="flex flex-1 items-start justify-center overflow-auto p-8">
+      <div
+        className="flex flex-1 items-start justify-center overflow-auto p-4 sm:p-8"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchMove={handleTouchMove}
+      >
         <div
           className="relative bg-white shadow-2xl"
           style={{
