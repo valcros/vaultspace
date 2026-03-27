@@ -1425,12 +1425,25 @@ export default function RoomDetailPage() {
                     className="max-h-full max-w-full object-contain"
                   />
                 </div>
-              ) : (
+              ) : selectedDocument?.mimeType.startsWith('text/') ||
+                selectedDocument?.mimeType === 'application/json' ||
+                selectedDocument?.mimeType === 'application/xml' ||
+                selectedDocument?.mimeType === 'image/svg+xml' ? (
                 <TextPreviewFetcher
                   url={previewUrl}
                   mimeType={selectedDocument?.mimeType ?? 'text/plain'}
                   fileName={selectedDocument?.name ?? 'file'}
                 />
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  {/* Office/document formats — preview API returns converted PNG */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={previewUrl}
+                    alt={selectedDocument?.name}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
               )
             ) : (
               <div className="flex h-full items-center justify-center">
