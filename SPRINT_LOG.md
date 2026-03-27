@@ -348,3 +348,35 @@ Root cause: BullMQ Redis connection missing TLS (`rediss://` protocol) + URL-enc
 | Duplicate test files           | 6 duplicates deleted                             |
 | Worker deploy automation       | Added to deploy-staging.yml                      |
 | Sprint log                     | Updated (this entry)                             |
+
+### QA Audit — 13 Items Addressed
+
+External QA audit identified 10 bugs + 3 gaps across 12 features.
+
+**Phase 1 — Critical bugs (4 items):**
+
+- F014: downloadEnabled→allowDownloads field mapping fix
+- F130: NDA fields (requiresNda, ndaContent) wired through save + API
+- F040: Activity filter parameter type→eventType
+- F114: totalDocuments decrement on soft delete
+
+**Phase 2 — Functionality (2 items):**
+
+- F003: Document view queues notification job
+- F128: Setup wizard auto-redirect via middleware
+
+**Phase 3 — Missing UI (3 items):**
+
+- F116: Link create dialog with password + expiry date
+- F130: Default link expiry days in room settings
+- F110: Document tag display (badges) + edit dialog + save via PATCH
+
+**Phase 4 — Mobile responsive (3 items):**
+
+- F034: Responsive width (max-w instead of fixed 800px)
+- F034: Toolbar collapses on mobile (zoom/rotate hidden)
+- F034: Touch swipe (page nav) + pinch zoom gestures
+
+**Deferred (1 item):**
+
+- F114: Trash cleanup job — V1 scope per spec
