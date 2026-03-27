@@ -125,8 +125,10 @@ export default function ViewerDocumentPage() {
 
   const handleTouchMove = React.useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2 && touchStartRef.current && touchStartRef.current.dist > 0) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const t0 = e.touches[0]!;
+      const t1 = e.touches[1]!;
+      const dx = t0.clientX - t1.clientX;
+      const dy = t0.clientY - t1.clientY;
       const newDist = Math.sqrt(dx * dx + dy * dy);
       const scale = newDist / touchStartRef.current.dist;
       if (scale > 1.2) {
