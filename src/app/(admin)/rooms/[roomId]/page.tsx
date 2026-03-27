@@ -1435,15 +1435,11 @@ export default function RoomDetailPage() {
                   fileName={selectedDocument?.name ?? 'file'}
                 />
               ) : (
-                <div className="flex h-full items-center justify-center">
-                  {/* Office/document formats — preview API returns converted PNG */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt={selectedDocument?.name}
-                    className="max-h-full max-w-full object-contain"
-                  />
-                </div>
+                <iframe
+                  src={previewUrl}
+                  className="h-full w-full border-0"
+                  title={selectedDocument?.name}
+                />
               )
             ) : (
               <div className="flex h-full items-center justify-center">

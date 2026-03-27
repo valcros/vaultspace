@@ -56,9 +56,11 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       dpi: 150,
     });
 
-    // Store each page as a RENDER asset
+    // Store each page as a preview asset
     for (const page of previewResult.pages) {
-      const renderKey = `previews/${documentId}/${versionId}/page-${page.pageNumber}.png`;
+      const ext = page.mimeType === 'application/pdf' ? 'pdf' : 'png';
+      const assetType = page.mimeType === 'application/pdf' ? 'PDF' : 'RENDER';
+      const renderKey = `previews/${documentId}/${versionId}/page-${page.pageNumber}.${ext}`;
       await providers.storage.put('previews', renderKey, page.data);
 
       // Create preview asset record for each page
@@ -66,7 +68,7 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
         data: {
           organizationId,
           versionId,
-          assetType: 'RENDER',
+          assetType,
           storageKey: renderKey,
           pageNumber: page.pageNumber,
           mimeType: page.mimeType,
