@@ -7,7 +7,30 @@ This file tracks in-progress work to help team members avoid conflicts.
 
 ## Currently Active
 
-_No active work in progress._
+### Floating Dock Full Integration
+
+- **Developer:** Claude Code (Machine 1)
+- **Branch:** `feature/floating-dock-integration`
+- **Started:** 2026-03-27
+- **Status:** In Progress
+
+**MAJOR CHANGE - Please coordinate before modifying these files:**
+
+- `src/components/layout/app-shell.tsx` - Being replaced with DockShell
+- `src/components/layout/sidebar.tsx` - Being deprecated
+- `src/components/layout/header.tsx` - Being modified
+- `src/app/(admin)/layout.tsx` - Layout swap
+
+**Changes being made:**
+
+1. Replace traditional sidebar with floating dock navigation
+2. Integrate ⌘K command palette globally
+3. Add touch-friendly navigation for tablets
+4. Update header (remove sidebar toggle, keep user menu)
+
+**Impact:** All authenticated pages will use new navigation after merge.
+
+**ETA:** Should be merged within a few hours.
 
 ---
 
