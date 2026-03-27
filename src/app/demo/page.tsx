@@ -22,20 +22,32 @@ const options = [
   {
     id: 'option-d',
     name: 'Option D: Hybrid Rail + Command',
-    description: 'Thin icon rail (48px) with ⌘K command palette. Best of both worlds - familiar to VSCode/Figma users.',
+    description:
+      'Thin icon rail (48px) with ⌘K command palette. Best of both worlds - familiar to VSCode/Figma users.',
     icon: PanelLeft,
     recommended: true,
     status: 'ready',
-    features: ['Icon rail navigation', '⌘K command palette', 'Tooltips on hover', 'Active state indicators'],
+    features: [
+      'Icon rail navigation',
+      '⌘K command palette',
+      'Tooltips on hover',
+      'Active state indicators',
+    ],
   },
   {
     id: 'option-a',
     name: 'Option A: Floating Dock',
-    description: 'macOS-style floating dock at the bottom with magnification effect. Maximum content area.',
+    description:
+      'macOS-style floating dock at the bottom with magnification effect. Maximum content area.',
     icon: Monitor,
     recommended: false,
     status: 'ready',
-    features: ['Magnification on hover', 'Floating position', 'Glassmorphism effect', 'Badge notifications'],
+    features: [
+      'Magnification on hover',
+      'Floating position',
+      'Glassmorphism effect',
+      'Badge notifications',
+    ],
   },
   {
     id: 'option-b',
@@ -87,9 +99,9 @@ export default function DemoLandingPage() {
             About This Demo
           </h2>
           <p className="text-sm text-blue-800 dark:text-blue-200">
-            These prototypes demonstrate four different navigation approaches to replace
-            the current sidebar-based interface. Each option prioritizes content area
-            while providing intuitive navigation. Click any option below to see it in action.
+            These prototypes demonstrate four different navigation approaches to replace the current
+            sidebar-based interface. Each option prioritizes content area while providing intuitive
+            navigation. Click any option below to see it in action.
           </p>
           <div className="mt-4 flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
             <span className="rounded bg-blue-200 px-2 py-1 dark:bg-blue-900">Pro tip</span>
@@ -119,30 +131,25 @@ export default function DemoLandingPage() {
 
               {/* Header */}
               <div className="mb-4 flex items-start gap-4">
-                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${
-                  option.recommended
-                    ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400'
-                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                }`}>
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl ${
+                    option.recommended
+                      ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400'
+                      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                  }`}
+                >
                   <option.icon className="h-6 w-6" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-                    {option.name}
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {option.description}
-                  </p>
+                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">{option.name}</h3>
+                  <p className="mt-1 text-sm text-gray-500">{option.description}</p>
                 </div>
               </div>
 
               {/* Features */}
               <ul className="mb-4 grid grid-cols-2 gap-2">
                 {option.features.map((feature) => (
-                  <li
-                    key={feature}
-                    className="flex items-center gap-2 text-xs text-gray-500"
-                  >
+                  <li key={feature} className="flex items-center gap-2 text-xs text-gray-500">
                     <span className="h-1.5 w-1.5 rounded-full bg-gray-300 dark:bg-gray-600" />
                     {feature}
                   </li>
@@ -151,11 +158,13 @@ export default function DemoLandingPage() {
 
               {/* Footer */}
               <div className="flex items-center justify-between">
-                <span className={`rounded-full px-2 py-1 text-xs font-medium ${
-                  option.status === 'ready'
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                }`}>
+                <span
+                  className={`rounded-full px-2 py-1 text-xs font-medium ${
+                    option.status === 'ready'
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                  }`}
+                >
                   {option.status === 'ready' ? 'Ready to preview' : 'Coming soon'}
                 </span>
                 {option.status === 'ready' && (
