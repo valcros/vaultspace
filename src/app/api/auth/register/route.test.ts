@@ -66,25 +66,31 @@ describe('POST /api/auth/register', () => {
     vi.clearAllMocks();
     mockFindUnique.mockResolvedValue(null); // No existing user
     mockSessionCreate.mockResolvedValue({});
-    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const tx = {
-        invitation: { update: vi.fn().mockResolvedValue({}) },
-        user: {
-          create: vi.fn().mockResolvedValue({
-            id: 'user-1',
-            email: 'alice@example.com',
-            firstName: 'Alice',
-            lastName: 'Smith',
-          }),
-        },
-        userOrganization: { create: vi.fn().mockResolvedValue({}) },
-        organization: {
-          create: vi.fn().mockResolvedValue({ id: 'org-new', name: "Alice's Organization", slug: 'org-123' }),
-          findUnique: vi.fn().mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' }),
-        },
-      };
-      return fn(tx);
-    });
+    mockTransaction.mockImplementation(
+      async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+        const tx = {
+          invitation: { update: vi.fn().mockResolvedValue({}) },
+          user: {
+            create: vi.fn().mockResolvedValue({
+              id: 'user-1',
+              email: 'alice@example.com',
+              firstName: 'Alice',
+              lastName: 'Smith',
+            }),
+          },
+          userOrganization: { create: vi.fn().mockResolvedValue({}) },
+          organization: {
+            create: vi
+              .fn()
+              .mockResolvedValue({ id: 'org-new', name: "Alice's Organization", slug: 'org-123' }),
+            findUnique: vi
+              .fn()
+              .mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' }),
+          },
+        };
+        return fn(tx);
+      }
+    );
   });
 
   describe('Self-signup without invite (still allowed pre-4a)', () => {
@@ -159,24 +165,28 @@ describe('POST /api/auth/register', () => {
       mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
 
       const txInvitationUpdate = vi.fn().mockResolvedValue({});
-      mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-        const tx = {
-          invitation: { update: txInvitationUpdate },
-          user: {
-            create: vi.fn().mockResolvedValue({
-              id: 'user-1',
-              email: 'alice@example.com',
-              firstName: 'Alice',
-              lastName: 'Smith',
-            }),
-          },
-          userOrganization: { create: vi.fn().mockResolvedValue({}) },
-          organization: {
-            findUnique: vi.fn().mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' }),
-          },
-        };
-        return fn(tx);
-      });
+      mockTransaction.mockImplementation(
+        async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+          const tx = {
+            invitation: { update: txInvitationUpdate },
+            user: {
+              create: vi.fn().mockResolvedValue({
+                id: 'user-1',
+                email: 'alice@example.com',
+                firstName: 'Alice',
+                lastName: 'Smith',
+              }),
+            },
+            userOrganization: { create: vi.fn().mockResolvedValue({}) },
+            organization: {
+              findUnique: vi
+                .fn()
+                .mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' }),
+            },
+          };
+          return fn(tx);
+        }
+      );
 
       const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
       expect(res.status).toBe(200);
