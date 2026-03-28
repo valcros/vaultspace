@@ -68,10 +68,7 @@ export async function POST(request: NextRequest) {
 
       // Email must match invitation (Issue 4b)
       if (invitation.email.toLowerCase() !== normalizedEmail) {
-        return NextResponse.json(
-          { error: 'Email does not match invitation' },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: 'Email does not match invitation' }, { status: 400 });
       }
 
       organizationId = invitation.organizationId;
