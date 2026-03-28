@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
     // Handle invite token if provided
     let organizationId: string | null = null;
     let role: 'ADMIN' | 'VIEWER' = 'ADMIN';
+    let validatedInvitationId: string | null = null;
 
     if (inviteToken) {
       const invitation = await db.invitation.findUnique({
@@ -65,21 +66,29 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invitation has already been used' }, { status: 400 });
       }
 
+      // Email must match invitation (Issue 4b)
+      if (invitation.email.toLowerCase() !== normalizedEmail) {
+        return NextResponse.json({ error: 'Email does not match invitation' }, { status: 400 });
+      }
+
       organizationId = invitation.organizationId;
       role = invitation.role as 'ADMIN' | 'VIEWER';
-
-      // Mark invitation as accepted
-      await db.invitation.update({
-        where: { id: invitation.id },
-        data: { status: 'ACCEPTED', acceptedAt: new Date() },
-      });
+      validatedInvitationId = invitation.id;
     }
 
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create user and organization in transaction
+    // Create user and organization in transaction (Issue 4b: invitation acceptance inside tx)
     const result = await db.$transaction(async (tx) => {
+      // Mark invitation as accepted inside transaction (Issue 4b)
+      if (validatedInvitationId) {
+        await tx.invitation.update({
+          where: { id: validatedInvitationId },
+          data: { status: 'ACCEPTED', acceptedAt: new Date() },
+        });
+      }
+
       // Create user
       const user = await tx.user.create({
         data: {
