@@ -73,7 +73,12 @@ describe('GET /api/storage/download', () => {
   });
 
   describe('Local provider — signature validation', () => {
-    const validParams = { bucket: 'test-bucket', key: 'docs/file.pdf', expires: '9999999999', sig: 'validsig' };
+    const validParams = {
+      bucket: 'test-bucket',
+      key: 'docs/file.pdf',
+      expires: '9999999999',
+      sig: 'validsig',
+    };
 
     it('returns 403 for invalid signature', async () => {
       (localProvider.validateSignedUrl as ReturnType<typeof vi.fn>).mockReturnValue(false);
