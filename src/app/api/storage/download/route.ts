@@ -47,6 +47,14 @@ function getMimeType(key: string): string {
 
 export async function GET(request: NextRequest) {
   try {
+    // This endpoint only serves files for LocalStorageProvider.
+    // Cloud providers (e.g. Azure Blob) use their own signed URLs directly.
+    const providers = getProviders();
+    const storage = providers.storage;
+    if (!(storage instanceof LocalStorageProvider)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const { searchParams } = new URL(request.url);
     const bucket = searchParams.get('bucket');
     const key = searchParams.get('key');
@@ -58,16 +66,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
-    // Get storage provider
-    const providers = getProviders();
-    const storage = providers.storage;
-
-    // Validate signed URL (only for LocalStorageProvider)
-    if (storage instanceof LocalStorageProvider) {
-      const isValid = storage.validateSignedUrl(bucket, key, expires, sig);
-      if (!isValid) {
-        return NextResponse.json({ error: 'Invalid or expired download link' }, { status: 403 });
-      }
+    // Validate signed URL unconditionally
+    const isValid = storage.validateSignedUrl(bucket, key, expires, sig);
+    if (!isValid) {
+      return NextResponse.json({ error: 'Invalid or expired download link' }, { status: 403 });
     }
 
     // Check if file exists
