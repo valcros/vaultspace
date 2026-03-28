@@ -1562,10 +1562,10 @@ export default function RoomDetailPage() {
                   fileName={selectedDocument?.name ?? 'file'}
                 />
               ) : (
-                <iframe
-                  src={previewUrl}
-                  className="h-full w-full border-0"
-                  title={selectedDocument?.name}
+                <ConvertedPreview
+                  url={previewUrl}
+                  name={selectedDocument?.name ?? 'file'}
+                  onDownload={() => selectedDocument && handleDownload(selectedDocument)}
                 />
               )
             ) : (
@@ -1593,6 +1593,78 @@ export default function RoomDetailPage() {
 }
 
 /**
+ * Fetches a converted preview (e.g. PDF from Gotenberg) via blob URL.
+ * Shows error UI if the server returns 404 or a JSON error response.
+ */
+function ConvertedPreview({
+  url,
+  name,
+  onDownload,
+}: {
+  url: string;
+  name: string;
+  onDownload: () => void;
+}) {
+  const [blobUrl, setBlobUrl] = React.useState<string | null>(null);
+  const [error, setError] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    fetch(url)
+      .then(async (res) => {
+        if (cancelled) {
+          return;
+        }
+        const ct = res.headers.get('content-type') || '';
+        if (!res.ok || ct.startsWith('application/json')) {
+          setError(true);
+          return;
+        }
+        const blob = await res.blob();
+        if (!cancelled) {
+          objectUrl = URL.createObjectURL(blob);
+          setBlobUrl(objectUrl);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [url]);
+
+  if (error) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center text-center">
+        <FileText className="mb-4 h-16 w-16 text-neutral-300" />
+        <p className="mb-4 text-neutral-500">Preview not available for this file type</p>
+        <Button onClick={onDownload}>
+          <Download className="mr-2 h-4 w-4" />
+          Download Instead
+        </Button>
+      </div>
+    );
+  }
+
+  if (!blobUrl) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+      </div>
+    );
+  }
+
+  return <iframe src={blobUrl} className="h-full w-full border-0" title={name} />;
+}
+
+/**
  * Fetches text content from a URL then renders via TextPreviewRenderer
  */
 function TextPreviewFetcher({
@@ -1613,11 +1685,16 @@ function TextPreviewFetcher({
         if (!res.ok) {
           throw new Error('Failed to load');
         }
+        // Belt-and-suspenders: if server returns JSON but we expected a text file, treat as error
+        const ct = res.headers.get('content-type') || '';
+        if (ct.startsWith('application/json') && mimeType !== 'application/json') {
+          throw new Error('Preview not available');
+        }
         return res.text();
       })
       .then(setContent)
       .catch((err) => setError(err.message));
-  }, [url]);
+  }, [url, mimeType]);
 
   if (error) {
     return <div className="flex h-full items-center justify-center text-neutral-500">{error}</div>;

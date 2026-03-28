@@ -30,6 +30,12 @@ const PREVIEWABLE_MIME_TYPES = new Set([
   'image/svg+xml',
   'text/plain',
   'text/csv',
+  'text/markdown',
+  'text/html',
+  'text/yaml',
+  'text/xml',
+  'application/json',
+  'application/xml',
 ]);
 
 // All responses from this route need X-Frame-Options: SAMEORIGIN to allow iframe embedding
@@ -152,10 +158,13 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
       // Return file with inline headers for preview
       // X-Frame-Options: SAMEORIGIN allows iframe embedding within same origin for preview dialogs
+      // Serve HTML as text/plain to prevent XSS if it ever reaches an iframe
+      const safeContentType = mimeType === 'text/html' ? 'text/plain' : mimeType;
+
       return new NextResponse(new Uint8Array(data), {
         status: 200,
         headers: {
-          'Content-Type': mimeType,
+          'Content-Type': safeContentType,
           'Content-Length': data.length.toString(),
           'Content-Disposition': `inline; filename="${encodeURIComponent(document.name)}"`,
           'Cache-Control': 'private, max-age=300',
@@ -198,7 +207,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           canPreview: false,
         },
       },
-      200
+      404
     );
   } catch (error) {
     console.error('[AdminPreviewAPI] Error:', error);
