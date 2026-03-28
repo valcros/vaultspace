@@ -13,10 +13,7 @@ vi.stubGlobal('fetch', mockFetch);
 
 import { middleware } from './middleware';
 
-function makeRequest(
-  path: string,
-  host = 'vaultspace.org'
-): NextRequest {
+function makeRequest(path: string, host = 'vaultspace.org'): NextRequest {
   const url = new URL(`http://${host}${path}`);
   const req = new NextRequest(url, {
     headers: { host },
