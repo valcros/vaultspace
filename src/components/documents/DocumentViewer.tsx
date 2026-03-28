@@ -474,6 +474,11 @@ function TextPreviewFetcher({
         if (!response.ok) {
           throw new Error('Failed to load file');
         }
+        // Belt-and-suspenders: if server returns JSON but we expected a text file, treat as error
+        const ct = response.headers.get('content-type') || '';
+        if (ct.startsWith('application/json') && mimeType !== 'application/json') {
+          throw new Error('Preview not available');
+        }
         const text = await response.text();
         setContent(text);
         onLoad();
@@ -482,7 +487,7 @@ function TextPreviewFetcher({
       }
     }
     fetchContent();
-  }, [previewUrl, onLoad]);
+  }, [previewUrl, mimeType, onLoad]);
 
   if (error) {
     return <div className="flex h-full items-center justify-center text-neutral-500">{error}</div>;
