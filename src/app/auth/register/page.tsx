@@ -34,10 +34,36 @@ interface InviteInfo {
   organizationName: string;
 }
 
-function RegisterForm() {
-  const router = useRouter();
+function InvitationRequiredNotice() {
+  return (
+    <div className="text-center">
+      <h1 className="text-2xl font-bold text-neutral-900">Registration requires an invitation</h1>
+      <p className="mt-4 text-sm text-neutral-500">
+        Contact your organization administrator to request an invitation.
+      </p>
+      <Link
+        href="/auth/login"
+        className="mt-6 inline-block text-sm font-medium text-primary-600 hover:text-primary-700"
+      >
+        Back to sign in
+      </Link>
+    </div>
+  );
+}
+
+function RegisterFormRouter() {
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get('token');
+
+  if (!inviteToken) {
+    return <InvitationRequiredNotice />;
+  }
+
+  return <RegisterForm inviteToken={inviteToken} />;
+}
+
+function RegisterForm({ inviteToken }: { inviteToken: string }) {
+  const router = useRouter();
 
   const [formData, setFormData] = React.useState({
     firstName: '',
@@ -106,7 +132,7 @@ function RegisterForm() {
           lastName: formData.lastName,
           email: formData.email,
           password: formData.password,
-          inviteToken: inviteToken || undefined,
+          inviteToken,
           title: formData.title || undefined,
           relationship: formData.relationship || undefined,
         }),
@@ -134,9 +160,7 @@ function RegisterForm() {
         <p className="mt-1 text-sm text-neutral-500">
           {inviteInfo
             ? `You've been invited to join ${inviteInfo.organizationName}`
-            : inviteToken
-              ? 'Complete your registration to join'
-              : 'Get started with VaultSpace'}
+            : 'Complete your registration to join'}
         </p>
       </div>
 
@@ -304,7 +328,7 @@ function RegisterFormFallback() {
 export default function RegisterPage() {
   return (
     <React.Suspense fallback={<RegisterFormFallback />}>
-      <RegisterForm />
+      <RegisterFormRouter />
     </React.Suspense>
   );
 }

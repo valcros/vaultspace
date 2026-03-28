@@ -1,8 +1,8 @@
 /**
- * Registration API Tests (Issue 4b)
+ * Registration API Tests (Issue 4a + 4b)
  *
- * Validates invite email enforcement and transactional invitation acceptance.
- * Self-signup (no invite) still works in this version — Issue 4a is a separate PR.
+ * Validates invitation-only registration, email match enforcement,
+ * and transactional invitation acceptance.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -80,9 +80,6 @@ describe('POST /api/auth/register', () => {
           },
           userOrganization: { create: vi.fn().mockResolvedValue({}) },
           organization: {
-            create: vi
-              .fn()
-              .mockResolvedValue({ id: 'org-new', name: "Alice's Organization", slug: 'org-123' }),
             findUnique: vi
               .fn()
               .mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' }),
@@ -93,12 +90,17 @@ describe('POST /api/auth/register', () => {
     );
   });
 
-  describe('Self-signup without invite (still allowed pre-4a)', () => {
-    it('succeeds and creates a new organization', async () => {
+  describe('Issue 4a — invitation-only registration', () => {
+    it('returns 403 without invite token', async () => {
       const res = await POST(makeRequest(validBody));
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
       const body = await res.json();
-      expect(body.user.email).toBe('alice@example.com');
+      expect(body.error).toMatch(/requires an invitation/);
+    });
+
+    it('returns 403 even with valid user data but no token', async () => {
+      const res = await POST(makeRequest({ ...validBody, email: 'new@example.com' }));
+      expect(res.status).toBe(403);
     });
   });
 
@@ -211,7 +213,7 @@ describe('POST /api/auth/register', () => {
     });
   });
 
-  describe('Happy path with invite', () => {
+  describe('Happy path', () => {
     it('creates user with correct role from invitation', async () => {
       mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
       const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));

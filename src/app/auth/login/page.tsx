@@ -110,10 +110,7 @@ export default function LoginPage() {
       </form>
 
       <div className="mt-6 text-center text-sm text-neutral-500">
-        Don&apos;t have an account?{' '}
-        <Link href="/auth/register" className="font-medium text-primary-600 hover:text-primary-700">
-          Sign up
-        </Link>
+        Need an account? Contact your organization administrator for an invitation.
       </div>
     </>
   );

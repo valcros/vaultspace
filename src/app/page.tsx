@@ -13,12 +13,6 @@ export default function HomePage() {
           >
             Sign In
           </Link>
-          <Link
-            href="/auth/register"
-            className="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-6 py-3 text-sm font-medium transition-colors"
-          >
-            Create Account
-          </Link>
         </div>
       </div>
     </main>

@@ -43,51 +43,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Handle invite token if provided
+    // Registration requires an invitation (Issue 4a)
+    if (!inviteToken) {
+      return NextResponse.json({ error: 'Registration requires an invitation' }, { status: 403 });
+    }
+
+    // Validate invitation
     let organizationId: string | null = null;
     let role: 'ADMIN' | 'VIEWER' = 'ADMIN';
-    let validatedInvitationId: string | null = null;
 
-    if (inviteToken) {
-      const invitation = await db.invitation.findUnique({
-        where: { invitationToken: inviteToken },
-        include: { organization: true },
-      });
+    const invitation = await db.invitation.findUnique({
+      where: { invitationToken: inviteToken },
+      include: { organization: true },
+    });
 
-      if (!invitation) {
-        return NextResponse.json({ error: 'Invalid invitation token' }, { status: 400 });
-      }
-
-      if (invitation.expiresAt < new Date()) {
-        return NextResponse.json({ error: 'Invitation has expired' }, { status: 400 });
-      }
-
-      if (invitation.status !== 'PENDING') {
-        return NextResponse.json({ error: 'Invitation has already been used' }, { status: 400 });
-      }
-
-      // Email must match invitation (Issue 4b)
-      if (invitation.email.toLowerCase() !== normalizedEmail) {
-        return NextResponse.json({ error: 'Email does not match invitation' }, { status: 400 });
-      }
-
-      organizationId = invitation.organizationId;
-      role = invitation.role as 'ADMIN' | 'VIEWER';
-      validatedInvitationId = invitation.id;
+    if (!invitation) {
+      return NextResponse.json({ error: 'Invalid invitation token' }, { status: 400 });
     }
+
+    if (invitation.expiresAt < new Date()) {
+      return NextResponse.json({ error: 'Invitation has expired' }, { status: 400 });
+    }
+
+    if (invitation.status !== 'PENDING') {
+      return NextResponse.json({ error: 'Invitation has already been used' }, { status: 400 });
+    }
+
+    // Email must match invitation (Issue 4b)
+    if (invitation.email.toLowerCase() !== normalizedEmail) {
+      return NextResponse.json({ error: 'Email does not match invitation' }, { status: 400 });
+    }
+
+    organizationId = invitation.organizationId;
+    role = invitation.role as 'ADMIN' | 'VIEWER';
 
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create user and organization in transaction (Issue 4b: invitation acceptance inside tx)
+    // Create user and accept invitation in transaction (Issue 4b)
     const result = await db.$transaction(async (tx) => {
-      // Mark invitation as accepted inside transaction (Issue 4b)
-      if (validatedInvitationId) {
-        await tx.invitation.update({
-          where: { id: validatedInvitationId },
-          data: { status: 'ACCEPTED', acceptedAt: new Date() },
-        });
-      }
+      // Mark invitation as accepted
+      await tx.invitation.update({
+        where: { id: invitation.id },
+        data: { status: 'ACCEPTED', acceptedAt: new Date() },
+      });
 
       // Create user
       const user = await tx.user.create({
@@ -101,20 +100,6 @@ export async function POST(request: NextRequest) {
           isActive: true,
         },
       });
-
-      // If no invite, create a new organization
-      if (!organizationId) {
-        const slug = `org-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        const org = await tx.organization.create({
-          data: {
-            name: `${firstName}'s Organization`,
-            slug,
-            isActive: true,
-          },
-        });
-        organizationId = org.id;
-        role = 'ADMIN';
-      }
 
       // Add user to organization
       await tx.userOrganization.create({
