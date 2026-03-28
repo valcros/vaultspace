@@ -29,6 +29,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         room: {
           select: {
             name: true,
+            requiresNda: true,
+            ndaContent: true,
           },
         },
         organization: {
@@ -44,14 +46,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'This link is invalid or has expired' }, { status: 404 });
     }
 
-    // Determine access type based on room/link settings
-    let accessType: 'PUBLIC' | 'EMAIL_REQUIRED' | 'PASSWORD_PROTECTED' = 'PUBLIC';
-    if (link.requiresPassword) {
-      accessType = 'PASSWORD_PROTECTED';
-    } else if (link.requiresEmailVerification) {
-      accessType = 'EMAIL_REQUIRED';
-    }
-
     return NextResponse.json({
       link: {
         id: link.id,
@@ -59,9 +53,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         roomName: link.room.name,
         organizationName: link.organization.name,
         organizationLogo: link.organization.logoUrl,
-        accessType,
-        ndaRequired: false, // NDA not in current schema
-        ndaText: null,
+        requiresPassword: link.requiresPassword ?? false,
+        requiresEmail: link.requiresEmailVerification ?? false,
+        ndaRequired: link.room.requiresNda ?? false,
+        ndaText: link.room.ndaContent ?? null,
         expiresAt: link.expiresAt?.toISOString() || null,
         isActive: link.isActive,
       },
