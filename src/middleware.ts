@@ -58,7 +58,7 @@ export async function middleware(request: NextRequest) {
       });
       if (setupRes.ok) {
         const data = await setupRes.json();
-        if (data.needsSetup) {
+        if (data.setupRequired) {
           return NextResponse.redirect(new URL('/setup', request.url));
         }
       }

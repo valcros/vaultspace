@@ -18,7 +18,8 @@ interface ShareLinkInfo {
   roomName: string;
   organizationName: string;
   organizationLogo: string | null;
-  accessType: 'PUBLIC' | 'EMAIL_REQUIRED' | 'PASSWORD_PROTECTED';
+  requiresPassword: boolean;
+  requiresEmail: boolean;
   ndaRequired: boolean;
   ndaText: string | null;
   expiresAt: string | null;
@@ -53,8 +54,8 @@ export default function ViewerAccessPage() {
 
       setLinkInfo(data.link);
 
-      // If public access and no NDA, redirect directly to documents
-      if (data.link.accessType === 'PUBLIC' && !data.link.ndaRequired) {
+      // If no gates required, redirect directly to documents
+      if (!data.link.requiresPassword && !data.link.requiresEmail && !data.link.ndaRequired) {
         router.push(`/view/${shareToken}/documents`);
         return;
       }
@@ -79,8 +80,8 @@ export default function ViewerAccessPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: linkInfo?.accessType === 'EMAIL_REQUIRED' ? email : undefined,
-          password: linkInfo?.accessType === 'PASSWORD_PROTECTED' ? password : undefined,
+          email: linkInfo?.requiresEmail ? email : undefined,
+          password: linkInfo?.requiresPassword ? password : undefined,
           ndaAccepted: linkInfo?.ndaRequired ? ndaAccepted : undefined,
         }),
       });
@@ -180,7 +181,7 @@ export default function ViewerAccessPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email Required */}
-            {linkInfo?.accessType === 'EMAIL_REQUIRED' && (
+            {linkInfo?.requiresEmail && (
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
                 <div className="relative">
@@ -203,7 +204,7 @@ export default function ViewerAccessPage() {
             )}
 
             {/* Password Required */}
-            {linkInfo?.accessType === 'PASSWORD_PROTECTED' && (
+            {linkInfo?.requiresPassword && (
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
@@ -250,8 +251,8 @@ export default function ViewerAccessPage() {
               className="w-full"
               loading={isSubmitting}
               disabled={
-                (linkInfo?.accessType === 'EMAIL_REQUIRED' && !email) ||
-                (linkInfo?.accessType === 'PASSWORD_PROTECTED' && !password) ||
+                (linkInfo?.requiresEmail && !email) ||
+                (linkInfo?.requiresPassword && !password) ||
                 (linkInfo?.ndaRequired && !ndaAccepted)
               }
             >
