@@ -119,55 +119,65 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       }
     }
 
-    // For PDFs, use Gotenberg Chromium to screenshot the first page
-    if (mimeType === 'application/pdf' && latestVersion.fileBlob) {
+    // For types without pre-generated thumbnails, create a branded placeholder
+    // using Gotenberg Chromium to render a styled HTML card as PNG
+    if (latestVersion.fileBlob) {
       const gotenbergUrl = process.env['GOTENBERG_URL'] ?? 'http://localhost:3001';
-      const bucket = latestVersion.fileBlob.storageBucket || 'documents';
-      const key = latestVersion.fileBlob.storageKey;
-      const exists = await storage.exists(bucket, key);
-      if (exists) {
-        try {
-          const pdfData = await storage.get(bucket, key);
-          const base64Pdf = Buffer.from(pdfData).toString('base64');
-          const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-            <style>*{margin:0;padding:0}body{width:800px;height:1100px;overflow:hidden}
-            embed{width:100%;height:100%}</style></head>
-            <body><embed src="data:application/pdf;base64,${base64Pdf}" type="application/pdf"/></body></html>`;
+      try {
+        const ext = document.name.split('.').pop()?.toUpperCase() || 'FILE';
+        const colors: Record<string, { bg: string; text: string }> = {
+          PDF: { bg: '#fef2f2', text: '#dc2626' },
+          DOCX: { bg: '#eff6ff', text: '#2563eb' },
+          DOC: { bg: '#eff6ff', text: '#2563eb' },
+          XLSX: { bg: '#f0fdf4', text: '#16a34a' },
+          XLS: { bg: '#f0fdf4', text: '#16a34a' },
+          PPTX: { bg: '#fff7ed', text: '#ea580c' },
+          PPT: { bg: '#fff7ed', text: '#ea580c' },
+          CSV: { bg: '#f0fdf4', text: '#16a34a' },
+          VSDX: { bg: '#faf5ff', text: '#9333ea' },
+        };
+        const color = colors[ext] || { bg: '#f9fafb', text: '#6b7280' };
+        const truncatedName =
+          document.name.length > 30 ? document.name.slice(0, 27) + '...' : document.name;
 
-          const boundary = `----Boundary${Date.now()}`;
-          const header = Buffer.from(
-            `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="index.html"\r\nContent-Type: text/html\r\n\r\n`
-          );
-          const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
-          const body = Buffer.concat([header, Buffer.from(html, 'utf-8'), footer]);
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+          <style>*{margin:0;padding:0;box-sizing:border-box}
+          body{width:400px;height:300px;display:flex;align-items:center;justify-content:center;background:${color.bg};font-family:system-ui,-apple-system,sans-serif}
+          .card{text-align:center;padding:20px}
+          .ext{font-size:48px;font-weight:700;color:${color.text};letter-spacing:2px;margin-bottom:8px}
+          .name{font-size:13px;color:#6b7280;max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+          </style></head>
+          <body><div class="card"><div class="ext">${ext}</div><div class="name">${truncatedName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div></body></html>`;
 
-          const ssResponse = await fetch(`${gotenbergUrl}/forms/chromium/screenshot/html`, {
-            method: 'POST',
-            headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-            body: new Uint8Array(body),
-            signal: AbortSignal.timeout(15000),
-          });
+        const boundary = `----Boundary${Date.now()}`;
+        const header = Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="index.html"\r\nContent-Type: text/html\r\n\r\n`
+        );
+        const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
+        const body = Buffer.concat([header, Buffer.from(html, 'utf-8'), footer]);
 
-          if (ssResponse.ok) {
-            const pngData = Buffer.from(await ssResponse.arrayBuffer());
-            const sharp = (await import('sharp')).default;
-            const thumbnail = await sharp(pngData)
-              .resize(400, 300, { fit: 'cover', position: 'top' })
-              .png({ quality: 80 })
-              .toBuffer();
+        const ssResponse = await fetch(`${gotenbergUrl}/forms/chromium/screenshot/html`, {
+          method: 'POST',
+          headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+          body: new Uint8Array(body),
+          signal: AbortSignal.timeout(10000),
+        });
 
-            return new NextResponse(new Uint8Array(thumbnail), {
+        if (ssResponse.ok) {
+          const pngData = Buffer.from(await ssResponse.arrayBuffer());
+          if (pngData.length > 100) {
+            return new NextResponse(new Uint8Array(pngData), {
               status: 200,
               headers: {
                 'Content-Type': 'image/png',
-                'Content-Length': thumbnail.length.toString(),
+                'Content-Length': pngData.length.toString(),
                 'Cache-Control': 'private, max-age=300',
               },
             });
           }
-        } catch (err) {
-          console.error('[ThumbnailAPI] Gotenberg screenshot failed:', err);
         }
+      } catch (err) {
+        console.error('[ThumbnailAPI] Placeholder generation failed:', err);
       }
     }
 
