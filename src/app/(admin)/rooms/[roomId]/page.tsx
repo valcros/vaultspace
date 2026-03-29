@@ -20,6 +20,9 @@ import {
   BarChart3,
   History,
   ChevronRight,
+  List,
+  LayoutGrid,
+  Lock,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -55,6 +58,7 @@ import {
 import { PageHeader } from '@/components/layout/page-header';
 import { UploadZone } from '@/components/documents/UploadZone';
 import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
+import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
 import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { toast } from '@/components/ui/use-toast';
 
@@ -140,6 +144,12 @@ export default function RoomDetailPage() {
   const [activity, setActivity] = React.useState<ActivityEvent[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [activeTab, setActiveTab] = React.useState('documents');
+  const [viewMode, setViewMode] = React.useState<'list' | 'grid'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('vaultspace-doc-view') as 'list' | 'grid') || 'list';
+    }
+    return 'list';
+  });
 
   // Dialog states
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
@@ -827,6 +837,28 @@ export default function RoomDetailPage() {
                   New Folder
                 </Button>
               </div>
+              <div className="flex items-center gap-1 rounded-lg border bg-white p-1">
+                <button
+                  onClick={() => {
+                    setViewMode('list');
+                    localStorage.setItem('vaultspace-doc-view', 'list');
+                  }}
+                  className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
+                  title="List view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setViewMode('grid');
+                    localStorage.setItem('vaultspace-doc-view', 'grid');
+                  }}
+                  className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {folders.length === 0 && documents.length === 0 ? (
@@ -841,8 +873,8 @@ export default function RoomDetailPage() {
                   Upload Files
                 </Button>
               </Card>
-            ) : (
-              <div className="overflow-hidden rounded-lg border">
+            ) : viewMode === 'list' ? (
+              <div className="overflow-hidden rounded-xl border">
                 <table className="w-full">
                   <thead className="border-b bg-neutral-50">
                     <tr>
@@ -915,7 +947,7 @@ export default function RoomDetailPage() {
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <FileText className="h-5 w-5 text-neutral-400" />
+                            <FileTypeIcon mimeType={doc.mimeType} />
                             <div>
                               <span className="font-medium">{doc.name}</span>
                               {doc.tags && doc.tags.length > 0 && (
@@ -981,6 +1013,84 @@ export default function RoomDetailPage() {
                   </tbody>
                 </table>
               </div>
+            ) : (
+              /* Grid / Thumbnail View */
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {/* Folders */}
+                {folders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className="group cursor-pointer rounded-xl border bg-white p-3 transition-all hover:border-primary-200 hover:shadow-md"
+                    onClick={() => handleFolderClick(folder)}
+                  >
+                    <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-amber-50">
+                      <Folder className="h-12 w-12 text-amber-500" />
+                    </div>
+                    <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
+                    <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
+                  </div>
+                ))}
+                {/* Documents */}
+                {documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="group relative cursor-pointer rounded-xl border bg-white p-3 transition-all hover:border-primary-200 hover:shadow-md"
+                    onClick={() => handlePreview(doc)}
+                  >
+                    <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-neutral-50">
+                      {doc.mimeType.startsWith('image/') ? (
+                        <img
+                          src={`/api/rooms/${roomId}/documents/${doc.id}/preview`}
+                          alt={doc.name}
+                          className="h-full w-full rounded-lg object-cover"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            target.style.display = 'none';
+                            target.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null}
+                      <FileTypeIcon
+                        mimeType={doc.mimeType}
+                        className={`h-12 w-12 ${doc.mimeType.startsWith('image/') ? 'hidden' : ''}`}
+                      />
+                    </div>
+                    <p className="mt-2 truncate text-sm font-medium">{doc.name}</p>
+                    <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
+                    {/* Action menu */}
+                    <div
+                      className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="secondary" size="sm" className="h-7 w-7 p-0 shadow-sm">
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handlePreview(doc)}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            Preview
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDownload(doc)}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Download
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(doc)}
+                            className="text-danger-600"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </TabsContent>
 
@@ -1006,7 +1116,7 @@ export default function RoomDetailPage() {
                 </Button>
               </Card>
             ) : (
-              <div className="overflow-hidden rounded-lg border">
+              <div className="overflow-hidden rounded-xl border">
                 <table className="w-full">
                   <thead className="border-b bg-neutral-50">
                     <tr>

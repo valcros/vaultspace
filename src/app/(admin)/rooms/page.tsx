@@ -291,7 +291,7 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
     <>
       <Link href={`/rooms/${room.id}`}>
         <Card
-          className={`cursor-pointer transition-all hover:border-primary-200 hover:shadow-md ${isDeleting ? 'opacity-50' : ''}`}
+          className={`cursor-pointer border-t-2 transition-all hover:border-primary-200 hover:shadow-md ${room.status === 'ACTIVE' ? 'border-t-primary-500' : 'border-t-neutral-300'} ${isDeleting ? 'opacity-50' : ''}`}
         >
           <CardHeader className="pb-2">
             <div className="flex items-start justify-between">
