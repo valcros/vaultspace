@@ -134,9 +134,9 @@ export default function RoomsPage() {
         }
       />
 
-      <div className="p-6">
+      <div>
         {/* Search */}
-        <div className="relative mb-6 max-w-md">
+        <div className="relative mb-4 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <Input
             placeholder="Search rooms..."
@@ -163,7 +163,7 @@ export default function RoomsPage() {
             ))}
           </div>
         ) : rooms.length === 0 ? (
-          <Card className="p-12 text-center">
+          <Card className="p-8 text-center">
             <FolderOpen className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
             <h3 className="mb-2 text-lg font-semibold text-neutral-900">No data rooms yet</h3>
             <p className="mx-auto mb-6 max-w-sm text-neutral-500">
