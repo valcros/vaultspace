@@ -753,7 +753,7 @@ export default function RoomDetailPage() {
             {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline">
+                <Button variant="ghost" className="text-white hover:bg-white/20 hover:text-white">
                   <MoreHorizontal className="mr-2 h-4 w-4" />
                   More
                 </Button>
@@ -773,7 +773,11 @@ export default function RoomDetailPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" onClick={() => router.push(`/rooms/${roomId}/settings`)}>
+            <Button
+              variant="ghost"
+              className="text-white hover:bg-white/20 hover:text-white"
+              onClick={() => router.push(`/rooms/${roomId}/settings`)}
+            >
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
@@ -781,7 +785,7 @@ export default function RoomDetailPage() {
         }
       />
 
-      <div className="p-6">
+      <div>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="documents" className="gap-2">
@@ -825,7 +829,7 @@ export default function RoomDetailPage() {
               </div>
             )}
 
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Button onClick={() => setShowUploadDialog(true)}>
                   <Upload className="mr-2 h-4 w-4" />
@@ -877,13 +881,13 @@ export default function RoomDetailPage() {
                 <table className="w-full">
                   <thead className="border-b bg-neutral-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
                         Name
                       </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
                         Size
                       </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
                         Uploaded
                       </th>
                       <th className="w-10"></th>
@@ -897,22 +901,22 @@ export default function RoomDetailPage() {
                         className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
                         onClick={() => handleFolderClick(folder)}
                       >
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <div className="flex items-center gap-3">
                             <Folder className="h-5 w-5 text-yellow-500" />
                             <span className="font-medium">{folder.name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-neutral-500">
+                        <td className="px-4 py-2 text-sm text-neutral-500">
                           {folder.documentCount} files, {folder.childCount} folders
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <Badge variant="secondary">folder</Badge>
                         </td>
-                        <td className="px-4 py-3 text-sm text-neutral-500">
+                        <td className="px-4 py-2 text-sm text-neutral-500">
                           {formatDate(folder.createdAt)}
                         </td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -944,7 +948,7 @@ export default function RoomDetailPage() {
                         className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
                         onClick={() => handlePreview(doc)}
                       >
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <div className="flex items-center gap-3">
                             <FileTypeIcon mimeType={doc.mimeType} />
                             <div>
@@ -965,13 +969,13 @@ export default function RoomDetailPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-neutral-500">
+                        <td className="px-4 py-2 text-sm text-neutral-500">
                           {formatFileSize(doc.size)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-neutral-500">
+                        <td className="px-4 py-2 text-sm text-neutral-500">
                           {formatDate(doc.createdAt)}
                         </td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -1036,24 +1040,7 @@ export default function RoomDetailPage() {
                     className="group relative cursor-pointer rounded-xl border bg-white p-3 transition-all hover:border-primary-200 hover:shadow-md"
                     onClick={() => handlePreview(doc)}
                   >
-                    <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-neutral-50">
-                      {doc.mimeType.startsWith('image/') ? (
-                        <img
-                          src={`/api/rooms/${roomId}/documents/${doc.id}/preview`}
-                          alt={doc.name}
-                          className="h-full w-full rounded-lg object-cover"
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            target.style.display = 'none';
-                            target.nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                      ) : null}
-                      <FileTypeIcon
-                        mimeType={doc.mimeType}
-                        className={`h-12 w-12 ${doc.mimeType.startsWith('image/') ? 'hidden' : ''}`}
-                      />
-                    </div>
+                    <DocumentThumbnail docId={doc.id} roomId={roomId} mimeType={doc.mimeType} />
                     <p className="mt-2 truncate text-sm font-medium">{doc.name}</p>
                     <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
                     {/* Action menu */}
@@ -1095,7 +1082,7 @@ export default function RoomDetailPage() {
 
           {/* Members Tab */}
           <TabsContent value="members" className="mt-6">
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-4 flex items-center justify-between">
               <Button onClick={() => setShowMemberDialog(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add Admin
@@ -1119,10 +1106,10 @@ export default function RoomDetailPage() {
                 <table className="w-full">
                   <thead className="border-b bg-neutral-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
                         Admin
                       </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
+                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
                         Scope
                       </th>
                       <th className="w-10"></th>
@@ -1131,7 +1118,7 @@ export default function RoomDetailPage() {
                   <tbody>
                     {admins.map((admin) => (
                       <tr key={admin.id} className="border-b last:border-0 hover:bg-neutral-50">
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <div className="flex items-center gap-3">
                             <UserAvatar name={`${admin.firstName} ${admin.lastName}`} size="sm" />
                             <div>
@@ -1142,12 +1129,12 @@ export default function RoomDetailPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <Badge variant={admin.scope === 'organization' ? 'default' : 'secondary'}>
                             {admin.scope === 'organization' ? 'Org Admin' : 'Room Admin'}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -1177,7 +1164,7 @@ export default function RoomDetailPage() {
 
           {/* Links Tab */}
           <TabsContent value="links" className="mt-6">
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-4 flex items-center justify-between">
               <Button onClick={() => setShowLinkDialog(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Create Link
@@ -1681,6 +1668,38 @@ export default function RoomDetailPage() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * Thumbnail for grid view — tries to load preview image, falls back to file type icon.
+ */
+function DocumentThumbnail({
+  docId,
+  roomId,
+  mimeType,
+}: {
+  docId: string;
+  roomId: string;
+  mimeType: string;
+}) {
+  const [failed, setFailed] = React.useState(false);
+  const isImage = mimeType.startsWith('image/');
+
+  return (
+    <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-neutral-50">
+      {!failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/rooms/${roomId}/documents/${docId}/preview`}
+          alt=""
+          className={`h-full w-full ${isImage ? 'object-cover' : 'bg-white object-contain p-1'}`}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <FileTypeIcon mimeType={mimeType} className="h-12 w-12" />
+      )}
+    </div>
   );
 }
 
