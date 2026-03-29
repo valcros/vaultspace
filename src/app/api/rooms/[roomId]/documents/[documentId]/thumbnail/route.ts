@@ -119,6 +119,58 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       }
     }
 
+    // For PDFs, use Gotenberg Chromium to screenshot the first page
+    if (mimeType === 'application/pdf' && latestVersion.fileBlob) {
+      const gotenbergUrl = process.env['GOTENBERG_URL'] ?? 'http://localhost:3001';
+      const bucket = latestVersion.fileBlob.storageBucket || 'documents';
+      const key = latestVersion.fileBlob.storageKey;
+      const exists = await storage.exists(bucket, key);
+      if (exists) {
+        try {
+          const pdfData = await storage.get(bucket, key);
+          const base64Pdf = Buffer.from(pdfData).toString('base64');
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+            <style>*{margin:0;padding:0}body{width:800px;height:1100px;overflow:hidden}
+            embed{width:100%;height:100%}</style></head>
+            <body><embed src="data:application/pdf;base64,${base64Pdf}" type="application/pdf"/></body></html>`;
+
+          const boundary = `----Boundary${Date.now()}`;
+          const header = Buffer.from(
+            `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="index.html"\r\nContent-Type: text/html\r\n\r\n`
+          );
+          const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
+          const body = Buffer.concat([header, Buffer.from(html, 'utf-8'), footer]);
+
+          const ssResponse = await fetch(`${gotenbergUrl}/forms/chromium/screenshot/html`, {
+            method: 'POST',
+            headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+            body: new Uint8Array(body),
+            signal: AbortSignal.timeout(15000),
+          });
+
+          if (ssResponse.ok) {
+            const pngData = Buffer.from(await ssResponse.arrayBuffer());
+            const sharp = (await import('sharp')).default;
+            const thumbnail = await sharp(pngData)
+              .resize(400, 300, { fit: 'cover', position: 'top' })
+              .png({ quality: 80 })
+              .toBuffer();
+
+            return new NextResponse(new Uint8Array(thumbnail), {
+              status: 200,
+              headers: {
+                'Content-Type': 'image/png',
+                'Content-Length': thumbnail.length.toString(),
+                'Cache-Control': 'private, max-age=300',
+              },
+            });
+          }
+        } catch (err) {
+          console.error('[ThumbnailAPI] Gotenberg screenshot failed:', err);
+        }
+      }
+    }
+
     // No thumbnail available
     return NextResponse.json({ error: 'No thumbnail available' }, { status: 404 });
   } catch (error) {
