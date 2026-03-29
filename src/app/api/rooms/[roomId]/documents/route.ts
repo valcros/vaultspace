@@ -186,7 +186,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const searchParams = request.nextUrl.searchParams;
     const folderId = searchParams.get('folderId') || undefined;
-    const status = searchParams.get('status') as 'ACTIVE' | 'ARCHIVED' | 'DELETED' | undefined;
+    const status = (searchParams.get('status') as 'ACTIVE' | 'ARCHIVED' | 'DELETED' | null) ?? 'ACTIVE';
     const search = searchParams.get('search') || undefined;
     const offset = parseInt(searchParams.get('offset') ?? '0', 10);
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 100);
