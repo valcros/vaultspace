@@ -289,6 +289,7 @@ export class DocumentService {
       storageKey: jobStorageKey,
       contentType: file.mimeType,
       fileName: file.filename,
+      fileSizeBytes: file.size,
     });
 
     return {
