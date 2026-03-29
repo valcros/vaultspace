@@ -75,6 +75,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     const providers = getProviders();
     const storage = providers.storage;
+    const mimeType = document.mimeType || '';
 
     // Try serving the THUMBNAIL asset first
     // Skip for PDFs — stored thumbnails from the pipeline have garbled fonts
@@ -99,7 +100,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     // For images, generate a thumbnail on the fly from the original file
-    const mimeType = document.mimeType || '';
     if (mimeType.startsWith('image/') && latestVersion.fileBlob) {
       const bucket = latestVersion.fileBlob.storageBucket || 'documents';
       const key = latestVersion.fileBlob.storageKey;
