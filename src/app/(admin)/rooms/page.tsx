@@ -124,7 +124,10 @@ export default function RoomsPage() {
         title="Data Rooms"
         description="Manage your secure data rooms"
         actions={
-          <Button onClick={() => setShowCreateDialog(true)}>
+          <Button
+            className="bg-white text-primary-700 shadow-sm hover:bg-primary-50"
+            onClick={() => setShowCreateDialog(true)}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Create Room
           </Button>
