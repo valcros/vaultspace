@@ -111,9 +111,9 @@ export function TextPreviewRenderer({ content, mimeType, fileName }: TextPreview
     return <CodeRenderer content={content} language="xml" />;
   }
 
-  // HTML — render in sandboxed view
+  // HTML — show as syntax-highlighted code (not executed, for XSS safety)
   if (mimeType === 'text/html' || ext === 'html' || ext === 'htm') {
-    return <CodeRenderer content={content} language="html" />;
+    return <CodeRenderer content={content} language="xml" />;
   }
 
   // Code files — detect language from extension
@@ -155,7 +155,7 @@ function MarkdownRenderer({ content }: { content: string }) {
   return (
     <div className="overflow-auto bg-white p-8">
       <div
-        className="prose prose-neutral prose-headings:font-semibold prose-a:text-primary-600 prose-code:rounded prose-code:bg-neutral-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-sm prose-pre:bg-neutral-50 prose-pre:text-sm max-w-none"
+        className="prose prose-neutral max-w-none prose-headings:font-semibold prose-a:text-primary-600 prose-code:rounded prose-code:bg-neutral-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-sm prose-pre:bg-neutral-50 prose-pre:text-sm"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
