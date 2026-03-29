@@ -351,7 +351,47 @@ export default function RoomSettingsPage() {
           </Button>
         </div>
 
-        <Separator className="my-8" />
+        {/* Maintenance */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Maintenance</CardTitle>
+            <CardDescription>Document processing and optimization</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Regenerate Previews</p>
+                <p className="text-sm text-neutral-500">
+                  Re-generate thumbnails for documents missing preview images
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/rooms/${roomId}/regenerate-previews`, {
+                      method: 'POST',
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                      setSuccess(true);
+                      setError(null);
+                      setTimeout(() => setSuccess(false), 3000);
+                    } else {
+                      setError(data.error || 'Failed to regenerate');
+                    }
+                  } catch {
+                    setError('Failed to regenerate previews');
+                  }
+                }}
+              >
+                Regenerate
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Separator className="my-6" />
 
         {/* Danger Zone */}
         <Card className="border-danger-200">
