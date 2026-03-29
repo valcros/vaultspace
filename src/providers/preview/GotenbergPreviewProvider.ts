@@ -162,9 +162,55 @@ export class GotenbergPreviewProvider implements PreviewProvider {
       throw new Error(`Gotenberg conversion failed (${response.status}): ${errorText}`);
     }
 
-    // Return the converted PDF directly as a single-page preview asset
-    // The browser's PDF viewer or react-pdf will render it — no Sharp rasterization needed
+    // Gotenberg returns a PDF — store it as the preview asset AND
+    // rasterize to PNG via Chromium screenshot for thumbnails
     const pdfBuffer = Buffer.from(await response.arrayBuffer());
+
+    // Try to rasterize the first page to PNG using Chromium
+    let pngBuffer: Buffer | null = null;
+    try {
+      // Wrap PDF in HTML for Chromium to screenshot
+      const htmlWrapper = `<!DOCTYPE html><html><head><meta charset="utf-8">
+        <style>body{margin:0;padding:0;overflow:hidden}embed{width:100%;height:100%}</style>
+        </head><body><embed src="data:application/pdf;base64,${pdfBuffer.toString('base64')}" type="application/pdf" width="800" height="1100"/></body></html>`;
+      const screenshotBoundary = `----GotenbergBoundary${Date.now()}ss`;
+      const screenshotBody = this.buildMultipartBody(
+        screenshotBoundary,
+        'index.html',
+        Buffer.from(htmlWrapper, 'utf-8')
+      );
+      const ssResponse = await fetch(`${this.gotenbergUrl}/forms/chromium/screenshot/html`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${screenshotBoundary}`,
+        },
+        body: new Uint8Array(screenshotBody),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      if (ssResponse.ok) {
+        pngBuffer = Buffer.from(await ssResponse.arrayBuffer());
+      }
+    } catch {
+      // Screenshot failed — fall back to PDF-only asset
+    }
+
+    // Return PNG if available, otherwise PDF
+    if (pngBuffer && pngBuffer.length > 100) {
+      return {
+        pages: [
+          {
+            pageNumber: 1,
+            data: pngBuffer,
+            width: 800,
+            height: 1100,
+            mimeType: 'image/png',
+          },
+        ],
+        totalPages: 1,
+        mimeType: 'image/png',
+      };
+    }
+
     return {
       pages: [
         {
@@ -328,27 +374,53 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
   }
 
   /**
-   * Convert plain text to preview image
+   * Convert plain text to preview image via Gotenberg Chromium screenshot
    */
   private async convertText(data: Buffer): Promise<PreviewResult> {
     const text = data.toString('utf-8').slice(0, 4000);
-    const lines = text.split('\n').slice(0, 60);
-    const escapedLines = lines.map((l) => this.escapeHtml(l.slice(0, 120)));
+    const escapedText = this.escapeHtml(text);
 
-    const width = 800;
-    const lineHeight = 18;
-    const height = Math.max(200, Math.min(lines.length * lineHeight + 80, 1200));
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>body{margin:20px;font-family:monospace;font-size:13px;line-height:1.5;color:#333;white-space:pre-wrap;word-break:break-all;background:#fff}</style>
+      </head><body>${escapedText}</body></html>`;
 
-    const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="100%" height="100%" fill="white"/>
-      <style>text { font-family: 'Courier New', monospace; font-size: 13px; fill: #333; }</style>
-      ${escapedLines.map((line, i) => `<text x="20" y="${40 + i * lineHeight}">${line || ' '}</text>`).join('\n')}
-    </svg>`;
+    try {
+      const boundary = `----GotenbergBoundary${Date.now()}`;
+      const body = this.buildMultipartBody(boundary, 'index.html', Buffer.from(html, 'utf-8'));
+      const response = await fetch(`${this.gotenbergUrl}/forms/chromium/screenshot/html`, {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body: new Uint8Array(body),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      if (response.ok) {
+        const pngBuffer = Buffer.from(await response.arrayBuffer());
+        return {
+          pages: [
+            { pageNumber: 1, data: pngBuffer, width: 800, height: 600, mimeType: 'image/png' },
+          ],
+          totalPages: 1,
+          mimeType: 'image/png',
+        };
+      }
+    } catch {
+      // Gotenberg screenshot failed — fall back to Sharp SVG
+    }
 
-    const pngBuffer = await sharp(Buffer.from(svg)).png().toBuffer();
+    // Fallback: simple white placeholder
+    const pngBuffer = await sharp({
+      create: {
+        width: 800,
+        height: 600,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
 
     return {
-      pages: [{ pageNumber: 1, data: pngBuffer, width, height, mimeType: 'image/png' }],
+      pages: [{ pageNumber: 1, data: pngBuffer, width: 800, height: 600, mimeType: 'image/png' }],
       totalPages: 1,
       mimeType: 'image/png',
     };
