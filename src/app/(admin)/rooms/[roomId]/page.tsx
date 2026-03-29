@@ -1870,7 +1870,7 @@ function DocumentThumbnail({
       {!failed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={`/api/rooms/${roomId}/documents/${docId}/thumbnail`}
+          src={`/api/rooms/${roomId}/documents/${docId}/thumbnail?v=2`}
           alt=""
           className="h-full w-full object-cover"
           onError={() => setFailed(true)}
