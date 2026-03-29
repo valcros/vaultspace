@@ -99,7 +99,9 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
     );
 
     // Queue thumbnail generation using the first page render
-    const firstPageKey = `previews/${documentId}/${versionId}/page-1.png`;
+    const firstPage = previewResult.pages[0];
+    const firstPageExt = firstPage && firstPage.mimeType === 'application/pdf' ? 'pdf' : 'png';
+    const firstPageKey = `previews/${documentId}/${versionId}/page-1.${firstPageExt}`;
     await providers.job.addJob(
       'high',
       'thumbnail.generate',
@@ -159,9 +161,47 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
     // Get preview file from previews bucket
     const previewBuffer = await providers.storage.get('previews', previewKey);
 
-    // Generate thumbnail (preview is now a PNG image, not PDF)
+    // If the preview is a PDF (from Gotenberg), rasterize to PNG first
+    let imageBuffer: Buffer;
+    const isPdf = previewKey.endsWith('.pdf');
+    if (isPdf) {
+      const sharp = (await import('sharp')).default;
+      try {
+        // Sharp can rasterize PDFs if libvips has poppler support
+        imageBuffer = await sharp(Buffer.from(previewBuffer), { density: 150 }).png().toBuffer();
+      } catch {
+        // Fallback: create a placeholder thumbnail for PDF previews
+        imageBuffer = await sharp({
+          create: {
+            width: width * 2,
+            height: height * 2,
+            channels: 4,
+            background: { r: 255, g: 255, b: 255, alpha: 1 },
+          },
+        })
+          .composite([
+            {
+              input: Buffer.from(
+                `<svg width="${width * 2}" height="${height * 2}">
+                  <rect width="100%" height="100%" fill="white" stroke="#e5e7eb" stroke-width="2" rx="8"/>
+                  <text x="50%" y="45%" text-anchor="middle" font-family="system-ui" font-size="24" fill="#6b7280">PDF</text>
+                  <text x="50%" y="55%" text-anchor="middle" font-family="system-ui" font-size="14" fill="#9ca3af">Preview</text>
+                </svg>`
+              ),
+              top: 0,
+              left: 0,
+            },
+          ])
+          .png()
+          .toBuffer();
+      }
+    } else {
+      imageBuffer = Buffer.from(previewBuffer);
+    }
+
+    // Generate thumbnail from the rasterized image
     const thumbnailBuffer = await providers.preview.generateThumbnail(
-      previewBuffer,
+      imageBuffer,
       'image/png',
       width,
       height
