@@ -184,14 +184,18 @@ export default function RoomSettingsPage() {
           { label: 'Settings' },
         ]}
         actions={
-          <Button variant="outline" onClick={() => router.push(`/rooms/${roomId}`)}>
+          <Button
+            variant="ghost"
+            className="text-white hover:bg-white/20 hover:text-white"
+            onClick={() => router.push(`/rooms/${roomId}`)}
+          >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Room
           </Button>
         }
       />
 
-      <div className="max-w-3xl p-6">
+      <div className="max-w-3xl">
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
@@ -208,7 +212,7 @@ export default function RoomSettingsPage() {
         )}
 
         {/* General Settings */}
-        <Card className="mb-6">
+        <Card className="mb-4">
           <CardHeader>
             <CardTitle>General Settings</CardTitle>
             <CardDescription>Basic room information and configuration</CardDescription>
@@ -235,7 +239,7 @@ export default function RoomSettingsPage() {
         </Card>
 
         {/* Security Settings */}
-        <Card className="mb-6">
+        <Card className="mb-4">
           <CardHeader>
             <CardTitle>Security Settings</CardTitle>
             <CardDescription>Control access and document protection</CardDescription>
