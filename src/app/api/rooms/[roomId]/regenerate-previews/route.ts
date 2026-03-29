@@ -60,15 +60,26 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         },
       });
 
-      // Filter to documents missing thumbnails
+      // All documents with file blobs need regeneration (force mode)
       const needsPreview = documents.filter((doc) => {
         const version = doc.versions[0];
-        if (!version || !version.fileBlob) {
-          return false;
-        }
-        // Re-queue if no thumbnail asset exists
-        return version.previewAssets.length === 0;
+        return version && version.fileBlob;
       });
+
+      // Delete existing preview assets so the pipeline recreates them
+      for (const doc of needsPreview) {
+        const version = doc.versions[0];
+        if (version) {
+          await tx.previewAsset.deleteMany({
+            where: { versionId: version.id },
+          });
+          // Reset preview status so pipeline re-runs
+          await tx.documentVersion.update({
+            where: { id: version.id },
+            data: { previewStatus: 'PENDING', previewGeneratedAt: null },
+          });
+        }
+      }
 
       return { documents: needsPreview };
     });
