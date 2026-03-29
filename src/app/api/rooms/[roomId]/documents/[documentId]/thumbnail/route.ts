@@ -76,15 +76,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const providers = getProviders();
     const storage = providers.storage;
 
-    // Try serving the THUMBNAIL asset first (skip if too small — likely a bad placeholder)
+    // Try serving the THUMBNAIL asset first
+    // Skip for PDFs — stored thumbnails from the pipeline have garbled fonts
+    // because Sharp can't rasterize PDFs without poppler. Fall through to
+    // the branded placeholder which renders cleanly via Gotenberg Chromium.
     const thumbnailAsset = latestVersion.previewAssets?.[0];
-    if (thumbnailAsset) {
+    if (thumbnailAsset && mimeType !== 'application/pdf') {
       const exists = await storage.exists('previews', thumbnailAsset.storageKey);
       if (exists) {
         const data = await storage.get('previews', thumbnailAsset.storageKey);
-        // Only serve if the thumbnail has real content (>5KB)
-        // Bad thumbnails from SVG placeholders with missing fonts are typically 2-5KB
-        if (data.length > 5000) {
+        if (data.length > 1000) {
           return new NextResponse(new Uint8Array(data), {
             status: 200,
             headers: {
