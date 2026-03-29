@@ -22,6 +22,11 @@ import {
   ChevronRight,
   List,
   LayoutGrid,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
+  Columns3,
+  Minus,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -150,6 +155,24 @@ export default function RoomDetailPage() {
     return 'list';
   });
 
+  const [compact, setCompact] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vaultspace-compact') === 'true';
+    }
+    return false;
+  });
+  const [sortField, setSortField] = React.useState<'name' | 'size' | 'createdAt'>('name');
+  const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('asc');
+  const [visibleColumns, setVisibleColumns] = React.useState<Record<string, boolean>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('vaultspace-columns');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    }
+    return { name: true, size: true, uploaded: true };
+  });
+
   // Dialog states
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
   const [showMemberDialog, setShowMemberDialog] = React.useState(false);
@@ -199,6 +222,32 @@ export default function RoomDetailPage() {
       setIsLoading(false);
     }
   }, [roomId, router]);
+
+  const sortedDocuments = React.useMemo(() => {
+    return [...documents].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'name') {
+        cmp = a.name.localeCompare(b.name);
+      } else if (sortField === 'size') {
+        cmp = a.size - b.size;
+      } else if (sortField === 'createdAt') {
+        cmp = a.createdAt.localeCompare(b.createdAt);
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [documents, sortField, sortDir]);
+
+  const handleSort = React.useCallback(
+    (field: 'name' | 'size' | 'createdAt') => {
+      if (sortField === field) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSortField(field);
+        setSortDir('asc');
+      }
+    },
+    [sortField]
+  );
 
   const fetchDocuments = React.useCallback(async () => {
     try {
@@ -807,7 +856,7 @@ export default function RoomDetailPage() {
           </TabsList>
 
           {/* Documents Tab */}
-          <TabsContent value="documents" className="mt-6">
+          <TabsContent value="documents" className="mt-4">
             {/* Breadcrumb navigation */}
             {breadcrumbs.length > 1 && (
               <div className="mb-4 flex items-center gap-1 text-sm">
@@ -840,35 +889,88 @@ export default function RoomDetailPage() {
                   New Folder
                 </Button>
               </div>
-              <div className="flex items-center gap-1 rounded-lg border bg-white p-1">
-                <button
-                  onClick={() => {
-                    setViewMode('list');
-                    localStorage.setItem('vaultspace-doc-view', 'list');
-                  }}
-                  className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
-                  title="List view"
-                >
-                  <List className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setViewMode('grid');
-                    localStorage.setItem('vaultspace-doc-view', 'grid');
-                  }}
-                  className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
+              <div className="flex items-center gap-2">
+                {/* Compact toggle (list view only) */}
+                {viewMode === 'list' && (
+                  <button
+                    onClick={() => {
+                      const next = !compact;
+                      setCompact(next);
+                      localStorage.setItem('vaultspace-compact', String(next));
+                    }}
+                    className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
+                    title={compact ? 'Standard density' : 'Compact density'}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                )}
+                {/* Column picker (list view only) */}
+                {viewMode === 'list' && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
+                        title="Show/hide columns"
+                      >
+                        <Columns3 className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {[
+                        { key: 'size', label: 'Size' },
+                        { key: 'uploaded', label: 'Uploaded' },
+                      ].map((col) => (
+                        <DropdownMenuItem
+                          key={col.key}
+                          onClick={() => {
+                            const next = {
+                              ...visibleColumns,
+                              [col.key]: !visibleColumns[col.key],
+                            };
+                            setVisibleColumns(next);
+                            localStorage.setItem('vaultspace-columns', JSON.stringify(next));
+                          }}
+                        >
+                          <span
+                            className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
+                          />
+                          {col.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {/* View toggle */}
+                <div className="flex items-center gap-1 rounded-lg border bg-white p-1">
+                  <button
+                    onClick={() => {
+                      setViewMode('list');
+                      localStorage.setItem('vaultspace-doc-view', 'list');
+                    }}
+                    className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
+                    title="List view"
+                  >
+                    <List className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setViewMode('grid');
+                      localStorage.setItem('vaultspace-doc-view', 'grid');
+                    }}
+                    className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
+                    title="Grid view"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
 
             {folders.length === 0 && documents.length === 0 ? (
-              <Card className="p-12 text-center">
-                <FileText className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
-                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No documents yet</h3>
-                <p className="mx-auto mb-6 max-w-sm text-neutral-500">
+              <Card className="p-8 text-center">
+                <FileText className="mx-auto mb-3 h-10 w-10 text-neutral-400" />
+                <h3 className="mb-1 text-base font-semibold text-neutral-900">No documents yet</h3>
+                <p className="mx-auto mb-4 max-w-sm text-sm text-neutral-500">
                   Upload your first documents to start sharing them securely.
                 </p>
                 <Button onClick={() => setShowUploadDialog(true)}>
@@ -881,16 +983,58 @@ export default function RoomDetailPage() {
                 <table className="w-full">
                   <thead className="border-b bg-neutral-50">
                     <tr>
-                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                        Name
+                      <th
+                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                        onClick={() => handleSort('name')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Name
+                          {sortField === 'name' ? (
+                            sortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                          )}
+                        </span>
                       </th>
-                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                        Size
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                        Uploaded
-                      </th>
-                      <th className="w-10"></th>
+                      {visibleColumns['size'] && (
+                        <th
+                          className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                          onClick={() => handleSort('size')}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            Size
+                            {sortField === 'size' ? (
+                              sortDir === 'asc' ? (
+                                <ChevronUp className="h-3 w-3" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3" />
+                              )
+                            ) : null}
+                          </span>
+                        </th>
+                      )}
+                      {visibleColumns['uploaded'] && (
+                        <th
+                          className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                          onClick={() => handleSort('createdAt')}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            Uploaded
+                            {sortField === 'createdAt' ? (
+                              sortDir === 'asc' ? (
+                                <ChevronUp className="h-3 w-3" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3" />
+                              )
+                            ) : null}
+                          </span>
+                        </th>
+                      )}
+                      <th className="w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -901,26 +1045,42 @@ export default function RoomDetailPage() {
                         className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
                         onClick={() => handleFolderClick(folder)}
                       >
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-3">
-                            <Folder className="h-5 w-5 text-yellow-500" />
-                            <span className="font-medium">{folder.name}</span>
+                        <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                          <div className="flex items-center gap-2">
+                            <Folder
+                              className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`}
+                            />
+                            <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
+                              {folder.name}
+                            </span>
                           </div>
                         </td>
-                        <td className="px-4 py-2 text-sm text-neutral-500">
-                          {folder.documentCount} files, {folder.childCount} folders
-                        </td>
-                        <td className="px-4 py-2">
-                          <Badge variant="secondary">folder</Badge>
-                        </td>
-                        <td className="px-4 py-2 text-sm text-neutral-500">
-                          {formatDate(folder.createdAt)}
-                        </td>
-                        <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                        {visibleColumns['size'] && (
+                          <td
+                            className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                          >
+                            {folder.documentCount} files, {folder.childCount} folders
+                          </td>
+                        )}
+                        {visibleColumns['uploaded'] && (
+                          <td
+                            className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                          >
+                            {formatDate(folder.createdAt)}
+                          </td>
+                        )}
+                        <td
+                          className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                              >
+                                <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -942,24 +1102,29 @@ export default function RoomDetailPage() {
                       </tr>
                     ))}
                     {/* Render documents */}
-                    {documents.map((doc) => (
+                    {sortedDocuments.map((doc) => (
                       <tr
                         key={doc.id}
                         className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
                         onClick={() => handlePreview(doc)}
                       >
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-3">
-                            <FileTypeIcon mimeType={doc.mimeType} />
+                        <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                          <div className="flex items-center gap-2">
+                            <FileTypeIcon
+                              mimeType={doc.mimeType}
+                              className={compact ? 'h-4 w-4' : undefined}
+                            />
                             <div>
-                              <span className="font-medium">{doc.name}</span>
-                              {doc.tags && doc.tags.length > 0 && (
+                              <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
+                                {doc.name}
+                              </span>
+                              {!compact && doc.tags && doc.tags.length > 0 && (
                                 <div className="mt-0.5 flex flex-wrap gap-1">
                                   {doc.tags.map((tag) => (
                                     <Badge
                                       key={tag}
                                       variant="outline"
-                                      className="px-1.5 py-0 text-xs"
+                                      className="px-1 py-0 text-[10px]"
                                     >
                                       {tag}
                                     </Badge>
@@ -969,17 +1134,32 @@ export default function RoomDetailPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-2 text-sm text-neutral-500">
-                          {formatFileSize(doc.size)}
-                        </td>
-                        <td className="px-4 py-2 text-sm text-neutral-500">
-                          {formatDate(doc.createdAt)}
-                        </td>
-                        <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                        {visibleColumns['size'] && (
+                          <td
+                            className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                          >
+                            {formatFileSize(doc.size)}
+                          </td>
+                        )}
+                        {visibleColumns['uploaded'] && (
+                          <td
+                            className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                          >
+                            {formatDate(doc.createdAt)}
+                          </td>
+                        )}
+                        <td
+                          className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                              >
+                                <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
