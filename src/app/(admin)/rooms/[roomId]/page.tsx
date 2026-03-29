@@ -74,7 +74,6 @@ interface Document {
   name: string;
   mimeType: string;
   size: number;
-  status: 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
   tags: string[];
   uploadedBy: { firstName: string; lastName: string };
   createdAt: string;
@@ -854,9 +853,6 @@ export default function RoomDetailPage() {
                         Size
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
-                        Status
-                      </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
                         Uploaded
                       </th>
                       <th className="w-10"></th>
@@ -940,19 +936,6 @@ export default function RoomDetailPage() {
                         </td>
                         <td className="px-4 py-3 text-sm text-neutral-500">
                           {formatFileSize(doc.size)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge
-                            variant={
-                              doc.status === 'READY'
-                                ? 'success'
-                                : doc.status === 'FAILED'
-                                  ? 'danger'
-                                  : 'secondary'
-                            }
-                          >
-                            {doc.status.toLowerCase()}
-                          </Badge>
                         </td>
                         <td className="px-4 py-3 text-sm text-neutral-500">
                           {formatDate(doc.createdAt)}
