@@ -62,6 +62,10 @@ const DEFAULT_ACCEPTED_TYPES = [
   'text/csv',
   'text/markdown',
   'text/html',
+  'text/yaml',
+  'text/xml',
+  'application/json',
+  'application/xml',
 ];
 
 export function UploadZone({
@@ -341,7 +345,7 @@ export function UploadZone({
           </p>
           <p className="mt-1 text-xs text-gray-400">
             PDF, Word, Excel, PowerPoint, Visio, OpenDocument, RTF, images, SVG, Markdown, CSV,
-            plain text
+            JSON, XML, YAML, plain text
           </p>
         </div>
       </div>
