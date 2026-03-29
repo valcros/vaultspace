@@ -63,7 +63,9 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       // Filter to documents missing thumbnails
       const needsPreview = documents.filter((doc) => {
         const version = doc.versions[0];
-        if (!version || !version.fileBlob) return false;
+        if (!version || !version.fileBlob) {
+          return false;
+        }
         // Re-queue if no thumbnail asset exists
         return version.previewAssets.length === 0;
       });
@@ -80,7 +82,9 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
     for (const doc of result.documents) {
       const version = doc.versions[0];
-      if (!version || !version.fileBlob) continue;
+      if (!version || !version.fileBlob) {
+        continue;
+      }
 
       const storageKey = version.fileBlob.storageKey;
 
