@@ -153,8 +153,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Unexpected result format' }, { status: 500 });
     }
 
+    // Map Prisma Event fields to client-expected shape
+    const mappedEvents = result.events.map((event) => ({
+      id: event.id,
+      type: event.eventType,
+      description: event.description,
+      actor: event.actor,
+      metadata: event.metadata,
+      createdAt: event.createdAt.toISOString(),
+    }));
+
     return NextResponse.json({
-      events: result.events,
+      events: mappedEvents,
       pagination: {
         page: result.page,
         limit: result.limit,
