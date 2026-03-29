@@ -70,6 +70,45 @@ function getFileExtension(fileName: string): string {
   return parts[parts.length - 1] ?? '';
 }
 
+/** Pretty-print JSON if it's valid; return as-is if parsing fails */
+function prettyPrintJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+/** Simple XML/HTML indentation — no dependencies */
+function prettyPrintXml(raw: string): string {
+  // If it already looks indented, don't re-format
+  if (/\n\s+</.test(raw)) {
+    return raw;
+  }
+  let indent = 0;
+  const parts = raw.replace(/>\s*</g, '>\n<').split('\n');
+  return parts
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return '';
+      }
+      // Closing tag — dedent first, then print
+      if (/^<\//.test(trimmed)) {
+        indent = Math.max(0, indent - 1);
+      }
+      const formatted = '  '.repeat(indent) + trimmed;
+      // Self-closing or non-tag line — no indent change
+      // Opening tag (not self-closing, not closing) — indent next
+      if (/^<[^/!?]/.test(trimmed) && !/>.*<\//.test(trimmed) && !/\/>$/.test(trimmed)) {
+        indent++;
+      }
+      return formatted;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function TextPreviewRenderer({ content, mimeType, fileName }: TextPreviewRendererProps) {
   const ext = getFileExtension(fileName);
 
@@ -96,9 +135,9 @@ export function TextPreviewRenderer({ content, mimeType, fileName }: TextPreview
     return <MarkdownRenderer content={content} />;
   }
 
-  // JSON
+  // JSON — pretty-print if minified
   if (mimeType === 'application/json' || ext === 'json') {
-    return <CodeRenderer content={content} language="json" />;
+    return <CodeRenderer content={prettyPrintJson(content)} language="json" />;
   }
 
   // YAML
@@ -106,14 +145,14 @@ export function TextPreviewRenderer({ content, mimeType, fileName }: TextPreview
     return <CodeRenderer content={content} language="yaml" />;
   }
 
-  // XML
+  // XML — pretty-print if minified
   if (mimeType === 'application/xml' || mimeType === 'text/xml' || ext === 'xml') {
-    return <CodeRenderer content={content} language="xml" />;
+    return <CodeRenderer content={prettyPrintXml(content)} language="xml" />;
   }
 
-  // HTML — show as syntax-highlighted code (not executed, for XSS safety)
+  // HTML — pretty-print and show as syntax-highlighted code (not executed, for XSS safety)
   if (mimeType === 'text/html' || ext === 'html' || ext === 'htm') {
-    return <CodeRenderer content={content} language="xml" />;
+    return <CodeRenderer content={prettyPrintXml(content)} language="xml" />;
   }
 
   // Code files — detect language from extension
