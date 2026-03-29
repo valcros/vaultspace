@@ -1864,16 +1864,15 @@ function DocumentThumbnail({
   mimeType: string;
 }) {
   const [failed, setFailed] = React.useState(false);
-  const isImage = mimeType.startsWith('image/');
 
   return (
     <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-neutral-50">
       {!failed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={`/api/rooms/${roomId}/documents/${docId}/preview`}
+          src={`/api/rooms/${roomId}/documents/${docId}/thumbnail`}
           alt=""
-          className={`h-full w-full ${isImage ? 'object-cover' : 'bg-white object-contain p-1'}`}
+          className="h-full w-full object-cover"
           onError={() => setFailed(true)}
         />
       ) : (
