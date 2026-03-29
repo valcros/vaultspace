@@ -87,7 +87,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           headers: {
             'Content-Type': 'image/png',
             'Content-Length': data.length.toString(),
-            'Cache-Control': 'private, max-age=3600',
+            'Cache-Control': 'private, max-age=300',
           },
         });
       }
@@ -113,7 +113,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           headers: {
             'Content-Type': 'image/png',
             'Content-Length': thumbnail.length.toString(),
-            'Cache-Control': 'private, max-age=3600',
+            'Cache-Control': 'private, max-age=300',
           },
         });
       }
