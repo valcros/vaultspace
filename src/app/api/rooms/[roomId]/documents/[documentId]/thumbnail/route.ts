@@ -76,20 +76,23 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const providers = getProviders();
     const storage = providers.storage;
 
-    // Try serving the THUMBNAIL asset first
+    // Try serving the THUMBNAIL asset first (skip if too small — likely a bad placeholder)
     const thumbnailAsset = latestVersion.previewAssets?.[0];
     if (thumbnailAsset) {
       const exists = await storage.exists('previews', thumbnailAsset.storageKey);
       if (exists) {
         const data = await storage.get('previews', thumbnailAsset.storageKey);
-        return new NextResponse(new Uint8Array(data), {
-          status: 200,
-          headers: {
-            'Content-Type': 'image/png',
-            'Content-Length': data.length.toString(),
-            'Cache-Control': 'private, max-age=300',
-          },
-        });
+        // Only serve if the thumbnail is substantial (>2KB = real content)
+        if (data.length > 2000) {
+          return new NextResponse(new Uint8Array(data), {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/png',
+              'Content-Length': data.length.toString(),
+              'Cache-Control': 'private, max-age=300',
+            },
+          });
+        }
       }
     }
 
