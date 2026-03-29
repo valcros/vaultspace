@@ -82,8 +82,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       const exists = await storage.exists('previews', thumbnailAsset.storageKey);
       if (exists) {
         const data = await storage.get('previews', thumbnailAsset.storageKey);
-        // Only serve if the thumbnail is substantial (>2KB = real content)
-        if (data.length > 2000) {
+        // Only serve if the thumbnail has real content (>5KB)
+        // Bad thumbnails from SVG placeholders with missing fonts are typically 2-5KB
+        if (data.length > 5000) {
           return new NextResponse(new Uint8Array(data), {
             status: 200,
             headers: {
