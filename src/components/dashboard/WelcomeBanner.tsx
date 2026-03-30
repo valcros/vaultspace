@@ -15,7 +15,7 @@ export function WelcomeBanner({ roomCount }: WelcomeBannerProps) {
     return false;
   });
 
-  if (dismissed || roomCount > 1) {
+  if (dismissed || roomCount >= 1) {
     return null;
   }
 
