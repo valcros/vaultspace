@@ -409,6 +409,37 @@ export default function RoomSettingsPage() {
                 Regenerate
               </Button>
             </div>
+            <Separator className="my-4" />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Remove Orphaned Documents</p>
+                <p className="text-sm text-neutral-500">
+                  Delete seed/demo documents that have no actual files in storage
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/rooms/${roomId}/cleanup-seed`, {
+                      method: 'POST',
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                      setSuccess(true);
+                      setError(null);
+                      setTimeout(() => setSuccess(false), 3000);
+                    } else {
+                      setError(data.error || 'Failed to cleanup');
+                    }
+                  } catch {
+                    setError('Failed to cleanup documents');
+                  }
+                }}
+              >
+                Cleanup
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

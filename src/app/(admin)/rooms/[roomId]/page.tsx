@@ -68,6 +68,7 @@ import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
 import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
+import { getEventStyle } from '@/lib/activityUtils';
 
 interface Room {
   id: string;
@@ -1221,8 +1222,8 @@ export default function RoomDetailPage() {
                                   setTagInput((doc.tags || []).join(', '));
                                 }}
                               >
-                                <FileText className="mr-2 h-4 w-4" />
-                                Edit Tags
+                                <Tag className="mr-2 h-4 w-4" />
+                                Edit Properties
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={async () => {
@@ -1507,42 +1508,48 @@ export default function RoomDetailPage() {
           </TabsContent>
 
           {/* Activity Tab */}
-          <TabsContent value="activity" className="mt-6">
+          <TabsContent value="activity" className="mt-4">
             {activity.length === 0 ? (
-              <Card className="p-12 text-center">
-                <Activity className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
-                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No activity yet</h3>
-                <p className="mx-auto max-w-sm text-neutral-500">
+              <Card className="p-8 text-center">
+                <Activity className="mx-auto mb-3 h-10 w-10 text-neutral-400" />
+                <h3 className="mb-1 text-base font-semibold text-neutral-900">No activity yet</h3>
+                <p className="mx-auto max-w-sm text-sm text-neutral-500">
                   Activity will appear here as users interact with this room.
                 </p>
               </Card>
             ) : (
-              <div className="space-y-4">
-                {activity.map((event) => (
-                  <div
-                    key={event.id}
-                    className="flex items-start gap-4 border-b py-3 last:border-0"
-                  >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-100">
-                      <Activity className="h-4 w-4 text-neutral-500" />
+              <div className="space-y-1">
+                {activity.map((event) => {
+                  const style = getEventStyle(event.type);
+                  const EventIcon = style.icon;
+                  return (
+                    <div
+                      key={event.id}
+                      className="flex items-start gap-3 border-b py-2 last:border-0"
+                    >
+                      <div
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${style.bg}`}
+                      >
+                        <EventIcon className={`h-3.5 w-3.5 ${style.text}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm">
+                          <span className="font-medium">
+                            {event.actor
+                              ? `${event.actor.firstName} ${event.actor.lastName}`
+                              : 'System'}
+                          </span>{' '}
+                          <span className="text-neutral-500">
+                            {event.type.replace(/_/g, ' ').toLowerCase()}
+                          </span>
+                        </p>
+                        <p className="mt-0.5 text-xs text-neutral-400">
+                          {new Date(event.createdAt).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">
-                        <span className="font-medium">
-                          {event.actor
-                            ? `${event.actor.firstName} ${event.actor.lastName}`
-                            : 'System'}
-                        </span>{' '}
-                        <span className="text-neutral-500">
-                          {event.type.replace(/_/g, ' ').toLowerCase()}
-                        </span>
-                      </p>
-                      <p className="mt-1 text-xs text-neutral-400">
-                        {new Date(event.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </TabsContent>
