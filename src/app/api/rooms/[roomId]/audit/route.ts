@@ -154,11 +154,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     // Map Prisma Event fields to client-expected shape
+    // Include both eventType (for audit page) and type (for room activity tab)
     const mappedEvents = result.events.map((event) => ({
       id: event.id,
+      eventType: event.eventType,
       type: event.eventType,
       description: event.description,
       actor: event.actor,
+      ipAddress: event.ipAddress,
       metadata: event.metadata,
       createdAt: event.createdAt.toISOString(),
     }));
