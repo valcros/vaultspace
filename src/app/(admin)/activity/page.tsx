@@ -1,21 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import {
-  Search,
-  Filter,
-  Download,
-  Activity,
-  FileText,
-  Users,
-  Link as LinkIcon,
-  Eye,
-  Upload,
-  Trash2,
-  Settings,
-  LogIn,
-  LogOut,
-} from 'lucide-react';
+import { Search, Filter, Download, Activity } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { getEventStyle, groupEventsByDate } from '@/lib/activityUtils';
 
 interface ActivityEvent {
   id: string;
@@ -48,21 +35,6 @@ interface ActivityEvent {
   ipAddress: string | null;
   createdAt: string;
 }
-
-const eventIcons: Record<string, React.ElementType> = {
-  document_uploaded: Upload,
-  document_viewed: Eye,
-  document_downloaded: Download,
-  document_deleted: Trash2,
-  room_created: FileText,
-  room_updated: Settings,
-  member_added: Users,
-  member_removed: Users,
-  link_created: LinkIcon,
-  link_accessed: Eye,
-  user_login: LogIn,
-  user_logout: LogOut,
-};
 
 const eventLabels: Record<string, string> = {
   document_uploaded: 'uploaded a document',
@@ -237,59 +209,70 @@ export default function ActivityPage() {
             </p>
           </Card>
         ) : (
-          <div className="space-y-2">
-            {filteredEvents.map((event) => {
-              const Icon = eventIcons[event.eventType] || Activity;
-              const label = eventLabels[event.eventType] || event.eventType.replace(/_/g, ' ');
+          <div className="space-y-4">
+            {groupEventsByDate(filteredEvents).map((group) => (
+              <div key={group.label}>
+                <p className="mb-2 text-xs font-medium text-neutral-400">{group.label}</p>
+                <div className="space-y-2">
+                  {group.events.map((event) => {
+                    const style = getEventStyle(event.eventType);
+                    const EventIcon = style.icon;
+                    const label =
+                      eventLabels[event.eventType] || event.eventType.replace(/_/g, ' ');
 
-              return (
-                <div
-                  key={event.id}
-                  className="flex items-start gap-4 rounded-lg border p-4 transition-colors hover:bg-neutral-50"
-                >
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-neutral-100">
-                    <Icon className="h-5 w-5 text-neutral-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm">
-                      {event.actor ? (
-                        <>
-                          <span className="font-medium">
-                            {event.actor.name || event.actor.email}
-                          </span>
-                          <span className="text-neutral-500"> {label}</span>
-                        </>
-                      ) : (
-                        <span className="text-neutral-500">System {label}</span>
-                      )}
-                      {event.description && (
-                        <>
-                          <span className="text-neutral-500">: </span>
-                          <span className="font-medium">{event.description}</span>
-                        </>
-                      )}
-                    </p>
-                    <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
-                      <span>{formatDate(event.createdAt)}</span>
-                      {event.room && (
-                        <>
-                          <span>•</span>
-                          <Badge variant="outline" className="text-xs">
-                            {event.room.name}
-                          </Badge>
-                        </>
-                      )}
-                      {event.ipAddress && (
-                        <>
-                          <span>•</span>
-                          <span>{event.ipAddress}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                    return (
+                      <div
+                        key={event.id}
+                        className="flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-neutral-50"
+                      >
+                        <div
+                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${style.bg}`}
+                        >
+                          <EventIcon className={`h-4 w-4 ${style.text}`} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm">
+                            {event.actor ? (
+                              <>
+                                <span className="font-medium">
+                                  {event.actor.name || event.actor.email}
+                                </span>
+                                <span className="text-neutral-500"> {label}</span>
+                              </>
+                            ) : (
+                              <span className="text-neutral-500">System {label}</span>
+                            )}
+                            {event.description && (
+                              <>
+                                <span className="text-neutral-500">: </span>
+                                <span className="font-medium">{event.description}</span>
+                              </>
+                            )}
+                          </p>
+                          <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
+                            <span>{formatDate(event.createdAt)}</span>
+                            {event.room && (
+                              <>
+                                <span>•</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {event.room.name}
+                                </Badge>
+                              </>
+                            )}
+                            {event.ipAddress && (
+                              <>
+                                <span>•</span>
+                                <span>{event.ipAddress}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
 
