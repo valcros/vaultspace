@@ -244,7 +244,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             _count: {
               select: {
                 children: true,
-                documents: true,
+                documents: { where: { status: 'ACTIVE' } },
               },
             },
           },
