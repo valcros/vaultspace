@@ -394,10 +394,12 @@ export class DocumentService {
     const { roomId, folderId, status, search, category, offset = 0, limit = 50 } = options;
 
     // Build where clause
+    // When no folderId is specified and no search query, show only root-level documents
+    // (folderId: null). When searching, show all documents regardless of folder.
     const where: Prisma.DocumentWhereInput = {
       organizationId: session.organizationId,
       roomId,
-      ...(folderId !== undefined && { folderId }),
+      ...(folderId !== undefined ? { folderId } : !search ? { folderId: null } : {}),
       ...(status && { status }),
       ...(category && { category: category as unknown as Prisma.DocumentWhereInput['category'] }),
       ...(search && {
