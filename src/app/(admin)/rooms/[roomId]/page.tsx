@@ -29,6 +29,8 @@ import {
   Minus,
   Lock,
   Tag,
+  Square,
+  CheckSquare,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -181,6 +183,14 @@ export default function RoomDetailPage() {
     return { name: true, size: true, uploaded: true };
   });
 
+  // Bulk selection
+  const [selectedDocs, setSelectedDocs] = React.useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = React.useState<{
+    x: number;
+    y: number;
+    doc: Document;
+  } | null>(null);
+
   // Dialog states
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
   const [showMemberDialog, setShowMemberDialog] = React.useState(false);
@@ -256,6 +266,64 @@ export default function RoomDetailPage() {
     },
     [sortField]
   );
+
+  const toggleDocSelection = React.useCallback((docId: string) => {
+    setSelectedDocs((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) {
+        next.delete(docId);
+      } else {
+        next.add(docId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = React.useCallback(() => {
+    if (selectedDocs.size === documents.length) {
+      setSelectedDocs(new Set());
+    } else {
+      setSelectedDocs(new Set(documents.map((d) => d.id)));
+    }
+  }, [documents, selectedDocs.size]);
+
+  const handleBulkCategory = React.useCallback(
+    async (category: string | null) => {
+      for (const docId of Array.from(selectedDocs)) {
+        await fetch(`/api/rooms/${roomId}/documents/${docId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category }),
+        });
+      }
+      setSelectedDocs(new Set());
+      fetchDocuments();
+    },
+    [selectedDocs, roomId]
+  );
+
+  const handleBulkConfidential = React.useCallback(
+    async (confidential: boolean) => {
+      for (const docId of Array.from(selectedDocs)) {
+        await fetch(`/api/rooms/${roomId}/documents/${docId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confidential }),
+        });
+      }
+      setSelectedDocs(new Set());
+      fetchDocuments();
+    },
+    [selectedDocs, roomId]
+  );
+
+  const handleBulkDelete = React.useCallback(async () => {
+    for (const docId of Array.from(selectedDocs)) {
+      await fetch(`/api/rooms/${roomId}/documents/${docId}`, { method: 'DELETE' });
+    }
+    setSelectedDocs(new Set());
+    fetchDocuments();
+  }, [selectedDocs, roomId]);
 
   const fetchDocuments = React.useCallback(async () => {
     try {
@@ -1014,6 +1082,18 @@ export default function RoomDetailPage() {
                 <table className="w-full">
                   <thead className="border-b bg-neutral-50">
                     <tr>
+                      <th className="w-8 px-2 py-2">
+                        <button
+                          onClick={toggleSelectAll}
+                          className="flex items-center text-neutral-400 hover:text-neutral-600"
+                        >
+                          {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
+                            <CheckSquare className="h-4 w-4 text-primary-500" />
+                          ) : (
+                            <Square className="h-4 w-4" />
+                          )}
+                        </button>
+                      </th>
                       <th
                         className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
                         onClick={() => handleSort('name')}
@@ -1076,6 +1156,7 @@ export default function RoomDetailPage() {
                         className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
                         onClick={() => handleFolderClick(folder)}
                       >
+                        <td className="w-8 px-2" />
                         <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
                           <div className="flex items-center gap-2">
                             <Folder
@@ -1136,9 +1217,26 @@ export default function RoomDetailPage() {
                     {sortedDocuments.map((doc) => (
                       <tr
                         key={doc.id}
-                        className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
+                        className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
                         onClick={() => handlePreview(doc)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({ x: e.clientX, y: e.clientY, doc });
+                        }}
                       >
+                        <td
+                          className="w-8 px-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleDocSelection(doc.id);
+                          }}
+                        >
+                          {selectedDocs.has(doc.id) ? (
+                            <CheckSquare className="h-4 w-4 text-primary-500" />
+                          ) : (
+                            <Square className="h-4 w-4 text-neutral-300" />
+                          )}
+                        </td>
                         <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
                           <div className="flex items-center gap-2">
                             <FileTypeIcon
@@ -1324,6 +1422,29 @@ export default function RoomDetailPage() {
                           <DropdownMenuItem onClick={() => handleDownload(doc)}>
                             <Download className="mr-2 h-4 w-4" />
                             Download
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setEditingTagsDoc(doc);
+                              setTagInput((doc.tags || []).join(', '));
+                            }}
+                          >
+                            <Tag className="mr-2 h-4 w-4" />
+                            Edit Properties
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              const next = !doc.confidential;
+                              await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ confidential: next }),
+                              });
+                              fetchDocuments();
+                            }}
+                          >
+                            <Lock className="mr-2 h-4 w-4" />
+                            {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -1555,6 +1676,122 @@ export default function RoomDetailPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Bulk Actions Bar */}
+      {selectedDocs.size > 0 && (
+        <div className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border bg-white px-4 py-2 shadow-lg">
+          <span className="text-sm font-medium text-neutral-700">{selectedDocs.size} selected</span>
+          <div className="mx-2 h-4 w-px bg-neutral-200" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Tag className="mr-1.5 h-3.5 w-3.5" />
+                Category
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleBulkCategory(null)}>
+                No category
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {CATEGORY_OPTIONS.map((opt) => (
+                <DropdownMenuItem key={opt.value} onClick={() => handleBulkCategory(opt.value)}>
+                  {opt.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="outline" size="sm" onClick={() => handleBulkConfidential(true)}>
+            <Lock className="mr-1.5 h-3.5 w-3.5" />
+            Confidential
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-danger-600 hover:bg-danger-50"
+            onClick={handleBulkDelete}
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            Delete
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedDocs(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
+
+      {/* Right-click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setContextMenu(null);
+          }}
+        >
+          <div
+            className="absolute rounded-xl border bg-white py-1 shadow-lg"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"
+              onClick={() => {
+                handlePreview(contextMenu.doc);
+                setContextMenu(null);
+              }}
+            >
+              <Eye className="h-4 w-4 text-neutral-500" /> Preview
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"
+              onClick={() => {
+                handleDownload(contextMenu.doc);
+                setContextMenu(null);
+              }}
+            >
+              <Download className="h-4 w-4 text-neutral-500" /> Download
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"
+              onClick={() => {
+                setEditingTagsDoc(contextMenu.doc);
+                setTagInput((contextMenu.doc.tags || []).join(', '));
+                setContextMenu(null);
+              }}
+            >
+              <Tag className="h-4 w-4 text-neutral-500" /> Edit Properties
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"
+              onClick={async () => {
+                const next = !contextMenu.doc.confidential;
+                await fetch(`/api/rooms/${roomId}/documents/${contextMenu.doc.id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ confidential: next }),
+                });
+                fetchDocuments();
+                setContextMenu(null);
+              }}
+            >
+              <Lock className="h-4 w-4 text-neutral-500" />{' '}
+              {contextMenu.doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+            </button>
+            <div className="my-1 border-t" />
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-danger-600 hover:bg-danger-50"
+              onClick={() => {
+                handleDelete(contextMenu.doc);
+                setContextMenu(null);
+              }}
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
