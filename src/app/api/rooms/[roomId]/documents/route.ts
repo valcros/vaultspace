@@ -189,6 +189,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const status =
       (searchParams.get('status') as 'ACTIVE' | 'ARCHIVED' | 'DELETED' | null) ?? 'ACTIVE';
     const search = searchParams.get('search') || undefined;
+    const category = searchParams.get('category') || undefined;
     const offset = parseInt(searchParams.get('offset') ?? '0', 10);
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 100);
 
@@ -205,6 +206,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       folderId,
       status,
       search,
+      category,
       offset,
       limit,
     });
@@ -219,6 +221,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       mimeType: doc.mimeType,
       size: Number(doc.fileSize),
       tags: doc.tags,
+      category: doc.category ?? null,
+      confidential: doc.confidential ?? false,
       folderId: doc.folderId,
       createdAt: doc.createdAt.toISOString(),
       updatedAt: doc.updatedAt.toISOString(),

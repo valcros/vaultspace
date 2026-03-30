@@ -96,6 +96,7 @@ export interface DocumentListOptions extends PaginationOptions {
   folderId?: string;
   status?: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
   search?: string;
+  category?: string;
 }
 
 /**
@@ -390,7 +391,7 @@ export class DocumentService {
     options: DocumentListOptions
   ): Promise<PaginatedResult<DocumentWithVersion>> {
     const { session } = ctx;
-    const { roomId, folderId, status, search, offset = 0, limit = 50 } = options;
+    const { roomId, folderId, status, search, category, offset = 0, limit = 50 } = options;
 
     // Build where clause
     const where: Prisma.DocumentWhereInput = {
@@ -398,6 +399,7 @@ export class DocumentService {
       roomId,
       ...(folderId !== undefined && { folderId }),
       ...(status && { status }),
+      ...(category && { category: category as unknown as Prisma.DocumentWhereInput['category'] }),
       ...(search && {
         name: { contains: search, mode: 'insensitive' },
       }),

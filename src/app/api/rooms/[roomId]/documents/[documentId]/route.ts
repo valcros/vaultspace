@@ -102,7 +102,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const body = await request.json();
-    const { name, tags, customMetadata, displayOrder, allowDownload, folderId, batesNumber } = body;
+    const {
+      name,
+      tags,
+      customMetadata,
+      displayOrder,
+      allowDownload,
+      folderId,
+      batesNumber,
+      category,
+      confidential,
+    } = body;
 
     // Validate tags if provided
     if (tags !== undefined) {
@@ -164,6 +174,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           ...(allowDownload !== undefined && { allowDownload }),
           ...(folderId !== undefined && { folderId }),
           ...(batesNumber !== undefined && { batesNumber }),
+          ...(category !== undefined && { category: category || null }),
+          ...(confidential !== undefined && { confidential }),
         },
       });
 

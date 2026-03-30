@@ -30,6 +30,24 @@ enum RoomStatus {
   CLOSED // Deny all viewer access
 }
 
+// Document categories for structured taxonomy
+enum DocumentCategory {
+  FINANCIAL_STATEMENTS
+  TAX_RETURNS
+  CONTRACTS_AGREEMENTS
+  CORPORATE_DOCUMENTS
+  INTELLECTUAL_PROPERTY
+  PITCH_DECK
+  PROFORMA_PROJECTIONS
+  DUE_DILIGENCE
+  INSURANCE
+  COMPLIANCE
+  TECHNICAL_DOCS
+  HR_EMPLOYMENT
+  REAL_ESTATE_LEASE
+  OTHER
+}
+
 // Document lifecycle
 enum DocumentStatus {
   ACTIVE // Normal operation
@@ -391,6 +409,9 @@ model Room {
   requiresNda Boolean @default(false)
   ndaContent  String? @db.Text // Rich text NDA content
 
+  // Privacy - suppress thumbnails for all documents in room
+  allDocumentsConfidential Boolean @default(false)
+
   // Watermark configuration - F130 (UI ready, F023 implements render)
   enableWatermark   Boolean @default(false)
   watermarkTemplate String? @db.VarChar(500) // Template with placeholders: {viewer_email}, {viewer_name}, {timestamp}, {ip}
@@ -443,6 +464,9 @@ model Folder {
   path         String @db.VarChar(1000) // Full path for quick lookup
   displayOrder Int    @default(0)
 
+  // Privacy
+  confidential Boolean @default(false)
+
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -490,9 +514,11 @@ model Document {
   // Tagging & metadata - F110
   tags           String[] @default([])
   customMetadata Json?
+  category       DocumentCategory?
 
   // Access control
-  allowDownload Boolean @default(true)
+  allowDownload  Boolean @default(true)
+  confidential   Boolean @default(false)
 
   // Analytics
   viewCount         Int       @default(0)
@@ -519,6 +545,7 @@ model Document {
   @@index([roomId])
   @@index([folderId])
   @@index([status])
+  @@index([category])
   @@index([batesNumber])
   @@index([deletedAt])
   @@map("documents")

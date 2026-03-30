@@ -86,6 +86,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       watermarkTemplate,
       requiresNda,
       ndaContent,
+      allDocumentsConfidential,
     } = body;
 
     // Use RLS context for org-scoped queries
@@ -133,6 +134,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           ...(watermarkTemplate !== undefined && { watermarkTemplate }),
           ...(requiresNda !== undefined && { requiresNda }),
           ...(ndaContent !== undefined && { ndaContent }),
+          ...(allDocumentsConfidential !== undefined && { allDocumentsConfidential }),
         },
       });
 
