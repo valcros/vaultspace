@@ -36,7 +36,14 @@ const GOTENBERG_OFFICE_TYPES = new Set([
 ]);
 
 // MIME types that Gotenberg can convert via Chromium (HTML rendering)
-const GOTENBERG_CHROMIUM_TYPES = new Set(['text/html', 'text/markdown']);
+const GOTENBERG_CHROMIUM_TYPES = new Set([
+  'text/html',
+  'text/markdown',
+  'text/xml',
+  'text/yaml',
+  'application/json',
+  'application/xml',
+]);
 
 // Types handled directly by Sharp (images)
 const SHARP_TYPES = new Set([
@@ -72,6 +79,10 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   'application/epub+zip': '.epub',
   'text/html': '.html',
   'text/markdown': '.md',
+  'text/xml': '.xml',
+  'text/yaml': '.yaml',
+  'application/json': '.json',
+  'application/xml': '.xml',
 };
 
 export class GotenbergPreviewProvider implements PreviewProvider {
@@ -236,9 +247,10 @@ export class GotenbergPreviewProvider implements PreviewProvider {
   ): Promise<PreviewResult> {
     let htmlContent: string;
 
+    const rawText = data.toString('utf-8');
+
     if (mimeType === 'text/markdown') {
       // Wrap markdown in basic HTML for Chromium rendering
-      const mdText = data.toString('utf-8');
       htmlContent = `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;line-height:1.6;color:#333}
@@ -246,9 +258,15 @@ pre{background:#f5f5f5;padding:16px;border-radius:4px;overflow-x:auto}
 code{background:#f5f5f5;padding:2px 6px;border-radius:3px;font-size:0.9em}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}
 th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-left:16px;color:#666}</style>
-</head><body>${this.escapeHtml(mdText)}</body></html>`;
+</head><body>${this.escapeHtml(rawText)}</body></html>`;
+    } else if (mimeType === 'text/html') {
+      htmlContent = rawText;
     } else {
-      htmlContent = data.toString('utf-8');
+      // JSON, XML, YAML — wrap in monospace code block
+      htmlContent = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>body{margin:20px;font-family:monospace;font-size:12px;line-height:1.5;color:#333;white-space:pre-wrap;word-break:break-all;background:#fff}</style>
+</head><body>${this.escapeHtml(rawText.slice(0, 5000))}</body></html>`;
     }
 
     const boundary = `----GotenbergBoundary${Date.now()}`;
