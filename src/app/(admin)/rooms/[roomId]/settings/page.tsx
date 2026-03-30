@@ -58,6 +58,7 @@ export default function RoomSettingsPage() {
     ndaRequired: false,
     ndaText: '',
     defaultExpiryDays: '',
+    allDocumentsConfidential: false,
   });
 
   const fetchRoom = React.useCallback(async () => {
@@ -75,6 +76,7 @@ export default function RoomSettingsPage() {
           ndaRequired: data.room.requiresNda || false,
           ndaText: data.room.ndaContent || '',
           defaultExpiryDays: data.room.defaultExpiryDays?.toString() || '',
+          allDocumentsConfidential: data.room.allDocumentsConfidential || false,
         });
       } else if (response.status === 404) {
         router.push('/rooms');
@@ -110,6 +112,7 @@ export default function RoomSettingsPage() {
           defaultExpiryDays: formData.defaultExpiryDays
             ? parseInt(formData.defaultExpiryDays, 10)
             : null,
+          allDocumentsConfidential: formData.allDocumentsConfidential,
         }),
       });
 
@@ -323,6 +326,24 @@ export default function RoomSettingsPage() {
                 />
               </div>
             )}
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="confidential">All Documents Confidential</Label>
+                <p className="mt-1 text-sm text-neutral-500">
+                  Hide document thumbnails in grid view for all documents
+                </p>
+              </div>
+              <Switch
+                id="confidential"
+                checked={formData.allDocumentsConfidential}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, allDocumentsConfidential: checked })
+                }
+              />
+            </div>
 
             <Separator />
 

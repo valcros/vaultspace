@@ -27,6 +27,9 @@ import {
   ChevronDown,
   Columns3,
   Minus,
+  Lock,
+  Tag,
+  X,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -65,6 +68,7 @@ import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer'
 import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
 import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { toast } from '@/components/ui/use-toast';
+import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
 
 interface Room {
   id: string;
@@ -74,6 +78,7 @@ interface Room {
   enableWatermark: boolean;
   watermarkTemplate: string | null;
   downloadEnabled: boolean;
+  allDocumentsConfidential: boolean;
   createdAt: string;
 }
 
@@ -83,6 +88,8 @@ interface Document {
   mimeType: string;
   size: number;
   tags: string[];
+  category: string | null;
+  confidential: boolean;
   uploadedBy: { firstName: string; lastName: string };
   createdAt: string;
 }
@@ -155,6 +162,7 @@ export default function RoomDetailPage() {
     return 'list';
   });
 
+  const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [compact, setCompact] = React.useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('vaultspace-compact') === 'true';
@@ -251,9 +259,14 @@ export default function RoomDetailPage() {
 
   const fetchDocuments = React.useCallback(async () => {
     try {
-      const url = currentFolderId
-        ? `/api/rooms/${roomId}/documents?folderId=${currentFolderId}`
-        : `/api/rooms/${roomId}/documents`;
+      const params = new URLSearchParams();
+      if (currentFolderId) {
+        params.set('folderId', currentFolderId);
+      }
+      if (categoryFilter) {
+        params.set('category', categoryFilter);
+      }
+      const url = `/api/rooms/${roomId}/documents${params.toString() ? `?${params}` : ''}`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -262,7 +275,7 @@ export default function RoomDetailPage() {
     } catch (error) {
       console.error('Failed to fetch documents:', error);
     }
-  }, [roomId, currentFolderId]);
+  }, [roomId, currentFolderId, categoryFilter]);
 
   const handleSaveTags = React.useCallback(
     async (doc: Document, tags: string[]) => {
@@ -878,7 +891,7 @@ export default function RoomDetailPage() {
               </div>
             )}
 
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Button onClick={() => setShowUploadDialog(true)}>
                   <Upload className="mr-2 h-4 w-4" />
@@ -888,6 +901,24 @@ export default function RoomDetailPage() {
                   <FolderPlus className="mr-2 h-4 w-4" />
                   New Folder
                 </Button>
+                {/* Category filter */}
+                <Select
+                  value={categoryFilter ?? 'all'}
+                  onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
+                >
+                  <SelectTrigger className="h-9 w-[140px] text-xs">
+                    <Tag className="mr-1.5 h-3.5 w-3.5 text-neutral-400" />
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {CATEGORY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex items-center gap-2">
                 {/* Compact toggle (list view only) */}
@@ -1114,13 +1145,27 @@ export default function RoomDetailPage() {
                               mimeType={doc.mimeType}
                               className={compact ? 'h-4 w-4' : undefined}
                             />
-                            <div>
-                              <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
-                                {doc.name}
-                              </span>
-                              {!compact && doc.tags && doc.tags.length > 0 && (
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`truncate font-medium ${compact ? 'text-sm' : ''}`}
+                                >
+                                  {doc.name}
+                                </span>
+                                {(doc.confidential || room?.allDocumentsConfidential) && (
+                                  <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                                )}
+                              </div>
+                              {!compact && (
                                 <div className="mt-0.5 flex flex-wrap gap-1">
-                                  {doc.tags.map((tag) => (
+                                  {doc.category && (
+                                    <span
+                                      className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
+                                    >
+                                      {getCategoryLabel(doc.category)}
+                                    </span>
+                                  )}
+                                  {doc.tags?.map((tag) => (
                                     <Badge
                                       key={tag}
                                       variant="outline"
@@ -1180,6 +1225,24 @@ export default function RoomDetailPage() {
                                 <FileText className="mr-2 h-4 w-4" />
                                 Edit Tags
                               </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={async () => {
+                                  const next = !doc.confidential;
+                                  await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+                                    method: 'PATCH',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({
+                                      confidential: next,
+                                    }),
+                                  });
+                                  fetchDocuments();
+                                }}
+                              >
+                                <Lock className="mr-2 h-4 w-4" />
+                                {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => handleDelete(doc)}
@@ -1220,9 +1283,28 @@ export default function RoomDetailPage() {
                     className="group relative cursor-pointer rounded-xl border bg-white p-3 transition-all hover:border-primary-200 hover:shadow-md"
                     onClick={() => handlePreview(doc)}
                   >
-                    <DocumentThumbnail docId={doc.id} roomId={roomId} mimeType={doc.mimeType} />
-                    <p className="mt-2 truncate text-sm font-medium">{doc.name}</p>
-                    <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
+                    <DocumentThumbnail
+                      docId={doc.id}
+                      roomId={roomId}
+                      mimeType={doc.mimeType}
+                      confidential={doc.confidential || room?.allDocumentsConfidential || false}
+                    />
+                    <div className="mt-2 flex items-center gap-1">
+                      <p className="truncate text-sm font-medium">{doc.name}</p>
+                      {(doc.confidential || room?.allDocumentsConfidential) && (
+                        <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
+                      {doc.category && (
+                        <span
+                          className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
+                        >
+                          {getCategoryLabel(doc.category)}
+                        </span>
+                      )}
+                    </div>
                     {/* Action menu */}
                     <div
                       className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
@@ -1536,7 +1618,7 @@ export default function RoomDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Tags Dialog */}
+      {/* Edit Properties Dialog */}
       <Dialog
         open={!!editingTagsDoc}
         onOpenChange={(open) => {
@@ -1547,29 +1629,58 @@ export default function RoomDetailPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Tags</DialogTitle>
+            <DialogTitle>Edit Properties</DialogTitle>
             <DialogDescription>
-              Add tags to &quot;{editingTagsDoc?.name}&quot;. Separate multiple tags with commas.
+              Update tags and category for &quot;{editingTagsDoc?.name}&quot;.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input
-              placeholder="confidential, financial, q4-2026"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && editingTagsDoc) {
-                  const tags = tagInput
-                    .split(',')
-                    .map((t) => t.trim())
-                    .filter(Boolean);
-                  handleSaveTags(editingTagsDoc, tags);
-                }
-              }}
-            />
-            <p className="mt-2 text-xs text-neutral-500">
-              Press Enter to save, or click Save Tags below
-            </p>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Category</Label>
+              <Select
+                value={editingTagsDoc?.category ?? 'none'}
+                onValueChange={async (v) => {
+                  if (editingTagsDoc) {
+                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ category: v === 'none' ? null : v }),
+                    });
+                    fetchDocuments();
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No category</SelectItem>
+                  {CATEGORY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tags</Label>
+              <Input
+                placeholder="confidential, financial, q4-2026"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && editingTagsDoc) {
+                    const tags = tagInput
+                      .split(',')
+                      .map((t) => t.trim())
+                      .filter(Boolean);
+                    handleSaveTags(editingTagsDoc, tags);
+                  }
+                }}
+              />
+              <p className="text-xs text-neutral-400">Separate tags with commas</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingTagsDoc(null)}>
@@ -1586,7 +1697,7 @@ export default function RoomDetailPage() {
                 }
               }}
             >
-              Save Tags
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1858,12 +1969,23 @@ function DocumentThumbnail({
   docId,
   roomId,
   mimeType,
+  confidential = false,
 }: {
   docId: string;
   roomId: string;
   mimeType: string;
+  confidential?: boolean;
 }) {
   const [failed, setFailed] = React.useState(false);
+
+  if (confidential) {
+    return (
+      <div className="flex aspect-[4/3] flex-col items-center justify-center rounded-lg bg-amber-50">
+        <Lock className="mb-1 h-8 w-8 text-amber-400" />
+        <span className="text-[10px] font-medium text-amber-500">Confidential</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-neutral-50">
