@@ -38,6 +38,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
+import { EmptyRooms } from '@/components/illustrations/EmptyState';
 
 interface Room {
   id: string;
@@ -59,9 +61,19 @@ export default function RoomsPage() {
   const [showCreateDialog, setShowCreateDialog] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [newRoom, setNewRoom] = React.useState({ name: '', description: '' });
+  const [stats, setStats] = React.useState<{
+    totalRooms: number;
+    totalDocuments: number;
+    totalMembers: number;
+    viewsThisWeek: number;
+  } | null>(null);
 
   React.useEffect(() => {
     fetchRooms();
+    fetch('/api/organization/stats')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setStats)
+      .catch(() => {});
   }, []);
 
   const fetchRooms = async () => {
@@ -135,6 +147,54 @@ export default function RoomsPage() {
       />
 
       <div>
+        {/* Stats Bar */}
+        {stats && (
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              {
+                label: 'Rooms',
+                value: stats.totalRooms,
+                icon: FolderOpen,
+                color: 'text-primary-600 bg-primary-50',
+              },
+              {
+                label: 'Documents',
+                value: stats.totalDocuments,
+                icon: FolderOpen,
+                color: 'text-green-600 bg-green-50',
+              },
+              {
+                label: 'Members',
+                value: stats.totalMembers,
+                icon: Users,
+                color: 'text-purple-600 bg-purple-50',
+              },
+              {
+                label: 'Views (7d)',
+                value: stats.viewsThisWeek,
+                icon: FolderOpen,
+                color: 'text-amber-600 bg-amber-50',
+              },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="flex items-center gap-3 rounded-xl border bg-white px-4 py-3"
+              >
+                <div className={`rounded-lg p-2 ${stat.color}`}>
+                  <stat.icon className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-neutral-900">{stat.value}</p>
+                  <p className="text-xs text-neutral-500">{stat.label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Welcome Banner */}
+        {!isLoading && <WelcomeBanner roomCount={rooms.length} />}
+
         {/* Search */}
         <div className="relative mb-4 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
@@ -164,7 +224,7 @@ export default function RoomsPage() {
           </div>
         ) : rooms.length === 0 ? (
           <Card className="p-8 text-center">
-            <FolderOpen className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
+            <EmptyRooms className="mx-auto mb-4" />
             <h3 className="mb-2 text-lg font-semibold text-neutral-900">No data rooms yet</h3>
             <p className="mx-auto mb-6 max-w-sm text-neutral-500">
               Create your first data room to start securely sharing documents with stakeholders.
