@@ -1380,6 +1380,10 @@ export default function RoomDetailPage() {
                     key={doc.id}
                     className="group relative cursor-pointer rounded-xl border bg-white p-3 transition-all hover:border-primary-200 hover:shadow-md"
                     onClick={() => handlePreview(doc)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({ x: e.clientX, y: e.clientY, doc });
+                    }}
                   >
                     <DocumentThumbnail
                       docId={doc.id}
