@@ -2,15 +2,20 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Install OpenSSL for Prisma
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL for Prisma, build tools, and libvips with poppler for PDF rasterization.
+# Sharp must be built from source to link against system libvips (which includes poppler).
+RUN apt-get update && apt-get install -y \
+    openssl build-essential python3 pkg-config \
+    libvips-dev libpoppler-glib-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and Prisma schema first
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 
-# Install dependencies (postinstall will run prisma generate)
+# Install dependencies — rebuild Sharp from source to use system libvips with poppler
 RUN npm ci
+RUN npm rebuild sharp --build-from-source
 
 # Copy source code
 COPY . .
