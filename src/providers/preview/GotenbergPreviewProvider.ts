@@ -405,14 +405,8 @@ body{width:${width * 2}px;padding:16px;background:#fff;font-family:'SF Mono',Mon
     fileName: string
   ): Promise<Buffer> {
     try {
-      // Approach A: base64-embedded PDF in HTML <embed>, Chromium screenshot
-      const pdfBase64 = data.toString('base64');
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>*{margin:0;padding:0}body{width:${width * 2}px;height:${height * 2}px;overflow:hidden}
-embed{width:100%;height:100%}</style>
-</head><body><embed src="data:application/pdf;base64,${pdfBase64}" type="application/pdf" width="${width * 2}" height="${height * 2}"/></body></html>`;
-
-      const png = await this.gotenbergScreenshot(html, width * 2, height * 2);
+      // Render PDF page 1 via pdf.js in Gotenberg's Chromium
+      const png = await this.renderPdfPageToImage(data);
       if (png.length > 1000) {
         return await sharp(png)
           .resize(width, height, { fit: 'cover', position: 'top' })
@@ -420,7 +414,7 @@ embed{width:100%;height:100%}</style>
           .toBuffer();
       }
     } catch {
-      // PDF embed approach failed
+      // PDF rendering failed
     }
 
     // Fallback to branded card for PDFs
@@ -573,6 +567,57 @@ embed{width:100%;height:100%}</style>
   }
 
   /**
+   * Render a PDF page to PNG using pdf.js in Gotenberg's Chromium.
+   * The <embed>/<object> approach doesn't work in headless Chromium
+   * because the PDF viewer plugin is disabled. pdf.js renders via canvas.
+   */
+  private async renderPdfPageToImage(pdfBuffer: Buffer, pageNum = 1): Promise<Buffer> {
+    const pdfBase64 = pdfBuffer.toString('base64');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
+<style>*{margin:0;padding:0}body{background:#fff}</style>
+</head><body><canvas id="c"></canvas>
+<script type="module">
+const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs');
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+const data=Uint8Array.from(atob('${pdfBase64}'),c=>c.charCodeAt(0));
+const pdf=await pdfjsLib.getDocument({data}).promise;
+const page=await pdf.getPage(${pageNum});
+const vp=page.getViewport({scale:1.5});
+const canvas=document.getElementById('c');
+canvas.width=vp.width;canvas.height=vp.height;
+await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+</script></body></html>`;
+
+    const boundary = `----GotenbergBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const body = this.buildMultipartBodyWithFields(
+      boundary,
+      'index.html',
+      Buffer.from(html, 'utf-8'),
+      {
+        waitDelay: '3s',
+        format: 'png',
+        width: '800',
+        height: '1100',
+        optimizeForSpeed: 'true',
+      }
+    );
+
+    const response = await fetch(`${this.gotenbergUrl}/forms/chromium/screenshot/html`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      body: new Uint8Array(body),
+      signal: AbortSignal.timeout(this.timeoutMs + 5000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`PDF screenshot failed (${response.status})`);
+    }
+
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  /**
    * Render a branded placeholder card via Gotenberg Chromium screenshot.
    * Shows the file extension in a color-coded card with the filename.
    */
@@ -656,40 +701,19 @@ body{width:${width * 2}px;height:${height * 2}px;display:flex;align-items:center
       throw new Error(`Gotenberg conversion failed (${response.status}): ${errorText}`);
     }
 
-    // Gotenberg returns a PDF — store it as the preview asset AND
-    // rasterize to PNG via Chromium screenshot for thumbnails
+    // Gotenberg returns a PDF. Render page 1 to PNG using pdf.js in Chromium.
+    // The <embed> approach doesn't work in headless Chromium (PDF plugin disabled).
     const pdfBuffer = Buffer.from(await response.arrayBuffer());
 
-    // Try to rasterize the first page to PNG using Chromium
     let pngBuffer: Buffer | null = null;
     try {
-      // Wrap PDF in HTML for Chromium to screenshot
-      const htmlWrapper = `<!DOCTYPE html><html><head><meta charset="utf-8">
-        <style>body{margin:0;padding:0;overflow:hidden}embed{width:100%;height:100%}</style>
-        </head><body><embed src="data:application/pdf;base64,${pdfBuffer.toString('base64')}" type="application/pdf" width="800" height="1100"/></body></html>`;
-      const screenshotBoundary = `----GotenbergBoundary${Date.now()}ss`;
-      const screenshotBody = this.buildMultipartBody(
-        screenshotBoundary,
-        'index.html',
-        Buffer.from(htmlWrapper, 'utf-8')
-      );
-      const ssResponse = await fetch(`${this.gotenbergUrl}/forms/chromium/screenshot/html`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': `multipart/form-data; boundary=${screenshotBoundary}`,
-        },
-        body: new Uint8Array(screenshotBody),
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
-      if (ssResponse.ok) {
-        pngBuffer = Buffer.from(await ssResponse.arrayBuffer());
-      }
+      pngBuffer = await this.renderPdfPageToImage(pdfBuffer);
     } catch {
-      // Screenshot failed — fall back to PDF-only asset
+      // PDF rendering failed — fall back to PDF asset
     }
 
     // Return PNG if available, otherwise PDF
-    if (pngBuffer && pngBuffer.length > 100) {
+    if (pngBuffer && pngBuffer.length > 1000) {
       return {
         pages: [
           {
@@ -826,37 +850,45 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
             .png({ quality: 90, compressionLevel: 6 })
             .toBuffer();
         } catch {
-          // Sharp PDF rendering requires libvips with poppler support
-          // Generate a placeholder page
-          const page = pdfDoc.getPage(i);
-          const pageSize = page.getSize();
-          width = Math.round(pageSize.width * (150 / 72)); // Convert from points to pixels at 150 DPI
-          height = Math.round(pageSize.height * (150 / 72));
+          // Sharp PDF rendering requires libvips with poppler support.
+          // Fallback: render via pdf.js in Gotenberg's Chromium.
+          try {
+            pageImage = await this.renderPdfPageToImage(Buffer.from(singlePagePdf), 1);
+            const meta = await sharp(pageImage).metadata();
+            width = meta.width ?? 800;
+            height = meta.height ?? 1100;
+          } catch {
+            // Both Sharp and Gotenberg failed — generate a placeholder page
+            const page = pdfDoc.getPage(i);
+            const pageSize = page.getSize();
+            width = Math.round(pageSize.width * (150 / 72));
+            height = Math.round(pageSize.height * (150 / 72));
 
-          pageImage = await sharp({
-            create: {
-              width: Math.min(width, 1600),
-              height: Math.min(height, 2200),
-              channels: 4,
-              background: { r: 255, g: 255, b: 255, alpha: 1 },
-            },
-          })
-            .composite([
-              {
-                input: Buffer.from(
-                  `<svg width="${Math.min(width, 1600)}" height="${Math.min(height, 2200)}">
-                    <rect width="100%" height="100%" fill="white" stroke="#e5e7eb" stroke-width="2"/>
-                    <text x="50%" y="50%" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#9ca3af">
-                      Page ${i + 1}
-                    </text>
-                  </svg>`
-                ),
-                top: 0,
-                left: 0,
+            pageImage = await sharp({
+              create: {
+                width: Math.min(width, 1600),
+                height: Math.min(height, 2200),
+                channels: 4,
+                background: { r: 255, g: 255, b: 255, alpha: 1 },
               },
-            ])
-            .png()
-            .toBuffer();
+            })
+              .composite([
+                {
+                  input: Buffer.from(
+                    `<svg width="${Math.min(width, 1600)}" height="${Math.min(height, 2200)}">
+                      <rect width="100%" height="100%" fill="white" stroke="#e5e7eb" stroke-width="2"/>
+                      <text x="50%" y="50%" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="18" fill="#9ca3af">
+                        Page ${i + 1}
+                      </text>
+                    </svg>`
+                  ),
+                  top: 0,
+                  left: 0,
+                },
+              ])
+              .png()
+              .toBuffer();
+          }
         }
 
         pages.push({
