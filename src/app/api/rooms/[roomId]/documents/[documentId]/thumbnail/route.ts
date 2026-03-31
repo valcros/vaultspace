@@ -3,17 +3,43 @@
  *
  * GET /api/rooms/:roomId/documents/:documentId/thumbnail
  *
- * Returns a PNG thumbnail for grid view. Falls back to generating one
- * from the original file for images, or returns 404 if no thumbnail exists.
+ * Returns a PNG thumbnail for grid view.
+ * Path 1: Serve stored THUMBNAIL asset for ALL types.
+ * Path 2: If no thumbnail, return branded placeholder IMMEDIATELY,
+ *          then enqueue a thumbnail.generate job (fire-and-forget).
+ * Never blocks on expensive Gotenberg generation.
+ * Never returns 404 for a document with a file blob.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 export const dynamic = 'force-dynamic';
+
+// Color mapping for branded placeholder cards
+const EXTENSION_COLORS: Record<string, { bg: string; text: string }> = {
+  PDF: { bg: '#fef2f2', text: '#dc2626' },
+  DOCX: { bg: '#eff6ff', text: '#2563eb' },
+  DOC: { bg: '#eff6ff', text: '#2563eb' },
+  XLSX: { bg: '#f0fdf4', text: '#16a34a' },
+  XLS: { bg: '#f0fdf4', text: '#16a34a' },
+  PPTX: { bg: '#fff7ed', text: '#ea580c' },
+  PPT: { bg: '#fff7ed', text: '#ea580c' },
+  CSV: { bg: '#f0fdf4', text: '#16a34a' },
+  MD: { bg: '#f5f3ff', text: '#7c3aed' },
+  HTML: { bg: '#fef3c7', text: '#d97706' },
+  JSON: { bg: '#ecfdf5', text: '#059669' },
+  XML: { bg: '#fef3c7', text: '#d97706' },
+  YAML: { bg: '#fce7f3', text: '#db2777' },
+  YML: { bg: '#fce7f3', text: '#db2777' },
+  TXT: { bg: '#f9fafb', text: '#6b7280' },
+  SVG: { bg: '#faf5ff', text: '#9333ea' },
+  VSDX: { bg: '#faf5ff', text: '#9333ea' },
+};
 
 interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
@@ -75,121 +101,102 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     const providers = getProviders();
     const storage = providers.storage;
-    const mimeType = document.mimeType || '';
 
-    // Try serving the THUMBNAIL asset first
-    // Skip for PDFs — stored thumbnails from the pipeline have garbled fonts
-    // because Sharp can't rasterize PDFs without poppler. Fall through to
-    // the branded placeholder which renders cleanly via Gotenberg Chromium.
+    // Path 1: Serve stored THUMBNAIL for ALL types (no PDF skip)
     const thumbnailAsset = latestVersion.previewAssets?.[0];
-    if (thumbnailAsset && mimeType !== 'application/pdf') {
-      const exists = await storage.exists('previews', thumbnailAsset.storageKey);
-      if (exists) {
-        const data = await storage.get('previews', thumbnailAsset.storageKey);
-        if (data.length > 1000) {
-          return new NextResponse(new Uint8Array(data), {
-            status: 200,
-            headers: {
-              'Content-Type': 'image/png',
-              'Content-Length': data.length.toString(),
-              'Cache-Control': 'private, max-age=300',
-            },
-          });
-        }
-      }
-    }
-
-    // For images, generate a thumbnail on the fly from the original file
-    if (mimeType.startsWith('image/') && latestVersion.fileBlob) {
-      const bucket = latestVersion.fileBlob.storageBucket || 'documents';
-      const key = latestVersion.fileBlob.storageKey;
-      const exists = await storage.exists(bucket, key);
-      if (exists) {
-        const data = await storage.get(bucket, key);
-        // Use sharp to resize to thumbnail
-        const sharp = (await import('sharp')).default;
-        const thumbnail = await sharp(Buffer.from(data))
-          .resize(400, 300, { fit: 'cover', position: 'top' })
-          .png({ quality: 80 })
-          .toBuffer();
-
-        return new NextResponse(new Uint8Array(thumbnail), {
-          status: 200,
-          headers: {
-            'Content-Type': 'image/png',
-            'Content-Length': thumbnail.length.toString(),
-            'Cache-Control': 'private, max-age=300',
-          },
-        });
-      }
-    }
-
-    // For types without pre-generated thumbnails, create a branded placeholder
-    // using Gotenberg Chromium to render a styled HTML card as PNG
-    if (latestVersion.fileBlob) {
-      const gotenbergUrl = process.env['GOTENBERG_URL'] ?? 'http://localhost:3001';
+    if (thumbnailAsset) {
       try {
-        const ext = document.name.split('.').pop()?.toUpperCase() || 'FILE';
-        const colors: Record<string, { bg: string; text: string }> = {
-          PDF: { bg: '#fef2f2', text: '#dc2626' },
-          DOCX: { bg: '#eff6ff', text: '#2563eb' },
-          DOC: { bg: '#eff6ff', text: '#2563eb' },
-          XLSX: { bg: '#f0fdf4', text: '#16a34a' },
-          XLS: { bg: '#f0fdf4', text: '#16a34a' },
-          PPTX: { bg: '#fff7ed', text: '#ea580c' },
-          PPT: { bg: '#fff7ed', text: '#ea580c' },
-          CSV: { bg: '#f0fdf4', text: '#16a34a' },
-          VSDX: { bg: '#faf5ff', text: '#9333ea' },
-        };
-        const color = colors[ext] || { bg: '#f9fafb', text: '#6b7280' };
-        const truncatedName =
-          document.name.length > 30 ? document.name.slice(0, 27) + '...' : document.name;
-
-        const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-          <style>*{margin:0;padding:0;box-sizing:border-box}
-          body{width:400px;height:300px;display:flex;align-items:center;justify-content:center;background:${color.bg};font-family:system-ui,-apple-system,sans-serif}
-          .card{text-align:center;padding:20px}
-          .ext{font-size:48px;font-weight:700;color:${color.text};letter-spacing:2px;margin-bottom:8px}
-          .name{font-size:13px;color:#6b7280;max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-          </style></head>
-          <body><div class="card"><div class="ext">${ext}</div><div class="name">${truncatedName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div></body></html>`;
-
-        const boundary = `----Boundary${Date.now()}`;
-        const header = Buffer.from(
-          `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="index.html"\r\nContent-Type: text/html\r\n\r\n`
-        );
-        const footer = Buffer.from(`\r\n--${boundary}--\r\n`);
-        const body = Buffer.concat([header, Buffer.from(html, 'utf-8'), footer]);
-
-        const ssResponse = await fetch(`${gotenbergUrl}/forms/chromium/screenshot/html`, {
-          method: 'POST',
-          headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-          body: new Uint8Array(body),
-          signal: AbortSignal.timeout(10000),
-        });
-
-        if (ssResponse.ok) {
-          const pngData = Buffer.from(await ssResponse.arrayBuffer());
-          if (pngData.length > 100) {
-            return new NextResponse(new Uint8Array(pngData), {
+        const exists = await storage.exists('previews', thumbnailAsset.storageKey);
+        if (exists) {
+          const data = await storage.get('previews', thumbnailAsset.storageKey);
+          if (data.length > 1000) {
+            return new NextResponse(new Uint8Array(data), {
               status: 200,
               headers: {
                 'Content-Type': 'image/png',
-                'Content-Length': pngData.length.toString(),
+                'Content-Length': data.length.toString(),
                 'Cache-Control': 'private, max-age=300',
               },
             });
           }
         }
       } catch (err) {
-        console.error('[ThumbnailAPI] Placeholder generation failed:', err);
+        console.error('[ThumbnailAPI] Failed to serve stored thumbnail:', err);
       }
     }
 
-    // No thumbnail available
-    return NextResponse.json({ error: 'No thumbnail available' }, { status: 404 });
+    // Path 2: No stored thumbnail — return branded placeholder IMMEDIATELY
+    // then enqueue a preview.generate job (fire-and-forget) which generates
+    // the thumbnail inline from original file bytes.
+    if (latestVersion.fileBlob) {
+      // Fire-and-forget: enqueue full preview generation which includes inline thumbnail
+      providers.job
+        .addJob(
+          'high',
+          'preview.generate',
+          {
+            documentId,
+            versionId: latestVersion.id,
+            organizationId: session.organizationId,
+            storageKey: latestVersion.fileBlob.storageKey,
+            contentType: document.mimeType || 'application/octet-stream',
+            fileName: document.name,
+            fileSizeBytes: 0,
+            isScanned: false,
+          },
+          { priority: 'normal' }
+        )
+        .catch((err: unknown) => {
+          console.error('[ThumbnailAPI] Failed to enqueue preview job:', err);
+        });
+    }
+
+    // Return branded placeholder immediately
+    const placeholderPng = await generateBrandedPlaceholder(document.name);
+    return new NextResponse(new Uint8Array(placeholderPng), {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/png',
+        'Content-Length': placeholderPng.length.toString(),
+        // Short cache so next load can pick up the real thumbnail
+        'Cache-Control': 'private, max-age=30',
+      },
+    });
   } catch (error) {
     console.error('[ThumbnailAPI] Error:', error);
     return NextResponse.json({ error: 'Failed to get thumbnail' }, { status: 500 });
   }
+}
+
+/**
+ * Generate a branded placeholder card via Sharp SVG (no Gotenberg dependency).
+ * Fast and reliable — no network calls needed.
+ */
+async function generateBrandedPlaceholder(fileName: string): Promise<Buffer> {
+  const ext = fileName.split('.').pop()?.toUpperCase() || 'FILE';
+  const color = EXTENSION_COLORS[ext] || { bg: '#f9fafb', text: '#6b7280' };
+  const truncatedName =
+    fileName.length > 30 ? fileName.slice(0, 27) + '...' : fileName;
+  const escapedExt = escapeXml(ext);
+  const escapedName = escapeXml(truncatedName);
+
+  const width = 400;
+  const height = 300;
+
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100%" height="100%" fill="${color.bg}" rx="8"/>
+    <text x="50%" y="42%" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="48" font-weight="700" fill="${color.text}">${escapedExt}</text>
+    <text x="50%" y="62%" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#6b7280">${escapedName}</text>
+  </svg>`;
+
+  return sharp(Buffer.from(svg)).resize(200, 150).png().toBuffer();
+}
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
