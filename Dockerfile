@@ -23,8 +23,11 @@ FROM node:20-slim AS runner
 WORKDIR /app
 
 # Install dumb-init, curl, OpenSSL for Prisma, PostgreSQL client for RLS,
-# and fonts for Sharp SVG text rendering in thumbnails
-RUN apt-get update && apt-get install -y dumb-init curl openssl postgresql-client fontconfig fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+# fonts for Sharp SVG text rendering, and libpoppler/libvips for PDF rasterization
+RUN apt-get update && apt-get install -y \
+    dumb-init curl openssl postgresql-client fontconfig fonts-dejavu-core \
+    libvips-dev libpoppler-glib-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set production environment
 ENV NODE_ENV=production
