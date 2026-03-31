@@ -184,8 +184,8 @@ async function generateBrandedPlaceholder(fileName: string): Promise<Buffer> {
 
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect width="100%" height="100%" fill="${color.bg}" rx="8"/>
-    <text x="50%" y="42%" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="48" font-weight="700" fill="${color.text}">${escapedExt}</text>
-    <text x="50%" y="62%" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#6b7280">${escapedName}</text>
+    <text x="50%" y="42%" text-anchor="middle" font-family="DejaVu Sans,sans-serif" font-size="48" font-weight="700" fill="${color.text}">${escapedExt}</text>
+    <text x="50%" y="62%" text-anchor="middle" font-family="DejaVu Sans,sans-serif" font-size="13" fill="#6b7280">${escapedName}</text>
   </svg>`;
 
   return sharp(Buffer.from(svg)).resize(200, 150).png().toBuffer();
