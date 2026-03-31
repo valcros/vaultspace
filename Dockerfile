@@ -22,8 +22,9 @@ RUN npm run build
 FROM node:20-slim AS runner
 WORKDIR /app
 
-# Install dumb-init, curl, OpenSSL for Prisma, and PostgreSQL client for RLS
-RUN apt-get update && apt-get install -y dumb-init curl openssl postgresql-client && rm -rf /var/lib/apt/lists/*
+# Install dumb-init, curl, OpenSSL for Prisma, PostgreSQL client for RLS,
+# and fonts for Sharp SVG text rendering in thumbnails
+RUN apt-get update && apt-get install -y dumb-init curl openssl postgresql-client fontconfig fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 
 # Set production environment
 ENV NODE_ENV=production

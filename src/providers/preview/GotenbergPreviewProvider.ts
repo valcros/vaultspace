@@ -616,8 +616,8 @@ body{width:${width * 2}px;height:${height * 2}px;display:flex;align-items:center
 
     const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <rect width="100%" height="100%" fill="${color.bg}" rx="4"/>
-      <text x="50%" y="42%" text-anchor="middle" font-family="system-ui,sans-serif" font-size="28" font-weight="700" fill="${color.text}">${this.escapeHtml(ext)}</text>
-      <text x="50%" y="62%" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#6b7280">${this.escapeHtml(truncatedName)}</text>
+      <text x="50%" y="42%" text-anchor="middle" font-family="DejaVu Sans,sans-serif" font-size="28" font-weight="700" fill="${color.text}">${this.escapeHtml(ext)}</text>
+      <text x="50%" y="62%" text-anchor="middle" font-family="DejaVu Sans,sans-serif" font-size="10" fill="#6b7280">${this.escapeHtml(truncatedName)}</text>
     </svg>`;
 
     return sharp(Buffer.from(svg)).resize(width, height).png().toBuffer();

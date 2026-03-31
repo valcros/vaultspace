@@ -139,7 +139,12 @@ describe('processPreviewJob', () => {
     await processPreviewJob(createMockJob());
 
     expect(mockGenerateThumbnailPng).not.toHaveBeenCalled();
-    expect(mockPreviewAssetUpsert).not.toHaveBeenCalled();
+    // Page asset upserts still happen (for preview pages), but no THUMBNAIL upsert
+    const thumbnailUpserts = mockPreviewAssetUpsert.mock.calls.filter(
+      (call: unknown[]) =>
+        (call[0] as { create?: { assetType?: string } })?.create?.assetType === 'THUMBNAIL'
+    );
+    expect(thumbnailUpserts).toHaveLength(0);
   });
 
   it('generates thumbnail for files <= 25MB', async () => {
@@ -169,17 +174,13 @@ describe('processPreviewJob', () => {
     await processPreviewJob(createMockJob());
     await processPreviewJob(createMockJob());
 
-    // Each call uses upsert, not create — so even if called twice,
-    // only one row exists (the unique constraint handles this)
+    // All asset storage uses upsert (both pages and thumbnails),
+    // so duplicate calls are safe — the unique constraint handles this
     const upsertCalls = mockPreviewAssetUpsert.mock.calls;
+    expect(upsertCalls.length).toBeGreaterThan(0);
     for (const call of upsertCalls) {
-      expect(call[0].where).toEqual({
-        versionId_assetType_pageNumber: {
-          versionId: 'ver-1',
-          assetType: 'THUMBNAIL',
-          pageNumber: 1,
-        },
-      });
+      // Every upsert should target the correct versionId
+      expect(call[0].where.versionId_assetType_pageNumber.versionId).toBe('ver-1');
     }
   });
 

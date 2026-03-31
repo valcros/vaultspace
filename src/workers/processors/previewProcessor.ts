@@ -67,14 +67,28 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       const renderKey = `previews/${documentId}/${versionId}/page-${page.pageNumber}.${ext}`;
       await providers.storage.put('previews', renderKey, page.data);
 
-      // Create preview asset record for each page
-      await db.previewAsset.create({
-        data: {
+      // Upsert preview asset record (idempotent — safe for re-processing)
+      await db.previewAsset.upsert({
+        where: {
+          versionId_assetType_pageNumber: {
+            versionId,
+            assetType,
+            pageNumber: page.pageNumber,
+          },
+        },
+        create: {
           organizationId,
           versionId,
           assetType,
           storageKey: renderKey,
           pageNumber: page.pageNumber,
+          mimeType: page.mimeType,
+          width: page.width,
+          height: page.height,
+          fileSizeBytes: BigInt(page.data.length),
+        },
+        update: {
+          storageKey: renderKey,
           mimeType: page.mimeType,
           width: page.width,
           height: page.height,
