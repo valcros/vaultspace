@@ -105,8 +105,7 @@ export class SharpPreviewProvider implements PreviewProvider {
 
     // Everything else — SVG placeholder
     const ext = fileName.split('.').pop()?.toUpperCase() || 'FILE';
-    const truncatedName =
-      fileName.length > 25 ? fileName.slice(0, 22) + '...' : fileName;
+    const truncatedName = fileName.length > 25 ? fileName.slice(0, 22) + '...' : fileName;
     const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <rect width="100%" height="100%" fill="#f5f5f5" rx="4"/>
       <text x="50%" y="42%" text-anchor="middle" font-family="system-ui,sans-serif" font-size="28" font-weight="700" fill="#6b7280">${this.escapeXml(ext)}</text>

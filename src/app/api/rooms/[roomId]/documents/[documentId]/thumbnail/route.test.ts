@@ -7,12 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted to define mocks referenced in vi.mock factories
-const {
-  mockStorageExists,
-  mockStorageGet,
-  mockJobAddJob,
-  mockDocument,
-} = vi.hoisted(() => ({
+const { mockStorageExists, mockStorageGet, mockJobAddJob, mockDocument } = vi.hoisted(() => ({
   mockStorageExists: vi.fn().mockResolvedValue(true),
   mockStorageGet: vi.fn().mockResolvedValue(Buffer.alloc(5000)),
   mockJobAddJob: vi.fn().mockResolvedValue('job-1'),
@@ -74,17 +69,19 @@ vi.mock('@/providers', () => ({
 
 // Mock DB
 vi.mock('@/lib/db', () => ({
-  withOrgContext: vi.fn().mockImplementation(async (_orgId: string, fn: (tx: unknown) => unknown) => {
-    const mockTx = {
-      room: {
-        findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }),
-      },
-      document: {
-        findFirst: vi.fn().mockResolvedValue(mockDocument),
-      },
-    };
-    return fn(mockTx);
-  }),
+  withOrgContext: vi
+    .fn()
+    .mockImplementation(async (_orgId: string, fn: (tx: unknown) => unknown) => {
+      const mockTx = {
+        room: {
+          findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }),
+        },
+        document: {
+          findFirst: vi.fn().mockResolvedValue(mockDocument),
+        },
+      };
+      return fn(mockTx);
+    }),
 }));
 
 import { GET } from './route';
