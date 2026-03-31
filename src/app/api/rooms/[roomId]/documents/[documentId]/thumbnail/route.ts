@@ -175,8 +175,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 async function generateBrandedPlaceholder(fileName: string): Promise<Buffer> {
   const ext = fileName.split('.').pop()?.toUpperCase() || 'FILE';
   const color = EXTENSION_COLORS[ext] || { bg: '#f9fafb', text: '#6b7280' };
-  const truncatedName =
-    fileName.length > 30 ? fileName.slice(0, 27) + '...' : fileName;
+  const truncatedName = fileName.length > 30 ? fileName.slice(0, 27) + '...' : fileName;
   const escapedExt = escapeXml(ext);
   const escapedName = escapeXml(truncatedName);
 
