@@ -15,7 +15,7 @@ COPY prisma ./prisma
 
 # Install dependencies — rebuild Sharp from source to use system libvips with poppler
 RUN npm ci
-RUN npm rebuild sharp --build-from-source
+RUN npm install node-addon-api node-gyp --save-dev && npm rebuild sharp --build-from-source
 
 # Copy source code
 COPY . .
