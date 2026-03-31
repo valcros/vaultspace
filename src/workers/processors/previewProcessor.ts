@@ -116,17 +116,44 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       `[PreviewProcessor] Preview generated: ${previewResult.totalPages} pages, created ${previewResult.pages.length} RENDER assets`
     );
 
-    // Generate thumbnail inline from original file bytes (not from preview output).
+    // Generate thumbnail from the best available source:
+    // 1. For types where generateThumbnailPng produces real content (HTML, MD, CSV, text, SVG, images)
+    //    → use original file bytes via generateThumbnailPng
+    // 2. For Office/PDF types where generateThumbnailPng falls back to branded cards
+    //    → use the first preview page (which was just rendered by convert())
     // Skip proactive generation for large files — on-demand API handles them.
     if (fileBuffer.length <= THUMBNAIL_SIZE_LIMIT) {
       try {
-        const thumbnailBuffer = await providers.preview.generateThumbnailPng(
-          fileBuffer,
-          contentType,
-          fileName,
-          200,
-          280
-        );
+        let thumbnailBuffer: Buffer;
+
+        // Check if the first preview page is a usable image (not a PDF)
+        const firstPage = previewResult.pages[0];
+        const hasImagePreview =
+          firstPage && firstPage.mimeType === 'image/png' && firstPage.data.length > 1000;
+
+        if (hasImagePreview) {
+          // Use the preview page 1 — resize it for the thumbnail.
+          // This works for ALL types where convert() produces PNG output,
+          // including Office types (LibreOffice→PDF→PNG) and PDF pages.
+          thumbnailBuffer = await providers.preview.generateThumbnail(
+            firstPage.data,
+            'image/png',
+            200,
+            280
+          );
+          console.log(
+            `[PreviewProcessor] Thumbnail from preview page 1 (${firstPage.data.length} bytes → ${thumbnailBuffer.length} bytes)`
+          );
+        } else {
+          // Fallback: generate from original bytes (works for HTML, MD, CSV, etc.)
+          thumbnailBuffer = await providers.preview.generateThumbnailPng(
+            fileBuffer,
+            contentType,
+            fileName,
+            200,
+            280
+          );
+        }
 
         if (thumbnailBuffer.length > 0) {
           const thumbnailKey = `thumbnails/${documentId}/${versionId}.png`;
