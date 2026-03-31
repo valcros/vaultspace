@@ -583,8 +583,7 @@ embed{width:100%;height:100%}</style>
   ): Promise<Buffer> {
     const ext = fileName.split('.').pop()?.toUpperCase() || 'FILE';
     const color = EXTENSION_COLORS[ext] || { bg: '#f9fafb', text: '#6b7280' };
-    const truncatedName =
-      fileName.length > 30 ? fileName.slice(0, 27) + '...' : fileName;
+    const truncatedName = fileName.length > 30 ? fileName.slice(0, 27) + '...' : fileName;
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>*{margin:0;padding:0;box-sizing:border-box}
@@ -613,8 +612,7 @@ body{width:${width * 2}px;height:${height * 2}px;display:flex;align-items:center
   ): Promise<Buffer> {
     const ext = fileName.split('.').pop()?.toUpperCase() || 'FILE';
     const color = EXTENSION_COLORS[ext] || { bg: '#f9fafb', text: '#6b7280' };
-    const truncatedName =
-      fileName.length > 25 ? fileName.slice(0, 22) + '...' : fileName;
+    const truncatedName = fileName.length > 25 ? fileName.slice(0, 22) + '...' : fileName;
 
     const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <rect width="100%" height="100%" fill="${color.bg}" rx="4"/>

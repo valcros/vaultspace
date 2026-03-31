@@ -206,11 +206,7 @@ async function approachC(
 // Helpers
 // ============================================================================
 
-async function gotenbergScreenshot(
-  html: string,
-  width: number,
-  height: number
-): Promise<Buffer> {
+async function gotenbergScreenshot(html: string, width: number, height: number): Promise<Buffer> {
   const boundary = `----SpikeBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
   const parts: Buffer[] = [];
 
@@ -307,16 +303,22 @@ async function main() {
       // PDF: test approaches A and B
       const resultA = await approachA(fileBuffer, outputBase);
       results.push(resultA);
-      console.log(`  Approach A: ${resultA.success ? 'PASS' : 'FAIL'} (${resultA.durationMs}ms)${resultA.error ? ` - ${resultA.error}` : ''}`);
+      console.log(
+        `  Approach A: ${resultA.success ? 'PASS' : 'FAIL'} (${resultA.durationMs}ms)${resultA.error ? ` - ${resultA.error}` : ''}`
+      );
 
       const resultB = await approachB(fileBuffer, outputBase);
       results.push(resultB);
-      console.log(`  Approach B: ${resultB.success ? 'PASS' : 'FAIL'} (${resultB.durationMs}ms)${resultB.error ? ` - ${resultB.error}` : ''}`);
+      console.log(
+        `  Approach B: ${resultB.success ? 'PASS' : 'FAIL'} (${resultB.durationMs}ms)${resultB.error ? ` - ${resultB.error}` : ''}`
+      );
     } else {
       // Office: test approach C
       const resultC = await approachC(fileBuffer, testFile.mimeType, outputBase);
       results.push(resultC);
-      console.log(`  Approach C: ${resultC.success ? 'PASS' : 'FAIL'} (${resultC.durationMs}ms)${resultC.error ? ` - ${resultC.error}` : ''}`);
+      console.log(
+        `  Approach C: ${resultC.success ? 'PASS' : 'FAIL'} (${resultC.durationMs}ms)${resultC.error ? ` - ${resultC.error}` : ''}`
+      );
     }
 
     console.log();
@@ -348,7 +350,9 @@ async function main() {
   );
   console.log(`\nDecision gate:`);
   if (pdfPassed) {
-    console.log(`  PDF rendering WORKS -> Proceed to Phase 2 with content thumbnails for all types.`);
+    console.log(
+      `  PDF rendering WORKS -> Proceed to Phase 2 with content thumbnails for all types.`
+    );
   } else {
     console.log(`  PDF rendering FAILED -> Use branded placeholders for PDF/Office types.`);
     console.log(`  Focus Phase 2 on text/markdown/HTML/CSV/SVG thumbnails only.`);
