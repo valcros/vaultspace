@@ -197,9 +197,22 @@ export interface PreviewProvider {
   convert(data: Buffer, mimeType: string, options?: PreviewOptions): Promise<PreviewResult>;
 
   /**
-   * Generate a thumbnail
+   * Generate a thumbnail (legacy — resizes an already-rendered image)
    */
   generateThumbnail(data: Buffer, mimeType: string, width: number, height: number): Promise<Buffer>;
+
+  /**
+   * Generate a PNG thumbnail directly from original file bytes.
+   * Always returns a PNG buffer. Never throws — catches internally and
+   * falls back to branded placeholder, then to Sharp SVG placeholder.
+   */
+  generateThumbnailPng(
+    data: Buffer,
+    mimeType: string,
+    fileName: string,
+    width: number,
+    height: number
+  ): Promise<Buffer>;
 
   /**
    * Check if a mime type is supported

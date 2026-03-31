@@ -47,6 +47,10 @@ export function createStubPreviewProvider(): PreviewProvider {
       return Buffer.alloc(0);
     },
 
+    async generateThumbnailPng(): Promise<Buffer> {
+      return Buffer.alloc(0);
+    },
+
     isSupported(): boolean {
       return false;
     },
