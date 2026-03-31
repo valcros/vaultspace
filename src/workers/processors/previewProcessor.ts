@@ -2,6 +2,7 @@
  * Preview Job Processor
  *
  * Processes document preview generation jobs using the PreviewProvider.
+ * Generates thumbnails inline from original file bytes (not from preview output).
  */
 
 import { Job } from 'bullmq';
@@ -10,6 +11,9 @@ import { db } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 import type { PreviewGenerateJobPayload, ThumbnailGenerateJobPayload } from '../types';
+
+/** Max file size for proactive thumbnail generation (25MB) */
+const THUMBNAIL_SIZE_LIMIT = 25 * 1024 * 1024;
 
 export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Promise<void> {
   const { documentId, versionId, organizationId, storageKey, contentType, fileName } = job.data;
@@ -98,24 +102,65 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       `[PreviewProcessor] Preview generated: ${previewResult.totalPages} pages, created ${previewResult.pages.length} RENDER assets`
     );
 
-    // Queue thumbnail generation using the first page render
-    const firstPage = previewResult.pages[0];
-    const firstPageExt = firstPage && firstPage.mimeType === 'application/pdf' ? 'pdf' : 'png';
-    const firstPageKey = `previews/${documentId}/${versionId}/page-1.${firstPageExt}`;
-    await providers.job.addJob(
-      'high',
-      'thumbnail.generate',
-      {
-        documentId,
-        versionId,
-        organizationId,
-        previewKey: firstPageKey,
-        pageNumber: 1,
-        width: 200,
-        height: 280,
-      } satisfies ThumbnailGenerateJobPayload,
-      { priority: 'normal' }
-    );
+    // Generate thumbnail inline from original file bytes (not from preview output).
+    // Skip proactive generation for large files — on-demand API handles them.
+    if (fileBuffer.length <= THUMBNAIL_SIZE_LIMIT) {
+      try {
+        const thumbnailBuffer = await providers.preview.generateThumbnailPng(
+          fileBuffer,
+          contentType,
+          fileName,
+          200,
+          280
+        );
+
+        if (thumbnailBuffer.length > 0) {
+          const thumbnailKey = `thumbnails/${documentId}/${versionId}.png`;
+          await providers.storage.put('previews', thumbnailKey, thumbnailBuffer);
+
+          // Upsert thumbnail asset (idempotent — safe for concurrent/retry)
+          await db.previewAsset.upsert({
+            where: {
+              versionId_assetType_pageNumber: {
+                versionId,
+                assetType: 'THUMBNAIL',
+                pageNumber: 1,
+              },
+            },
+            create: {
+              organizationId,
+              versionId,
+              assetType: 'THUMBNAIL',
+              storageKey: thumbnailKey,
+              pageNumber: 1,
+              mimeType: 'image/png',
+              width: 200,
+              height: 280,
+              fileSizeBytes: BigInt(thumbnailBuffer.length),
+            },
+            update: {
+              storageKey: thumbnailKey,
+              mimeType: 'image/png',
+              width: 200,
+              height: 280,
+              fileSizeBytes: BigInt(thumbnailBuffer.length),
+            },
+          });
+
+          console.log(`[PreviewProcessor] Thumbnail generated inline: ${thumbnailKey}`);
+        }
+      } catch (thumbError) {
+        // Thumbnail failure is non-critical — on-demand API handles failures
+        console.error(
+          `[PreviewProcessor] Inline thumbnail generation failed for ${documentId}:`,
+          thumbError
+        );
+      }
+    } else {
+      console.log(
+        `[PreviewProcessor] Skipping proactive thumbnail for ${documentId} (${fileBuffer.length} bytes > ${THUMBNAIL_SIZE_LIMIT})`
+      );
+    }
 
     // Queue text extraction using the original document
     await providers.job.addJob(
@@ -150,10 +195,14 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
   }
 }
 
+/**
+ * @deprecated Use inline thumbnail generation in processPreviewJob instead.
+ * Kept for backward compatibility with jobs already in the queue.
+ */
 export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>): Promise<void> {
   const { documentId, versionId, organizationId, previewKey, width, height } = job.data;
 
-  console.log(`[PreviewProcessor] Generating thumbnail for document ${documentId}`);
+  console.log(`[PreviewProcessor] Processing legacy thumbnail job for document ${documentId}`);
 
   const providers = getProviders();
 
@@ -211,9 +260,16 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
     const thumbnailKey = `thumbnails/${documentId}/${versionId}.png`;
     await providers.storage.put('previews', thumbnailKey, thumbnailBuffer);
 
-    // Create preview asset record for thumbnail
-    await db.previewAsset.create({
-      data: {
+    // Upsert thumbnail asset (idempotent)
+    await db.previewAsset.upsert({
+      where: {
+        versionId_assetType_pageNumber: {
+          versionId,
+          assetType: 'THUMBNAIL',
+          pageNumber: 1,
+        },
+      },
+      create: {
         organizationId,
         versionId,
         assetType: 'THUMBNAIL',
@@ -224,9 +280,16 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
         height,
         fileSizeBytes: BigInt(thumbnailBuffer.length),
       },
+      update: {
+        storageKey: thumbnailKey,
+        mimeType: 'image/png',
+        width,
+        height,
+        fileSizeBytes: BigInt(thumbnailBuffer.length),
+      },
     });
 
-    console.log(`[PreviewProcessor] Thumbnail generated: ${thumbnailKey}`);
+    console.log(`[PreviewProcessor] Legacy thumbnail generated: ${thumbnailKey}`);
   } catch (error) {
     console.error(
       `[PreviewProcessor] Thumbnail generation failed for document ${documentId}:`,

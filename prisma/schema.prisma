@@ -660,6 +660,7 @@ model PreviewAsset {
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   version      DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
+  @@unique([versionId, assetType, pageNumber])
   @@index([organizationId])
   @@index([versionId])
   @@index([assetType])
