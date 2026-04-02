@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { FileText, Folder, Search, Download, Eye, ChevronRight, LogOut, Home } from 'lucide-react';
+import { FileText, Folder, Search, Download, Eye, ChevronRight, LogOut, Home, MessageCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -169,10 +169,20 @@ export default function ViewerDocumentsPage() {
                 <p className="text-sm text-neutral-500">{session?.organizationName}</p>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Exit
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/view/${shareToken}/questions`)}
+              >
+                <MessageCircle className="mr-2 h-4 w-4" />
+                Q&amp;A
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Exit
+              </Button>
+            </div>
           </div>
         </div>
       </div>

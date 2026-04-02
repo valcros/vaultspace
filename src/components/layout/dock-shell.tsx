@@ -29,6 +29,8 @@ import {
   ArrowRight,
   Upload,
   UserPlus,
+  FileText,
+  Loader2,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -532,6 +534,17 @@ function DockIcon({ item, isActive, onClick, isTouch, isHorizontal }: DockIconPr
 // Command Menu Component
 // ============================================================================
 
+interface DocumentSearchResult {
+  documentId: string;
+  title: string;
+  fileName: string;
+  snippet: string;
+  score: number;
+  mimeType: string;
+  roomId: string;
+  roomName: string;
+}
+
 interface CommandMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -542,7 +555,11 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
   const router = useRouter();
   const [search, setSearch] = React.useState('');
   const [selectedIndex, setSelectedIndex] = React.useState(0);
+  const [docResults, setDocResults] = React.useState<DocumentSearchResult[]>([]);
+  const [isSearching, setIsSearching] = React.useState(false);
+  const [searchTotal, setSearchTotal] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const abortRef = React.useRef<AbortController | null>(null);
 
   const navigationItems = [
     { id: 'rooms', label: 'All Rooms', icon: FolderOpen, shortcut: '⌘R', href: '/rooms' },
@@ -568,16 +585,68 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
     room.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  // Debounced document search
+  React.useEffect(() => {
+    if (!search.trim() || search.trim().length < 2) {
+      setDocResults([]);
+      setSearchTotal(0);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+
+    const timer = setTimeout(async () => {
+      // Cancel previous request
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(search.trim())}&limit=5`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) {
+          setDocResults([]);
+          setSearchTotal(0);
+          setIsSearching(false);
+          return;
+        }
+        const data = await res.json();
+        if (!controller.signal.aborted) {
+          setDocResults(data.results || []);
+          setSearchTotal(data.total || 0);
+          setIsSearching(false);
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setDocResults([]);
+          setSearchTotal(0);
+          setIsSearching(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [search]);
+
   const allItems = [
+    ...docResults.map((d) => ({ ...d, id: d.documentId, type: 'document' as const })),
     ...filteredRecent.map((r) => ({ ...r, type: 'recent' as const })),
     ...filteredNav.map((n) => ({ ...n, type: 'nav' as const })),
     ...filteredActions.map((a) => ({ ...a, type: 'action' as const })),
   ];
 
   const handleSelect = (
-    item: (typeof navigationItems)[0] | (typeof actionItems)[0] | { id: string; name: string }
+    item: (typeof allItems)[number]
   ) => {
-    if ('href' in item && item.href) {
+    if (item.type === 'document') {
+      const doc = item as DocumentSearchResult & { type: 'document' };
+      router.push(`/rooms/${doc.roomId}?doc=${doc.documentId}`);
+    } else if ('href' in item && item.href) {
       router.push(item.href);
     } else if ('name' in item) {
       router.push(`/rooms/${item.id}`);
@@ -600,7 +669,7 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
         setSelectedIndex((i) => Math.max(i - 1, 0));
       } else if (e.key === 'Enter' && allItems[selectedIndex]) {
         e.preventDefault();
-        handleSelect(allItems[selectedIndex] as (typeof navigationItems)[0]);
+        handleSelect(allItems[selectedIndex]);
       }
     };
 
@@ -618,15 +687,23 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
     } else {
       setSearch('');
       setSelectedIndex(0);
+      setDocResults([]);
+      setSearchTotal(0);
     }
   }, [open]);
+
+  const showEmptyState = !isSearching && search.trim().length >= 2 && allItems.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg overflow-hidden p-0">
         {/* Search Input */}
         <div className="flex items-center border-b px-4 py-3">
-          <Search className="mr-3 h-5 w-5 text-neutral-400" />
+          {isSearching ? (
+            <Loader2 className="mr-3 h-5 w-5 animate-spin text-neutral-400" />
+          ) : (
+            <Search className="mr-3 h-5 w-5 text-neutral-400" />
+          )}
           <input
             ref={inputRef}
             type="text"
@@ -639,7 +716,7 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
 
         {/* Results */}
         <div className="max-h-[400px] overflow-y-auto p-2">
-          {allItems.length === 0 ? (
+          {showEmptyState ? (
             <div className="py-8 text-center">
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800">
                 <Search className="h-6 w-6 text-neutral-400" />
@@ -649,27 +726,65 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
             </div>
           ) : (
             <>
-              {/* Recent Rooms */}
-              {filteredRecent.length > 0 && (
+              {/* Document Results */}
+              {docResults.length > 0 && (
                 <div className="mb-2">
-                  <p className="px-2 py-1 text-xs font-medium uppercase text-neutral-500">Recent</p>
-                  {filteredRecent.slice(0, 3).map((room, i) => (
+                  <p className="px-2 py-1 text-xs font-medium uppercase text-neutral-500">
+                    Documents{searchTotal > docResults.length ? ` (${searchTotal} total)` : ''}
+                  </p>
+                  {docResults.map((doc, i) => (
                     <button
-                      key={room.id}
-                      onClick={() => handleSelect(room)}
+                      key={doc.documentId}
+                      onClick={() => handleSelect({ ...doc, id: doc.documentId, type: 'document' })}
                       className={clsx(
-                        'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left',
+                        'flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left',
                         'transition-colors duration-100',
                         selectedIndex === i
                           ? 'bg-primary-50 dark:bg-primary-900/20'
                           : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
                       )}
                     >
-                      <Clock className="h-4 w-4 text-neutral-400" />
-                      <span className="flex-1">{room.name}</span>
-                      <ArrowRight className="h-4 w-4 text-neutral-300" />
+                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{doc.title}</p>
+                        {doc.snippet && (
+                          <p
+                            className="mt-0.5 line-clamp-2 text-xs text-neutral-500"
+                            dangerouslySetInnerHTML={{ __html: doc.snippet }}
+                          />
+                        )}
+                        <p className="mt-0.5 text-xs text-neutral-400">{doc.roomName}</p>
+                      </div>
+                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-neutral-300" />
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/* Recent Rooms */}
+              {filteredRecent.length > 0 && (
+                <div className="mb-2">
+                  <p className="px-2 py-1 text-xs font-medium uppercase text-neutral-500">Recent</p>
+                  {filteredRecent.slice(0, 3).map((room, i) => {
+                    const idx = docResults.length + i;
+                    return (
+                      <button
+                        key={room.id}
+                        onClick={() => handleSelect({ ...room, type: 'recent' })}
+                        className={clsx(
+                          'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left',
+                          'transition-colors duration-100',
+                          selectedIndex === idx
+                            ? 'bg-primary-50 dark:bg-primary-900/20'
+                            : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                        )}
+                      >
+                        <Clock className="h-4 w-4 text-neutral-400" />
+                        <span className="flex-1">{room.name}</span>
+                        <ArrowRight className="h-4 w-4 text-neutral-300" />
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
@@ -680,11 +795,11 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
                     Navigation
                   </p>
                   {filteredNav.map((item, i) => {
-                    const idx = filteredRecent.length + i;
+                    const idx = docResults.length + filteredRecent.length + i;
                     return (
                       <button
                         key={item.id}
-                        onClick={() => handleSelect(item)}
+                        onClick={() => handleSelect({ ...item, type: 'nav' })}
                         className={clsx(
                           'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left',
                           'transition-colors duration-100',
@@ -711,11 +826,11 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
                     Quick Actions
                   </p>
                   {filteredActions.map((item, i) => {
-                    const idx = filteredRecent.length + filteredNav.length + i;
+                    const idx = docResults.length + filteredRecent.length + filteredNav.length + i;
                     return (
                       <button
                         key={item.id}
-                        onClick={() => handleSelect(item)}
+                        onClick={() => handleSelect({ ...item, type: 'action' })}
                         className={clsx(
                           'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left',
                           'transition-colors duration-100',

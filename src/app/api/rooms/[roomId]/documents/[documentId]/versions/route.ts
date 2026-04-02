@@ -131,6 +131,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
         return { error: 'Room not found', status: 404 };
       }
 
+      if (room.status === 'CLOSED' || room.status === 'ARCHIVED') {
+        return {
+          error: 'Cannot upload documents to a closed or archived room',
+          status: 403,
+        };
+      }
+
       // Get existing document
       const document = await tx.document.findFirst({
         where: {

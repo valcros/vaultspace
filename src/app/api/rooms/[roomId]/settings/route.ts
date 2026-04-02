@@ -6,9 +6,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { RoomStatus } from '@prisma/client';
 
-import { requireAuth } from '@/lib/middleware';
+import { requireAuth, getRequestContext } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { createServiceContext, roomService } from '@/services';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -117,6 +119,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const {
       name,
       description,
+      status,
       requiresPassword,
       password,
       requiresEmailVerification,
@@ -127,6 +130,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       enableWatermark,
       watermarkTemplate,
     } = body;
+
+    // Validate status if provided
+    const VALID_STATUSES: string[] = ['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED'];
+    if (status !== undefined && !VALID_STATUSES.includes(status)) {
+      return NextResponse.json(
+        { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` },
+        { status: 400 }
+      );
+    }
 
     // Validate name if provided
     if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
@@ -186,8 +198,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       updateData['watermarkTemplate'] = watermarkTemplate?.trim() || null;
     }
 
-    // Update room using RLS context
-    const updatedRoom = await withOrgContext(session.organizationId, async (tx) => {
+    // Update room settings using RLS context
+    let updatedRoom = await withOrgContext(session.organizationId, async (tx) => {
       return tx.room.update({
         where: { id: roomId },
         data: updateData,
@@ -209,6 +221,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         },
       });
     });
+
+    // Handle status change separately via RoomService (manages state machine + events)
+    if (status !== undefined && status !== room.status) {
+      const reqContext = getRequestContext(request);
+      const ctx = createServiceContext({
+        session,
+        requestId: reqContext.requestId,
+        ipAddress: reqContext.ipAddress,
+        userAgent: reqContext.userAgent,
+      });
+      const statusUpdatedRoom = await roomService.changeStatus(ctx, roomId, status as RoomStatus);
+      // Merge the status-related fields from the changeStatus result
+      updatedRoom = {
+        ...updatedRoom,
+        status: statusUpdatedRoom.status,
+        archivedAt: statusUpdatedRoom.archivedAt,
+        closedAt: statusUpdatedRoom.closedAt,
+      };
+    }
 
     return NextResponse.json({
       settings: {

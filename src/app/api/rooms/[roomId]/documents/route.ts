@@ -13,6 +13,7 @@ import { AppError, formatErrorResponse, NotFoundError, RateLimitError } from '@/
 import { UPLOAD_CONFIG, HTTP_STATUS } from '@/lib/constants';
 import { rateLimiters } from '@/lib/middleware/rateLimit';
 import { getProviders } from '@/providers';
+import { withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,40 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const session = await requireAuth();
     const { roomId } = await context.params;
     const reqContext = getRequestContext(request);
+
+    // Verify room exists and is not closed/archived
+    const room = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.room.findFirst({
+        where: {
+          id: roomId,
+          organizationId: session.organizationId,
+        },
+        select: { id: true, status: true },
+      });
+    });
+
+    if (!room) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Room not found' },
+        },
+        { status: HTTP_STATUS.NOT_FOUND }
+      );
+    }
+
+    if (room.status === 'CLOSED' || room.status === 'ARCHIVED') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Cannot upload documents to a closed or archived room',
+          },
+        },
+        { status: HTTP_STATUS.FORBIDDEN }
+      );
+    }
 
     // Rate limiting for uploads (throws RateLimitError if exceeded)
     try {
@@ -140,7 +175,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         // Queue upload notification job (async via job queue per architecture)
         const providers = getProviders();
         providers.job
-          .addJob('email', 'notify-document-uploaded', {
+          .addJob('normal', 'notify-document-uploaded', {
             organizationId: session.organizationId,
             roomId,
             documentId: doc.id,
