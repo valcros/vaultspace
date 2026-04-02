@@ -49,10 +49,11 @@ function jsonResponse(data: object, status: number) {
  * GET /api/rooms/:roomId/documents/:documentId/preview
  * Get document preview for authenticated admin
  */
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const session = await requireAuth();
     const { roomId, documentId } = await context.params;
+    const versionId = request.nextUrl.searchParams.get('versionId');
 
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
@@ -68,7 +69,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return { error: 'Room not found', status: 404 };
       }
 
-      // Get document with its latest version, file blob, and preview assets
+      // Get the document (without versions — we load the version separately if needed)
       const document = await tx.document.findFirst({
         where: {
           id: documentId,
@@ -76,32 +77,55 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           organizationId: session.organizationId,
           status: 'ACTIVE',
         },
-        include: {
-          versions: {
-            orderBy: { versionNumber: 'desc' },
-            take: 1,
-            include: {
-              fileBlob: {
-                select: {
-                  storageKey: true,
-                  storageBucket: true,
-                },
-              },
-              previewAssets: {
-                where: { assetType: { in: ['RENDER', 'PDF'] }, pageNumber: 1 },
-                take: 1,
-              },
-            },
-          },
-        },
       });
 
       if (!document) {
         return { error: 'Document not found', status: 404 };
       }
 
-      const latestVersion = document.versions[0];
-      if (!latestVersion || !latestVersion.fileBlob) {
+      // Version include shape shared by both queries
+      const versionInclude = {
+        fileBlob: {
+          select: {
+            storageKey: true,
+            storageBucket: true,
+          },
+        },
+        previewAssets: {
+          where: { assetType: { in: ['RENDER' as const, 'PDF' as const] }, pageNumber: 1 },
+          take: 1,
+        },
+      };
+
+      let selectedVersion;
+
+      if (versionId) {
+        // Load specific version — must belong to the same document and organization
+        selectedVersion = await tx.documentVersion.findFirst({
+          where: {
+            id: versionId,
+            documentId,
+            organizationId: session.organizationId,
+          },
+          include: versionInclude,
+        });
+
+        if (!selectedVersion) {
+          return { error: 'Document version not found', status: 404 };
+        }
+      } else {
+        // Load latest version
+        selectedVersion = await tx.documentVersion.findFirst({
+          where: {
+            documentId,
+            organizationId: session.organizationId,
+          },
+          orderBy: { versionNumber: 'desc' },
+          include: versionInclude,
+        });
+      }
+
+      if (!selectedVersion || !selectedVersion.fileBlob) {
         return { error: 'Document version not found', status: 404 };
       }
 
@@ -113,7 +137,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         },
       });
 
-      return { document, latestVersion };
+      return { document, selectedVersion };
     });
 
     if ('error' in result) {
@@ -135,7 +159,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       // Non-critical — don't block preview
     }
 
-    const { document, latestVersion } = result;
+    const { document, selectedVersion } = result;
     const mimeType = document.mimeType || 'application/octet-stream';
 
     // Get storage provider
@@ -144,8 +168,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // For previewable types, return the original file inline
     if (PREVIEWABLE_MIME_TYPES.has(mimeType)) {
-      const bucket = latestVersion.fileBlob!.storageBucket || 'documents';
-      const key = latestVersion.fileBlob!.storageKey;
+      const bucket = selectedVersion.fileBlob!.storageBucket || 'documents';
+      const key = selectedVersion.fileBlob!.storageKey;
 
       // Check if file exists
       const exists = await storage.exists(bucket, key);
@@ -174,7 +198,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     // For non-previewable types, check if we have a generated preview asset
-    const previewAsset = latestVersion.previewAssets?.[0];
+    const previewAsset = selectedVersion.previewAssets?.[0];
     if (previewAsset) {
       const bucket = 'previews';
       const key = previewAsset.storageKey;

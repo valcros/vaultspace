@@ -8,6 +8,7 @@
 export { createServiceContext, createSystemContext } from './context';
 export { documentService, DocumentService } from './DocumentService';
 export { groupService, GroupService } from './GroupService';
+export { questionService, QuestionService } from './QuestionService';
 export { roomService, RoomService } from './RoomService';
 
 export type {
@@ -33,6 +34,15 @@ export type {
   GroupWithCount,
   UpdateGroupOptions,
 } from './GroupService';
+
+export type {
+  CreateQuestionOptions,
+  CreateViewerQuestionOptions,
+  QuestionListOptions,
+  QuestionWithAnswers,
+  QuestionWithMeta,
+  UpdateQuestionOptions,
+} from './QuestionService';
 
 export type {
   CreateRoomOptions,

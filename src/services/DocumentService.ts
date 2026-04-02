@@ -396,15 +396,45 @@ export class DocumentService {
     // Build where clause
     // When no folderId is specified and no search query, show only root-level documents
     // (folderId: null). When searching, show all documents regardless of folder.
+    //
+    // Search matches document name OR full-text content via SearchIndex.
+    let contentMatchIds: string[] | null = null;
+    if (search) {
+      try {
+        const contentMatches = await withOrgContext(session.organizationId, async (tx) => {
+          return tx.$queryRaw<{ documentId: string }[]>`
+            SELECT DISTINCT si."documentId"
+            FROM search_indexes si
+            WHERE si."organizationId" = ${session.organizationId}
+              AND si."documentId" IN (
+                SELECT d.id FROM documents d WHERE d."roomId" = ${roomId} AND d."organizationId" = ${session.organizationId}
+              )
+              AND (
+                to_tsvector('english', coalesce(si."extractedText", '') || ' ' || coalesce(si."documentTitle", ''))
+                @@ plainto_tsquery('english', ${search})
+              )
+          `;
+        });
+        contentMatchIds = contentMatches.map((r) => r.documentId);
+      } catch {
+        // Full-text search may fail if DB doesn't support it; fall back to name-only
+        contentMatchIds = null;
+      }
+    }
+
+    const searchCondition: Prisma.DocumentWhereInput | undefined = search
+      ? contentMatchIds && contentMatchIds.length > 0
+        ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { id: { in: contentMatchIds } }] }
+        : { name: { contains: search, mode: 'insensitive' } }
+      : undefined;
+
     const where: Prisma.DocumentWhereInput = {
       organizationId: session.organizationId,
       roomId,
       ...(folderId !== undefined ? { folderId } : !search ? { folderId: null } : {}),
       ...(status && { status }),
       ...(category && { category: category as unknown as Prisma.DocumentWhereInput['category'] }),
-      ...(search && {
-        name: { contains: search, mode: 'insensitive' },
-      }),
+      ...searchCondition,
     };
 
     // Use RLS context for org-scoped queries

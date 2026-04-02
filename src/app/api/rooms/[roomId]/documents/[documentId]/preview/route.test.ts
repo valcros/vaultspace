@@ -34,6 +34,7 @@ vi.mock('@/providers', () => ({
 const mockTx = {
   room: { findFirst: vi.fn() },
   document: { findFirst: vi.fn(), update: vi.fn() },
+  documentVersion: { findFirst: vi.fn() },
 };
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
@@ -52,18 +53,20 @@ function makeContext() {
 const mockRoom = { id: 'room-1', organizationId: 'org-1' };
 const fileBlob = { storageKey: 'files/test.bin', storageBucket: 'documents' };
 
-function makeDocument(mimeType: string, previewAssets: unknown[] = []) {
+function makeDocument(mimeType: string) {
   return {
     id: 'doc-1',
     name: 'test-file',
     mimeType,
-    versions: [
-      {
-        versionNumber: 1,
-        fileBlob,
-        previewAssets,
-      },
-    ],
+  };
+}
+
+function makeVersion(mimeType: string, previewAssets: unknown[] = []) {
+  return {
+    versionNumber: 1,
+    mimeType,
+    fileBlob,
+    previewAssets,
   };
 }
 
@@ -79,6 +82,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
   describe('text-renderable MIME types served inline', () => {
     it('serves text/markdown with correct Content-Type', async () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument('text/markdown'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('text/markdown'));
       const res = await GET(makeRequest(), makeContext());
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('text/markdown');
@@ -86,6 +90,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
 
     it('serves application/json with correct Content-Type', async () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument('application/json'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('application/json'));
       const res = await GET(makeRequest(), makeContext());
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('application/json');
@@ -93,6 +98,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
 
     it('serves text/html as text/plain for XSS defense', async () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument('text/html'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('text/html'));
       const res = await GET(makeRequest(), makeContext());
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('text/plain');
@@ -102,6 +108,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
   describe('existing previewable types still work', () => {
     it('serves PDF inline', async () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('application/pdf'));
       const res = await GET(makeRequest(), makeContext());
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('application/pdf');
@@ -110,9 +117,9 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
 
   describe('non-previewable types', () => {
     it('returns 404 with canPreview:false for XLSX without preview asset', async () => {
-      mockTx.document.findFirst.mockResolvedValue(
-        makeDocument('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-      );
+      const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      mockTx.document.findFirst.mockResolvedValue(makeDocument(xlsxType));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion(xlsxType));
       const res = await GET(makeRequest(), makeContext());
       expect(res.status).toBe(404);
       const body = await res.json();
@@ -120,17 +127,15 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
     });
 
     it('serves preview asset when available for XLSX', async () => {
+      const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       const previewAsset = {
         assetType: 'RENDER',
         storageKey: 'previews/doc-1.png',
         mimeType: 'image/png',
         pageNumber: 1,
       };
-      mockTx.document.findFirst.mockResolvedValue(
-        makeDocument('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', [
-          previewAsset,
-        ])
-      );
+      mockTx.document.findFirst.mockResolvedValue(makeDocument(xlsxType));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion(xlsxType, [previewAsset]));
       const res = await GET(makeRequest(), makeContext());
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('image/png');
