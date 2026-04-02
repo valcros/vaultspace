@@ -35,7 +35,7 @@ export default function LoginPage() {
         throw new Error(data.error || 'Failed to sign in');
       }
 
-      router.push('/rooms');
+      router.push('/dashboard');
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');

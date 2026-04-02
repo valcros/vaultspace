@@ -36,6 +36,7 @@ import {
   AlertCircle,
   MessageSquare,
   ClipboardCheck,
+  CalendarDays,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,7 @@ import {
 import { PageHeader } from '@/components/layout/page-header';
 import { QATab } from '@/components/rooms/QATab';
 import { ChecklistTab } from '@/components/rooms/ChecklistTab';
+import { CalendarTab } from '@/components/rooms/CalendarTab';
 import { UploadZone } from '@/components/documents/UploadZone';
 import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
 import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
@@ -1067,6 +1069,10 @@ export default function RoomDetailPage() {
               <ClipboardCheck className="h-4 w-4" />
               Checklist
             </TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Calendar
+            </TabsTrigger>
             <TabsTrigger value="activity" className="gap-2">
               <Activity className="h-4 w-4" />
               Activity
@@ -1786,6 +1792,11 @@ export default function RoomDetailPage() {
           {/* Checklist Tab */}
           <TabsContent value="checklist" className="mt-4">
             <ChecklistTab roomId={roomId} />
+          </TabsContent>
+
+          {/* Calendar Tab */}
+          <TabsContent value="calendar" className="mt-4">
+            <CalendarTab roomId={roomId} />
           </TabsContent>
 
           {/* Activity Tab */}
