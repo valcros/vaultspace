@@ -51,7 +51,7 @@ interface Question {
   documentId: string | null;
   documentName?: string | null;
   createdAt: string;
-  askedBy: { firstName: string; lastName: string; email: string } | null;
+  askedByUser: { firstName: string; lastName: string; email: string } | null;
   answers?: Answer[];
   _count?: { answers: number };
 }
@@ -330,7 +330,9 @@ export function QATab({ roomId }: { roomId: string }) {
                   </div>
                   <div className="flex items-center gap-3 text-xs text-neutral-500">
                     <span>
-                      {q.askedBy ? `${q.askedBy.firstName} ${q.askedBy.lastName}` : 'Unknown'}
+                      {q.askedByUser
+                        ? `${q.askedByUser.firstName} ${q.askedByUser.lastName}`
+                        : 'Unknown'}
                     </span>
                     <span>{timeAgo(q.createdAt)}</span>
                     {q.documentName && (
@@ -359,8 +361,8 @@ export function QATab({ roomId }: { roomId: string }) {
                 <DialogTitle>{selectedQuestion.subject}</DialogTitle>
                 <DialogDescription>
                   Asked by{' '}
-                  {selectedQuestion.askedBy
-                    ? `${selectedQuestion.askedBy.firstName} ${selectedQuestion.askedBy.lastName} (${selectedQuestion.askedBy.email})`
+                  {selectedQuestion.askedByUser
+                    ? `${selectedQuestion.askedByUser.firstName} ${selectedQuestion.askedByUser.lastName} (${selectedQuestion.askedByUser.email})`
                     : 'Unknown'}{' '}
                   &middot; {timeAgo(selectedQuestion.createdAt)}
                 </DialogDescription>

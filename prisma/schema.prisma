@@ -252,6 +252,15 @@ enum ChecklistItemStatus {
   NOT_APPLICABLE
 }
 
+// Calendar event types
+enum CalendarEventType {
+  MILESTONE
+  REVIEW_DATE
+  DEADLINE
+  MEETING
+  OTHER
+}
+
 // =============================================================================
 // MODELS
 // =============================================================================
@@ -307,6 +316,7 @@ model Organization {
   answers          Answer[]
   checklists       Checklist[]
   checklistItems   ChecklistItem[]
+  calendarEvents   CalendarEvent[]
 
   @@index([slug])
   @@index([isActive])
@@ -351,6 +361,7 @@ model User {
   questionsAsked             Question[]
   answersGiven               Answer[]
   checklistItemsCompleted    ChecklistItem[]
+  calendarEvents             CalendarEvent[]
 
   @@index([email])
   @@index([isActive])
@@ -480,8 +491,9 @@ model Room {
   events       Event[]
   linkVisits   LinkVisit[]
   viewSessions ViewSession[]
-  questions    Question[]
-  checklists   Checklist[]
+  questions      Question[]
+  checklists     Checklist[]
+  calendarEvents CalendarEvent[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -583,6 +595,7 @@ model Document {
   viewSessions  ViewSession[]
   questions      Question[]
   checklistItems ChecklistItem[]
+  calendarEvents CalendarEvent[]
 
   @@unique([organizationId, id])
   @@index([organizationId])
@@ -1413,4 +1426,35 @@ model ChecklistItem {
   @@index([documentId])
   @@index([status])
   @@map("checklist_items")
+}
+
+// CalendarEvent (Room-scoped event calendar)
+model CalendarEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId  String
+  roomId          String
+  documentId      String?
+  createdByUserId String
+
+  title       String            @db.VarChar(255)
+  description String?           @db.Text
+  eventType   CalendarEventType @default(OTHER)
+  date        DateTime
+  endDate     DateTime?
+  isAllDay    Boolean           @default(true)
+  color       String?           @db.VarChar(7)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  createdBy    User         @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([date])
+  @@index([documentId])
+  @@map("calendar_events")
 }
