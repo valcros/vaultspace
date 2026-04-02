@@ -52,12 +52,15 @@ async function getViewerSession(shareToken: string) {
           allowDownloads: true,
           enableWatermark: true,
           watermarkTemplate: true,
+          brandColor: true,
+          brandLogoUrl: true,
         },
       },
       organization: {
         select: {
           name: true,
           logoUrl: true,
+          primaryColor: true,
         },
       },
     },
@@ -148,7 +151,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       session: {
         roomName: session.room.name,
         organizationName: session.organization.name,
-        organizationLogo: session.organization.logoUrl,
+        organizationLogo: session.room.brandLogoUrl || session.organization.logoUrl,
+        brandColor: session.room.brandColor || session.organization.primaryColor,
         downloadEnabled: session.room.allowDownloads,
         watermarkEnabled: session.room.enableWatermark,
         watermarkTemplate: session.room.watermarkTemplate,
