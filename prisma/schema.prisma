@@ -322,6 +322,7 @@ model Organization {
   notificationTemplates  NotificationTemplate[]
   messages               Message[]
   pageViews              PageView[]
+  webhooks               Webhook[]
 
   @@index([slug])
   @@index([isActive])
@@ -347,6 +348,11 @@ model User {
   // Session & security
   lastLoginAt     DateTime?
   emailVerifiedAt DateTime?
+
+  // Two-factor authentication
+  twoFactorEnabled    Boolean  @default(false)
+  twoFactorSecret     String?  @db.VarChar(255) // Encrypted TOTP secret
+  twoFactorBackupCodes String[] @default([]) // Hashed backup codes
 
   // Account status
   isActive Boolean @default(true)
@@ -514,6 +520,7 @@ model Room {
   accessRequests AccessRequest[]
   messages       Message[]
   pageViews      PageView[]
+  webhooks       Webhook[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -1653,4 +1660,38 @@ model PageView {
   @@index([viewerEmail])
   @@index([createdAt])
   @@map("page_views")
+}
+
+// =============================================================================
+// WEBHOOKS (Admin-Configured Event Notifications)
+// =============================================================================
+
+model Webhook {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  url         String  @db.VarChar(500)
+  secret      String  @db.VarChar(255) // For HMAC signature verification
+  description String? @db.VarChar(255)
+
+  // Event filters
+  eventTypes String[] @default([]) // Empty = all events. Otherwise filter.
+  roomId     String? // If set, only events from this room
+
+  // Status
+  isActive        Boolean   @default(true)
+  lastTriggeredAt DateTime?
+  failureCount    Int       @default(0)
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([isActive])
+  @@map("webhooks")
 }

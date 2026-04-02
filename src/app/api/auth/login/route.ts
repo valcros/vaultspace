@@ -6,12 +6,25 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHmac } from 'crypto';
 
 import { db } from '@/lib/db';
 import { setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
+
+/**
+ * Generate a signed temporary token for 2FA verification.
+ * Format: userId:timestamp:hmac
+ * Expires after 5 minutes.
+ */
+function generateTempToken(userId: string): string {
+  const secret =
+    process.env['SESSION_SECRET'] || process.env['NEXTAUTH_SECRET'] || 'vaultspace-2fa-temp-secret';
+  const timestamp = Date.now().toString();
+  const signature = createHmac('sha256', secret).update(`${userId}:${timestamp}`).digest('hex');
+  return `${userId}:${timestamp}:${signature}`;
+}
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -54,6 +67,15 @@ export async function POST(request: NextRequest) {
     const passwordValid = await bcrypt.compare(password, user.passwordHash);
     if (!passwordValid) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+    }
+
+    // Check if 2FA is enabled - if so, return a temp token instead of creating a session
+    if (user.twoFactorEnabled) {
+      const tempToken = generateTempToken(user.id);
+      return NextResponse.json({
+        requiresTwoFactor: true,
+        tempToken,
+      });
     }
 
     // Get default organization
