@@ -83,6 +83,7 @@ import { UploadZone } from '@/components/documents/UploadZone';
 import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
 import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
 import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
 import { getEventStyle } from '@/lib/activityUtils';
@@ -152,6 +153,17 @@ interface AccessRequest {
     lastName: string;
     email: string;
   } | null;
+}
+
+interface Viewer {
+  email: string;
+  name: string | null;
+  visits: number;
+  lastActive: string;
+  totalTimeSpent: number;
+  linkName: string | null;
+  linkId: string | null;
+  isActive: boolean;
 }
 
 interface ShareLink {
@@ -288,6 +300,12 @@ export default function RoomDetailPage() {
   const [accessRequests, setAccessRequests] = React.useState<AccessRequest[]>([]);
   const [_isLoadingAccessRequests, setIsLoadingAccessRequests] = React.useState(false);
   const [reviewingRequestId, setReviewingRequestId] = React.useState<string | null>(null);
+  const [viewers, setViewers] = React.useState<Viewer[]>([]);
+  const [isLoadingViewers, setIsLoadingViewers] = React.useState(false);
+  const [showInviteViewerDialog, setShowInviteViewerDialog] = React.useState(false);
+  const [inviteViewerEmails, setInviteViewerEmails] = React.useState('');
+  const [isInvitingViewers, setIsInvitingViewers] = React.useState(false);
+  const [revokingViewerEmail, setRevokingViewerEmail] = React.useState<string | null>(null);
 
   // Member add states
   const [newMemberEmail, setNewMemberEmail] = React.useState('');
@@ -472,6 +490,101 @@ export default function RoomDetailPage() {
     }
   }, [roomId]);
 
+  const fetchViewers = React.useCallback(async () => {
+    setIsLoadingViewers(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/viewers`);
+      if (response.ok) {
+        const data = await response.json();
+        setViewers(data.viewers || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch viewers:', error);
+    } finally {
+      setIsLoadingViewers(false);
+    }
+  }, [roomId]);
+
+  const handleInviteViewers = React.useCallback(async () => {
+    const emails = inviteViewerEmails
+      .split('\n')
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0 && e.includes('@'));
+
+    if (emails.length === 0) {
+      toast({
+        title: 'Error',
+        description: 'Please enter at least one valid email',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsInvitingViewers(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/viewers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emails }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: 'Success',
+          description: `Invited ${data.invited} viewer(s)`,
+          variant: 'success',
+        });
+        setShowInviteViewerDialog(false);
+        setInviteViewerEmails('');
+        fetchViewers();
+      } else {
+        const error = await response.json();
+        toast({
+          title: 'Error',
+          description: error.error || 'Failed to invite viewers',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Invite viewers error:', error);
+      toast({ title: 'Error', description: 'Failed to invite viewers', variant: 'destructive' });
+    } finally {
+      setIsInvitingViewers(false);
+    }
+  }, [roomId, inviteViewerEmails, fetchViewers]);
+
+  const handleRevokeViewer = React.useCallback(
+    async (email: string) => {
+      setRevokingViewerEmail(email);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/viewers`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emails: [email] }),
+        });
+
+        if (response.ok) {
+          toast({ title: 'Success', description: 'Viewer access revoked', variant: 'success' });
+          fetchViewers();
+        } else {
+          const error = await response.json();
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to revoke access',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Revoke viewer error:', error);
+        toast({ title: 'Error', description: 'Failed to revoke access', variant: 'destructive' });
+      } finally {
+        setRevokingViewerEmail(null);
+      }
+    },
+    [roomId, fetchViewers]
+  );
+
   const handleReviewAccessRequest = React.useCallback(
     async (requestId: string, status: 'APPROVED' | 'DENIED') => {
       setReviewingRequestId(requestId);
@@ -609,6 +722,7 @@ export default function RoomDetailPage() {
         case 'members':
           fetchAdmins();
           fetchAccessRequests();
+          fetchViewers();
           break;
         case 'links':
           fetchLinks();
@@ -626,6 +740,7 @@ export default function RoomDetailPage() {
     fetchBookmarks,
     fetchAdmins,
     fetchAccessRequests,
+    fetchViewers,
     fetchLinks,
     fetchActivity,
   ]);
@@ -1989,6 +2104,152 @@ export default function RoomDetailPage() {
                 </table>
               </div>
             )}
+
+            {/* Viewers Section */}
+            <Card className="mt-6">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-5 w-5 text-neutral-500" />
+                    <CardTitle className="text-base">Viewers</CardTitle>
+                    {viewers.length > 0 && <Badge variant="secondary">{viewers.length}</Badge>}
+                  </div>
+                  <Button size="sm" onClick={() => setShowInviteViewerDialog(true)}>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Invite Viewers
+                  </Button>
+                </div>
+                <CardDescription>
+                  External viewers who have accessed this room via share links.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingViewers ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : viewers.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-neutral-500">
+                    No viewers have accessed this room yet.
+                  </p>
+                ) : (
+                  <div className="overflow-hidden rounded-lg border">
+                    <table className="w-full">
+                      <thead className="border-b bg-neutral-50">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                            Email
+                          </th>
+                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                            Name
+                          </th>
+                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                            Visits
+                          </th>
+                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                            Last Active
+                          </th>
+                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                            Time Spent
+                          </th>
+                          <th className="w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {viewers.map((viewer) => (
+                          <tr
+                            key={viewer.email}
+                            className="border-b last:border-0 hover:bg-neutral-50"
+                          >
+                            <td className="px-4 py-2 text-sm font-medium text-neutral-900">
+                              {viewer.email}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-neutral-600">
+                              {viewer.name || '\u2014'}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-neutral-600">{viewer.visits}</td>
+                            <td className="px-4 py-2 text-sm text-neutral-600">
+                              {new Date(viewer.lastActive).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-neutral-600">
+                              {viewer.totalTimeSpent < 60
+                                ? `${viewer.totalTimeSpent}s`
+                                : viewer.totalTimeSpent < 3600
+                                  ? `${Math.round(viewer.totalTimeSpent / 60)}m`
+                                  : `${Math.round(viewer.totalTimeSpent / 3600)}h`}
+                            </td>
+                            <td className="px-4 py-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-danger-600 hover:bg-danger-50 hover:text-danger-700"
+                                disabled={revokingViewerEmail === viewer.email}
+                                onClick={() => handleRevokeViewer(viewer.email)}
+                              >
+                                {revokingViewerEmail === viewer.email ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Invite Viewers Dialog */}
+            <Dialog open={showInviteViewerDialog} onOpenChange={setShowInviteViewerDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Invite Viewers</DialogTitle>
+                  <DialogDescription>
+                    Enter email addresses to invite as viewers (one per line). A view-only share
+                    link will be created for each.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                  <Label htmlFor="viewer-emails">Email Addresses</Label>
+                  <Textarea
+                    id="viewer-emails"
+                    placeholder={'viewer1@example.com\nviewer2@example.com'}
+                    value={inviteViewerEmails}
+                    onChange={(e) => setInviteViewerEmails(e.target.value)}
+                    className="mt-1.5"
+                    rows={6}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowInviteViewerDialog(false);
+                      setInviteViewerEmails('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleInviteViewers}
+                    disabled={isInvitingViewers || !inviteViewerEmails.trim()}
+                  >
+                    {isInvitingViewers ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Inviting...
+                      </>
+                    ) : (
+                      'Invite'
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* Links Tab */}
