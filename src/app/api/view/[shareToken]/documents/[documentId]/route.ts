@@ -32,6 +32,7 @@ async function getViewerSession(shareToken: string) {
     select: {
       organizationId: true,
       visitorEmail: true,
+      visitorName: true,
       ipAddress: true,
       link: {
         select: {
@@ -141,6 +142,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         previewUrl: `/api/view/${shareToken}/documents/${documentId}/preview`,
         downloadEnabled: session.room.allowDownloads && document.allowDownload,
         watermarkText,
+        viewerEmail: session.visitorEmail ?? null,
+        viewerName: session.visitorName ?? null,
       },
     });
   } catch (error) {

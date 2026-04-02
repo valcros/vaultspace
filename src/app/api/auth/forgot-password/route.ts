@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     }
     const resetUrl = `${baseUrl}/auth/reset-password?token=${resetToken}`;
 
-    await providers.job.addJob('email', 'send-password-reset', {
+    await providers.job.addJob('normal', 'send-password-reset', {
       to: user.email,
       userName: user.firstName || 'User',
       organizationName: orgName,

@@ -231,7 +231,7 @@ export default function OrganizationSettingsPage() {
             <div className="space-y-2">
               <Label htmlFor="slug">URL Slug</Label>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-neutral-500">vaultspace.com/</span>
+                <span className="text-sm text-neutral-500">vaultspace.org/</span>
                 <Input id="slug" value={settings.slug} disabled className="flex-1 bg-neutral-50" />
               </div>
               <p className="text-xs text-neutral-500">URL slug cannot be changed after creation</p>

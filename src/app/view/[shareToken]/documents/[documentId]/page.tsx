@@ -27,6 +27,8 @@ interface DocumentInfo {
   previewUrl: string;
   downloadEnabled: boolean;
   watermarkText: string | null;
+  viewerEmail: string | null;
+  viewerName: string | null;
 }
 
 export default function ViewerDocumentPage() {
@@ -354,7 +356,8 @@ export default function ViewerDocumentPage() {
           {document.watermarkText && (
             <WatermarkOverlay
               template={document.watermarkText}
-              viewerEmail={document.watermarkText}
+              viewerEmail={document.viewerEmail ?? undefined}
+              viewerName={document.viewerName ?? undefined}
             />
           )}
         </div>

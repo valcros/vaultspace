@@ -236,7 +236,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (link.scopedDocumentId) {
       const providers = getProviders();
       providers.job
-        .addJob('email', 'notify-document-viewed', {
+        .addJob('normal', 'notify-document-viewed', {
           organizationId: link.organizationId,
           roomId: link.roomId,
           documentId: link.scopedDocumentId,

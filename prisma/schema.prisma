@@ -115,10 +115,35 @@ enum EventType {
   ADMIN_SETTING_CHANGED
   ADMIN_EXPORT_INITIATED
 
+  // Q&A
+  QUESTION_SUBMITTED
+  QUESTION_UPDATED
+  QUESTION_CLOSED
+  ANSWER_SUBMITTED
+
+  // Checklists
+  CHECKLIST_CREATED
+  CHECKLIST_ITEM_UPDATED
+  CHECKLIST_ITEM_COMPLETED
+
   // System
   SYSTEM_BACKUP_STARTED
   SYSTEM_BACKUP_COMPLETED
   SYSTEM_JOB_FAILED
+}
+
+// Q&A status - tracks question lifecycle
+enum QuestionStatus {
+  OPEN
+  ANSWERED
+  CLOSED
+}
+
+// Q&A priority
+enum QuestionPriority {
+  NORMAL
+  HIGH
+  URGENT
 }
 
 // Actor type - who triggered the event
@@ -219,6 +244,14 @@ enum InvitationStatus {
   REJECTED
 }
 
+// Checklist item status
+enum ChecklistItemStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETE
+  NOT_APPLICABLE
+}
+
 // =============================================================================
 // MODELS
 // =============================================================================
@@ -270,6 +303,10 @@ model Organization {
   notifications    Notification[]
   roleAssignments  RoleAssignment[]
   folders          Folder[]
+  questions        Question[]
+  answers          Answer[]
+  checklists       Checklist[]
+  checklistItems   ChecklistItem[]
 
   @@index([slug])
   @@index([isActive])
@@ -311,6 +348,9 @@ model User {
   documentVersions   DocumentVersion[]
   eventsTriggered    Event[]
   permissionsGranted Permission[]       @relation("GrantedBy")
+  questionsAsked             Question[]
+  answersGiven               Answer[]
+  checklistItemsCompleted    ChecklistItem[]
 
   @@index([email])
   @@index([isActive])
@@ -440,6 +480,8 @@ model Room {
   events       Event[]
   linkVisits   LinkVisit[]
   viewSessions ViewSession[]
+  questions    Question[]
+  checklists   Checklist[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -539,6 +581,8 @@ model Document {
   searchIndexes SearchIndex[]
   linkVisits    LinkVisit[]
   viewSessions  ViewSession[]
+  questions      Question[]
+  checklistItems ChecklistItem[]
 
   @@unique([organizationId, id])
   @@index([organizationId])
@@ -864,6 +908,7 @@ model ViewSession {
   visits    LinkVisit[]
   events    Event[]
   documents Document[]
+  questions Question[]
 
   @@unique([organizationId, sessionToken])
   @@index([organizationId])
@@ -1219,4 +1264,153 @@ model EmailVerificationToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("email_verification_tokens")
+}
+
+// =============================================================================
+// Q&A / FEEDBACK
+// =============================================================================
+
+// Question (Q&A - viewer questions on rooms/documents)
+model Question {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  roomId         String
+  documentId     String? // Optional: question about a specific document
+
+  // Asker identity
+  askedByUserId String? // Null for viewer-submitted questions
+  askedByEmail  String  @db.VarChar(255)
+  askedByName   String? @db.VarChar(255)
+
+  // Viewer session link (for audit trail)
+  viewSessionId String?
+
+  // Content
+  subject String @db.VarChar(500)
+  body    String @db.Text
+
+  // Status & priority
+  status   QuestionStatus   @default(OPEN)
+  priority QuestionPriority @default(NORMAL)
+
+  // Visibility: if true + answered, visible to all viewers
+  isPublic Boolean @default(false)
+
+  // Relations
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  document     Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  askedByUser  User?         @relation(fields: [askedByUserId], references: [id], onDelete: SetNull)
+  viewSession  ViewSession?  @relation(fields: [viewSessionId], references: [id], onDelete: SetNull)
+
+  answers Answer[]
+
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([documentId])
+  @@index([roomId, status])
+  @@index([askedByEmail])
+  @@index([createdAt])
+  @@map("questions")
+}
+
+// Answer (admin response to a question)
+model Answer {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId   String
+  questionId       String
+  answeredByUserId String
+
+  // Content
+  body String @db.Text
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  question     Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answeredBy   User         @relation(fields: [answeredByUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([questionId])
+  @@index([createdAt])
+  @@map("answers")
+}
+
+// =============================================================================
+// DUE DILIGENCE CHECKLISTS
+// =============================================================================
+
+// Checklist (Due Diligence Checklist per Room)
+model Checklist {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  roomId         String
+
+  // Identity
+  name        String  @db.VarChar(255)
+  description String? @db.Text
+
+  // Visibility: when true, viewers can see the checklist
+  isPublic Boolean @default(false)
+
+  // Relations
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  items        ChecklistItem[]
+
+  @@index([organizationId])
+  @@index([roomId])
+  @@map("checklists")
+}
+
+// ChecklistItem (Individual items within a checklist)
+model ChecklistItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  checklistId    String
+
+  // Content
+  name        String  @db.VarChar(500)
+  description String? @db.Text
+
+  // Status & ordering
+  status    ChecklistItemStatus @default(PENDING)
+  sortOrder Int                 @default(0)
+
+  // Requirements
+  isRequired Boolean @default(true)
+
+  // Linked document that fulfills this item
+  documentId String?
+
+  // Assignment
+  assignedToEmail String? @db.VarChar(255)
+
+  // Completion tracking
+  completedAt      DateTime?
+  completedByUserId String?
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  checklist    Checklist    @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  completedBy  User?        @relation(fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([checklistId, sortOrder])
+  @@index([organizationId])
+  @@index([checklistId])
+  @@index([documentId])
+  @@index([status])
+  @@map("checklist_items")
 }
