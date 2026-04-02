@@ -35,6 +35,8 @@ async function getViewerSession(shareToken: string) {
       sessionToken: viewerToken,
     },
     select: {
+      id: true,
+      createdAt: true,
       organizationId: true,
       roomId: true,
       link: {
@@ -43,6 +45,7 @@ async function getViewerSession(shareToken: string) {
           scope: true,
           scopedFolderId: true,
           scopedDocumentId: true,
+          maxSessionMinutes: true,
         },
       },
       room: {
@@ -76,6 +79,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     if (!session) {
       return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
+    }
+
+    // Enforce per-session time limit (F021)
+    if (session.link?.maxSessionMinutes) {
+      const elapsed = (Date.now() - session.createdAt.getTime()) / 1000 / 60;
+      if (elapsed > session.link.maxSessionMinutes) {
+        return NextResponse.json({ error: 'Session time limit exceeded' }, { status: 403 });
+      }
     }
 
     const { searchParams } = new URL(request.url);
