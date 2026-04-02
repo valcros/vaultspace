@@ -77,9 +77,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Compute progress stats
       const checklistsWithStats = checklists.map((checklist) => {
         const itemsCount = checklist.items.length;
-        const completedCount = checklist.items.filter(
-          (item) => item.status === 'COMPLETE'
-        ).length;
+        const completedCount = checklist.items.filter((item) => item.status === 'COMPLETE').length;
         return {
           ...checklist,
           _stats: {

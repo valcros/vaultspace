@@ -48,16 +48,19 @@ export async function GET(request: NextRequest) {
 
     const limit = Math.min(Math.max(parseInt(limitParam || '20', 10) || 20, 1), 50);
     const offset = Math.max(parseInt(offsetParam || '0', 10) || 0, 0);
-    const tags = tagsParam ? tagsParam.split(',').map((t) => t.trim()).filter(Boolean) : null;
+    const tags = tagsParam
+      ? tagsParam
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : null;
 
     const organizationId = session.organizationId;
     const startTime = Date.now();
 
     const response = await withOrgContext(organizationId, async (tx) => {
       // Build dynamic WHERE conditions
-      const conditions: Prisma.Sql[] = [
-        Prisma.sql`si."organizationId" = ${organizationId}`,
-      ];
+      const conditions: Prisma.Sql[] = [Prisma.sql`si."organizationId" = ${organizationId}`];
 
       // Exclude soft-deleted documents
       conditions.push(Prisma.sql`d."status" != 'DELETED'`);
@@ -156,7 +159,10 @@ export async function GET(request: NextRequest) {
 
     console.error('[Search API] Unexpected error:', error);
     return NextResponse.json(
-      { success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } },
+      {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' },
+      },
       { status: 500 }
     );
   }

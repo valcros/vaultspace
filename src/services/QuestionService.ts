@@ -295,8 +295,7 @@ export class QuestionService {
       return { question: updated, previousStatus: existing.status };
     });
 
-    const eventType =
-      options.status === 'CLOSED' ? 'QUESTION_CLOSED' : 'QUESTION_UPDATED';
+    const eventType = options.status === 'CLOSED' ? 'QUESTION_CLOSED' : 'QUESTION_UPDATED';
 
     await eventBus.emit(eventType, {
       roomId,
