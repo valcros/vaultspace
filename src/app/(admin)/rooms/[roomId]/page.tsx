@@ -277,6 +277,7 @@ export default function RoomDetailPage() {
   const [newLinkPermission, setNewLinkPermission] = React.useState<'VIEW' | 'DOWNLOAD'>('VIEW');
   const [newLinkPassword, setNewLinkPassword] = React.useState('');
   const [newLinkExpiry, setNewLinkExpiry] = React.useState('');
+  const [newLinkSessionLimit, setNewLinkSessionLimit] = React.useState('');
   const [isCreatingLink, setIsCreatingLink] = React.useState(false);
 
   // Tag editor states
@@ -996,6 +997,7 @@ export default function RoomDetailPage() {
           scope: 'ENTIRE_ROOM',
           ...(newLinkPassword && { password: newLinkPassword }),
           ...(newLinkExpiry && { expiresAt: new Date(newLinkExpiry).toISOString() }),
+          ...(newLinkSessionLimit && { maxSessionMinutes: parseInt(newLinkSessionLimit, 10) }),
         }),
       });
 
@@ -1006,6 +1008,7 @@ export default function RoomDetailPage() {
         setNewLinkPermission('VIEW');
         setNewLinkPassword('');
         setNewLinkExpiry('');
+        setNewLinkSessionLimit('');
         fetchLinks();
         // Copy link URL to clipboard
         if (data.link?.url) {
@@ -1030,7 +1033,15 @@ export default function RoomDetailPage() {
     } finally {
       setIsCreatingLink(false);
     }
-  }, [roomId, newLinkName, newLinkPermission, newLinkPassword, newLinkExpiry, fetchLinks]);
+  }, [
+    roomId,
+    newLinkName,
+    newLinkPermission,
+    newLinkPassword,
+    newLinkExpiry,
+    newLinkSessionLimit,
+    fetchLinks,
+  ]);
 
   // Handle copy link
   const handleCopyLink = React.useCallback(async (link: ShareLink) => {
@@ -2557,6 +2568,20 @@ export default function RoomDetailPage() {
                 value={newLinkExpiry}
                 onChange={(e) => setNewLinkExpiry(e.target.value)}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="linkSessionLimit">Session Time Limit in Minutes (optional)</Label>
+              <Input
+                id="linkSessionLimit"
+                type="number"
+                min="1"
+                placeholder="e.g. 60"
+                value={newLinkSessionLimit}
+                onChange={(e) => setNewLinkSessionLimit(e.target.value)}
+              />
+              <p className="text-xs text-neutral-500">
+                Maximum viewing time per session. Leave blank for unlimited.
+              </p>
             </div>
           </div>
           <DialogFooter>

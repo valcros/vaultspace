@@ -18,6 +18,7 @@ interface ShareLinkInfo {
   roomName: string;
   organizationName: string;
   organizationLogo: string | null;
+  brandColor: string | null;
   requiresPassword: boolean;
   requiresEmail: boolean;
   ndaRequired: boolean;
@@ -249,6 +250,7 @@ export default function ViewerAccessPage() {
             <Button
               type="submit"
               className="w-full"
+              style={linkInfo?.brandColor ? { backgroundColor: linkInfo.brandColor } : undefined}
               loading={isSubmitting}
               disabled={
                 (linkInfo?.requiresEmail && !email) ||
