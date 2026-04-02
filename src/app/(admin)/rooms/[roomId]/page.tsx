@@ -38,6 +38,11 @@ import {
   ClipboardCheck,
   CalendarDays,
   Star,
+  Clock,
+  UserPlus,
+  Check,
+  X,
+  Mail,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -103,6 +108,8 @@ interface Document {
   category: string | null;
   confidential: boolean;
   uploadedBy: { firstName: string; lastName: string };
+  expiresAt: string | null;
+  expiryAction: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -128,6 +135,23 @@ interface Admin {
   lastName: string;
   email: string;
   scope: 'organization' | 'room';
+}
+
+interface AccessRequest {
+  id: string;
+  requesterEmail: string;
+  requesterName: string | null;
+  reason: string | null;
+  status: 'PENDING' | 'APPROVED' | 'DENIED';
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  reviewedBy: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
 }
 
 interface ShareLink {
@@ -258,6 +282,11 @@ export default function RoomDetailPage() {
   // Tag editor states
   const [editingTagsDoc, setEditingTagsDoc] = React.useState<Document | null>(null);
   const [tagInput, setTagInput] = React.useState('');
+
+  // Access request states
+  const [accessRequests, setAccessRequests] = React.useState<AccessRequest[]>([]);
+  const [isLoadingAccessRequests, setIsLoadingAccessRequests] = React.useState(false);
+  const [reviewingRequestId, setReviewingRequestId] = React.useState<string | null>(null);
 
   // Member add states
   const [newMemberEmail, setNewMemberEmail] = React.useState('');
@@ -427,6 +456,60 @@ export default function RoomDetailPage() {
     }
   }, [roomId]);
 
+  const fetchAccessRequests = React.useCallback(async () => {
+    setIsLoadingAccessRequests(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/access-requests?status=PENDING`);
+      if (response.ok) {
+        const data = await response.json();
+        setAccessRequests(data.accessRequests || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch access requests:', error);
+    } finally {
+      setIsLoadingAccessRequests(false);
+    }
+  }, [roomId]);
+
+  const handleReviewAccessRequest = React.useCallback(
+    async (requestId: string, status: 'APPROVED' | 'DENIED') => {
+      setReviewingRequestId(requestId);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/access-requests/${requestId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        });
+
+        if (response.ok) {
+          toast({
+            title: 'Success',
+            description: `Access request ${status.toLowerCase()}`,
+            variant: 'success',
+          });
+          fetchAccessRequests();
+        } else {
+          const error = await response.json();
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to review access request',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Review access request error:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to review access request',
+          variant: 'destructive',
+        });
+      } finally {
+        setReviewingRequestId(null);
+      }
+    },
+    [roomId, fetchAccessRequests]
+  );
+
   const fetchLinks = React.useCallback(async () => {
     try {
       const response = await fetch(`/api/rooms/${roomId}/links`);
@@ -524,6 +607,7 @@ export default function RoomDetailPage() {
           break;
         case 'members':
           fetchAdmins();
+          fetchAccessRequests();
           break;
         case 'links':
           fetchLinks();
@@ -540,6 +624,7 @@ export default function RoomDetailPage() {
     fetchFolders,
     fetchBookmarks,
     fetchAdmins,
+    fetchAccessRequests,
     fetchLinks,
     fetchActivity,
   ]);
@@ -1514,6 +1599,12 @@ export default function RoomDetailPage() {
                                       {tag}
                                     </Badge>
                                   ))}
+                                  {doc.expiresAt && (
+                                    <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
+                                      <Clock className="h-2.5 w-2.5" />
+                                      Expires {new Date(doc.expiresAt).toLocaleDateString()}
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1650,13 +1741,19 @@ export default function RoomDetailPage() {
                         <Lock className="h-3 w-3 shrink-0 text-amber-500" />
                       )}
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex flex-wrap items-center gap-1">
                       <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
                       {doc.category && (
                         <span
                           className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
                         >
                           {getCategoryLabel(doc.category)}
+                        </span>
+                      )}
+                      {doc.expiresAt && (
+                        <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
+                          <Clock className="h-2.5 w-2.5" />
+                          {new Date(doc.expiresAt).toLocaleDateString()}
                         </span>
                       )}
                     </div>
@@ -1732,6 +1829,77 @@ export default function RoomDetailPage() {
 
           {/* Members Tab */}
           <TabsContent value="members" className="mt-6">
+            {/* Access Requests Section */}
+            {accessRequests.length > 0 && (
+              <Card className="mb-6 border-amber-200 bg-amber-50/50">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="h-5 w-5 text-amber-600" />
+                    <CardTitle className="text-base">
+                      Pending Access Requests
+                      <Badge variant="warning" className="ml-2">
+                        {accessRequests.length}
+                      </Badge>
+                    </CardTitle>
+                  </div>
+                  <CardDescription>
+                    People requesting access to this room. Approve to create a share link.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {accessRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className="flex items-center justify-between rounded-lg border bg-white p-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4 text-neutral-400" />
+                          <span className="font-medium text-neutral-900">
+                            {req.requesterName || req.requesterEmail}
+                          </span>
+                          {req.requesterName && (
+                            <span className="text-sm text-neutral-500">{req.requesterEmail}</span>
+                          )}
+                        </div>
+                        {req.reason && (
+                          <p className="mt-1 line-clamp-2 text-sm text-neutral-600">{req.reason}</p>
+                        )}
+                        <p className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
+                          <Clock className="h-3 w-3" />
+                          {new Date(req.createdAt).toLocaleDateString()} at{' '}
+                          {new Date(req.createdAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                      <div className="ml-4 flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-red-200 text-red-600 hover:bg-red-50"
+                          disabled={reviewingRequestId === req.id}
+                          onClick={() => handleReviewAccessRequest(req.id, 'DENIED')}
+                        >
+                          <X className="mr-1 h-3.5 w-3.5" />
+                          Deny
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={reviewingRequestId === req.id}
+                          onClick={() => handleReviewAccessRequest(req.id, 'APPROVED')}
+                        >
+                          <Check className="mr-1 h-3.5 w-3.5" />
+                          Approve
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
             <div className="mb-4 flex items-center justify-between">
               <Button onClick={() => setShowMemberDialog(true)}>
                 <Plus className="mr-2 h-4 w-4" />
@@ -2260,6 +2428,55 @@ export default function RoomDetailPage() {
                 }}
               />
               <p className="text-xs text-neutral-400">Separate tags with commas</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Expiry Date</Label>
+              <Input
+                type="datetime-local"
+                value={
+                  editingTagsDoc?.expiresAt
+                    ? new Date(editingTagsDoc.expiresAt).toISOString().slice(0, 16)
+                    : ''
+                }
+                onChange={async (e) => {
+                  if (editingTagsDoc) {
+                    const val = e.target.value ? new Date(e.target.value).toISOString() : null;
+                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ expiresAt: val }),
+                    });
+                    fetchDocuments();
+                  }
+                }}
+              />
+              <p className="text-xs text-neutral-400">
+                Document will auto-archive or delete after this date
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Expiry Action</Label>
+              <Select
+                value={editingTagsDoc?.expiryAction ?? 'ARCHIVE'}
+                onValueChange={async (v) => {
+                  if (editingTagsDoc) {
+                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ expiryAction: v }),
+                    });
+                    fetchDocuments();
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select action" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ARCHIVE">Archive</SelectItem>
+                  <SelectItem value="DELETE">Delete</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
