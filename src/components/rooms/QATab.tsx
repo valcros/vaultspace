@@ -52,7 +52,8 @@ interface Question {
   documentName?: string | null;
   createdAt: string;
   askedBy: { firstName: string; lastName: string; email: string } | null;
-  answers: Answer[];
+  answers?: Answer[];
+  _count?: { answers: number };
 }
 
 type StatusFilter = 'ALL' | 'OPEN' | 'ANSWERED' | 'CLOSED';
@@ -241,11 +242,13 @@ export function QATab({ roomId }: { roomId: string }) {
       }
       const answer = await res.json();
       setSelectedQuestion((prev) =>
-        prev ? { ...prev, answers: [...prev.answers, answer] } : prev
+        prev ? { ...prev, answers: [...(prev.answers || []), answer] } : prev
       );
       setQuestions((prev) =>
         prev.map((q) =>
-          q.id === selectedQuestion.id ? { ...q, answers: [...q.answers, answer] } : q
+          q.id === selectedQuestion.id
+            ? { ...q, _count: { answers: (q._count?.answers ?? 0) + 1 } }
+            : q
         )
       );
       setNewAnswerBody('');
@@ -257,10 +260,20 @@ export function QATab({ roomId }: { roomId: string }) {
     }
   };
 
-  const openDetail = (question: Question) => {
+  const openDetail = async (question: Question) => {
     setSelectedQuestion(question);
     setShowQuestionDetail(true);
     setNewAnswerBody('');
+    // Fetch full detail with answers
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/questions/${question.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedQuestion(data.question || data);
+      }
+    } catch {
+      // Keep the list version if detail fetch fails
+    }
   };
 
   return (
@@ -329,7 +342,7 @@ export function QATab({ roomId }: { roomId: string }) {
                   </div>
                 </div>
                 <span className="whitespace-nowrap text-xs text-neutral-500">
-                  {q.answers.length} {q.answers.length === 1 ? 'answer' : 'answers'}
+                  {q._count?.answers ?? 0} {(q._count?.answers ?? 0) === 1 ? 'answer' : 'answers'}
                 </span>
               </div>
             </Card>
@@ -424,9 +437,9 @@ export function QATab({ roomId }: { roomId: string }) {
               {/* Answers */}
               <div className="mt-4 space-y-3">
                 <h4 className="text-sm font-semibold text-neutral-700">
-                  Answers ({selectedQuestion.answers.length})
+                  Answers ({selectedQuestion.answers?.length ?? 0})
                 </h4>
-                {selectedQuestion.answers.length === 0 ? (
+                {!selectedQuestion.answers || selectedQuestion.answers.length === 0 ? (
                   <p className="text-sm text-neutral-500">No answers yet.</p>
                 ) : (
                   selectedQuestion.answers.map((a) => (
