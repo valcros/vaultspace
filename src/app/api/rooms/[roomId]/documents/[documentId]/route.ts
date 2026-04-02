@@ -112,6 +112,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       batesNumber,
       category,
       confidential,
+      expiresAt,
+      expiryAction,
     } = body;
 
     // Validate tags if provided
@@ -176,6 +178,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           ...(batesNumber !== undefined && { batesNumber }),
           ...(category !== undefined && { category: category || null }),
           ...(confidential !== undefined && { confidential }),
+          ...(expiresAt !== undefined && { expiresAt: expiresAt ? new Date(expiresAt) : null }),
+          ...(expiryAction !== undefined && { expiryAction: expiryAction || null }),
         },
       });
 

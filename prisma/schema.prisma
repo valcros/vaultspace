@@ -318,6 +318,7 @@ model Organization {
   checklistItems   ChecklistItem[]
   calendarEvents   CalendarEvent[]
   bookmarks        Bookmark[]
+  accessRequests   AccessRequest[]
 
   @@index([slug])
   @@index([isActive])
@@ -338,7 +339,7 @@ model User {
   firstName    String  @db.VarChar(100)
   lastName     String  @db.VarChar(100)
   title        String? @db.VarChar(255) // Job title (e.g., "Managing Partner")
-  relationship String? @db.VarChar(50)  // Relationship to org (e.g., "investor", "legal_advisor")
+  relationship String? @db.VarChar(50) // Relationship to org (e.g., "investor", "legal_advisor")
 
   // Session & security
   lastLoginAt     DateTime?
@@ -348,22 +349,23 @@ model User {
   isActive Boolean @default(true)
 
   // Relations
-  organizations      UserOrganization[]
-  permissions        Permission[]
-  roleAssignments    RoleAssignment[]
-  groupMemberships   GroupMembership[]
-  viewSessions       ViewSession[]
-  invitationsSent    Invitation[]
-  sessions           Session[]
-  linksCreated       Link[]
-  documentVersions   DocumentVersion[]
-  eventsTriggered    Event[]
-  permissionsGranted Permission[]       @relation("GrantedBy")
-  questionsAsked             Question[]
-  answersGiven               Answer[]
-  checklistItemsCompleted    ChecklistItem[]
-  calendarEvents             CalendarEvent[]
-  bookmarks                  Bookmark[]
+  organizations           UserOrganization[]
+  permissions             Permission[]
+  roleAssignments         RoleAssignment[]
+  groupMemberships        GroupMembership[]
+  viewSessions            ViewSession[]
+  invitationsSent         Invitation[]
+  sessions                Session[]
+  linksCreated            Link[]
+  documentVersions        DocumentVersion[]
+  eventsTriggered         Event[]
+  permissionsGranted      Permission[]       @relation("GrantedBy")
+  questionsAsked          Question[]
+  answersGiven            Answer[]
+  checklistItemsCompleted ChecklistItem[]
+  calendarEvents          CalendarEvent[]
+  bookmarks               Bookmark[]
+  accessRequestsReviewed  AccessRequest[]
 
   @@index([email])
   @@index([isActive])
@@ -388,8 +390,8 @@ model UserOrganization {
   canManageRooms Boolean @default(false)
 
   // Relations
-  organization            Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user                    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization            Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   notificationPreferences NotificationPreference[]
   notifications           Notification[]
 
@@ -486,17 +488,18 @@ model Room {
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  folders      Folder[]
-  documents    Document[]
-  links        Link[]
-  permissions  Permission[]
-  events       Event[]
-  linkVisits   LinkVisit[]
-  viewSessions ViewSession[]
+  folders        Folder[]
+  documents      Document[]
+  links          Link[]
+  permissions    Permission[]
+  events         Event[]
+  linkVisits     LinkVisit[]
+  viewSessions   ViewSession[]
   questions      Question[]
   checklists     Checklist[]
   calendarEvents CalendarEvent[]
   bookmarks      Bookmark[]
+  accessRequests AccessRequest[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -517,9 +520,9 @@ model Folder {
 
   // Hierarchy
   parentId     String?
-  name         String @db.VarChar(255)
-  path         String @db.VarChar(1000) // Full path for quick lookup
-  displayOrder Int    @default(0)
+  name         String  @db.VarChar(255)
+  path         String  @db.VarChar(1000) // Full path for quick lookup
+  displayOrder Int     @default(0)
 
   // Privacy
   confidential Boolean @default(false)
@@ -569,13 +572,17 @@ model Document {
   batesStartNumber Int?
 
   // Tagging & metadata - F110
-  tags           String[] @default([])
+  tags           String[]          @default([])
   customMetadata Json?
   category       DocumentCategory?
 
+  // Expiry — F012
+  expiresAt    DateTime?
+  expiryAction String?   @db.VarChar(20) // "ARCHIVE" or "DELETE"
+
   // Access control
-  allowDownload  Boolean @default(true)
-  confidential   Boolean @default(false)
+  allowDownload Boolean @default(true)
+  confidential  Boolean @default(false)
 
   // Analytics
   viewCount         Int       @default(0)
@@ -591,11 +598,11 @@ model Document {
   room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
   folder       Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
-  versions      DocumentVersion[]
-  permissions   Permission[]
-  searchIndexes SearchIndex[]
-  linkVisits    LinkVisit[]
-  viewSessions  ViewSession[]
+  versions       DocumentVersion[]
+  permissions    Permission[]
+  searchIndexes  SearchIndex[]
+  linkVisits     LinkVisit[]
+  viewSessions   ViewSession[]
   questions      Question[]
   checklistItems ChecklistItem[]
   calendarEvents CalendarEvent[]
@@ -609,6 +616,7 @@ model Document {
   @@index([category])
   @@index([batesNumber])
   @@index([deletedAt])
+  @@index([expiresAt])
   @@map("documents")
 }
 
@@ -872,11 +880,11 @@ model LinkVisit {
   countryCode String? @db.VarChar(2)
 
   // Relations
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  link         Link          @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  room         Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  document     Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  session      ViewSession?  @relation(fields: [viewSessionId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  link         Link         @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  session      ViewSession? @relation(fields: [viewSessionId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([linkId])
@@ -910,8 +918,8 @@ model ViewSession {
   totalTimeSpentSeconds Int      @default(0)
 
   // Device info
-  ipAddress   String? @db.VarChar(50)
-  userAgent   String? @db.Text
+  ipAddress String? @db.VarChar(50)
+  userAgent String? @db.Text
 
   // Access flags
   isActive Boolean @default(true)
@@ -1317,11 +1325,11 @@ model Question {
   isPublic Boolean @default(false)
 
   // Relations
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  room         Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  document     Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  askedByUser  User?         @relation(fields: [askedByUserId], references: [id], onDelete: SetNull)
-  viewSession  ViewSession?  @relation(fields: [viewSessionId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  askedByUser  User?        @relation(fields: [askedByUserId], references: [id], onDelete: SetNull)
+  viewSession  ViewSession? @relation(fields: [viewSessionId], references: [id], onDelete: SetNull)
 
   answers Answer[]
 
@@ -1415,7 +1423,7 @@ model ChecklistItem {
   assignedToEmail String? @db.VarChar(255)
 
   // Completion tracking
-  completedAt      DateTime?
+  completedAt       DateTime?
   completedByUserId String?
 
   // Relations
@@ -1486,4 +1494,42 @@ model Bookmark {
   @@index([userId])
   @@index([documentId])
   @@map("bookmarks")
+}
+
+// =============================================================================
+// ACCESS REQUESTS (F027)
+// =============================================================================
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+model AccessRequest {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  roomId         String
+
+  requesterEmail String @db.VarChar(255)
+  requesterName  String? @db.VarChar(255)
+  reason         String? @db.Text
+
+  status         AccessRequestStatus @default(PENDING)
+  reviewedByUserId String?
+  reviewedAt     DateTime?
+  reviewNote     String? @db.Text
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  reviewedBy   User?        @relation(fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([roomId, status])
+  @@index([requesterEmail])
+  @@map("access_requests")
 }
