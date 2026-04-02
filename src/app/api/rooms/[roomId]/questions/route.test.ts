@@ -30,7 +30,6 @@ vi.mock('@/lib/db', () => ({
 }));
 
 import { GET, POST } from './route';
-import { requireAuth } from '@/lib/middleware';
 
 const mockRoom = { id: 'room-1', organizationId: 'org-1' };
 
