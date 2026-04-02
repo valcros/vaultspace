@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Users, Bell, Activity, ChevronRight } from 'lucide-react';
+import { Building2, Users, Bell, Activity, Shield, Webhook, ChevronRight } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
@@ -31,11 +31,25 @@ const settingsSections: SettingsSection[] = [
     href: '/users',
   },
   {
+    id: 'security',
+    title: 'Security',
+    description: 'Manage two-factor authentication and security settings',
+    icon: Shield,
+    href: '/settings/security',
+  },
+  {
     id: 'notifications',
     title: 'Notifications',
     description: 'Configure email notification preferences',
     icon: Bell,
     href: '/settings/notifications',
+  },
+  {
+    id: 'webhooks',
+    title: 'Webhooks',
+    description: 'Configure webhook endpoints for event notifications',
+    icon: Webhook,
+    href: '/settings/webhooks',
   },
   {
     id: 'activity',

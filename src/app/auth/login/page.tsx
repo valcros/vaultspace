@@ -17,6 +17,11 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  // 2FA state
+  const [requiresTwoFactor, setRequiresTwoFactor] = React.useState(false);
+  const [tempToken, setTempToken] = React.useState('');
+  const [twoFactorCode, setTwoFactorCode] = React.useState('');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -35,6 +40,13 @@ export default function LoginPage() {
         throw new Error(data.error || 'Failed to sign in');
       }
 
+      // Check if 2FA is required
+      if (data.requiresTwoFactor) {
+        setRequiresTwoFactor(true);
+        setTempToken(data.tempToken);
+        return;
+      }
+
       router.push('/dashboard');
       router.refresh();
     } catch (err) {
@@ -43,6 +55,87 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  const handleTwoFactorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('/api/auth/2fa/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: twoFactorCode, tempToken }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Invalid verification code');
+      }
+
+      router.push('/dashboard');
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 2FA verification screen
+  if (requiresTwoFactor) {
+    return (
+      <>
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-bold text-neutral-900">Two-Factor Authentication</h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Enter the 6-digit code from your authenticator app, or use a backup code
+          </p>
+        </div>
+
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <form onSubmit={handleTwoFactorSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="twoFactorCode">Verification code</Label>
+            <Input
+              id="twoFactorCode"
+              type="text"
+              placeholder="Enter 6-digit code or backup code"
+              value={twoFactorCode}
+              onChange={(e) => setTwoFactorCode(e.target.value)}
+              required
+              autoComplete="one-time-code"
+              autoFocus
+              maxLength={8}
+            />
+          </div>
+
+          <Button type="submit" className="w-full" loading={isLoading}>
+            Verify
+          </Button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setRequiresTwoFactor(false);
+              setTempToken('');
+              setTwoFactorCode('');
+              setError(null);
+            }}
+            className="w-full text-center text-sm text-neutral-500 hover:text-neutral-700"
+          >
+            Back to sign in
+          </button>
+        </form>
+      </>
+    );
+  }
 
   return (
     <>
