@@ -14,25 +14,7 @@ import { withOrgContext } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-// Common webhook event types for the UI
-export const WEBHOOK_EVENT_TYPES = [
-  'DOCUMENT_UPLOADED',
-  'DOCUMENT_UPDATED',
-  'DOCUMENT_DELETED',
-  'DOCUMENT_VIEWED',
-  'DOCUMENT_DOWNLOADED',
-  'ROOM_CREATED',
-  'ROOM_UPDATED',
-  'ROOM_STATUS_CHANGED',
-  'ROOM_ARCHIVED',
-  'ROOM_CLOSED',
-  'LINK_CREATED',
-  'LINK_ACCESSED',
-  'USER_INVITED',
-  'USER_ACCEPTED_INVITATION',
-  'QUESTION_SUBMITTED',
-  'ANSWER_SUBMITTED',
-] as const;
+import { WEBHOOK_EVENT_TYPES } from '@/lib/constants/webhookEvents';
 
 /**
  * GET /api/settings/webhooks
