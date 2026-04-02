@@ -61,6 +61,7 @@ export default function RoomSettingsPage() {
     allDocumentsConfidential: false,
     brandColor: '',
     brandLogoUrl: '',
+    ipAllowlist: '',
   });
 
   const fetchRoom = React.useCallback(async () => {
@@ -81,6 +82,7 @@ export default function RoomSettingsPage() {
           allDocumentsConfidential: data.room.allDocumentsConfidential || false,
           brandColor: data.room.brandColor || '',
           brandLogoUrl: data.room.brandLogoUrl || '',
+          ipAllowlist: (data.room.ipAllowlist || []).join('\n'),
         });
       } else if (response.status === 404) {
         router.push('/rooms');
@@ -119,6 +121,10 @@ export default function RoomSettingsPage() {
           allDocumentsConfidential: formData.allDocumentsConfidential,
           brandColor: formData.brandColor || null,
           brandLogoUrl: formData.brandLogoUrl || null,
+          ipAllowlist: formData.ipAllowlist
+            .split('\n')
+            .map((ip: string) => ip.trim())
+            .filter((ip: string) => ip.length > 0),
         }),
       });
 
@@ -365,6 +371,23 @@ export default function RoomSettingsPage() {
               />
               <p className="text-xs text-neutral-500">
                 Set to 0 or leave blank for no default expiry on share links
+              </p>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <Label htmlFor="ipAllowlist">IP Address Allowlist</Label>
+              <Textarea
+                id="ipAllowlist"
+                value={formData.ipAllowlist}
+                onChange={(e) => setFormData({ ...formData, ipAllowlist: e.target.value })}
+                rows={4}
+                placeholder={'192.168.1.1\n10.0.0.0/24\n203.0.113.50'}
+              />
+              <p className="text-xs text-neutral-500">
+                Enter one IP address per line. Only viewers from these IPs will be able to access
+                the room. Leave empty to allow all IPs.
               </p>
             </div>
           </CardContent>
