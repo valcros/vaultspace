@@ -23,6 +23,7 @@ interface ViewerSession {
   roomName: string;
   organizationName: string;
   organizationLogo: string | null;
+  brandColor: string | null;
   downloadEnabled: boolean;
   watermarkEnabled: boolean;
 }
@@ -170,7 +171,10 @@ export default function ViewerDocumentsPage() {
                   className="h-8 object-contain"
                 />
               ) : (
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-lg font-bold text-white"
+                  style={{ backgroundColor: session?.brandColor || '#2563eb' }}
+                >
                   {session?.organizationName.charAt(0) || 'V'}
                 </div>
               )}
