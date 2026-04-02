@@ -73,8 +73,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (from || to) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dateFilter: any = {};
-        if (from) dateFilter.gte = new Date(from);
-        if (to) dateFilter.lte = new Date(to);
+        if (from) {
+          dateFilter.gte = new Date(from);
+        }
+        if (to) {
+          dateFilter.lte = new Date(to);
+        }
         where.date = dateFilter;
       }
 
