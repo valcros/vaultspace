@@ -1,7 +1,7 @@
 /**
- * Room Analytics API (F121)
+ * Room Analytics Summary API (F028)
  *
- * GET /api/rooms/:roomId/analytics - Get room activity dashboard data
+ * GET /api/rooms/:roomId/analytics - Get room-level analytics summary
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,9 +18,16 @@ interface RouteContext {
 
 /**
  * GET /api/rooms/:roomId/analytics
- * Get room activity and analytics data
+ * Returns overall room analytics summary for admins.
+ *
+ * Provides:
+ * - Total document views
+ * - Total downloads
+ * - Unique viewers
+ * - Average session duration
+ * - Most active day (last 30 days)
  */
-export async function GET(request: NextRequest, context: RouteContext) {
+export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const session = await requireAuth();
     const { roomId } = await context.params;
@@ -30,14 +37,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Parse query parameters
-    const { searchParams } = new URL(request.url);
-    const daysParam = searchParams.get('days');
-    const days = daysParam ? parseInt(daysParam, 10) : 30;
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    // Use RLS context for org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
       // Verify room access
       const room = await tx.room.findFirst({
@@ -51,131 +53,89 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return { error: 'Room not found', status: 404 };
       }
 
-      // Get summary statistics
-      const [
-        totalDocuments,
-        totalViews,
-        uniqueViewers,
-        totalDownloads,
-        recentEvents,
-        documentStats,
-        viewerActivity,
-        dailyViews,
-      ] = await Promise.all([
-        // Total documents
-        tx.document.count({
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-            status: 'ACTIVE',
-          },
-        }),
+      const orgRoomFilter = {
+        roomId,
+        organizationId: session.organizationId,
+      };
 
-        // Total views
-        tx.linkVisit.count({
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-          },
-        }),
-
-        // Unique viewers (by email)
-        tx.linkVisit.findMany({
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-            visitorEmail: { not: null },
-          },
-          select: { visitorEmail: true },
-          distinct: ['visitorEmail'],
-        }),
-
-        // Total downloads (from events)
-        tx.event.count({
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-            eventType: 'DOCUMENT_DOWNLOADED',
-          },
-        }),
-
-        // Recent events
-        tx.event.findMany({
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-            createdAt: { gte: startDate },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 20,
-          include: {
-            actor: {
-              select: {
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
+      const [totalViews, totalDownloads, uniqueViewerRecords, viewSessions, recentEvents] =
+        await Promise.all([
+          // Total document views (from events)
+          tx.event.count({
+            where: {
+              ...orgRoomFilter,
+              eventType: 'DOCUMENT_VIEWED',
             },
-          },
-        }),
+          }),
 
-        // Document statistics
-        tx.document.findMany({
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-            status: 'ACTIVE',
-          },
-          select: {
-            id: true,
-            name: true,
-            viewCount: true,
-            downloadCount: true,
-            lastViewedAt: true,
-            createdAt: true,
-          },
-          orderBy: { viewCount: 'desc' },
-          take: 10,
-        }),
+          // Total downloads (from events)
+          tx.event.count({
+            where: {
+              ...orgRoomFilter,
+              eventType: 'DOCUMENT_DOWNLOADED',
+            },
+          }),
 
-        // Viewer activity
-        tx.viewSession.findMany({
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-            createdAt: { gte: startDate },
-          },
-          select: {
-            visitorEmail: true,
-            visitorName: true,
-            totalTimeSpentSeconds: true,
-            lastActivityAt: true,
-          },
-          orderBy: { lastActivityAt: 'desc' },
-          take: 10,
-        }),
+          // Unique viewers — distinct actorEmail from view events
+          tx.event.findMany({
+            where: {
+              ...orgRoomFilter,
+              eventType: { in: ['DOCUMENT_VIEWED', 'DOCUMENT_DOWNLOADED'] },
+              actorEmail: { not: null },
+            },
+            select: { actorEmail: true },
+            distinct: ['actorEmail'],
+          }),
 
-        // Daily view counts for chart
-        tx.linkVisit.groupBy({
-          by: ['createdAt'],
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-            createdAt: { gte: startDate },
-          },
-          _count: true,
-        }),
-      ]);
+          // View sessions for average duration
+          tx.viewSession.aggregate({
+            where: orgRoomFilter,
+            _avg: {
+              totalTimeSpentSeconds: true,
+            },
+            _count: true,
+          }),
+
+          // Events in last 30 days for most active day calculation
+          tx.event.findMany({
+            where: {
+              ...orgRoomFilter,
+              createdAt: { gte: thirtyDaysAgo },
+            },
+            select: {
+              createdAt: true,
+            },
+          }),
+        ]);
+
+      // Calculate most active day
+      const dayCountMap = new Map<string, number>();
+      for (const event of recentEvents) {
+        const dateParts = event.createdAt.toISOString().split('T');
+        const dateKey = dateParts[0] ?? '';
+        if (dateKey) {
+          dayCountMap.set(dateKey, (dayCountMap.get(dateKey) ?? 0) + 1);
+        }
+      }
+
+      let mostActiveDay: string | null = null;
+      let mostActiveDayCount = 0;
+      dayCountMap.forEach((count, day) => {
+        if (count > mostActiveDayCount) {
+          mostActiveDayCount = count;
+          mostActiveDay = day;
+        }
+      });
 
       return {
-        totalDocuments,
         totalViews,
-        uniqueViewers,
         totalDownloads,
-        recentEvents,
-        documentStats,
-        viewerActivity,
-        dailyViews,
+        uniqueViewers: uniqueViewerRecords.length,
+        averageSessionDurationSeconds: Math.round(viewSessions._avg.totalTimeSpentSeconds ?? 0),
+        totalSessions: viewSessions._count,
+        mostActiveDay: mostActiveDay
+          ? { date: mostActiveDay, eventCount: mostActiveDayCount }
+          : null,
       };
     });
 
@@ -183,56 +143,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    // Process daily views for chart
-    const viewsByDay = new Map<string, number>();
-    for (let i = 0; i < days; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateParts = date.toISOString().split('T');
-      const dateKey = dateParts[0] ?? '';
-      if (dateKey) {
-        viewsByDay.set(dateKey, 0);
-      }
-    }
-
-    result.dailyViews.forEach((visit) => {
-      const dateParts = visit.createdAt.toISOString().split('T');
-      const dateKey = dateParts[0] ?? '';
-      if (dateKey && viewsByDay.has(dateKey)) {
-        viewsByDay.set(dateKey, (viewsByDay.get(dateKey) ?? 0) + visit._count);
-      }
-    });
-
-    const viewTimeline = Array.from(viewsByDay.entries())
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    return NextResponse.json({
-      summary: {
-        totalDocuments: result.totalDocuments,
-        totalViews: result.totalViews,
-        uniqueViewers: result.uniqueViewers.length,
-        totalDownloads: result.totalDownloads,
-      },
-      topDocuments: result.documentStats,
-      recentViewers: result.viewerActivity.map((v) => ({
-        email: v.visitorEmail,
-        name: v.visitorName,
-        timeSpent: v.totalTimeSpentSeconds,
-        lastActive: v.lastActivityAt,
-      })),
-      recentEvents: result.recentEvents.map((e) => ({
-        id: e.id,
-        type: e.eventType,
-        description: e.description,
-        actor: e.actor ? `${e.actor.firstName} ${e.actor.lastName}` : (e.actorEmail ?? 'System'),
-        createdAt: e.createdAt,
-      })),
-      viewTimeline,
-      period: { days, startDate: startDate.toISOString() },
-    });
+    return NextResponse.json(result);
   } catch (error) {
-    console.error('[AnalyticsAPI] GET error:', error);
-    return NextResponse.json({ error: 'Failed to get analytics' }, { status: 500 });
+    console.error('[RoomAnalyticsAPI] GET error:', error);
+    return NextResponse.json({ error: 'Failed to get room analytics' }, { status: 500 });
   }
 }

@@ -837,9 +837,10 @@ model Link {
   allowedEmails             String[] @default([])
 
   // Expiry - F116
-  expiresAt DateTime?
-  maxViews  Int?
-  viewCount Int       @default(0)
+  expiresAt          DateTime?
+  maxViews           Int?
+  viewCount          Int       @default(0)
+  maxSessionMinutes  Int? // Maximum viewing time per session in minutes
 
   // Scope: what documents are accessible via this link
   scope            LinkScope @default(ENTIRE_ROOM)
