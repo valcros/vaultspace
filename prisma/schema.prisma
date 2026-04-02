@@ -323,6 +323,7 @@ model Organization {
   messages               Message[]
   pageViews              PageView[]
   webhooks               Webhook[]
+  signatureRequests      SignatureRequest[]
 
   @@index([slug])
   @@index([isActive])
@@ -377,6 +378,7 @@ model User {
   accessRequestsReviewed  AccessRequest[]
   messagesSent            Message[]          @relation("MessagesSent")
   messagesReceived        Message[]          @relation("MessagesReceived")
+  signatureRequests       SignatureRequest[]
 
   @@index([email])
   @@index([isActive])
@@ -517,10 +519,11 @@ model Room {
   checklists     Checklist[]
   calendarEvents CalendarEvent[]
   bookmarks      Bookmark[]
-  accessRequests AccessRequest[]
-  messages       Message[]
-  pageViews      PageView[]
-  webhooks       Webhook[]
+  accessRequests    AccessRequest[]
+  messages          Message[]
+  pageViews         PageView[]
+  webhooks          Webhook[]
+  signatureRequests SignatureRequest[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -628,8 +631,9 @@ model Document {
   checklistItems ChecklistItem[]
   calendarEvents CalendarEvent[]
   bookmarks      Bookmark[]
-  messages       Message[]
-  pageViews      PageView[]
+  messages          Message[]
+  pageViews         PageView[]
+  signatureRequests SignatureRequest[]
 
   @@unique([organizationId, id])
   @@index([organizationId])
@@ -1660,6 +1664,59 @@ model PageView {
   @@index([viewerEmail])
   @@index([createdAt])
   @@map("page_views")
+}
+
+// =============================================================================
+// E-SIGNATURE (F046-F050)
+// =============================================================================
+
+enum SignatureStatus {
+  PENDING
+  SIGNED
+  DECLINED
+  EXPIRED
+}
+
+model SignatureRequest {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId    String
+  roomId            String
+  documentId        String
+  requestedByUserId String
+
+  // Signer info
+  signerEmail String  @db.VarChar(255)
+  signerName  String? @db.VarChar(255)
+
+  // Status
+  status     SignatureStatus @default(PENDING)
+  signedAt   DateTime?
+  declinedAt DateTime?
+  expiresAt  DateTime?
+
+  // Signature data
+  signatureData String? @db.Text // Base64 signature image or typed name
+  signatureType String? @db.VarChar(20) // "drawn" | "typed" | "uploaded"
+  signatureIp   String? @db.VarChar(50)
+
+  // Audit
+  declineReason String? @db.Text
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requestedBy  User         @relation(fields: [requestedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([documentId])
+  @@index([signerEmail])
+  @@index([status])
+  @@map("signature_requests")
 }
 
 // =============================================================================

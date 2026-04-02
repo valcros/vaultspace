@@ -2,7 +2,16 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Users, Bell, Activity, Shield, Webhook, ChevronRight } from 'lucide-react';
+import {
+  Building2,
+  Users,
+  Bell,
+  Activity,
+  Shield,
+  Webhook,
+  Code2,
+  ChevronRight,
+} from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
@@ -57,6 +66,13 @@ const settingsSections: SettingsSection[] = [
     description: 'View settings changes and security events',
     icon: Activity,
     href: '/settings/activity',
+  },
+  {
+    id: 'api',
+    title: 'API',
+    description: 'REST API documentation and OpenAPI specification',
+    icon: Code2,
+    href: '/settings/api',
   },
 ];
 
