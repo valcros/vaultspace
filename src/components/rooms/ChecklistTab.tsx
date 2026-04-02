@@ -58,9 +58,7 @@ interface Checklist {
 function getProgress(checklist: Checklist) {
   const items = checklist.items ?? [];
   const total = checklist.totalCount ?? items.length;
-  const completed =
-    checklist.completedCount ??
-    items.filter((i) => i.status === 'COMPLETE').length;
+  const completed = checklist.completedCount ?? items.filter((i) => i.status === 'COMPLETE').length;
   const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
   return { completed, total, pct };
 }
@@ -90,7 +88,10 @@ function itemStatusBadge(status: ItemStatus) {
       );
     case 'NOT_APPLICABLE':
       return (
-        <Badge variant="outline" className="border-neutral-300 bg-neutral-50 text-neutral-400 italic">
+        <Badge
+          variant="outline"
+          className="border-neutral-300 bg-neutral-50 italic text-neutral-400"
+        >
           <Minus className="mr-1 h-3 w-3" />
           N/A
         </Badge>
@@ -123,7 +124,9 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
     setIsLoading(true);
     try {
       const res = await fetch(`/api/rooms/${roomId}/checklists`);
-      if (!res.ok) {throw new Error('Failed to fetch checklists');}
+      if (!res.ok) {
+        throw new Error('Failed to fetch checklists');
+      }
       const data = await res.json();
       setChecklists(data.checklists ?? data);
     } catch {
@@ -140,7 +143,9 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
   /* ---- Create checklist ---- */
 
   const handleCreateChecklist = async () => {
-    if (!newName.trim()) {return;}
+    if (!newName.trim()) {
+      return;
+    }
     setIsSubmitting(true);
     try {
       const res = await fetch(`/api/rooms/${roomId}/checklists`, {
@@ -152,7 +157,9 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
           isPublic: newIsPublic,
         }),
       });
-      if (!res.ok) {throw new Error('Failed to create checklist');}
+      if (!res.ok) {
+        throw new Error('Failed to create checklist');
+      }
       toast({ title: 'Checklist created' });
       setShowNewDialog(false);
       setNewName('');
@@ -171,15 +178,14 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
   const handleToggleItem = async (checklistId: string, item: ChecklistItem) => {
     const nextStatus: ItemStatus = item.status === 'COMPLETE' ? 'PENDING' : 'COMPLETE';
     try {
-      const res = await fetch(
-        `/api/rooms/${roomId}/checklists/${checklistId}/items/${item.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: nextStatus }),
-        }
-      );
-      if (!res.ok) {throw new Error('Failed to update item');}
+      const res = await fetch(`/api/rooms/${roomId}/checklists/${checklistId}/items/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!res.ok) {
+        throw new Error('Failed to update item');
+      }
       const updated = await res.json();
       setChecklists((prev) =>
         prev.map((cl) =>
@@ -199,7 +205,9 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
   /* ---- Add item ---- */
 
   const handleAddItem = async (checklistId: string) => {
-    if (!newItemName.trim()) {return;}
+    if (!newItemName.trim()) {
+      return;
+    }
     setIsSubmittingItem(true);
     try {
       const res = await fetch(`/api/rooms/${roomId}/checklists/${checklistId}/items`, {
@@ -207,12 +215,12 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newItemName.trim() }),
       });
-      if (!res.ok) {throw new Error('Failed to add item');}
+      if (!res.ok) {
+        throw new Error('Failed to add item');
+      }
       const item = await res.json();
       setChecklists((prev) =>
-        prev.map((cl) =>
-          cl.id === checklistId ? { ...cl, items: [...cl.items, item] } : cl
-        )
+        prev.map((cl) => (cl.id === checklistId ? { ...cl, items: [...cl.items, item] } : cl))
       );
       setNewItemName('');
       setAddingItemChecklistId(null);
@@ -227,16 +235,15 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
 
   const handleDeleteItem = async (checklistId: string, itemId: string) => {
     try {
-      const res = await fetch(
-        `/api/rooms/${roomId}/checklists/${checklistId}/items/${itemId}`,
-        { method: 'DELETE' }
-      );
-      if (!res.ok) {throw new Error('Failed to delete item');}
+      const res = await fetch(`/api/rooms/${roomId}/checklists/${checklistId}/items/${itemId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        throw new Error('Failed to delete item');
+      }
       setChecklists((prev) =>
         prev.map((cl) =>
-          cl.id === checklistId
-            ? { ...cl, items: cl.items.filter((i) => i.id !== itemId) }
-            : cl
+          cl.id === checklistId ? { ...cl, items: cl.items.filter((i) => i.id !== itemId) } : cl
         )
       );
     } catch {
@@ -302,7 +309,10 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
                     <div className="flex items-center gap-2">
                       <span className="truncate font-semibold text-neutral-900">{cl.name}</span>
                       {cl.isPublic && (
-                        <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-600 text-xs">
+                        <Badge
+                          variant="outline"
+                          className="border-blue-200 bg-blue-50 text-xs text-blue-600"
+                        >
                           Public
                         </Badge>
                       )}
@@ -399,7 +409,9 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
                           value={newItemName}
                           onChange={(e) => setNewItemName(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') {handleAddItem(cl.id);}
+                            if (e.key === 'Enter') {
+                              handleAddItem(cl.id);
+                            }
                           }}
                           autoFocus
                           className="h-8 text-sm"
@@ -409,11 +421,7 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
                           onClick={() => handleAddItem(cl.id)}
                           disabled={!newItemName.trim() || isSubmittingItem}
                         >
-                          {isSubmittingItem ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            'Add'
-                          )}
+                          {isSubmittingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
                         </Button>
                         <Button
                           size="sm"
@@ -489,10 +497,7 @@ export function ChecklistTab({ roomId }: { roomId: string }) {
             <Button variant="outline" onClick={() => setShowNewDialog(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleCreateChecklist}
-              disabled={!newName.trim() || isSubmitting}
-            >
+            <Button onClick={handleCreateChecklist} disabled={!newName.trim() || isSubmitting}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create Checklist
             </Button>

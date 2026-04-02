@@ -61,11 +61,17 @@ function timeAgo(dateStr: string): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
   const seconds = Math.floor((now - then) / 1000);
-  if (seconds < 60) {return 'just now';}
+  if (seconds < 60) {
+    return 'just now';
+  }
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {return `${minutes}m ago`;}
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) {return `${hours}h ago`;}
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }
@@ -145,7 +151,9 @@ export function QATab({ roomId }: { roomId: string }) {
         params.set('status', statusFilter);
       }
       const res = await fetch(`/api/rooms/${roomId}/questions?${params.toString()}`);
-      if (!res.ok) {throw new Error('Failed to fetch questions');}
+      if (!res.ok) {
+        throw new Error('Failed to fetch questions');
+      }
       const data = await res.json();
       setQuestions(data.questions ?? data);
     } catch {
@@ -160,7 +168,9 @@ export function QATab({ roomId }: { roomId: string }) {
   }, [fetchQuestions]);
 
   const handleCreateQuestion = async () => {
-    if (!newSubject.trim() || !newBody.trim()) {return;}
+    if (!newSubject.trim() || !newBody.trim()) {
+      return;
+    }
     setIsSubmittingQuestion(true);
     try {
       const res = await fetch(`/api/rooms/${roomId}/questions`, {
@@ -174,7 +184,9 @@ export function QATab({ roomId }: { roomId: string }) {
           isPublic: newIsPublic,
         }),
       });
-      if (!res.ok) {throw new Error('Failed to create question');}
+      if (!res.ok) {
+        throw new Error('Failed to create question');
+      }
       toast({ title: 'Question submitted' });
       setShowNewQuestionDialog(false);
       setNewSubject('');
@@ -200,7 +212,9 @@ export function QATab({ roomId }: { roomId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
-      if (!res.ok) {throw new Error('Failed to update question');}
+      if (!res.ok) {
+        throw new Error('Failed to update question');
+      }
       const updated = await res.json();
       setQuestions((prev) => prev.map((q) => (q.id === questionId ? { ...q, ...updated } : q)));
       if (selectedQuestion?.id === questionId) {
@@ -212,7 +226,9 @@ export function QATab({ roomId }: { roomId: string }) {
   };
 
   const handleSubmitAnswer = async () => {
-    if (!selectedQuestion || !newAnswerBody.trim()) {return;}
+    if (!selectedQuestion || !newAnswerBody.trim()) {
+      return;
+    }
     setIsSubmittingAnswer(true);
     try {
       const res = await fetch(`/api/rooms/${roomId}/questions/${selectedQuestion.id}/answers`, {
@@ -220,7 +236,9 @@ export function QATab({ roomId }: { roomId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: newAnswerBody.trim() }),
       });
-      if (!res.ok) {throw new Error('Failed to submit answer');}
+      if (!res.ok) {
+        throw new Error('Failed to submit answer');
+      }
       const answer = await res.json();
       setSelectedQuestion((prev) =>
         prev ? { ...prev, answers: [...prev.answers, answer] } : prev
@@ -249,14 +267,9 @@ export function QATab({ roomId }: { roomId: string }) {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">
-          Questions ({questions.length})
-        </h3>
+        <h3 className="text-lg font-semibold">Questions ({questions.length})</h3>
         <div className="flex items-center gap-3">
-          <Select
-            value={statusFilter}
-            onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-          >
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Filter status" />
             </SelectTrigger>
@@ -304,9 +317,7 @@ export function QATab({ roomId }: { roomId: string }) {
                   </div>
                   <div className="flex items-center gap-3 text-xs text-neutral-500">
                     <span>
-                      {q.askedBy
-                        ? `${q.askedBy.firstName} ${q.askedBy.lastName}`
-                        : 'Unknown'}
+                      {q.askedBy ? `${q.askedBy.firstName} ${q.askedBy.lastName}` : 'Unknown'}
                     </span>
                     <span>{timeAgo(q.createdAt)}</span>
                     {q.documentName && (
@@ -419,10 +430,7 @@ export function QATab({ roomId }: { roomId: string }) {
                   <p className="text-sm text-neutral-500">No answers yet.</p>
                 ) : (
                   selectedQuestion.answers.map((a) => (
-                    <div
-                      key={a.id}
-                      className="rounded-md border border-neutral-200 bg-white p-3"
-                    >
+                    <div key={a.id} className="rounded-md border border-neutral-200 bg-white p-3">
                       <div className="mb-1 flex items-center gap-2 text-xs text-neutral-500">
                         <span className="font-medium text-neutral-700">
                           {a.answeredBy

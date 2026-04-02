@@ -53,13 +53,21 @@ export default function SearchPage() {
 
   const performSearch = React.useCallback(
     async (q: string, searchOffset: number) => {
-      if (!q.trim()) {return;}
+      if (!q.trim()) {
+        return;
+      }
       setIsLoading(true);
       setHasSearched(true);
 
       try {
-        const params = new URLSearchParams({ q: q.trim(), limit: String(limit), offset: String(searchOffset) });
-        if (typeFilter) {params.set('type', typeFilter);}
+        const params = new URLSearchParams({
+          q: q.trim(),
+          limit: String(limit),
+          offset: String(searchOffset),
+        });
+        if (typeFilter) {
+          params.set('type', typeFilter);
+        }
 
         const res = await fetch(`/api/search?${params.toString()}`);
         if (!res.ok) {
@@ -104,21 +112,30 @@ export default function SearchPage() {
   };
 
   const getMimeTypeLabel = (mimeType: string) => {
-    if (mimeType.startsWith('application/pdf')) {return 'PDF';}
-    if (mimeType.startsWith('image/')) {return 'Image';}
-    if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) {return 'Spreadsheet';}
-    if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) {return 'Presentation';}
-    if (mimeType.includes('document') || mimeType.includes('word')) {return 'Document';}
-    if (mimeType.startsWith('text/')) {return 'Text';}
+    if (mimeType.startsWith('application/pdf')) {
+      return 'PDF';
+    }
+    if (mimeType.startsWith('image/')) {
+      return 'Image';
+    }
+    if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) {
+      return 'Spreadsheet';
+    }
+    if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) {
+      return 'Presentation';
+    }
+    if (mimeType.includes('document') || mimeType.includes('word')) {
+      return 'Document';
+    }
+    if (mimeType.startsWith('text/')) {
+      return 'Text';
+    }
     return 'File';
   };
 
   return (
     <>
-      <PageHeader
-        title="Search"
-        breadcrumbs={[{ label: 'Search' }]}
-      />
+      <PageHeader title="Search" breadcrumbs={[{ label: 'Search' }]} />
 
       <div className="max-w-4xl p-6">
         {/* Search Bar */}
@@ -135,14 +152,14 @@ export default function SearchPage() {
               />
             </div>
             <Button type="submit" disabled={isLoading || !query.trim()}>
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="mr-2 h-4 w-4" />
+              )}
               Search
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-            >
+            <Button type="button" variant="outline" onClick={() => setShowFilters(!showFilters)}>
               <Filter className="h-4 w-4" />
             </Button>
           </div>
@@ -236,9 +253,7 @@ export default function SearchPage() {
                         <FolderOpen className="h-3 w-3" />
                         {result.roomName}
                       </span>
-                      {result.tags.length > 0 && (
-                        <span>{result.tags.slice(0, 3).join(', ')}</span>
-                      )}
+                      {result.tags.length > 0 && <span>{result.tags.slice(0, 3).join(', ')}</span>}
                     </div>
                   </div>
                 </button>
@@ -277,8 +292,8 @@ export default function SearchPage() {
             <Search className="mx-auto mb-3 h-10 w-10 text-neutral-400" />
             <h3 className="mb-1 text-base font-semibold text-neutral-900">Search documents</h3>
             <p className="mx-auto max-w-sm text-sm text-neutral-500">
-              Search across all documents by name, content, or tags. Full-text search
-              looks inside PDFs and other document formats.
+              Search across all documents by name, content, or tags. Full-text search looks inside
+              PDFs and other document formats.
             </p>
           </Card>
         )}

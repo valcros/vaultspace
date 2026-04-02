@@ -603,10 +603,9 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
       abortRef.current = controller;
 
       try {
-        const res = await fetch(
-          `/api/search?q=${encodeURIComponent(search.trim())}&limit=5`,
-          { signal: controller.signal }
-        );
+        const res = await fetch(`/api/search?q=${encodeURIComponent(search.trim())}&limit=5`, {
+          signal: controller.signal,
+        });
         if (!res.ok) {
           setDocResults([]);
           setSearchTotal(0);
@@ -640,9 +639,7 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
     ...filteredActions.map((a) => ({ ...a, type: 'action' as const })),
   ];
 
-  const handleSelect = (
-    item: (typeof allItems)[number]
-  ) => {
+  const handleSelect = (item: (typeof allItems)[number]) => {
     if (item.type === 'document') {
       const doc = item as DocumentSearchResult & { type: 'document' };
       router.push(`/rooms/${doc.roomId}?doc=${doc.documentId}`);
