@@ -37,6 +37,7 @@ import {
   MessageSquare,
   ClipboardCheck,
   CalendarDays,
+  Star,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -213,6 +214,9 @@ export default function RoomDetailPage() {
     y: number;
     doc: Document;
   } | null>(null);
+
+  // Bookmarks
+  const [bookmarkedDocs, setBookmarkedDocs] = React.useState<Set<string>>(new Set());
 
   // Dialog states
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
@@ -447,6 +451,65 @@ export default function RoomDetailPage() {
     }
   }, [roomId]);
 
+  const fetchBookmarks = React.useCallback(async () => {
+    try {
+      const response = await fetch('/api/bookmarks');
+      if (response.ok) {
+        const data = await response.json();
+        const ids = new Set<string>(
+          (data.bookmarks || []).map((b: { documentId: string }) => b.documentId)
+        );
+        setBookmarkedDocs(ids);
+      }
+    } catch (error) {
+      console.error('Failed to fetch bookmarks:', error);
+    }
+  }, []);
+
+  const toggleBookmark = React.useCallback(
+    async (doc: Document) => {
+      const isBookmarked = bookmarkedDocs.has(doc.id);
+      // Optimistic update
+      setBookmarkedDocs((prev) => {
+        const next = new Set(prev);
+        if (isBookmarked) {
+          next.delete(doc.id);
+        } else {
+          next.add(doc.id);
+        }
+        return next;
+      });
+      try {
+        if (isBookmarked) {
+          await fetch('/api/bookmarks', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documentId: doc.id }),
+          });
+        } else {
+          await fetch('/api/bookmarks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documentId: doc.id, roomId }),
+          });
+        }
+      } catch (error) {
+        console.error('Failed to toggle bookmark:', error);
+        // Revert on failure
+        setBookmarkedDocs((prev) => {
+          const next = new Set(prev);
+          if (isBookmarked) {
+            next.add(doc.id);
+          } else {
+            next.delete(doc.id);
+          }
+          return next;
+        });
+      }
+    },
+    [bookmarkedDocs, roomId]
+  );
+
   React.useEffect(() => {
     fetchRoom();
   }, [fetchRoom]);
@@ -457,6 +520,7 @@ export default function RoomDetailPage() {
         case 'documents':
           fetchDocuments();
           fetchFolders();
+          fetchBookmarks();
           break;
         case 'members':
           fetchAdmins();
@@ -469,7 +533,16 @@ export default function RoomDetailPage() {
           break;
       }
     }
-  }, [activeTab, room, fetchDocuments, fetchFolders, fetchAdmins, fetchLinks, fetchActivity]);
+  }, [
+    activeTab,
+    room,
+    fetchDocuments,
+    fetchFolders,
+    fetchBookmarks,
+    fetchAdmins,
+    fetchLinks,
+    fetchActivity,
+  ]);
 
   // Refetch when navigating folders
   React.useEffect(() => {
@@ -989,6 +1062,27 @@ export default function RoomDetailPage() {
     [roomId, fetchAdmins]
   );
 
+  const handleDuplicateRoom = React.useCallback(async () => {
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/duplicate`, { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        toast({ title: 'Room duplicated', description: `Created "${data.room.name}"` });
+        router.push(`/rooms/${data.room.id}`);
+      } else {
+        const error = await response.json();
+        toast({
+          title: 'Error',
+          description: error.error || 'Failed to duplicate room',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Duplicate room error:', error);
+      toast({ title: 'Error', description: 'Failed to duplicate room', variant: 'destructive' });
+    }
+  }, [roomId, router]);
+
   if (isLoading) {
     return (
       <div className="p-6">
@@ -1031,6 +1125,11 @@ export default function RoomDetailPage() {
                 <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/trash`)}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   Trash
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleDuplicateRoom}>
+                  <Copy className="mr-2 h-4 w-4" />
+                  Duplicate Room
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1466,6 +1565,12 @@ export default function RoomDetailPage() {
                                 <Tag className="mr-2 h-4 w-4" />
                                 Edit Properties
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
+                                <Star
+                                  className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
+                                />
+                                {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
                                 <History className="mr-2 h-4 w-4" />
                                 Version History
@@ -1583,6 +1688,12 @@ export default function RoomDetailPage() {
                           >
                             <Tag className="mr-2 h-4 w-4" />
                             Edit Properties
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
+                            <Star
+                              className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
+                            />
+                            {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
                             <History className="mr-2 h-4 w-4" />
@@ -1967,6 +2078,18 @@ export default function RoomDetailPage() {
               }}
             >
               <Tag className="h-4 w-4 text-neutral-500" /> Edit Properties
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"
+              onClick={() => {
+                toggleBookmark(contextMenu.doc);
+                setContextMenu(null);
+              }}
+            >
+              <Star
+                className={`h-4 w-4 ${bookmarkedDocs.has(contextMenu.doc.id) ? 'fill-amber-400 text-amber-400' : 'text-neutral-500'}`}
+              />{' '}
+              {bookmarkedDocs.has(contextMenu.doc.id) ? 'Remove Bookmark' : 'Bookmark'}
             </button>
             <button
               className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"

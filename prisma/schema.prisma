@@ -317,6 +317,7 @@ model Organization {
   checklists       Checklist[]
   checklistItems   ChecklistItem[]
   calendarEvents   CalendarEvent[]
+  bookmarks        Bookmark[]
 
   @@index([slug])
   @@index([isActive])
@@ -362,6 +363,7 @@ model User {
   answersGiven               Answer[]
   checklistItemsCompleted    ChecklistItem[]
   calendarEvents             CalendarEvent[]
+  bookmarks                  Bookmark[]
 
   @@index([email])
   @@index([isActive])
@@ -494,6 +496,7 @@ model Room {
   questions      Question[]
   checklists     Checklist[]
   calendarEvents CalendarEvent[]
+  bookmarks      Bookmark[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -596,6 +599,7 @@ model Document {
   questions      Question[]
   checklistItems ChecklistItem[]
   calendarEvents CalendarEvent[]
+  bookmarks      Bookmark[]
 
   @@unique([organizationId, id])
   @@index([organizationId])
@@ -1457,4 +1461,29 @@ model CalendarEvent {
   @@index([date])
   @@index([documentId])
   @@map("calendar_events")
+}
+
+// =============================================================================
+// BOOKMARKS / FAVORITES
+// =============================================================================
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String
+  userId         String
+  documentId     String
+  roomId         String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, documentId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([documentId])
+  @@map("bookmarks")
 }
