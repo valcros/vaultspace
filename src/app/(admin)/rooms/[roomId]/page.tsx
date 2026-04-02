@@ -285,7 +285,7 @@ export default function RoomDetailPage() {
 
   // Access request states
   const [accessRequests, setAccessRequests] = React.useState<AccessRequest[]>([]);
-  const [isLoadingAccessRequests, setIsLoadingAccessRequests] = React.useState(false);
+  const [_isLoadingAccessRequests, setIsLoadingAccessRequests] = React.useState(false);
   const [reviewingRequestId, setReviewingRequestId] = React.useState<string | null>(null);
 
   // Member add states
