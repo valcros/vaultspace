@@ -321,6 +321,7 @@ model Organization {
   accessRequests         AccessRequest[]
   notificationTemplates  NotificationTemplate[]
   messages               Message[]
+  pageViews              PageView[]
 
   @@index([slug])
   @@index([isActive])
@@ -475,6 +476,9 @@ model Room {
   brandColor   String? @db.VarChar(7)   // Hex color for room accent (e.g. "#2563eb")
   brandLogoUrl String? @db.VarChar(500) // Room-specific logo URL
 
+  // IP Allowlist - F018
+  ipAllowlist String[] @default([]) // Array of allowed IP addresses/CIDRs
+
   // Watermark configuration - F130 (UI ready, F023 implements render)
   enableWatermark   Boolean @default(false)
   watermarkTemplate String? @db.VarChar(500) // Template with placeholders: {viewer_email}, {viewer_name}, {timestamp}, {ip}
@@ -509,6 +513,7 @@ model Room {
   bookmarks      Bookmark[]
   accessRequests AccessRequest[]
   messages       Message[]
+  pageViews      PageView[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -617,6 +622,7 @@ model Document {
   calendarEvents CalendarEvent[]
   bookmarks      Bookmark[]
   messages       Message[]
+  pageViews      PageView[]
 
   @@unique([organizationId, id])
   @@index([organizationId])
@@ -1614,4 +1620,36 @@ model Message {
   @@index([senderUserId])
   @@index([createdAt])
   @@map("messages")
+}
+
+// PageView (Per-page View Analytics - F026)
+model PageView {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String
+  documentId     String
+  versionId      String?
+  roomId         String
+
+  // Viewer info
+  viewerEmail   String? @db.VarChar(255)
+  viewSessionId String?
+  userId        String?
+
+  // Page data
+  pageNumber  Int
+  timeSpentMs Int @default(0) // milliseconds on this page
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([documentId])
+  @@index([roomId])
+  @@index([viewerEmail])
+  @@index([createdAt])
+  @@map("page_views")
 }
