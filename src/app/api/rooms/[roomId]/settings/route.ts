@@ -51,6 +51,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           defaultExpiryDays: true,
           requiresNda: true,
           ndaContent: true,
+          brandColor: true,
+          brandLogoUrl: true,
           enableWatermark: true,
           watermarkTemplate: true,
           archivedAt: true,
@@ -75,6 +77,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         defaultExpiryDays: room.defaultExpiryDays,
         requiresNda: room.requiresNda,
         ndaContent: room.ndaContent,
+        brandColor: room.brandColor,
+        brandLogoUrl: room.brandLogoUrl,
         enableWatermark: room.enableWatermark,
         watermarkTemplate: room.watermarkTemplate,
         archivedAt: room.archivedAt,
@@ -127,6 +131,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       defaultExpiryDays,
       requiresNda,
       ndaContent,
+      brandColor,
+      brandLogoUrl,
       enableWatermark,
       watermarkTemplate,
     } = body;
@@ -191,6 +197,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (ndaContent !== undefined) {
       updateData['ndaContent'] = ndaContent?.trim() || null;
     }
+    if (brandColor !== undefined) {
+      updateData['brandColor'] = brandColor?.trim() || null;
+    }
+    if (brandLogoUrl !== undefined) {
+      updateData['brandLogoUrl'] = brandLogoUrl?.trim() || null;
+    }
     if (enableWatermark !== undefined) {
       updateData['enableWatermark'] = Boolean(enableWatermark);
     }
@@ -214,6 +226,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           defaultExpiryDays: true,
           requiresNda: true,
           ndaContent: true,
+          brandColor: true,
+          brandLogoUrl: true,
           enableWatermark: true,
           watermarkTemplate: true,
           archivedAt: true,
@@ -253,6 +267,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         defaultExpiryDays: updatedRoom.defaultExpiryDays,
         requiresNda: updatedRoom.requiresNda,
         ndaContent: updatedRoom.ndaContent,
+        brandColor: updatedRoom.brandColor,
+        brandLogoUrl: updatedRoom.brandLogoUrl,
         enableWatermark: updatedRoom.enableWatermark,
         watermarkTemplate: updatedRoom.watermarkTemplate,
         archivedAt: updatedRoom.archivedAt,

@@ -20,6 +20,7 @@ import {
   Users,
   UsersRound,
   Activity,
+  Mail,
   Settings,
   Search,
   Plus,
@@ -68,6 +69,7 @@ const navigationItems: DockItem[] = [
   { id: 'users', label: 'Users', icon: Users, href: '/users' },
   { id: 'groups', label: 'Groups', icon: UsersRound, href: '/groups' },
   { id: 'activity', label: 'Activity', icon: Activity, href: '/activity' },
+  { id: 'messages', label: 'Messages', icon: Mail, href: '/messages' },
   { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
 ];
 

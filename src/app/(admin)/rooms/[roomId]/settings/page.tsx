@@ -59,6 +59,8 @@ export default function RoomSettingsPage() {
     ndaText: '',
     defaultExpiryDays: '',
     allDocumentsConfidential: false,
+    brandColor: '',
+    brandLogoUrl: '',
   });
 
   const fetchRoom = React.useCallback(async () => {
@@ -77,6 +79,8 @@ export default function RoomSettingsPage() {
           ndaText: data.room.ndaContent || '',
           defaultExpiryDays: data.room.defaultExpiryDays?.toString() || '',
           allDocumentsConfidential: data.room.allDocumentsConfidential || false,
+          brandColor: data.room.brandColor || '',
+          brandLogoUrl: data.room.brandLogoUrl || '',
         });
       } else if (response.status === 404) {
         router.push('/rooms');
@@ -113,6 +117,8 @@ export default function RoomSettingsPage() {
             ? parseInt(formData.defaultExpiryDays, 10)
             : null,
           allDocumentsConfidential: formData.allDocumentsConfidential,
+          brandColor: formData.brandColor || null,
+          brandLogoUrl: formData.brandLogoUrl || null,
         }),
       });
 
@@ -359,6 +365,64 @@ export default function RoomSettingsPage() {
               />
               <p className="text-xs text-neutral-500">
                 Set to 0 or leave blank for no default expiry on share links
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Branding */}
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Branding</CardTitle>
+            <CardDescription>
+              Customize this room&apos;s appearance for viewers. Overrides organization defaults
+              when set.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="brandColor">Accent Color</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="brandColor"
+                  type="color"
+                  value={formData.brandColor || '#2563eb'}
+                  onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
+                  className="h-10 w-12 cursor-pointer p-1"
+                />
+                <Input
+                  value={formData.brandColor}
+                  onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
+                  placeholder="#2563eb"
+                  className="w-32"
+                />
+                {formData.brandColor && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFormData({ ...formData, brandColor: '' })}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-neutral-500">
+                Leave empty to use the organization&apos;s default color
+              </p>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <Label htmlFor="brandLogoUrl">Logo URL</Label>
+              <Input
+                id="brandLogoUrl"
+                value={formData.brandLogoUrl}
+                onChange={(e) => setFormData({ ...formData, brandLogoUrl: e.target.value })}
+                placeholder="https://example.com/logo.png"
+              />
+              <p className="text-xs text-neutral-500">
+                URL to a logo image for this room. Leave empty to use the organization&apos;s logo.
               </p>
             </div>
           </CardContent>

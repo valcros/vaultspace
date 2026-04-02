@@ -317,8 +317,10 @@ model Organization {
   checklists       Checklist[]
   checklistItems   ChecklistItem[]
   calendarEvents   CalendarEvent[]
-  bookmarks        Bookmark[]
-  accessRequests   AccessRequest[]
+  bookmarks              Bookmark[]
+  accessRequests         AccessRequest[]
+  notificationTemplates  NotificationTemplate[]
+  messages               Message[]
 
   @@index([slug])
   @@index([isActive])
@@ -366,6 +368,8 @@ model User {
   calendarEvents          CalendarEvent[]
   bookmarks               Bookmark[]
   accessRequestsReviewed  AccessRequest[]
+  messagesSent            Message[]          @relation("MessagesSent")
+  messagesReceived        Message[]          @relation("MessagesReceived")
 
   @@index([email])
   @@index([isActive])
@@ -467,6 +471,10 @@ model Room {
   // Privacy - suppress thumbnails for all documents in room
   allDocumentsConfidential Boolean @default(false)
 
+  // Room-level branding - overrides org defaults when set
+  brandColor   String? @db.VarChar(7)   // Hex color for room accent (e.g. "#2563eb")
+  brandLogoUrl String? @db.VarChar(500) // Room-specific logo URL
+
   // Watermark configuration - F130 (UI ready, F023 implements render)
   enableWatermark   Boolean @default(false)
   watermarkTemplate String? @db.VarChar(500) // Template with placeholders: {viewer_email}, {viewer_name}, {timestamp}, {ip}
@@ -500,6 +508,7 @@ model Room {
   calendarEvents CalendarEvent[]
   bookmarks      Bookmark[]
   accessRequests AccessRequest[]
+  messages       Message[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -607,6 +616,7 @@ model Document {
   checklistItems ChecklistItem[]
   calendarEvents CalendarEvent[]
   bookmarks      Bookmark[]
+  messages       Message[]
 
   @@unique([organizationId, id])
   @@index([organizationId])
@@ -1532,4 +1542,76 @@ model AccessRequest {
   @@index([roomId, status])
   @@index([requesterEmail])
   @@map("access_requests")
+}
+
+// =============================================================================
+// NOTIFICATION TEMPLATES (F029)
+// =============================================================================
+
+model NotificationTemplate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  // Template identification
+  templateKey String @db.VarChar(100) // e.g. "document_uploaded", "question_submitted", "access_approved"
+
+  // Content
+  subject  String @db.VarChar(500) // Supports {placeholders}
+  bodyHtml String @db.Text         // HTML template with {placeholders}
+
+  // Status
+  isActive Boolean @default(true)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, templateKey])
+  @@index([organizationId])
+  @@map("notification_templates")
+}
+
+// =============================================================================
+// MESSAGES (Private Admin-to-User Messaging)
+// =============================================================================
+
+model Message {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  roomId         String?
+  documentId     String?
+
+  // Sender (always an admin)
+  senderUserId String
+
+  // Recipient
+  recipientUserId  String?
+  recipientEmail   String  @db.VarChar(255)
+
+  // Content
+  subject String  @db.VarChar(500)
+  body    String  @db.Text
+
+  // Status
+  isRead   Boolean   @default(false)
+  readAt   DateTime?
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  sender       User         @relation("MessagesSent", fields: [senderUserId], references: [id], onDelete: Cascade)
+  recipient    User?        @relation("MessagesReceived", fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([roomId])
+  @@index([recipientEmail])
+  @@index([recipientUserId])
+  @@index([senderUserId])
+  @@index([createdAt])
+  @@map("messages")
 }
