@@ -669,7 +669,9 @@ export default function RoomDetailPage() {
 
   const handleRollback = React.useCallback(
     async (versionId: string, versionNumber: number) => {
-      if (!versionDoc) {return;}
+      if (!versionDoc) {
+        return;
+      }
       setIsRollingBack(true);
       try {
         const res = await fetch(
@@ -689,7 +691,11 @@ export default function RoomDetailPage() {
           });
         }
       } catch {
-        toast({ title: 'Error', description: 'Failed to rollback version', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: 'Failed to rollback version',
+          variant: 'destructive',
+        });
       } finally {
         setIsRollingBack(false);
       }
@@ -699,7 +705,9 @@ export default function RoomDetailPage() {
 
   const handleUploadNewVersion = React.useCallback(
     async (file: File) => {
-      if (!versionDoc) {return;}
+      if (!versionDoc) {
+        return;
+      }
       setIsUploadingVersion(true);
       try {
         const formData = new FormData();
@@ -721,7 +729,11 @@ export default function RoomDetailPage() {
           });
         }
       } catch {
-        toast({ title: 'Error', description: 'Failed to upload new version', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: 'Failed to upload new version',
+          variant: 'destructive',
+        });
       } finally {
         setIsUploadingVersion(false);
       }
@@ -1811,7 +1823,13 @@ export default function RoomDetailPage() {
                           <span className="text-neutral-500">
                             {event.type.replace(/_/g, ' ').toLowerCase()}
                             {event.metadata?.['documentName'] ? (
-                              <> — <span className="font-medium text-neutral-700">{String(event.metadata['documentName'])}</span></>
+                              <>
+                                {' '}
+                                —{' '}
+                                <span className="font-medium text-neutral-700">
+                                  {String(event.metadata['documentName'])}
+                                </span>
+                              </>
                             ) : null}
                           </span>
                         </p>
@@ -2440,7 +2458,9 @@ export default function RoomDetailPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold">v{v.versionNumber}</span>
                             {isCurrent && (
-                              <Badge variant="default" className="text-xs">Current</Badge>
+                              <Badge variant="default" className="text-xs">
+                                Current
+                              </Badge>
                             )}
                             {v.scanStatus === 'INFECTED' && (
                               <Badge variant="danger" className="text-xs">
@@ -2449,7 +2469,9 @@ export default function RoomDetailPage() {
                               </Badge>
                             )}
                             {v.scanStatus === 'PENDING' && (
-                              <Badge variant="secondary" className="text-xs">Scanning...</Badge>
+                              <Badge variant="secondary" className="text-xs">
+                                Scanning...
+                              </Badge>
                             )}
                           </div>
                           <p className="mt-0.5 text-xs text-neutral-500">
@@ -2551,7 +2573,9 @@ export default function RoomDetailPage() {
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) {handleUploadNewVersion(file);}
+                  if (file) {
+                    handleUploadNewVersion(file);
+                  }
                   e.target.value = '';
                 }}
               />

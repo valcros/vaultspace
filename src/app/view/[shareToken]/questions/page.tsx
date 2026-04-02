@@ -54,12 +54,13 @@ interface Question {
   answers: Answer[];
 }
 
-const statusVariantMap: Record<Question['status'], 'secondary' | 'success' | 'danger' | 'outline'> = {
-  pending: 'secondary',
-  answered: 'success',
-  rejected: 'danger',
-  closed: 'outline',
-};
+const statusVariantMap: Record<Question['status'], 'secondary' | 'success' | 'danger' | 'outline'> =
+  {
+    pending: 'secondary',
+    answered: 'success',
+    rejected: 'danger',
+    closed: 'outline',
+  };
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString);
@@ -67,12 +68,20 @@ function formatRelativeTime(dateString: string): string {
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
 
-  if (diffMins < 1) {return 'just now';}
-  if (diffMins < 60) {return `${diffMins}m ago`;}
+  if (diffMins < 1) {
+    return 'just now';
+  }
+  if (diffMins < 60) {
+    return `${diffMins}m ago`;
+  }
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) {return `${diffHours}h ago`;}
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) {return `${diffDays}d ago`;}
+  if (diffDays < 30) {
+    return `${diffDays}d ago`;
+  }
   return date.toLocaleDateString();
 }
 
@@ -133,7 +142,9 @@ export default function ViewerQuestionsPage() {
   };
 
   const handleSubmit = async () => {
-    if (!subject.trim() || !body.trim()) {return;}
+    if (!subject.trim() || !body.trim()) {
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -145,17 +156,28 @@ export default function ViewerQuestionsPage() {
 
       if (!response.ok) {
         const data = await response.json();
-        toast({ title: 'Error', description: data.error || 'Failed to submit question', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: data.error || 'Failed to submit question',
+          variant: 'destructive',
+        });
         return;
       }
 
-      toast({ title: 'Question submitted', description: 'Your question has been sent to the room administrators.' });
+      toast({
+        title: 'Question submitted',
+        description: 'Your question has been sent to the room administrators.',
+      });
       setSubject('');
       setBody('');
       setDialogOpen(false);
       fetchQuestions();
     } catch {
-      toast({ title: 'Error', description: 'Failed to submit question. Please try again.', variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: 'Failed to submit question. Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsSubmitting(false);
     }

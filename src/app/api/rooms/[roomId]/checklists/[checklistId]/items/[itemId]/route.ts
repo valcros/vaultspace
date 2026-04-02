@@ -52,8 +52,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const { name, description, status, isRequired, documentId, assignedToEmail } =
-      parsed.data;
+    const { name, description, status, isRequired, documentId, assignedToEmail } = parsed.data;
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
       // Verify room access
@@ -110,8 +109,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       // Determine completion fields
-      const isBecomingComplete =
-        status === 'COMPLETE' && existing.status !== 'COMPLETE';
+      const isBecomingComplete = status === 'COMPLETE' && existing.status !== 'COMPLETE';
       const isLeavingComplete =
         status !== undefined && status !== 'COMPLETE' && existing.status === 'COMPLETE';
 
@@ -171,10 +169,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ item: result.item });
   } catch (error) {
     console.error('[ChecklistItemAPI] PATCH error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update checklist item' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update checklist item' }, { status: 500 });
   }
 }
 
@@ -245,9 +240,6 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[ChecklistItemAPI] DELETE error:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete checklist item' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to delete checklist item' }, { status: 500 });
   }
 }

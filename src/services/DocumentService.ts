@@ -424,7 +424,12 @@ export class DocumentService {
 
     const searchCondition: Prisma.DocumentWhereInput | undefined = search
       ? contentMatchIds && contentMatchIds.length > 0
-        ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { id: { in: contentMatchIds } }] }
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { id: { in: contentMatchIds } },
+            ],
+          }
         : { name: { contains: search, mode: 'insensitive' } }
       : undefined;
 
