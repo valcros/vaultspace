@@ -30,7 +30,7 @@ const listQuerySchema = z.object({
 const createQuestionSchema = z.object({
   subject: z.string().min(1).max(500),
   body: z.string().min(1),
-  documentId: z.string().optional(),
+  documentId: z.string().nullable().optional(),
   priority: z.nativeEnum(QuestionPriority).optional(),
   isPublic: z.boolean().optional(),
 });
