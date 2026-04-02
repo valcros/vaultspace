@@ -43,6 +43,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             organizationId: true,
             requiresNda: true,
             ndaContent: true,
+            ipAllowlist: true,
           },
         },
       },
@@ -50,6 +51,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (!link) {
       return NextResponse.json({ error: 'This link is invalid or has expired' }, { status: 404 });
+    }
+
+    // Check IP allowlist (F018)
+    if (link.room.ipAllowlist && link.room.ipAllowlist.length > 0) {
+      const clientIp =
+        request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        request.headers.get('x-real-ip') ||
+        '';
+      const isIpAllowed = link.room.ipAllowlist.some((allowedIp) => allowedIp === clientIp);
+      if (!isIpAllowed) {
+        return NextResponse.json(
+          { error: 'Access denied: your IP address is not allowed.' },
+          { status: 403 }
+        );
+      }
     }
 
     // Verify email if required

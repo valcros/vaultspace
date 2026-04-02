@@ -55,6 +55,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           brandLogoUrl: true,
           enableWatermark: true,
           watermarkTemplate: true,
+          ipAllowlist: true,
           archivedAt: true,
           closedAt: true,
         },
@@ -81,6 +82,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         brandLogoUrl: room.brandLogoUrl,
         enableWatermark: room.enableWatermark,
         watermarkTemplate: room.watermarkTemplate,
+        ipAllowlist: room.ipAllowlist,
         archivedAt: room.archivedAt,
         closedAt: room.closedAt,
       },
@@ -135,6 +137,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       brandLogoUrl,
       enableWatermark,
       watermarkTemplate,
+      ipAllowlist,
     } = body;
 
     // Validate status if provided
@@ -209,6 +212,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (watermarkTemplate !== undefined) {
       updateData['watermarkTemplate'] = watermarkTemplate?.trim() || null;
     }
+    if (ipAllowlist !== undefined) {
+      if (!Array.isArray(ipAllowlist)) {
+        return NextResponse.json(
+          { error: 'ipAllowlist must be an array of strings' },
+          { status: 400 }
+        );
+      }
+      // Filter out empty strings and trim whitespace
+      updateData['ipAllowlist'] = ipAllowlist
+        .map((ip: string) => (typeof ip === 'string' ? ip.trim() : ''))
+        .filter((ip: string) => ip.length > 0);
+    }
 
     // Update room settings using RLS context
     let updatedRoom = await withOrgContext(session.organizationId, async (tx) => {
@@ -230,6 +245,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           brandLogoUrl: true,
           enableWatermark: true,
           watermarkTemplate: true,
+          ipAllowlist: true,
           archivedAt: true,
           closedAt: true,
         },
@@ -271,6 +287,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         brandLogoUrl: updatedRoom.brandLogoUrl,
         enableWatermark: updatedRoom.enableWatermark,
         watermarkTemplate: updatedRoom.watermarkTemplate,
+        ipAllowlist: updatedRoom.ipAllowlist,
         archivedAt: updatedRoom.archivedAt,
         closedAt: updatedRoom.closedAt,
       },
