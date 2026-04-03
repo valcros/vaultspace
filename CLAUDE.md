@@ -10,17 +10,28 @@ VaultSpace is an open-source, self-hosted secure Virtual Data Room (VDR) platfor
 
 **Status:** Specification complete. Implementation not started.
 
-## ⚠️ AZURE-ONLY OPERATION
+## Deployment Modes
 
-**VaultSpace runs exclusively in Azure. Local execution is not permitted.**
+VaultSpace supports two deployment modes controlled by `DEPLOYMENT_MODE` environment variable:
 
-- **Runtime:** Azure Container Apps only
-- **Database:** Azure PostgreSQL only
-- **Storage:** Azure Blob Storage only
-- **Cache:** Azure Cache for Redis only
-- **Testing:** Against Azure-hosted services only
+### Azure Mode (default)
+- **Runtime:** Azure Container Apps or AKS
+- **Database:** Azure PostgreSQL
+- **Storage:** Azure Blob Storage
+- **Cache:** Azure Cache for Redis
+- **Testing:** Against Azure-hosted services
 
-The application includes guardrails that block local execution. Any attempt to run locally or test against localhost will fail with a clear error message.
+Missing Azure configuration causes startup failure with clear error messages.
+
+### Standalone Mode
+Set `DEPLOYMENT_MODE=standalone` to enable self-hosted deployment:
+
+- **Database:** Any PostgreSQL 15+ (Azure, AWS RDS, self-hosted)
+- **Storage:** S3-compatible (MinIO, Backblaze, DO Spaces) or local filesystem
+- **Cache:** Any Redis, or omit for degraded mode (async features disabled)
+- **Testing:** Localhost databases allowed
+
+Standalone mode uses graceful degradation. Missing optional services (Redis, ClamAV, Gotenberg) disable related features without blocking core functionality. The health endpoint reports degraded capabilities.
 
 ## Before Writing Any Code
 
@@ -110,26 +121,23 @@ The application includes guardrails that block local execution. Any attempt to r
 ## Key Commands
 
 ```bash
-# ⚠️ AZURE-ONLY - Local execution is blocked
-
 # Static Analysis (runs locally, no runtime)
 npm run type-check                   # TypeScript type checking
 npm run lint                         # ESLint
 npm run test                         # Unit tests (no database required)
 
-# Integration Testing (requires Azure PostgreSQL)
+# Azure Mode (default)
 DATABASE_URL=<azure-postgres-url> npm run test:integration
-
-# Deployment (Azure Container Apps)
 az containerapp up ...               # Deploy to Azure
-
-# Database Migrations (run against Azure PostgreSQL)
 DATABASE_URL=<azure-postgres-url> npm run db:migrate
 
-# ❌ NOT SUPPORTED - Local execution is blocked:
-# npm run dev                        # Blocked by Azure guard
-# docker compose up                  # Not for VaultSpace
-# npm run worker                     # Must run in Azure
+# Standalone Mode
+npm run dev:standalone               # Local development server
+npm run worker:standalone            # Local worker process
+npm run test:integration:standalone  # Integration tests against localhost
+npm run db:migrate:dev               # Create migrations (local DB)
+npm run db:push                      # Push schema to local DB
+npm run db:studio                    # Prisma Studio (local DB)
 ```
 
 ## Project Structure

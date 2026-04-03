@@ -6,7 +6,7 @@
  * Returns a PNG thumbnail for grid view.
  * Path 1: Serve stored THUMBNAIL asset for ALL types.
  * Path 2: If no thumbnail, return branded placeholder IMMEDIATELY,
- *          then enqueue a thumbnail.generate job (fire-and-forget).
+ *          then enqueue a thumbnail.generate job (fire-and-forget) if async previews available.
  * Never blocks on expensive Gotenberg generation.
  * Never returns 404 for a document with a file blob.
  */
@@ -17,6 +17,7 @@ import sharp from 'sharp';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+import { hasCapability } from '@/lib/deployment-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,7 +129,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     // Path 2: No stored thumbnail — return branded placeholder IMMEDIATELY
     // then enqueue a preview.generate job (fire-and-forget) which generates
     // the thumbnail inline from original file bytes.
-    if (latestVersion.fileBlob) {
+    // Only enqueue if async preview capability is available (Redis + Gotenberg configured)
+    if (latestVersion.fileBlob && hasCapability('canGenerateAsyncPreviews')) {
       // Fire-and-forget: enqueue full preview generation which includes inline thumbnail
       providers.job
         .addJob(

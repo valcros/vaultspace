@@ -15,7 +15,7 @@ VaultSpace provides enterprise-grade document security and collaboration for M&A
 - **Background processing** — virus scanning (ClamAV), preview generation, OCR text extraction
 - **Share links** — password-protected, email-verified, expiring access for external viewers
 - **Room management** — templates (M&A, investor, board, compliance), lifecycle states, folder hierarchy
-- **Self-hosted deployment** — Azure Container Apps with PostgreSQL, Redis, Blob Storage
+- **Flexible deployment** — Azure Container Apps or self-hosted with PostgreSQL, Redis, S3-compatible storage
 - **Admin dashboard** — rooms, users, groups, activity log, analytics, organization branding
 
 ## Tech Stack
@@ -44,7 +44,8 @@ See [MASTER_PLAN.md](MASTER_PLAN.md) for the full sprint plan and [IMPLEMENTATIO
 ### Prerequisites
 
 - Node.js 20+
-- Azure account (VaultSpace runs exclusively on Azure)
+- PostgreSQL 15+
+- For full features: Redis, Gotenberg (document previews), ClamAV (virus scanning)
 
 ### Development (static analysis only)
 
@@ -59,9 +60,21 @@ npm run lint          # ESLint
 npm run test          # Unit tests (74 tests)
 ```
 
-### Deployment
+### Deployment Options
 
-VaultSpace deploys to Azure Container Apps. See [DEPLOYMENT.md](DEPLOYMENT.md) for full instructions.
+VaultSpace supports two deployment modes:
+
+**Azure Mode** (default) - Full Azure infrastructure:
+```bash
+az containerapp up ...  # Deploy to Azure Container Apps
+```
+
+**Standalone Mode** - Self-hosted with flexible infrastructure:
+```bash
+DEPLOYMENT_MODE=standalone npm run dev:standalone  # Local development
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for full deployment instructions including Docker Compose for self-hosted deployments.
 
 ```bash
 # Build Docker images

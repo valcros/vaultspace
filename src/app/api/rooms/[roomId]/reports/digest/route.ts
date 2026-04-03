@@ -11,6 +11,10 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+import {
+  hasCapability,
+  createCapabilityUnavailableResponse,
+} from '@/lib/deployment-capabilities';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -342,6 +346,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
  */
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
+    // Check if scheduled reports capability is available (requires Redis)
+    if (!hasCapability('canRunScheduledReports')) {
+      return createCapabilityUnavailableResponse('canRunScheduledReports', 'Digest email');
+    }
+
     const session = await requireAuth();
     const { roomId } = await context.params;
 
