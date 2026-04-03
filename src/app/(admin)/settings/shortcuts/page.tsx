@@ -110,19 +110,13 @@ export default function KeyboardShortcutsPage() {
         <div className="mb-6 rounded-lg border border-blue-100 bg-blue-50 p-4">
           <p className="text-sm text-blue-800">
             <strong>Tip:</strong> Press{' '}
-            <kbd className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs">
-              ⌘
-            </kbd>{' '}
-            <kbd className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs">
-              K
-            </kbd>{' '}
+            <kbd className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs">⌘</kbd>{' '}
+            <kbd className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs">K</kbd>{' '}
             (or{' '}
             <kbd className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs">
               Ctrl
             </kbd>{' '}
-            <kbd className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs">
-              K
-            </kbd>{' '}
+            <kbd className="rounded border border-blue-200 bg-white px-1.5 py-0.5 text-xs">K</kbd>{' '}
             on Windows) anywhere in VaultSpace to open the command palette for quick navigation.
           </p>
         </div>
