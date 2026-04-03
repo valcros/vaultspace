@@ -92,22 +92,70 @@ jobs:
             --container-name ca-vaultspace-worker \
             --image $ACR_SERVER/vaultspace-worker:${{ github.sha }}
 
-      - name: Health check
+      - name: Health check with deployment mode validation
         run: |
           echo "Waiting for deployment to stabilize..."
           sleep 30
+
+          # Basic health check
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health")
           if [ "$HTTP_CODE" -ne 200 ]; then
             echo "Health check failed with status $HTTP_CODE"
             exit 1
           fi
-          echo "Health check passed (HTTP $HTTP_CODE)"
+          echo "✓ Health check passed (HTTP $HTTP_CODE)"
+
+          # Fetch full health response for mode validation
+          HEALTH_RESPONSE=$(curl -s "$APP_URL/api/health")
+          echo "Health response: $HEALTH_RESPONSE"
+
+          # Validate deployment mode is azure
+          DEPLOY_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.mode // "unknown"')
+          if [ "$DEPLOY_MODE" != "azure" ]; then
+            echo "ERROR: Expected deployment mode 'azure', got '$DEPLOY_MODE'"
+            exit 1
+          fi
+          echo "✓ Deployment mode verified: $DEPLOY_MODE"
+
+          # Check for degraded capabilities (warning, not failure)
+          DEGRADED=$(echo "$HEALTH_RESPONSE" | jq -r '.degraded // []')
+          if [ "$DEGRADED" != "[]" ]; then
+            echo "WARNING: Some capabilities are degraded: $DEGRADED"
+          else
+            echo "✓ All capabilities available"
+          fi
+
+          # Verify critical Azure capabilities
+          CAN_QUEUE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canQueueJobs // false')
+          CAN_CACHE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canUseDistributedCache // false')
+
+          if [ "$CAN_QUEUE" != "true" ]; then
+            echo "ERROR: Job queue capability unavailable in Azure mode"
+            exit 1
+          fi
+          echo "✓ Job queue capability verified"
+
+          if [ "$CAN_CACHE" != "true" ]; then
+            echo "ERROR: Distributed cache capability unavailable in Azure mode"
+            exit 1
+          fi
+          echo "✓ Distributed cache capability verified"
 
       - name: Post deployment summary
         run: |
+          # Fetch capabilities for summary
+          HEALTH_RESPONSE=$(curl -s "$APP_URL/api/health" || echo '{}')
+          DEPLOY_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.mode // "unknown"')
+          DEGRADED=$(echo "$HEALTH_RESPONSE" | jq -r '.degraded | length // 0')
+
           echo "## Staging Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Info" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Image:** $ACR_SERVER/vaultspace-web:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** $APP_URL" >> $GITHUB_STEP_SUMMARY
-          echo "- **Health:** Verified" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Mode" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode:** $DEPLOY_MODE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Degraded Capabilities:** $DEGRADED" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health:** ✓ Verified" >> $GITHUB_STEP_SUMMARY

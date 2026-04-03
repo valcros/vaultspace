@@ -1,0 +1,314 @@
+name: Standalone Mode Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/deployment-*.ts'
+      - 'src/lib/azure-guard.ts'
+      - 'src/providers/**'
+      - 'docker-compose.yml'
+      - 'scripts/smoke-test-deployment-modes.sh'
+  workflow_dispatch:
+    inputs:
+      run_full_smoke:
+        description: 'Run full smoke test suite'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  standalone-unit-tests:
+    name: Standalone Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run deployment mode tests in standalone mode
+        run: npm run test -- --reporter=verbose src/lib/deployment-mode.test.ts src/lib/deployment-capabilities.test.ts src/lib/azure-guard.test.ts
+        env:
+          DEPLOYMENT_MODE: standalone
+
+      - name: Verify standalone mode detection
+        run: |
+          node -e "
+            process.env.DEPLOYMENT_MODE = 'standalone';
+            const { getDeploymentMode, isStandaloneMode } = require('./src/lib/deployment-mode');
+            const mode = getDeploymentMode();
+            const isStandalone = isStandaloneMode();
+            if (mode !== 'standalone' || !isStandalone) {
+              console.error('Standalone mode not correctly detected');
+              process.exit(1);
+            }
+            console.log('✓ Standalone mode detection works correctly');
+          "
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+
+  standalone-degraded-mode:
+    name: Degraded Mode Validation
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+
+      - name: Verify degraded capabilities (no Redis)
+        run: |
+          node -e "
+            process.env.DEPLOYMENT_MODE = 'standalone';
+            process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+            // No REDIS_URL set - should degrade gracefully
+
+            const { resolveCapabilities, getDegradedCapabilities } = require('./src/lib/deployment-capabilities');
+            const caps = resolveCapabilities();
+            const degraded = getDegradedCapabilities();
+
+            console.log('Capabilities:', JSON.stringify(caps, null, 2));
+            console.log('Degraded:', degraded);
+
+            // In standalone without Redis, async features should be unavailable
+            if (caps.canQueueJobs !== false) {
+              console.error('ERROR: canQueueJobs should be false without Redis');
+              process.exit(1);
+            }
+            console.log('✓ canQueueJobs correctly false without Redis');
+
+            // Sync features should still work
+            if (caps.canGenerateSyncPreviews !== true) {
+              console.error('ERROR: canGenerateSyncPreviews should be true');
+              process.exit(1);
+            }
+            console.log('✓ canGenerateSyncPreviews correctly true');
+
+            // Should have degraded capabilities listed
+            if (!degraded.includes('canQueueJobs')) {
+              console.error('ERROR: canQueueJobs should be in degraded list');
+              process.exit(1);
+            }
+            console.log('✓ Degraded capabilities correctly reported');
+
+            console.log('\\n✓ All degraded mode validations passed');
+          "
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+
+  standalone-full-stack:
+    name: Full Stack (Redis + Services)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.run_full_smoke == 'true' || github.event_name == 'workflow_dispatch'
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run migrations
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+
+      - name: Verify full capabilities with Redis
+        run: |
+          node -e "
+            process.env.DEPLOYMENT_MODE = 'standalone';
+            process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+            process.env.REDIS_URL = 'redis://localhost:6379';
+
+            const { resolveCapabilities, getDegradedCapabilities } = require('./src/lib/deployment-capabilities');
+            const caps = resolveCapabilities();
+            const degraded = getDegradedCapabilities();
+
+            console.log('Capabilities:', JSON.stringify(caps, null, 2));
+            console.log('Degraded:', degraded);
+
+            // With Redis, job queue should be available
+            if (caps.canQueueJobs !== true) {
+              console.error('ERROR: canQueueJobs should be true with Redis');
+              process.exit(1);
+            }
+            console.log('✓ canQueueJobs correctly true with Redis');
+
+            if (caps.canUseDistributedCache !== true) {
+              console.error('ERROR: canUseDistributedCache should be true with Redis');
+              process.exit(1);
+            }
+            console.log('✓ canUseDistributedCache correctly true with Redis');
+
+            console.log('\\n✓ All full stack validations passed');
+          "
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+
+  azure-guard-validation:
+    name: Azure Guard Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Verify Azure mode blocks localhost
+        run: |
+          node -e "
+            process.env.DEPLOYMENT_MODE = 'azure';
+            process.env.DATABASE_URL = 'postgresql://localhost:5432/test';
+
+            const { validateConfig } = require('./src/lib/azure-guard');
+            const { errors } = validateConfig();
+
+            if (errors.length === 0) {
+              console.error('ERROR: Azure mode should error on localhost database');
+              process.exit(1);
+            }
+            console.log('✓ Azure mode correctly rejects localhost database');
+            console.log('  Errors:', errors);
+          "
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+
+      - name: Verify standalone mode allows localhost
+        run: |
+          node -e "
+            process.env.DEPLOYMENT_MODE = 'standalone';
+            process.env.DATABASE_URL = 'postgresql://localhost:5432/test';
+            process.env.STORAGE_PROVIDER = 'local';
+            process.env.STORAGE_LOCAL_PATH = './storage';
+
+            const { validateConfig } = require('./src/lib/azure-guard');
+            const { errors } = validateConfig();
+
+            const localhostErrors = errors.filter(e => e.includes('localhost'));
+            if (localhostErrors.length > 0) {
+              console.error('ERROR: Standalone mode should allow localhost database');
+              console.error('  Errors:', localhostErrors);
+              process.exit(1);
+            }
+            console.log('✓ Standalone mode correctly allows localhost database');
+          "
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+
+      - name: Verify isLocalhost detection
+        run: |
+          node -e "
+            const { isLocalhost } = require('./src/lib/azure-guard');
+
+            const testCases = [
+              ['postgresql://localhost:5432/db', true],
+              ['postgresql://127.0.0.1:5432/db', true],
+              ['postgresql://host.docker.internal:5432/db', true],
+              ['postgresql://db.azure.com:5432/db', false],
+              ['redis://10.0.0.5:6379', false],
+              [undefined, false],
+              ['', false],
+            ];
+
+            let passed = 0;
+            let failed = 0;
+
+            for (const [url, expected] of testCases) {
+              const result = isLocalhost(url);
+              if (result === expected) {
+                console.log('✓', url || '(empty)', '→', result);
+                passed++;
+              } else {
+                console.error('✗', url || '(empty)', '→', result, '(expected', expected + ')');
+                failed++;
+              }
+            }
+
+            console.log('\\nResults:', passed, 'passed,', failed, 'failed');
+            if (failed > 0) process.exit(1);
+          "
+        env:
+          NODE_OPTIONS: --experimental-vm-modules

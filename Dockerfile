@@ -2,6 +2,10 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
+# Deployment mode: azure (default) or standalone
+ARG DEPLOYMENT_MODE=azure
+ENV DEPLOYMENT_MODE=${DEPLOYMENT_MODE}
+
 # Install OpenSSL for Prisma
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
@@ -31,6 +35,10 @@ RUN apt-get update && apt-get install -y \
 # Set production environment
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Deployment mode (can be overridden at runtime)
+ARG DEPLOYMENT_MODE=azure
+ENV DEPLOYMENT_MODE=${DEPLOYMENT_MODE}
 
 # Create non-root user
 RUN groupadd --system --gid 1001 nodejs
