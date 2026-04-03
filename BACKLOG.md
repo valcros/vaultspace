@@ -33,7 +33,7 @@ Implemented via two-tier architecture (see DOCUMENT_PREVIEW_PLAN.md):
 
 ## Medium Priority
 
-- Replace remaining `window.confirm()` calls with proper confirmation dialogs
+- ~~Replace remaining `window.confirm()` calls with proper confirmation dialogs~~ ✅ Done (webhooks, share links, remove member)
 - Accessibility audit (WCAG 2.1 AA)
 - Production deployment workflow (tag-based)
 
