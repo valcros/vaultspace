@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation';
 import { Bell, Search, Command } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/ui/avatar';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,13 +45,15 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200 bg-white/80 px-4 backdrop-blur-xl lg:px-6">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200 bg-white/80 px-4 backdrop-blur-xl dark:border-neutral-700 dark:bg-neutral-900/80 lg:px-6">
       {/* Logo */}
       <Link href="/rooms" className="flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
           V
         </div>
-        <span className="hidden font-semibold text-neutral-900 sm:inline">VaultSpace</span>
+        <span className="hidden font-semibold text-neutral-900 dark:text-neutral-50 sm:inline">
+          VaultSpace
+        </span>
       </Link>
 
       {/* Center: Search Trigger */}
@@ -77,6 +80,9 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
 
       {/* Right Actions */}
       <div className="flex items-center gap-2">
+        {/* Theme toggle */}
+        <ThemeToggle />
+
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
