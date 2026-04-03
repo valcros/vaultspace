@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { db, withOrgContext } from '@/lib/db';
+import { isIpAllowed, getClientIp } from '@/lib/utils/ip';
 
 interface RouteContext {
   params: Promise<{ shareToken: string }>;
@@ -53,14 +54,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'This link is invalid or has expired' }, { status: 404 });
     }
 
-    // Check IP allowlist (F018)
+    // Check IP allowlist (F018) - supports both exact IPs and CIDR notation
     if (link.room.ipAllowlist && link.room.ipAllowlist.length > 0) {
-      const clientIp =
-        request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-        request.headers.get('x-real-ip') ||
-        '';
-      const isIpAllowed = link.room.ipAllowlist.some((allowedIp) => allowedIp === clientIp);
-      if (!isIpAllowed) {
+      const clientIp = getClientIp(request.headers);
+      if (!isIpAllowed(clientIp, link.room.ipAllowlist)) {
         return NextResponse.json(
           { error: 'Access denied: your IP address is not allowed.' },
           { status: 403 }
