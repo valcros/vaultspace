@@ -180,7 +180,9 @@ export default function WebhooksSettingsPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deleteWebhookId) return;
+    if (!deleteWebhookId) {
+      return;
+    }
 
     setIsDeleting(true);
     try {
