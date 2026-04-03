@@ -30,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageHeader } from '@/components/layout/page-header';
 
 interface WebhookRoom {
@@ -93,6 +94,10 @@ export default function WebhooksSettingsPage() {
     success: boolean;
     message: string;
   } | null>(null);
+
+  // Delete confirmation dialog
+  const [deleteWebhookId, setDeleteWebhookId] = React.useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
 
   React.useEffect(() => {
     fetchWebhooks();
@@ -170,13 +175,16 @@ export default function WebhooksSettingsPage() {
     }
   };
 
-  const handleDelete = async (webhookId: string) => {
-    if (!confirm('Are you sure you want to delete this webhook?')) {
-      return;
-    }
+  const handleDeleteClick = (webhookId: string) => {
+    setDeleteWebhookId(webhookId);
+  };
 
+  const handleDeleteConfirm = async () => {
+    if (!deleteWebhookId) return;
+
+    setIsDeleting(true);
     try {
-      const response = await fetch(`/api/settings/webhooks/${webhookId}`, {
+      const response = await fetch(`/api/settings/webhooks/${deleteWebhookId}`, {
         method: 'DELETE',
       });
 
@@ -184,8 +192,11 @@ export default function WebhooksSettingsPage() {
         throw new Error('Failed to delete webhook');
       }
       fetchWebhooks();
+      setDeleteWebhookId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete webhook');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -398,7 +409,7 @@ export default function WebhooksSettingsPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDelete(webhook.id)}
+                        onClick={() => handleDeleteClick(webhook.id)}
                         className="text-danger-600 hover:text-danger-700"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -545,6 +556,17 @@ export default function WebhooksSettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteWebhookId !== null}
+        onOpenChange={(open) => !open && setDeleteWebhookId(null)}
+        title="Delete Webhook"
+        description="Are you sure you want to delete this webhook? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteConfirm}
+        loading={isDeleting}
+      />
     </>
   );
 }
