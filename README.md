@@ -65,11 +65,13 @@ npm run test          # Unit tests (74 tests)
 VaultSpace supports two deployment modes:
 
 **Azure Mode** (default) - Full Azure infrastructure:
+
 ```bash
 az containerapp up ...  # Deploy to Azure Container Apps
 ```
 
 **Standalone Mode** - Self-hosted with flexible infrastructure:
+
 ```bash
 DEPLOYMENT_MODE=standalone npm run dev:standalone  # Local development
 ```

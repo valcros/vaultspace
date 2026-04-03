@@ -12,10 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
-import {
-  hasCapability,
-  createCapabilityUnavailableResponse,
-} from '@/lib/deployment-capabilities';
+import { hasCapability, createCapabilityUnavailableResponse } from '@/lib/deployment-capabilities';
 
 export const dynamic = 'force-dynamic';
 
