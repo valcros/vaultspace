@@ -1184,7 +1184,9 @@ export default function RoomDetailPage() {
   }, []);
 
   const handleDeleteLinkConfirm = React.useCallback(async () => {
-    if (!deleteLinkTarget) return;
+    if (!deleteLinkTarget) {
+      return;
+    }
 
     setIsDeletingLink(true);
     try {
@@ -1255,7 +1257,9 @@ export default function RoomDetailPage() {
   }, []);
 
   const handleRemoveMemberConfirm = React.useCallback(async () => {
-    if (!removeMemberTarget) return;
+    if (!removeMemberTarget) {
+      return;
+    }
 
     setIsRemovingMember(true);
     try {
