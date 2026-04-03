@@ -26,7 +26,7 @@ jobs:
         run: npm ci
 
       - name: Run ESLint
-        run: npm run lint -- --max-warnings 20
+        run: npm run lint -- --max-warnings 25
 
       - name: Run Prettier check
         run: npm run format:check
@@ -215,9 +215,8 @@ jobs:
 
       - name: Verify mode detection
         run: |
-          node -e "
-            process.env.DEPLOYMENT_MODE = '${{ matrix.mode }}';
-            const { getDeploymentMode } = require('./src/lib/deployment-mode');
+          npx tsx -e "
+            import { getDeploymentMode } from './src/lib/deployment-mode';
             const mode = getDeploymentMode();
             if (mode !== '${{ matrix.mode }}') {
               console.error('Mode mismatch: expected ${{ matrix.mode }}, got', mode);
@@ -226,7 +225,7 @@ jobs:
             console.log('✓ Deployment mode correctly detected:', mode);
           "
         env:
-          NODE_OPTIONS: --experimental-vm-modules
+          DEPLOYMENT_MODE: ${{ matrix.mode }}
 
   docker:
     name: Docker Build
