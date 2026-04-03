@@ -11,6 +11,7 @@ import { RoomStatus } from '@prisma/client';
 import { requireAuth, getRequestContext } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { createServiceContext, roomService } from '@/services';
+import { hasCapability } from '@/lib/deployment-capabilities';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -66,6 +67,15 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Room not found' }, { status: 404 });
     }
 
+    // Build security warnings for admin UI
+    const securityWarnings: string[] = [];
+    if (!hasCapability('canRunVirusScanning')) {
+      securityWarnings.push(
+        'Virus scanning is not available. Uploaded documents will not be scanned for malware. ' +
+          'Configure ClamAV and Redis to enable scanning.'
+      );
+    }
+
     return NextResponse.json({
       settings: {
         id: room.id,
@@ -86,6 +96,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         archivedAt: room.archivedAt,
         closedAt: room.closedAt,
       },
+      // Security posture warnings for admin display
+      ...(securityWarnings.length > 0 && { securityWarnings }),
     });
   } catch (error) {
     console.error('[RoomSettingsAPI] GET error:', error);

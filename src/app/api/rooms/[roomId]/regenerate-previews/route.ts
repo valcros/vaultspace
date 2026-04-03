@@ -12,6 +12,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+import {
+  hasCapability,
+  createCapabilityUnavailableResponse,
+} from '@/lib/deployment-capabilities';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +25,14 @@ interface RouteContext {
 
 export async function POST(_request: NextRequest, context: RouteContext) {
   try {
+    // Check if async preview generation capability is available (requires Redis + Gotenberg)
+    if (!hasCapability('canGenerateAsyncPreviews')) {
+      return createCapabilityUnavailableResponse(
+        'canGenerateAsyncPreviews',
+        'Preview regeneration'
+      );
+    }
+
     const session = await requireAuth();
     const { roomId } = await context.params;
 

@@ -19,21 +19,24 @@
 
 ## Overview
 
-> **⚠️ AZURE-ONLY:** VaultSpace runs exclusively in Azure. Local development is not supported on this branch.
-> Use Azure Container Apps (dev/staging) or AKS (production) for all deployments.
+VaultSpace supports two deployment modes:
 
-VaultSpace deployment philosophy prioritizes **security by default** and **scalability when needed**. The platform is built for Azure with:
+- **Azure Mode** (default): Full Azure infrastructure with all features enabled
+- **Standalone Mode**: Self-hosted deployment with flexible infrastructure choices
 
-- **Development/Staging**: Azure Container Apps (simple, cost-effective)
-- **Production**: Azure Kubernetes Service (AKS) with horizontal scaling
+VaultSpace deployment philosophy prioritizes **security by default** and **scalability when needed**. The platform supports:
+
+- **Azure Deployment**: Azure Container Apps (dev/staging) or AKS (production)
+- **Standalone Deployment**: Self-hosted with PostgreSQL, Redis (optional), S3-compatible or local storage
 
 ### Key Principles
 
-1. **Azure-only infrastructure** - All components must run on Azure services
+1. **Flexible infrastructure** - Deploy on Azure or self-hosted infrastructure
 2. **Stateless application layer** - Multiple app instances can run behind a load balancer with zero coordination
 3. **Background workers** - Heavy lifting (preview generation, virus scanning, exports) runs in dedicated worker processes
 4. **Private infrastructure** - Database, Redis, and workers are never publicly exposed
 5. **Standard container practices** - Multi-stage Dockerfiles, secrets via environment variables, health checks
+6. **Graceful degradation** - Missing optional services degrade features without blocking core functionality
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) and [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) for system design details.
 
@@ -104,6 +107,162 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [DATABASE_SCHEMA.md](./DATABASE_SCH
 - **Storage:** Premium LRS with geo-redundancy option
 
 **Typical monthly cost (production):** $2,000–5,000+ USD depending on usage.
+
+---
+
+## Standalone Deployment Mode
+
+VaultSpace supports self-hosted deployment via `DEPLOYMENT_MODE=standalone`. This mode allows flexible infrastructure choices while maintaining security standards.
+
+### Enabling Standalone Mode
+
+Set the environment variable:
+
+```bash
+DEPLOYMENT_MODE=standalone
+```
+
+Without this variable, VaultSpace defaults to Azure mode and enforces Azure service requirements.
+
+### Infrastructure Requirements
+
+| Component | Required | Options | Notes |
+|-----------|----------|---------|-------|
+| PostgreSQL 15+ | Yes | Any provider | Azure, AWS RDS, self-hosted |
+| Redis | Recommended | Any provider | Required for async features (jobs, previews) |
+| S3-compatible storage | Option A | MinIO, Backblaze B2, DO Spaces, AWS S3 | Full production support |
+| Local filesystem | Option B | Docker volume, NFS | Single-node only, manual backups |
+| Gotenberg | Recommended | Container sidecar | Required for Office document previews |
+| ClamAV | Optional | Container sidecar | Uploads proceed without scanning if unavailable |
+| SMTP | Yes | Any provider | Required for notifications |
+
+### Capabilities Matrix
+
+Standalone mode uses a capabilities system to gracefully handle missing services:
+
+| Capability | Requires | Behavior When Unavailable |
+|------------|----------|---------------------------|
+| `canQueueJobs` | Redis | Async operations return 503 |
+| `canGenerateAsyncPreviews` | Redis + Gotenberg | Preview endpoint returns 503 |
+| `canGenerateSyncPreviews` | Sharp (bundled) | Always available for images |
+| `canRunVirusScanning` | Redis + ClamAV | Uploads proceed, documents marked unscanned |
+| `canSendAsyncEmail` | Redis | Falls back to sync email |
+| `canSendSyncEmail` | SMTP | Always available if SMTP configured |
+| `canRunScheduledReports` | Redis | Scheduled reports return 503 |
+| `canRunBulkExport` | Redis | Bulk export returns 503 |
+
+### Health Check Response
+
+The `/api/health` endpoint reports deployment status:
+
+```json
+{
+  "status": "healthy",
+  "mode": "standalone",
+  "capabilities": {
+    "canQueueJobs": true,
+    "canGenerateAsyncPreviews": true,
+    "canRunVirusScanning": false,
+    "canSendAsyncEmail": true,
+    "canSendSyncEmail": true
+  },
+  "degraded": ["canRunVirusScanning"]
+}
+```
+
+Degraded capabilities do not fail the health check. Only infrastructure failures (database, storage) result in unhealthy status.
+
+### Standalone with Full Features
+
+For production standalone deployments with all features:
+
+```bash
+# Core
+DEPLOYMENT_MODE=standalone
+DATABASE_URL=postgresql://user:pass@postgres:5432/vaultspace
+REDIS_URL=redis://:password@redis:6379
+
+# Storage (S3-compatible)
+STORAGE_PROVIDER=s3
+STORAGE_BUCKET=vaultspace
+STORAGE_ENDPOINT=https://minio.example.com
+STORAGE_KEY_ID=your-access-key
+STORAGE_SECRET_KEY=your-secret-key
+
+# Preview generation
+PREVIEW_PROVIDER=gotenberg
+GOTENBERG_URL=http://gotenberg:3000
+
+# Virus scanning
+SCAN_PROVIDER=clamav
+CLAMAV_HOST=clamav
+CLAMAV_PORT=3310
+
+# Email
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=noreply@example.com
+SMTP_PASSWORD=your-password
+```
+
+### Standalone Minimal (Development/Testing)
+
+For development or small deployments without async features:
+
+```bash
+DEPLOYMENT_MODE=standalone
+DATABASE_URL=postgresql://user:pass@localhost:5432/vaultspace
+
+# Local filesystem storage
+STORAGE_PROVIDER=local
+STORAGE_LOCAL_PATH=./storage
+
+# No Redis - async features unavailable
+# Email - sync only
+EMAIL_PROVIDER=smtp
+SMTP_HOST=localhost
+SMTP_PORT=1025
+```
+
+**Limitations without Redis:**
+- Preview generation unavailable (returns 503)
+- Virus scanning unavailable (uploads proceed unscanned)
+- Bulk exports unavailable (returns 503)
+- Scheduled reports unavailable (returns 503)
+- Email sent synchronously (may timeout on slow SMTP)
+
+### Security Considerations
+
+**Virus scanning unavailable:**
+- Documents are stored with `scanned: false` in the database
+- Admin warning displayed in Settings > Security page
+- One-time notification to tenant owner when creating rooms
+- Startup log: `[Security] Virus scanning unavailable - uploads will not be scanned`
+
+**Local filesystem storage:**
+- Single-node only (no horizontal scaling)
+- Manual backup responsibility
+- Not suitable for HA deployments
+- Signed URLs still enforced for all document access
+
+### Development Scripts
+
+Package.json includes standalone-aware scripts:
+
+```bash
+# Development
+npm run dev:standalone              # Local dev server
+npm run worker:standalone           # Local worker process
+
+# Database (uses local PostgreSQL)
+npm run db:migrate:dev              # Create migrations
+npm run db:push                     # Push schema changes
+npm run db:studio                   # Prisma Studio
+
+# Testing
+npm run test:integration:standalone # Integration tests against localhost
+```
 
 ---
 
@@ -254,6 +413,7 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 | Variable           | Required | Default           | Example                          | Description                                                                                                                      |
 | ------------------ | -------- | ----------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `DEPLOYMENT_MODE`  | No       | `azure`           | `azure` or `standalone`          | Deployment mode. `azure` enforces Azure services; `standalone` allows flexible infrastructure.                                   |
 | `NODE_ENV`         | Yes      | `production`      | `production` or `development`    | Runtime environment. Controls logging, bundling, and feature flags.                                                              |
 | `APP_URL`          | Yes      | —                 | `https://dataroom.example.com`   | Full public URL of the application. Used in emails, webhooks, and client-side redirects. **Must match domain in cookies/HTTPS.** |
 | `APP_NAME`         | No       | `VaultSpace`      | `ACME Data Room`                 | Display name shown in UI and emails.                                                                                             |
@@ -272,14 +432,15 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 | Variable    | Required | Default | Example                                                 | Description                                                                              |
 | ----------- | -------- | ------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `REDIS_URL` | Yes      | —       | `rediss://:key@yourserver.redis.cache.windows.net:6380` | Azure Cache for Redis connection string. Format: `rediss://[:password@]host[:port][/db]` |
+| `REDIS_URL` | Conditional | —    | `rediss://:key@yourserver.redis.cache.windows.net:6380` | Redis connection string. Required in Azure mode. Optional in standalone mode (async features disabled without Redis). Format: `rediss://[:password@]host[:port][/db]` |
 | `REDIS_TLS` | No       | `false` | `true`                                                  | Enable TLS for Redis connection. Required if using Azure Cache for Redis with SSL.       |
 
 #### Storage
 
 | Variable                     | Required    | Default | Example                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---------------------------- | ----------- | ------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| `STORAGE_PROVIDER`           | Yes         | `azure` | `azure`                                          | Storage backend. Must be `azure` (Azure Blob Storage) for Azure-only deployment.                                                                                                                                                                                                                                                                                                                                                                                                              |     |
+| `STORAGE_PROVIDER`           | Yes         | `azure` | `azure`, `s3`, `local`                           | Storage backend. `azure` for Azure Blob Storage, `s3` for S3-compatible (AWS, MinIO, Backblaze), `local` for filesystem (standalone mode only).                                                                                                                                                                                                                                                                                                                                              |     |
+| `STORAGE_LOCAL_PATH`         | Conditional | —       | `./storage`                                      | Filesystem path for document storage. Required for `STORAGE_PROVIDER=local`. Only available in standalone mode.                                                                                                                                                                                                                                                                                                                                                                              |
 | `STORAGE_BUCKET`             | Conditional | —       | `vaultspace-prod`                                | Bucket/container name. Required for `s3` or `azure`.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `STORAGE_REGION`             | Conditional | —       | `us-east-1`                                      | AWS region. Required for `STORAGE_PROVIDER=s3`.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `STORAGE_ENDPOINT`           | No          | —       | `https://minio.example.com`                      | Custom S3-compatible endpoint. Use for MinIO, Backblaze B2, DigitalOcean Spaces, etc.                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -401,6 +562,11 @@ Complete template file:
 # ============================================================================
 # CORE APPLICATION
 # ============================================================================
+
+# Deployment mode: azure (default) or standalone
+# - azure: Enforces Azure services, blocks startup if misconfigured
+# - standalone: Allows non-Azure services, graceful degradation for missing optional services
+DEPLOYMENT_MODE=azure
 
 # Runtime environment: production or development
 NODE_ENV=production
@@ -1864,17 +2030,17 @@ az postgres flexible-server execute --name <server> --admin-user <user> --admin-
 
 ## Appendix A: Non-Azure Reference Configurations
 
-> **⚠️ UNSUPPORTED:** The configurations in this appendix are provided as reference material only.
-> VaultSpace on this branch runs exclusively in Azure. These examples may be useful for:
+> **Standalone Mode:** These configurations are fully supported when `DEPLOYMENT_MODE=standalone` is set.
+> They provide reference material for self-hosted deployments:
 >
-> - Understanding service dependencies when migrating from other platforms
-> - AKS deployments requiring custom ingress configuration
-> - Debugging service communication patterns
+> - Docker Compose for local development and single-server production
+> - Reverse proxy configurations (nginx, Caddy, Traefik)
+> - Non-Azure cloud deployments (AWS, GCP, DigitalOcean)
 
 ### A.1 Docker Compose Service Reference
 
 This Docker Compose file shows VaultSpace service dependencies and internal networking patterns.
-**Do not run locally** - use Azure Container Apps for all deployments.
+For standalone mode deployments, this serves as a complete local development or single-server production setup.
 
 ```yaml
 version: '3.9'
