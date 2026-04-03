@@ -94,52 +94,114 @@ jobs:
 
       - name: Health check with deployment mode validation
         run: |
-          echo "Waiting for deployment to stabilize..."
-          sleep 30
+          # Configuration
+          MAX_ATTEMPTS=10
+          INITIAL_WAIT=15
+          RETRY_INTERVAL=15
 
-          # Basic health check
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health")
-          if [ "$HTTP_CODE" -ne 200 ]; then
-            echo "Health check failed with status $HTTP_CODE"
-            exit 1
-          fi
-          echo "✓ Health check passed (HTTP $HTTP_CODE)"
+          echo "=== Deployment Health Check ==="
+          echo "Max attempts: $MAX_ATTEMPTS"
+          echo "Initial wait: ${INITIAL_WAIT}s"
+          echo "Retry interval: ${RETRY_INTERVAL}s"
+          echo ""
 
-          # Fetch full health response for mode validation
-          HEALTH_RESPONSE=$(curl -s "$APP_URL/api/health")
-          echo "Health response: $HEALTH_RESPONSE"
+          # Get container app revision info for diagnostics
+          echo "=== Container App Diagnostics ==="
+          REVISION_INFO=$(az containerapp revision list \
+            --name $CONTAINER_APP_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --query "[0].{name:name, active:properties.active, replicas:properties.replicas, createdTime:properties.createdTime, runningState:properties.runningState}" \
+            -o json 2>/dev/null || echo '{}')
+          echo "Latest revision: $REVISION_INFO"
+          echo ""
 
-          # Validate deployment mode is azure
-          DEPLOY_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.mode // "unknown"')
-          if [ "$DEPLOY_MODE" != "azure" ]; then
-            echo "ERROR: Expected deployment mode 'azure', got '$DEPLOY_MODE'"
-            exit 1
-          fi
-          echo "✓ Deployment mode verified: $DEPLOY_MODE"
+          echo "Waiting ${INITIAL_WAIT}s for deployment to initialize..."
+          sleep $INITIAL_WAIT
 
-          # Check for degraded capabilities (warning, not failure)
-          DEGRADED=$(echo "$HEALTH_RESPONSE" | jq -r '.degraded // []')
-          if [ "$DEGRADED" != "[]" ]; then
-            echo "WARNING: Some capabilities are degraded: $DEGRADED"
-          else
-            echo "✓ All capabilities available"
-          fi
+          # Retry loop for health check with deployment mode validation
+          ATTEMPT=1
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo ""
+            echo "=== Attempt $ATTEMPT of $MAX_ATTEMPTS ==="
 
-          # Verify critical Azure capabilities
-          CAN_QUEUE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canQueueJobs // false')
-          CAN_CACHE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canUseDistributedCache // false')
+            # Basic health check
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL/api/health" 2>/dev/null || echo "000")
+            echo "HTTP status: $HTTP_CODE"
 
-          if [ "$CAN_QUEUE" != "true" ]; then
-            echo "ERROR: Job queue capability unavailable in Azure mode"
-            exit 1
-          fi
-          echo "✓ Job queue capability verified"
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "Health endpoint not ready (HTTP $HTTP_CODE)"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Retrying in ${RETRY_INTERVAL}s..."
+                sleep $RETRY_INTERVAL
+                ATTEMPT=$((ATTEMPT + 1))
+                continue
+              else
+                echo "ERROR: Health check failed after $MAX_ATTEMPTS attempts"
+                exit 1
+              fi
+            fi
 
-          if [ "$CAN_CACHE" != "true" ]; then
-            echo "ERROR: Distributed cache capability unavailable in Azure mode"
-            exit 1
-          fi
-          echo "✓ Distributed cache capability verified"
+            # Fetch full health response
+            HEALTH_RESPONSE=$(curl -s --max-time 10 "$APP_URL/api/health" 2>/dev/null || echo '{}')
+            echo "Health response: $HEALTH_RESPONSE"
+
+            # Validate deployment mode
+            DEPLOY_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.mode // "unknown"')
+            echo "Deployment mode: $DEPLOY_MODE"
+
+            if [ "$DEPLOY_MODE" = "unknown" ]; then
+              echo "New container not yet active (mode field missing)"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Retrying in ${RETRY_INTERVAL}s..."
+                sleep $RETRY_INTERVAL
+                ATTEMPT=$((ATTEMPT + 1))
+                continue
+              else
+                echo "ERROR: New container did not become active after $MAX_ATTEMPTS attempts"
+                # Show final revision state for debugging
+                az containerapp revision list \
+                  --name $CONTAINER_APP_NAME \
+                  --resource-group $RESOURCE_GROUP \
+                  --query "[].{name:name, active:properties.active, replicas:properties.replicas, runningState:properties.runningState}" \
+                  -o table 2>/dev/null || true
+                exit 1
+              fi
+            fi
+
+            if [ "$DEPLOY_MODE" != "azure" ]; then
+              echo "ERROR: Expected deployment mode 'azure', got '$DEPLOY_MODE'"
+              exit 1
+            fi
+            echo "✓ Deployment mode verified: $DEPLOY_MODE"
+
+            # Verify critical Azure capabilities
+            CAN_QUEUE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canQueueJobs // false')
+            CAN_CACHE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canUseDistributedCache // false')
+
+            if [ "$CAN_QUEUE" != "true" ]; then
+              echo "ERROR: Job queue capability unavailable in Azure mode"
+              exit 1
+            fi
+            echo "✓ Job queue capability verified"
+
+            if [ "$CAN_CACHE" != "true" ]; then
+              echo "ERROR: Distributed cache capability unavailable in Azure mode"
+              exit 1
+            fi
+            echo "✓ Distributed cache capability verified"
+
+            # Check for degraded capabilities (warning, not failure)
+            DEGRADED=$(echo "$HEALTH_RESPONSE" | jq -r '.degraded // []')
+            if [ "$DEGRADED" != "[]" ]; then
+              echo "⚠ Some capabilities are degraded: $DEGRADED"
+            else
+              echo "✓ All capabilities available"
+            fi
+
+            echo ""
+            echo "=== Health Check Passed (attempt $ATTEMPT) ==="
+            exit 0
+          done
 
       - name: Post deployment summary
         run: |
