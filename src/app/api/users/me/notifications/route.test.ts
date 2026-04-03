@@ -33,7 +33,9 @@ describe('GET /api/users/me/notifications', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 500 for unauthenticated requests', async () => {
@@ -123,7 +125,9 @@ describe('PATCH /api/users/me/notifications', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 400 for invalid digest frequency', async () => {

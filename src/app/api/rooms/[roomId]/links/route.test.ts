@@ -40,7 +40,9 @@ describe('GET /api/rooms/:roomId/links', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 500 for unauthenticated requests', async () => {
@@ -90,7 +92,12 @@ describe('GET /api/rooms/:roomId/links', () => {
         name: 'Investor Link',
         permission: 'VIEW',
         scope: 'ENTIRE_ROOM',
-        createdByUser: { id: 'user-1', firstName: 'Admin', lastName: 'User', email: 'admin@example.com' },
+        createdByUser: {
+          id: 'user-1',
+          firstName: 'Admin',
+          lastName: 'User',
+          email: 'admin@example.com',
+        },
         _count: { visits: 5 },
       },
     ];
@@ -124,7 +131,9 @@ describe('POST /api/rooms/:roomId/links', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
     // Set required env var
     process.env['NEXT_PUBLIC_APP_URL'] = 'https://example.com';
   });

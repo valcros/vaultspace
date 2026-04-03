@@ -33,7 +33,9 @@ describe('GET /api/rooms/:roomId/admins', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 500 for unauthenticated requests', async () => {
@@ -110,7 +112,12 @@ describe('GET /api/rooms/:roomId/admins', () => {
   });
 
   it('deduplicates admins who are both org and room admin', async () => {
-    const sharedUser = { id: 'user-1', firstName: 'Both', lastName: 'Admin', email: 'both@example.com' };
+    const sharedUser = {
+      id: 'user-1',
+      firstName: 'Both',
+      lastName: 'Admin',
+      email: 'both@example.com',
+    };
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
@@ -142,7 +149,9 @@ describe('POST /api/rooms/:roomId/admins', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 403 for non-admin users', async () => {

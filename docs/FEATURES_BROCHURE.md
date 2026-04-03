@@ -29,13 +29,13 @@ VaultSpace is released under the **GNU Affero General Public License v3 (AGPL-3.
 
 ## Why VaultSpace?
 
-| Challenge | VaultSpace Solution |
-|-----------|-------------------|
-| Sensitive documents scattered across email, Dropbox, and shared drives | Centralized, secure data rooms with granular access control |
-| No visibility into who viewed what, when, or for how long | Per-page analytics, activity heatmaps, and comprehensive audit trails |
-| Expensive per-seat pricing from legacy VDR vendors | Open-source, self-hosted — pay only for your Azure infrastructure |
-| Vendor lock-in with no data portability | Your data, your servers, your rules — full export at any time |
-| Static file sharing with no collaboration tools | Built-in Q&A, checklists, calendar, messaging, and e-signatures |
+| Challenge                                                              | VaultSpace Solution                                                   |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Sensitive documents scattered across email, Dropbox, and shared drives | Centralized, secure data rooms with granular access control           |
+| No visibility into who viewed what, when, or for how long              | Per-page analytics, activity heatmaps, and comprehensive audit trails |
+| Expensive per-seat pricing from legacy VDR vendors                     | Open-source, self-hosted — pay only for your Azure infrastructure     |
+| Vendor lock-in with no data portability                                | Your data, your servers, your rules — full export at any time         |
+| Static file sharing with no collaboration tools                        | Built-in Q&A, checklists, calendar, messaging, and e-signatures       |
 
 ---
 
@@ -277,15 +277,15 @@ VaultSpace is released under the **GNU Affero General Public License v3 (AGPL-3.
 
 ## By the Numbers
 
-| Metric | Value |
-|--------|-------|
-| Database Models | 38 |
-| API Endpoints | 90+ |
-| Previewable File Types | 35+ |
-| Document Categories | 14 |
-| Event Types Tracked | 50+ |
-| Unit Tests | 226 |
-| Room Templates | 4 built-in |
+| Metric                 | Value          |
+| ---------------------- | -------------- |
+| Database Models        | 38             |
+| API Endpoints          | 90+            |
+| Previewable File Types | 35+            |
+| Document Categories    | 14             |
+| Event Types Tracked    | 50+            |
+| Unit Tests             | 226            |
+| Room Templates         | 4 built-in     |
 | Notification Templates | 6 customizable |
 
 ---

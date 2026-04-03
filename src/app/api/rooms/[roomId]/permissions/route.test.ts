@@ -33,7 +33,9 @@ describe('GET /api/rooms/:roomId/permissions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 500 for unauthenticated requests', async () => {
@@ -112,7 +114,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('returns 403 for non-admin users', async () => {
-    mockRequireAuth.mockResolvedValue(mockViewerSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockViewerSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const request = new NextRequest('http://localhost/api/rooms/room-1/permissions', {
       method: 'POST',
@@ -129,7 +133,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('returns 400 for invalid grantee type', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const request = new NextRequest('http://localhost/api/rooms/room-1/permissions', {
       method: 'POST',
@@ -148,7 +154,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('returns 400 for invalid permission level', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const request = new NextRequest('http://localhost/api/rooms/room-1/permissions', {
       method: 'POST',
@@ -167,7 +175,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('returns 400 when USER grantee has no userId or email', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const request = new NextRequest('http://localhost/api/rooms/room-1/permissions', {
       method: 'POST',
@@ -183,7 +193,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('returns 400 when GROUP grantee has no groupId', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const request = new NextRequest('http://localhost/api/rooms/room-1/permissions', {
       method: 'POST',
@@ -199,7 +211,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('creates new permission successfully', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const newPermission = {
       id: 'perm-new',
@@ -239,7 +253,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('updates existing permission instead of creating duplicate', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const existingPermission = {
       id: 'perm-existing',
@@ -284,7 +300,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('creates permission with expiration date', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
 
@@ -325,7 +343,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('creates document-level permission', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const newPermission = {
       id: 'perm-new',
@@ -369,7 +389,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('looks up user by email when userId not provided', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     const newPermission = {
       id: 'perm-new',
@@ -407,7 +429,9 @@ describe('POST /api/rooms/:roomId/permissions', () => {
   });
 
   it('returns 404 when user email not found', async () => {
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {

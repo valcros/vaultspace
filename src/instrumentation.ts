@@ -10,9 +10,8 @@ export async function register() {
   if (process.env['NEXT_RUNTIME'] === 'nodejs') {
     const { enforceDeploymentMode, validateConfig } = await import('@/lib/azure-guard');
     const { getDeploymentMode } = await import('@/lib/deployment-mode');
-    const { resolveCapabilities, getDegradedCapabilities } = await import(
-      '@/lib/deployment-capabilities'
-    );
+    const { resolveCapabilities, getDegradedCapabilities } =
+      await import('@/lib/deployment-capabilities');
 
     const mode = getDeploymentMode();
 

@@ -122,9 +122,8 @@ describe('deployment-capabilities', () => {
     it('throws CapabilityUnavailableError when capability is unavailable', async () => {
       delete process.env['REDIS_URL'];
 
-      const { requireCapability, CapabilityUnavailableError } = await import(
-        './deployment-capabilities'
-      );
+      const { requireCapability, CapabilityUnavailableError } =
+        await import('./deployment-capabilities');
 
       expect(() => requireCapability('canQueueJobs')).toThrow(CapabilityUnavailableError);
     });

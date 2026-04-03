@@ -53,7 +53,9 @@ describe('POST /api/users/invite', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
     process.env['APP_URL'] = 'https://example.com';
   });
 
@@ -249,7 +251,9 @@ describe('GET /api/users/invite', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 500 for unauthenticated requests', async () => {

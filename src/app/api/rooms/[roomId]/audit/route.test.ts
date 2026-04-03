@@ -33,7 +33,9 @@ describe('GET /api/rooms/:roomId/audit', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 500 for unauthenticated requests', async () => {
@@ -190,7 +192,9 @@ describe('GET /api/rooms/:roomId/audit', () => {
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
 
-    const request = new NextRequest('http://localhost/api/rooms/room-1/audit?eventType=DOCUMENT_DOWNLOADED');
+    const request = new NextRequest(
+      'http://localhost/api/rooms/room-1/audit?eventType=DOCUMENT_DOWNLOADED'
+    );
     const context = { params: Promise.resolve({ roomId: 'room-1' }) };
 
     const response = await GET(request, context);

@@ -15,6 +15,7 @@ VaultSpace is an open-source, self-hosted secure Virtual Data Room (VDR) platfor
 VaultSpace supports two deployment modes controlled by `DEPLOYMENT_MODE` environment variable:
 
 ### Azure Mode (default)
+
 - **Runtime:** Azure Container Apps or AKS
 - **Database:** Azure PostgreSQL
 - **Storage:** Azure Blob Storage
@@ -24,6 +25,7 @@ VaultSpace supports two deployment modes controlled by `DEPLOYMENT_MODE` environ
 Missing Azure configuration causes startup failure with clear error messages.
 
 ### Standalone Mode
+
 Set `DEPLOYMENT_MODE=standalone` to enable self-hosted deployment:
 
 - **Database:** Any PostgreSQL 15+ (Azure, AWS RDS, self-hosted)

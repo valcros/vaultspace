@@ -2,7 +2,7 @@
 
 **Secure Virtual Data Room Platform**
 
-*Open-source, self-hosted document sharing for M&A, fundraising, board governance, and compliance.*
+_Open-source, self-hosted document sharing for M&A, fundraising, board governance, and compliance._
 
 ---
 
@@ -18,15 +18,15 @@ VaultSpace is an enterprise-grade Virtual Data Room you deploy on your own Azure
 
 ## Key Capabilities
 
-| Document Management | Security & Access | Collaboration |
-|---------------------|-------------------|---------------|
-| 35+ previewable file formats | Two-factor authentication (TOTP) | Q&A / Feedback boards |
-| Version control with rollback | Dynamic watermarks (per-viewer) | Due diligence checklists |
-| 14 structured categories | Virus scanning (ClamAV) | Event calendar |
-| Full-text content search | IP address allowlists | Private messaging |
-| Thumbnails & grid view | NDA acceptance gates | E-signature requests |
-| Bulk operations | Time-limited sessions | Document linking |
-| Document expiry & archival | Signed URLs (5-min expiry) | Priority & status tracking |
+| Document Management           | Security & Access                | Collaboration              |
+| ----------------------------- | -------------------------------- | -------------------------- |
+| 35+ previewable file formats  | Two-factor authentication (TOTP) | Q&A / Feedback boards      |
+| Version control with rollback | Dynamic watermarks (per-viewer)  | Due diligence checklists   |
+| 14 structured categories      | Virus scanning (ClamAV)          | Event calendar             |
+| Full-text content search      | IP address allowlists            | Private messaging          |
+| Thumbnails & grid view        | NDA acceptance gates             | E-signature requests       |
+| Bulk operations               | Time-limited sessions            | Document linking           |
+| Document expiry & archival    | Signed URLs (5-min expiry)       | Priority & status tracking |
 
 ---
 
@@ -42,14 +42,14 @@ VaultSpace is an enterprise-grade Virtual Data Room you deploy on your own Azure
 
 ## Share Links
 
-| Feature | Description |
-|---------|-------------|
-| Scoped access | Share entire room, folder, or single document |
-| Permission levels | View-only or view-and-download |
-| Password protection | Optional bcrypt-hashed passwords |
-| Email verification | Restrict to specific email addresses |
-| Link expiry | Automatic expiration dates |
-| Access requests | Non-members request access; admins approve with one click |
+| Feature             | Description                                               |
+| ------------------- | --------------------------------------------------------- |
+| Scoped access       | Share entire room, folder, or single document             |
+| Permission levels   | View-only or view-and-download                            |
+| Password protection | Optional bcrypt-hashed passwords                          |
+| Email verification  | Restrict to specific email addresses                      |
+| Link expiry         | Automatic expiration dates                                |
+| Access requests     | Non-members request access; admins approve with one click |
 
 ---
 
@@ -66,29 +66,29 @@ VaultSpace is an enterprise-grade Virtual Data Room you deploy on your own Azure
 
 ## By the Numbers
 
-| 38 | 90+ | 35+ | 50+ | 226 |
-|:--:|:---:|:---:|:---:|:---:|
+|       38        |      90+      |     35+      |     50+     |    226     |
+| :-------------: | :-----------: | :----------: | :---------: | :--------: |
 | Database Models | API Endpoints | File Formats | Event Types | Unit Tests |
 
 ---
 
 ## Technical Stack
 
-| Component | Technology |
-|-----------|------------|
-| Frontend | Next.js 14+, React 18+, TypeScript, TailwindCSS |
-| Backend | Next.js API Routes, Prisma ORM |
-| Database | PostgreSQL 15+ |
-| Queue | Redis + BullMQ |
-| Preview | Gotenberg (LibreOffice + Chromium) |
-| Deployment | Azure Container Apps, Docker |
+| Component  | Technology                                      |
+| ---------- | ----------------------------------------------- |
+| Frontend   | Next.js 14+, React 18+, TypeScript, TailwindCSS |
+| Backend    | Next.js API Routes, Prisma ORM                  |
+| Database   | PostgreSQL 15+                                  |
+| Queue      | Redis + BullMQ                                  |
+| Preview    | Gotenberg (LibreOffice + Chromium)              |
+| Deployment | Azure Container Apps, Docker                    |
 
 ---
 
 ## Ideal For
 
-| M&A Teams | Startups | Law Firms | Boards | Compliance |
-|:---------:|:--------:|:---------:|:------:|:----------:|
+|       M&A Teams        |      Startups      |        Law Firms        |      Boards       |     Compliance      |
+| :--------------------: | :----------------: | :---------------------: | :---------------: | :-----------------: |
 | Due diligence packages | Investor materials | Discovery & client docs | Meeting materials | Audit documentation |
 
 ---
