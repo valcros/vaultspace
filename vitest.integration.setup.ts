@@ -1,16 +1,22 @@
 /**
  * Vitest Integration Test Setup
  *
- * AZURE-ONLY: Tests must run against Azure-hosted services.
- * Local execution is blocked at the config level.
+ * In Azure mode: Tests must run against Azure-hosted services.
+ * In Standalone mode: Tests can run against localhost for local development.
+ *
+ * Set DEPLOYMENT_MODE=standalone to enable local testing.
  */
 
 import { PrismaClient } from '@prisma/client';
 import { beforeAll, afterAll, beforeEach } from 'vitest';
 import { guardIntegrationTests } from '@/lib/azure-guard';
+import { getDeploymentMode } from '@/lib/deployment-mode';
 
-// Enforce Azure-only for integration tests
+// Enforce deployment mode restrictions for integration tests
 guardIntegrationTests();
+
+const mode = getDeploymentMode();
+console.log(`[Integration Setup] Running in ${mode} mode`);
 
 const prisma = new PrismaClient();
 

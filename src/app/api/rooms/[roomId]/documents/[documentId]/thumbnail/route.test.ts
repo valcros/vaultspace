@@ -84,6 +84,11 @@ vi.mock('@/lib/db', () => ({
     }),
 }));
 
+// Mock deployment capabilities - assume all capabilities available in tests
+vi.mock('@/lib/deployment-capabilities', () => ({
+  hasCapability: vi.fn().mockReturnValue(true),
+}));
+
 import { GET } from './route';
 import { NextRequest } from 'next/server';
 

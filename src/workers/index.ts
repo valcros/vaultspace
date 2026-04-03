@@ -1,25 +1,46 @@
 /**
  * VaultSpace Worker Entry Point
  *
- * AZURE-ONLY: Workers must run in Azure infrastructure.
- *
  * Bootstraps background workers based on WORKER_TYPE environment variable.
  * Worker types: general, preview, scan, report
+ *
+ * Workers require Redis in both Azure and Standalone modes.
+ * The BullMQ job queue is the backbone of all async processing.
  */
 
-import { enforceAzureOnly, validateAzureConfig } from '@/lib/azure-guard';
+import { enforceDeploymentMode, validateConfig } from '@/lib/azure-guard';
+import { getDeploymentMode } from '@/lib/deployment-mode';
 
-// Block local execution - must be first
-enforceAzureOnly();
+const mode = getDeploymentMode();
 
-// Validate Azure configuration - fail fast if not properly configured
-const { valid, errors } = validateAzureConfig();
+// Enforce deployment mode restrictions
+enforceDeploymentMode();
+
+// Validate configuration - workers require Redis regardless of mode
+const { valid, errors, warnings } = validateConfig();
 if (!valid) {
-  console.error('[VaultSpace Worker] ❌ STARTUP BLOCKED - Missing required Azure configuration:');
+  console.error(
+    `[VaultSpace Worker] STARTUP BLOCKED - Missing required configuration for ${mode} mode:`
+  );
   errors.forEach((err) => console.error(`  - ${err}`));
-  console.error('\nVaultSpace workers require properly configured Azure services.');
-  console.error('See DEPLOYMENT.md for Azure configuration requirements.\n');
+  console.error('\nSee DEPLOYMENT.md for configuration requirements.\n');
   process.exit(1);
+}
+
+// Workers always require Redis - check explicitly
+if (!process.env['REDIS_URL']) {
+  console.error('[VaultSpace Worker] STARTUP BLOCKED - Redis is required for workers.');
+  console.error(
+    '  Workers use BullMQ for job processing, which requires Redis in both deployment modes.'
+  );
+  console.error('  Set REDIS_URL to your Redis instance (Azure Cache for Redis or any Redis 6+).');
+  process.exit(1);
+}
+
+// Log warnings
+if (warnings.length > 0) {
+  console.warn(`[VaultSpace Worker] Configuration warnings:`);
+  warnings.forEach((warn) => console.warn(`  - ${warn}`));
 }
 
 import { Worker, type ConnectionOptions, type Job } from 'bullmq';
@@ -41,18 +62,13 @@ type WorkerType = 'general' | 'preview' | 'scan' | 'report';
 
 const workerType = (process.env['WORKER_TYPE'] ?? 'general') as WorkerType;
 
-console.log(`[VaultSpace Worker] Starting ${workerType} worker...`);
+console.log(`[VaultSpace Worker] Starting ${workerType} worker in ${mode} mode...`);
 console.log(`[VaultSpace Worker] Environment: ${process.env['NODE_ENV'] ?? 'development'}`);
 
 // Build Redis connection options
 function getConnectionOptions(): ConnectionOptions {
-  const redisUrl = process.env['REDIS_URL'];
-
-  if (!redisUrl) {
-    console.error('[VaultSpace Worker] ❌ REDIS_URL is required for workers');
-    console.error('Workers cannot run without Azure Cache for Redis.');
-    process.exit(1);
-  }
+  // REDIS_URL is guaranteed to exist - checked at startup
+  const redisUrl = process.env['REDIS_URL']!;
 
   const url = new URL(redisUrl);
   const useTls = url.protocol === 'rediss:';

@@ -10,6 +10,7 @@ import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { z } from 'zod';
+import { hasCapability } from '@/lib/deployment-capabilities';
 
 const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Send reset email via job queue
+    // Send reset email via job queue (fallback to sync if async unavailable)
     const providers = getProviders();
     const orgName = user.organizations[0]?.organization.name || 'VaultSpace';
     const baseUrl = process.env['NEXTAUTH_URL'] || process.env['APP_URL'];
@@ -66,13 +67,33 @@ export async function POST(request: NextRequest) {
     }
     const resetUrl = `${baseUrl}/auth/reset-password?token=${resetToken}`;
 
-    await providers.job.addJob('normal', 'send-password-reset', {
-      to: user.email,
-      userName: user.firstName || 'User',
-      organizationName: orgName,
-      resetUrl,
-      expiresIn: '1 hour',
-    });
+    // Try async email first (via job queue), fall back to sync if unavailable
+    if (hasCapability('canSendAsyncEmail')) {
+      await providers.job.addJob('normal', 'send-password-reset', {
+        to: user.email,
+        userName: user.firstName || 'User',
+        organizationName: orgName,
+        resetUrl,
+        expiresIn: '1 hour',
+      });
+    } else if (hasCapability('canSendSyncEmail')) {
+      // Fallback: send email synchronously (may timeout on slow SMTP)
+      try {
+        const textBody = `Hi ${user.firstName || 'User'},\n\nClick here to reset your password: ${resetUrl}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, please ignore this email.`;
+        await providers.email.sendEmail({
+          to: user.email,
+          subject: `Reset your ${orgName} password`,
+          html: `<p>Hi ${user.firstName || 'User'},</p><p>Click <a href="${resetUrl}">here</a> to reset your password.</p><p>This link expires in 1 hour.</p><p>If you didn't request this, please ignore this email.</p>`,
+          text: textBody,
+        });
+      } catch (emailErr) {
+        console.error('[ForgotPasswordAPI] Sync email failed:', emailErr);
+        // Don't return error to prevent email enumeration
+      }
+    } else {
+      // No email capability available - log warning but don't fail
+      console.warn('[ForgotPasswordAPI] Email not configured - password reset email not sent');
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

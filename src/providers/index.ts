@@ -25,6 +25,7 @@ import { S3StorageProvider } from './storage/S3StorageProvider';
 import { createOCRProvider } from './ocr';
 import { createScanProvider } from './scan';
 import { createPreviewProvider } from './preview';
+import { isAzureMode } from '../lib/deployment-mode';
 
 // Singleton instance
 let providersInstance: Providers | null = null;
@@ -61,6 +62,20 @@ function createStorageProvider(): StorageProvider {
 
   switch (provider) {
     case 'local': {
+      // Block local storage in Azure mode
+      if (isAzureMode()) {
+        throw new Error(
+          'Local filesystem storage is not permitted in Azure mode. ' +
+            'Use STORAGE_PROVIDER=azure for Azure Blob Storage, or ' +
+            'set DEPLOYMENT_MODE=standalone for self-hosted operation.'
+        );
+      }
+
+      console.log(
+        '[StorageProvider] Using local filesystem storage. ' +
+          'Note: Single-node only, manual backup required, not suitable for HA deployments.'
+      );
+
       return new LocalStorageProvider({
         basePath: process.env['STORAGE_LOCAL_PATH'] ?? './storage',
         signedUrlSecret: process.env['SESSION_SECRET'] ?? 'dev-secret',

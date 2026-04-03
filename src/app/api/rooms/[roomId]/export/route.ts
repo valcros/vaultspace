@@ -11,6 +11,10 @@ import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { QUEUE_NAMES } from '@/workers/types';
+import {
+  hasCapability,
+  createCapabilityUnavailableResponse,
+} from '@/lib/deployment-capabilities';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -25,6 +29,11 @@ interface RouteContext {
  */
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
+    // Check if bulk export capability is available (requires Redis)
+    if (!hasCapability('canRunBulkExport')) {
+      return createCapabilityUnavailableResponse('canRunBulkExport', 'Room export');
+    }
+
     const session = await requireAuth();
     const { roomId } = await context.params;
 
