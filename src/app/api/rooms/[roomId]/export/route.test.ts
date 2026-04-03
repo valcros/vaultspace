@@ -49,7 +49,9 @@ describe('POST /api/rooms/:roomId/export', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
     mockHasCapability.mockReturnValue(true);
     mockGetProviders.mockReturnValue({
       job: {
@@ -206,7 +208,9 @@ describe('GET /api/rooms/:roomId/export', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
     mockGetProviders.mockReturnValue({
       job: {
         getJobStatus: vi.fn().mockResolvedValue({ state: 'completed' }),

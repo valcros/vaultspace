@@ -193,7 +193,9 @@ describe('azure-guard', () => {
         const { validateConfig } = await import('./azure-guard');
         const { warnings } = validateConfig();
 
-        expect(warnings.some((w) => w.includes('Local filesystem') || w.includes('single-node'))).toBe(true);
+        expect(
+          warnings.some((w) => w.includes('Local filesystem') || w.includes('single-node'))
+        ).toBe(true);
       });
     });
   });

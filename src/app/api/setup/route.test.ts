@@ -375,7 +375,9 @@ describe('POST /api/setup', () => {
     let capturedSessionData: Record<string, unknown> | undefined;
     mockDbSession.create.mockImplementation((args: { data: Record<string, unknown> }) => {
       capturedSessionData = args.data;
-      return Promise.resolve({ id: 'session-1' }) as unknown as ReturnType<typeof mockDbSession.create>;
+      return Promise.resolve({ id: 'session-1' }) as unknown as ReturnType<
+        typeof mockDbSession.create
+      >;
     });
 
     const request = new NextRequest('http://localhost/api/setup', {

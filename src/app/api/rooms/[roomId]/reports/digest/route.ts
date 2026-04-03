@@ -11,10 +11,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
-import {
-  hasCapability,
-  createCapabilityUnavailableResponse,
-} from '@/lib/deployment-capabilities';
+import { hasCapability, createCapabilityUnavailableResponse } from '@/lib/deployment-capabilities';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';

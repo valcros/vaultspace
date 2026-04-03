@@ -11,10 +11,7 @@ import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { QUEUE_NAMES } from '@/workers/types';
-import {
-  hasCapability,
-  createCapabilityUnavailableResponse,
-} from '@/lib/deployment-capabilities';
+import { hasCapability, createCapabilityUnavailableResponse } from '@/lib/deployment-capabilities';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';

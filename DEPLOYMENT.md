@@ -126,30 +126,30 @@ Without this variable, VaultSpace defaults to Azure mode and enforces Azure serv
 
 ### Infrastructure Requirements
 
-| Component | Required | Options | Notes |
-|-----------|----------|---------|-------|
-| PostgreSQL 15+ | Yes | Any provider | Azure, AWS RDS, self-hosted |
-| Redis | Recommended | Any provider | Required for async features (jobs, previews) |
-| S3-compatible storage | Option A | MinIO, Backblaze B2, DO Spaces, AWS S3 | Full production support |
-| Local filesystem | Option B | Docker volume, NFS | Single-node only, manual backups |
-| Gotenberg | Recommended | Container sidecar | Required for Office document previews |
-| ClamAV | Optional | Container sidecar | Uploads proceed without scanning if unavailable |
-| SMTP | Yes | Any provider | Required for notifications |
+| Component             | Required    | Options                                | Notes                                           |
+| --------------------- | ----------- | -------------------------------------- | ----------------------------------------------- |
+| PostgreSQL 15+        | Yes         | Any provider                           | Azure, AWS RDS, self-hosted                     |
+| Redis                 | Recommended | Any provider                           | Required for async features (jobs, previews)    |
+| S3-compatible storage | Option A    | MinIO, Backblaze B2, DO Spaces, AWS S3 | Full production support                         |
+| Local filesystem      | Option B    | Docker volume, NFS                     | Single-node only, manual backups                |
+| Gotenberg             | Recommended | Container sidecar                      | Required for Office document previews           |
+| ClamAV                | Optional    | Container sidecar                      | Uploads proceed without scanning if unavailable |
+| SMTP                  | Yes         | Any provider                           | Required for notifications                      |
 
 ### Capabilities Matrix
 
 Standalone mode uses a capabilities system to gracefully handle missing services:
 
-| Capability | Requires | Behavior When Unavailable |
-|------------|----------|---------------------------|
-| `canQueueJobs` | Redis | Async operations return 503 |
-| `canGenerateAsyncPreviews` | Redis + Gotenberg | Preview endpoint returns 503 |
-| `canGenerateSyncPreviews` | Sharp (bundled) | Always available for images |
-| `canRunVirusScanning` | Redis + ClamAV | Uploads proceed, documents marked unscanned |
-| `canSendAsyncEmail` | Redis | Falls back to sync email |
-| `canSendSyncEmail` | SMTP | Always available if SMTP configured |
-| `canRunScheduledReports` | Redis | Scheduled reports return 503 |
-| `canRunBulkExport` | Redis | Bulk export returns 503 |
+| Capability                 | Requires          | Behavior When Unavailable                   |
+| -------------------------- | ----------------- | ------------------------------------------- |
+| `canQueueJobs`             | Redis             | Async operations return 503                 |
+| `canGenerateAsyncPreviews` | Redis + Gotenberg | Preview endpoint returns 503                |
+| `canGenerateSyncPreviews`  | Sharp (bundled)   | Always available for images                 |
+| `canRunVirusScanning`      | Redis + ClamAV    | Uploads proceed, documents marked unscanned |
+| `canSendAsyncEmail`        | Redis             | Falls back to sync email                    |
+| `canSendSyncEmail`         | SMTP              | Always available if SMTP configured         |
+| `canRunScheduledReports`   | Redis             | Scheduled reports return 503                |
+| `canRunBulkExport`         | Redis             | Bulk export returns 503                     |
 
 ### Health Check Response
 
@@ -226,6 +226,7 @@ SMTP_PORT=1025
 ```
 
 **Limitations without Redis:**
+
 - Preview generation unavailable (returns 503)
 - Virus scanning unavailable (uploads proceed unscanned)
 - Bulk exports unavailable (returns 503)
@@ -235,12 +236,14 @@ SMTP_PORT=1025
 ### Security Considerations
 
 **Virus scanning unavailable:**
+
 - Documents are stored with `scanned: false` in the database
 - Admin warning displayed in Settings > Security page
 - One-time notification to tenant owner when creating rooms
 - Startup log: `[Security] Virus scanning unavailable - uploads will not be scanned`
 
 **Local filesystem storage:**
+
 - Single-node only (no horizontal scaling)
 - Manual backup responsibility
 - Not suitable for HA deployments
@@ -430,17 +433,17 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 #### Redis
 
-| Variable    | Required | Default | Example                                                 | Description                                                                              |
-| ----------- | -------- | ------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `REDIS_URL` | Conditional | —    | `rediss://:key@yourserver.redis.cache.windows.net:6380` | Redis connection string. Required in Azure mode. Optional in standalone mode (async features disabled without Redis). Format: `rediss://[:password@]host[:port][/db]` |
-| `REDIS_TLS` | No       | `false` | `true`                                                  | Enable TLS for Redis connection. Required if using Azure Cache for Redis with SSL.       |
+| Variable    | Required    | Default | Example                                                 | Description                                                                                                                                                           |
+| ----------- | ----------- | ------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REDIS_URL` | Conditional | —       | `rediss://:key@yourserver.redis.cache.windows.net:6380` | Redis connection string. Required in Azure mode. Optional in standalone mode (async features disabled without Redis). Format: `rediss://[:password@]host[:port][/db]` |
+| `REDIS_TLS` | No          | `false` | `true`                                                  | Enable TLS for Redis connection. Required if using Azure Cache for Redis with SSL.                                                                                    |
 
 #### Storage
 
 | Variable                     | Required    | Default | Example                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---------------------------- | ----------- | ------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| `STORAGE_PROVIDER`           | Yes         | `azure` | `azure`, `s3`, `local`                           | Storage backend. `azure` for Azure Blob Storage, `s3` for S3-compatible (AWS, MinIO, Backblaze), `local` for filesystem (standalone mode only).                                                                                                                                                                                                                                                                                                                                              |     |
-| `STORAGE_LOCAL_PATH`         | Conditional | —       | `./storage`                                      | Filesystem path for document storage. Required for `STORAGE_PROVIDER=local`. Only available in standalone mode.                                                                                                                                                                                                                                                                                                                                                                              |
+| `STORAGE_PROVIDER`           | Yes         | `azure` | `azure`, `s3`, `local`                           | Storage backend. `azure` for Azure Blob Storage, `s3` for S3-compatible (AWS, MinIO, Backblaze), `local` for filesystem (standalone mode only).                                                                                                                                                                                                                                                                                                                                               |     |
+| `STORAGE_LOCAL_PATH`         | Conditional | —       | `./storage`                                      | Filesystem path for document storage. Required for `STORAGE_PROVIDER=local`. Only available in standalone mode.                                                                                                                                                                                                                                                                                                                                                                               |
 | `STORAGE_BUCKET`             | Conditional | —       | `vaultspace-prod`                                | Bucket/container name. Required for `s3` or `azure`.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `STORAGE_REGION`             | Conditional | —       | `us-east-1`                                      | AWS region. Required for `STORAGE_PROVIDER=s3`.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `STORAGE_ENDPOINT`           | No          | —       | `https://minio.example.com`                      | Custom S3-compatible endpoint. Use for MinIO, Backblaze B2, DigitalOcean Spaces, etc.                                                                                                                                                                                                                                                                                                                                                                                                         |

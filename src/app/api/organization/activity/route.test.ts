@@ -33,7 +33,9 @@ describe('GET /api/organization/activity', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuth.mockResolvedValue(
+      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
+    );
   });
 
   it('returns 500 for unauthenticated requests', async () => {
@@ -119,7 +121,9 @@ describe('GET /api/organization/activity', () => {
   it('filters by eventType', async () => {
     mockWithOrgContext.mockResolvedValue({ events: [], total: 0 });
 
-    const request = new NextRequest('http://localhost/api/organization/activity?eventType=DOCUMENT_DOWNLOADED');
+    const request = new NextRequest(
+      'http://localhost/api/organization/activity?eventType=DOCUMENT_DOWNLOADED'
+    );
     const response = await GET(request);
     expect(response.status).toBe(200);
   });
