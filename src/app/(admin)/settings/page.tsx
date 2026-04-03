@@ -10,6 +10,7 @@ import {
   Shield,
   Webhook,
   Code2,
+  Keyboard,
   ChevronRight,
 } from 'lucide-react';
 
@@ -73,6 +74,13 @@ const settingsSections: SettingsSection[] = [
     description: 'REST API documentation and OpenAPI specification',
     icon: Code2,
     href: '/settings/api',
+  },
+  {
+    id: 'shortcuts',
+    title: 'Keyboard Shortcuts',
+    description: 'Learn keyboard shortcuts for faster navigation',
+    icon: Keyboard,
+    href: '/settings/shortcuts',
   },
 ];
 
