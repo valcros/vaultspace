@@ -1,0 +1,33 @@
+# .claudeignore - VaultSpace
+# Reduces token consumption by excluding noisy directories from Claude Code scanning
+
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Build artifacts
+dist/
+build/
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+
+# Logs
+*.log
+logs/
+
+# Lockfiles (large, not useful for context)
+package-lock.json
+
+# OS and IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Archive
+archive/
