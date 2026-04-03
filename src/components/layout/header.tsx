@@ -7,6 +7,7 @@ import { Menu, Bell, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/ui/avatar';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,7 +37,7 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-neutral-200 bg-white px-4 lg:px-6">
+    <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-neutral-200 bg-white px-4 dark:border-neutral-700 dark:bg-neutral-900 lg:px-6">
       {/* Mobile menu button */}
       {onMenuClick && (
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}>
@@ -63,6 +64,9 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
             <span className="sr-only">Search</span>
           </Button>
         )}
+
+        {/* Theme toggle */}
+        <ThemeToggle />
 
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">

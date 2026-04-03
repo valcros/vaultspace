@@ -6,16 +6,16 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { clsx } from 'clsx';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:focus-visible:ring-offset-neutral-900',
   {
     variants: {
       variant: {
         default: 'bg-primary-600 text-white shadow-sm hover:bg-primary-700 hover:shadow-md',
         destructive: 'bg-danger-500 text-white hover:bg-danger-600',
-        outline: 'border border-neutral-200 bg-white hover:bg-neutral-100 hover:text-neutral-900',
-        secondary: 'bg-neutral-100 text-neutral-900 hover:bg-neutral-200',
-        ghost: 'hover:bg-neutral-100 hover:text-neutral-900',
-        link: 'text-primary-600 underline-offset-4 hover:underline',
+        outline: 'border border-neutral-200 bg-white hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700',
+        secondary: 'bg-neutral-100 text-neutral-900 hover:bg-neutral-200 dark:bg-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-600',
+        ghost: 'hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100',
+        link: 'text-primary-600 underline-offset-4 hover:underline dark:text-primary-400',
       },
       size: {
         default: 'h-10 px-4 py-2',

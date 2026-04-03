@@ -55,18 +55,18 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
   return (
     <aside
       className={clsx(
-        'flex h-full flex-col border-r border-neutral-200 bg-white transition-all duration-300',
+        'flex h-full flex-col border-r border-neutral-200 bg-white transition-all duration-300 dark:border-neutral-700 dark:bg-neutral-900',
         collapsed ? 'w-16' : 'w-64'
       )}
     >
       {/* Logo */}
-      <div className="flex h-16 items-center justify-between border-b border-neutral-200 px-4">
+      <div className="flex h-16 items-center justify-between border-b border-neutral-200 px-4 dark:border-neutral-700">
         {!collapsed && (
           <Link href="/rooms" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
               V
             </div>
-            <span className="font-semibold text-neutral-900">VaultSpace</span>
+            <span className="font-semibold text-neutral-900 dark:text-neutral-50">VaultSpace</span>
           </Link>
         )}
         {collapsed && (
@@ -102,8 +102,8 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
               className={clsx(
                 'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-primary-50 text-primary-700'
-                  : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900',
+                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400'
+                  : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100',
                 collapsed && 'justify-center px-2'
               )}
               title={collapsed ? item.label : undefined}
@@ -138,14 +138,14 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
           <UserAvatar name={user.name} imageUrl={user.imageUrl} size="sm" />
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-neutral-900">{user.name}</p>
-              <p className="truncate text-xs text-neutral-500">{user.email}</p>
+              <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{user.name}</p>
+              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{user.email}</p>
             </div>
           )}
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-neutral-500 hover:text-neutral-900"
+            className="h-8 w-8 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
             title="Log out"
             aria-label="Log out"
             onClick={handleLogout}

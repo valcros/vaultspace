@@ -40,10 +40,10 @@ Implemented via two-tier architecture (see DOCUMENT_PREVIEW_PLAN.md):
 ## Low Priority
 
 - OnlyOffice integration for collaborative editing
-- Dark mode theme
-- Keyboard shortcuts documentation page
+- ~~Dark mode theme~~ ✅ Implemented (next-themes, ThemeProvider, theme toggle, core component dark: classes)
+- ~~Keyboard shortcuts documentation page~~ ✅ Implemented (/settings/shortcuts)
 
 ## Technical Debt
 
-- Update GitHub Actions to Node.js 24 (deprecation warning)
-- Azure CLI Python 3.14 compatibility (az ad sp create-for-rbac broken)
+- ~~Update GitHub Actions to Node.js 24 (deprecation warning)~~ ✅ Done (ci.yml, deploy-staging.yml, standalone-validation.yml)
+- Azure CLI Python 3.14 compatibility (az ad sp create-for-rbac broken) - Note: No az ad sp commands found in workflows
