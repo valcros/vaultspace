@@ -5,7 +5,8 @@
  * Used to gracefully degrade functionality when optional services are unavailable.
  */
 
-import { getDeploymentMode, isAzureMode } from './deployment-mode';
+// Note: Capabilities are determined by infrastructure availability, not deployment mode.
+// Both Azure and standalone modes use the same capability resolution logic.
 
 /**
  * Capabilities available in the current deployment.
@@ -81,15 +82,13 @@ function hasSmtp(): boolean {
  * Resolve capabilities based on current infrastructure configuration.
  */
 export function resolveCapabilities(): DeploymentCapabilities {
-  const mode = getDeploymentMode();
   const redis = hasRedis();
   const clamav = hasClamAV();
   const gotenberg = hasGotenberg();
   const smtp = hasSmtp();
 
-  // In Azure mode, Redis is always expected to be available
-  // In standalone mode, Redis is recommended but optional
-  const hasJobQueue = isAzureMode() ? redis : redis;
+  // Redis is required for job queue in both modes
+  const hasJobQueue = redis;
 
   return {
     // Core infrastructure
@@ -179,18 +178,30 @@ export function getCapabilityUnavailableReason(
       return redis ? null : 'Redis is not configured (REDIS_URL)';
 
     case 'canGenerateAsyncPreviews':
-      if (!redis) return 'Redis is not configured (REDIS_URL)';
-      if (!gotenberg) return 'Gotenberg is not configured (GOTENBERG_URL)';
+      if (!redis) {
+        return 'Redis is not configured (REDIS_URL)';
+      }
+      if (!gotenberg) {
+        return 'Gotenberg is not configured (GOTENBERG_URL)';
+      }
       return null;
 
     case 'canRunVirusScanning':
-      if (!redis) return 'Redis is not configured (REDIS_URL)';
-      if (!clamav) return 'ClamAV is not configured (CLAMAV_HOST)';
+      if (!redis) {
+        return 'Redis is not configured (REDIS_URL)';
+      }
+      if (!clamav) {
+        return 'ClamAV is not configured (CLAMAV_HOST)';
+      }
       return null;
 
     case 'canSendAsyncEmail':
-      if (!redis) return 'Redis is not configured (REDIS_URL)';
-      if (!smtp) return 'SMTP is not configured (SMTP_HOST)';
+      if (!redis) {
+        return 'Redis is not configured (REDIS_URL)';
+      }
+      if (!smtp) {
+        return 'SMTP is not configured (SMTP_HOST)';
+      }
       return null;
 
     case 'canSendSyncEmail':
