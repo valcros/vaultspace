@@ -59,6 +59,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -291,6 +292,12 @@ export default function RoomDetailPage() {
   const [newLinkExpiry, setNewLinkExpiry] = React.useState('');
   const [newLinkSessionLimit, setNewLinkSessionLimit] = React.useState('');
   const [isCreatingLink, setIsCreatingLink] = React.useState(false);
+
+  // Confirmation dialog states
+  const [deleteLinkTarget, setDeleteLinkTarget] = React.useState<ShareLink | null>(null);
+  const [isDeletingLink, setIsDeletingLink] = React.useState(false);
+  const [removeMemberTarget, setRemoveMemberTarget] = React.useState<Admin | null>(null);
+  const [isRemovingMember, setIsRemovingMember] = React.useState(false);
 
   // Tag editor states
   const [editingTagsDoc, setEditingTagsDoc] = React.useState<Document | null>(null);
@@ -1172,34 +1179,37 @@ export default function RoomDetailPage() {
   }, []);
 
   // Handle delete link
-  const handleDeleteLink = React.useCallback(
-    async (link: ShareLink) => {
-      if (!confirm(`Are you sure you want to delete the link "${link.name}"?`)) {
-        return;
-      }
+  const handleDeleteLinkClick = React.useCallback((link: ShareLink) => {
+    setDeleteLinkTarget(link);
+  }, []);
 
-      try {
-        const response = await fetch(`/api/rooms/${roomId}/links/${link.id}`, {
-          method: 'DELETE',
+  const handleDeleteLinkConfirm = React.useCallback(async () => {
+    if (!deleteLinkTarget) return;
+
+    setIsDeletingLink(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/links/${deleteLinkTarget.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchLinks();
+        setDeleteLinkTarget(null);
+      } else {
+        const error = await response.json();
+        toast({
+          title: 'Error',
+          description: error.error || 'Failed to delete link',
+          variant: 'destructive',
         });
-
-        if (response.ok) {
-          fetchLinks();
-        } else {
-          const error = await response.json();
-          toast({
-            title: 'Error',
-            description: error.error || 'Failed to delete link',
-            variant: 'destructive',
-          });
-        }
-      } catch (error) {
-        console.error('Delete link error:', error);
-        toast({ title: 'Error', description: 'Failed to delete link', variant: 'destructive' });
       }
-    },
-    [roomId, fetchLinks]
-  );
+    } catch (error) {
+      console.error('Delete link error:', error);
+      toast({ title: 'Error', description: 'Failed to delete link', variant: 'destructive' });
+    } finally {
+      setIsDeletingLink(false);
+    }
+  }, [roomId, fetchLinks, deleteLinkTarget]);
 
   // Handle add member (room admin)
   const handleAddMember = React.useCallback(async () => {
@@ -1240,38 +1250,37 @@ export default function RoomDetailPage() {
   }, [roomId, newMemberEmail, fetchAdmins]);
 
   // Handle remove member
-  const handleRemoveMember = React.useCallback(
-    async (admin: Admin) => {
-      if (
-        !confirm(
-          `Are you sure you want to remove ${admin.firstName} ${admin.lastName} as a room admin?`
-        )
-      ) {
-        return;
-      }
+  const handleRemoveMemberClick = React.useCallback((admin: Admin) => {
+    setRemoveMemberTarget(admin);
+  }, []);
 
-      try {
-        const response = await fetch(`/api/rooms/${roomId}/admins/${admin.id}`, {
-          method: 'DELETE',
+  const handleRemoveMemberConfirm = React.useCallback(async () => {
+    if (!removeMemberTarget) return;
+
+    setIsRemovingMember(true);
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/admins/${removeMemberTarget.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchAdmins();
+        setRemoveMemberTarget(null);
+      } else {
+        const error = await response.json();
+        toast({
+          title: 'Error',
+          description: error.error || 'Failed to remove admin',
+          variant: 'destructive',
         });
-
-        if (response.ok) {
-          fetchAdmins();
-        } else {
-          const error = await response.json();
-          toast({
-            title: 'Error',
-            description: error.error || 'Failed to remove admin',
-            variant: 'destructive',
-          });
-        }
-      } catch (error) {
-        console.error('Remove member error:', error);
-        toast({ title: 'Error', description: 'Failed to remove admin', variant: 'destructive' });
       }
-    },
-    [roomId, fetchAdmins]
-  );
+    } catch (error) {
+      console.error('Remove member error:', error);
+      toast({ title: 'Error', description: 'Failed to remove admin', variant: 'destructive' });
+    } finally {
+      setIsRemovingMember(false);
+    }
+  }, [roomId, fetchAdmins, removeMemberTarget]);
 
   const handleDuplicateRoom = React.useCallback(async () => {
     try {
@@ -2088,7 +2097,7 @@ export default function RoomDetailPage() {
                             <DropdownMenuContent align="end">
                               {admin.scope === 'room' && (
                                 <DropdownMenuItem
-                                  onClick={() => handleRemoveMember(admin)}
+                                  onClick={() => handleRemoveMemberClick(admin)}
                                   className="text-danger-600"
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
@@ -2307,7 +2316,7 @@ export default function RoomDetailPage() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              onClick={() => handleDeleteLink(link)}
+                              onClick={() => handleDeleteLinkClick(link)}
                               className="text-danger-600"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
@@ -3233,6 +3242,28 @@ export default function RoomDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteLinkTarget !== null}
+        onOpenChange={(open) => !open && setDeleteLinkTarget(null)}
+        title="Delete Share Link"
+        description={`Are you sure you want to delete the link "${deleteLinkTarget?.name}"? External users will no longer be able to access this room via this link.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteLinkConfirm}
+        loading={isDeletingLink}
+      />
+
+      <ConfirmDialog
+        open={removeMemberTarget !== null}
+        onOpenChange={(open) => !open && setRemoveMemberTarget(null)}
+        title="Remove Room Admin"
+        description={`Are you sure you want to remove ${removeMemberTarget?.firstName} ${removeMemberTarget?.lastName} as a room admin? They will lose access to manage this room.`}
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={handleRemoveMemberConfirm}
+        loading={isRemovingMember}
+      />
     </>
   );
 }
