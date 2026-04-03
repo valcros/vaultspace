@@ -138,8 +138,12 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
           <UserAvatar name={user.name} imageUrl={user.imageUrl} size="sm" />
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{user.name}</p>
-              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{user.email}</p>
+              <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                {user.name}
+              </p>
+              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                {user.email}
+              </p>
             </div>
           )}
           <Button
