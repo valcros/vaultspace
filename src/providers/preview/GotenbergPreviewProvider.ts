@@ -1042,7 +1042,9 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
       .toBuffer();
 
     return {
-      pages: [{ pageNumber: 1, data: placeholderPng, width: 800, height: 600, mimeType: 'image/png' }],
+      pages: [
+        { pageNumber: 1, data: placeholderPng, width: 800, height: 600, mimeType: 'image/png' },
+      ],
       totalPages: 1,
       mimeType: 'image/png',
     };

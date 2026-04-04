@@ -34,7 +34,8 @@ export function AnnouncementsWidget({ announcements, loading }: AnnouncementsWid
             key={announcement.id}
             className={clsx(
               'rounded-lg border-l-4 border-primary-500 bg-primary-50 p-3 dark:bg-primary-900/20',
-              index > 0 && 'border-l-neutral-300 bg-neutral-50 dark:border-l-neutral-600 dark:bg-neutral-700/30'
+              index > 0 &&
+                'border-l-neutral-300 bg-neutral-50 dark:border-l-neutral-600 dark:bg-neutral-700/30'
             )}
           >
             <p className="text-sm text-neutral-700 dark:text-neutral-300">
@@ -43,8 +44,12 @@ export function AnnouncementsWidget({ announcements, loading }: AnnouncementsWid
                 : announcement.content}
             </p>
             <div className="mt-2 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
-              <span>{announcement.authorName} - {announcement.roomName}</span>
-              <span>{formatDistanceToNow(new Date(announcement.createdAt), { addSuffix: true })}</span>
+              <span>
+                {announcement.authorName} - {announcement.roomName}
+              </span>
+              <span>
+                {formatDistanceToNow(new Date(announcement.createdAt), { addSuffix: true })}
+              </span>
             </div>
           </div>
         ))}
@@ -73,7 +78,9 @@ export function FeaturedAnnouncement({ announcement }: { announcement: Announcem
         </div>
         <p className="text-sm text-neutral-700 dark:text-neutral-300">{announcement.content}</p>
         <div className="mt-3 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
-          <span>From {announcement.authorName} in {announcement.roomName}</span>
+          <span>
+            From {announcement.authorName} in {announcement.roomName}
+          </span>
           <span>{formatDistanceToNow(new Date(announcement.createdAt), { addSuffix: true })}</span>
         </div>
       </div>
