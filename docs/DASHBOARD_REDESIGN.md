@@ -30,15 +30,15 @@ Based on analysis of leading VDR platforms (Datasite, Intralinks, Firmex, ShareV
 
 ### Problems with Current Dashboard
 
-| Issue | Impact |
-|-------|--------|
+| Issue                                           | Impact                                                  |
+| ----------------------------------------------- | ------------------------------------------------------- |
 | Generic metrics (rooms, docs, members, storage) | Not actionable - users can't do anything with this info |
-| No personalization by role | Org Owner sees same as Room Viewer |
-| No "since last login" context | Users don't know what's new |
-| Activity feed is passive | Shows what happened, not what needs attention |
-| Missing messages/Q&A | Key collaboration features not surfaced |
-| No bookmarks/favorites | Users can't quickly access their important docs |
-| No room-specific insights | Everything is org-level aggregate |
+| No personalization by role                      | Org Owner sees same as Room Viewer                      |
+| No "since last login" context                   | Users don't know what's new                             |
+| Activity feed is passive                        | Shows what happened, not what needs attention           |
+| Missing messages/Q&A                            | Key collaboration features not surfaced                 |
+| No bookmarks/favorites                          | Users can't quickly access their important docs         |
+| No room-specific insights                       | Everything is org-level aggregate                       |
 
 ---
 
@@ -47,12 +47,14 @@ Based on analysis of leading VDR platforms (Datasite, Intralinks, Firmex, ShareV
 ### Persona 1: Organization Owner/Admin
 
 **Goals:**
+
 - Monitor overall health of all data rooms
 - Identify rooms needing attention (inactive, approaching deadlines)
 - Track team member activity
 - Respond to urgent items (questions, access requests)
 
 **Dashboard Needs:**
+
 - Rooms requiring attention (unanswered questions, pending access requests)
 - Recent viewer activity across all rooms
 - Team member last active status
@@ -62,12 +64,14 @@ Based on analysis of leading VDR platforms (Datasite, Intralinks, Firmex, ShareV
 ### Persona 2: Room Admin
 
 **Goals:**
+
 - Manage a specific data room or set of rooms
 - Monitor viewer engagement
 - Respond to viewer questions
 - Track document completion/uploads
 
 **Dashboard Needs:**
+
 - Their rooms at a glance
 - Unanswered questions for their rooms
 - New viewer activity
@@ -77,12 +81,14 @@ Based on analysis of leading VDR platforms (Datasite, Intralinks, Firmex, ShareV
 ### Persona 3: Room Viewer (via Link)
 
 **Goals:**
+
 - Find and view documents
 - Track their own progress through materials
 - Ask questions when confused
 - Return to previously viewed/bookmarked documents
 
 **Dashboard Needs:**
+
 - Recently viewed documents (continue where they left off)
 - Bookmarked/favorited documents
 - New documents since last visit
@@ -221,11 +227,13 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Surface items that need the user's immediate attention
 
 **Data Sources:**
+
 - `Question` model (where `status = 'PENDING'` and room admin)
 - `AccessRequest` model (where `status = 'PENDING'`)
 - `Document` model (where `reviewStatus = 'PENDING'` if implemented)
 
 **Display:**
+
 - Badge count in header
 - Grouped by type (Questions, Access Requests, Reviews)
 - Click to navigate to resolution page
@@ -235,10 +243,12 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Quick access to direct and room messages
 
 **Data Sources:**
+
 - `Message` model (inbox: `recipientUserId = currentUser`)
 - Unread count from `Notification` model
 
 **Display:**
+
 - Unread count badge
 - Last 3 message previews
 - Link to full messages page
@@ -248,10 +258,12 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Quick navigation to user's rooms with status indicators
 
 **Data Sources:**
+
 - `Room` model filtered by user's role assignments
 - Aggregate counts (docs, viewers, questions)
 
 **Display:**
+
 - Room name with status badge (ACTIVE/DRAFT/ARCHIVED)
 - Key metrics inline (doc count, viewer count, question count)
 - Quick action buttons (Open, Settings)
@@ -261,10 +273,12 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Show what's happening across the organization/rooms
 
 **Data Sources:**
+
 - `Event` model (filtered by relevance to user)
 - `PageView` model for viewer activity
 
 **Display:**
+
 - Avatar/icon + actor name + action + target
 - Relative timestamp
 - Grouped by time period (Today, Yesterday, This Week)
@@ -274,10 +288,12 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Help viewers resume their document review
 
 **Data Sources:**
+
 - `PageView` model (user's last viewed documents with page number)
 - Session last access timestamp
 
 **Display:**
+
 - Document thumbnail
 - Document name + page position
 - Last viewed timestamp
@@ -287,9 +303,11 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Quick access to user's saved documents
 
 **Data Sources:**
+
 - `Bookmark` model
 
 **Display:**
+
 - Document name + folder location
 - Quick view button
 - Remove bookmark action
@@ -299,10 +317,12 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Highlight documents added/updated since user's last session
 
 **Data Sources:**
+
 - `Document` model where `createdAt > user.lastLoginAt`
 - `DocumentVersion` model where `createdAt > user.lastLoginAt`
 
 **Display:**
+
 - Document name with "NEW" or "UPDATED" badge
 - Upload timestamp
 - Folder location
@@ -312,9 +332,11 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Track due diligence completion status
 
 **Data Sources:**
+
 - `Checklist` and `ChecklistItem` models
 
 **Display:**
+
 - Progress bar with percentage
 - Count of completed vs total items
 - List of missing items
@@ -324,10 +346,12 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Visual analytics of room/document engagement
 
 **Data Sources:**
+
 - `Event` model aggregated by day
 - `PageView` model for detailed analytics
 
 **Display:**
+
 - Sparkline or bar chart of daily activity
 - Key metrics (total views, unique viewers, downloads)
 - Top documents list
@@ -337,9 +361,11 @@ Similar to Org Admin but scoped to their assigned rooms:
 **Purpose:** Show admin-posted updates about the room
 
 **Data Sources:**
+
 - `Message` model where `isAnnouncement = true`
 
 **Display:**
+
 - Announcement text
 - Posted by + timestamp
 - Room context
@@ -468,21 +494,25 @@ model PageView {
 ## Migration Path
 
 ### Phase 1: API Updates
+
 1. Add `lastLoginAt` tracking to session/login flow
 2. Create `GET /api/dashboard/v2` endpoint
 3. Add missing data aggregation queries
 
 ### Phase 2: Widget Components
+
 1. Build individual widget components
 2. Add loading/empty states
 3. Ensure responsive design
 
 ### Phase 3: Dashboard Layouts
+
 1. Create role-specific dashboard layouts
 2. Implement dashboard routing by role
 3. Update navigation
 
 ### Phase 4: Polish
+
 1. Add animations/transitions
 2. Implement widget collapse/expand
 3. Add mobile-optimized views
@@ -492,12 +522,12 @@ model PageView {
 
 ## Success Metrics
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| Time to first meaningful action | Unknown | < 5 seconds |
-| Dashboard bounce rate | Unknown | < 20% |
-| Questions response time | Unknown | Decrease by 30% |
-| User satisfaction (feedback) | "Awkward, not valuable" | "Helpful, actionable" |
+| Metric                          | Current                 | Target                |
+| ------------------------------- | ----------------------- | --------------------- |
+| Time to first meaningful action | Unknown                 | < 5 seconds           |
+| Dashboard bounce rate           | Unknown                 | < 20%                 |
+| Questions response time         | Unknown                 | Decrease by 30%       |
+| User satisfaction (feedback)    | "Awkward, not valuable" | "Helpful, actionable" |
 
 ---
 
