@@ -11,7 +11,7 @@ import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { createHash } from 'crypto';
-import { sanitizeFilename } from '@/lib/fileTypes';
+import { sanitizeFilename, resolveMimeType } from '@/lib/fileTypes';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -116,6 +116,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const fileSha256 = createHash('sha256').update(buffer).digest('hex');
     const sanitizedFilename = sanitizeFilename(file.name);
+    // Resolve MIME type - browsers may report incorrect type for some formats (e.g., DXF)
+    const mimeType = resolveMimeType(file.name, file.type || '');
 
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
@@ -181,7 +183,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           versionNumber: newVersionNumber,
           uploadedByUserId: session.userId,
           changeDescription,
-          mimeType: file.type || 'application/octet-stream',
+          mimeType,
           fileSize: BigInt(buffer.length),
           fileName: sanitizedFilename,
           fileSha256,
@@ -208,7 +210,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         data: {
           currentVersionId: version.id,
           totalVersions: { increment: 1 },
-          mimeType: file.type || document.mimeType,
+          mimeType: mimeType || document.mimeType,
           fileSize: BigInt(buffer.length),
         },
       });
