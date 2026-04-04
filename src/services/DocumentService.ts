@@ -59,6 +59,21 @@ const SUPPORTED_MIME_TYPES = new Set([
   'application/xml',
   'text/xml',
   'text/yaml',
+  // Vector Graphics - EPS
+  'application/postscript',
+  'application/eps',
+  'application/x-eps',
+  'image/x-eps',
+  'image/eps',
+  // Vector Graphics - Adobe Illustrator
+  'application/illustrator',
+  'application/x-illustrator',
+  'application/vnd.adobe.illustrator',
+  // CAD - DXF
+  'application/dxf',
+  'image/vnd.dxf',
+  'application/x-dxf',
+  'image/x-dxf',
 ]);
 
 /**

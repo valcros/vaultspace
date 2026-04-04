@@ -16,14 +16,16 @@ export interface SupportedFileType {
   tier: 1 | 2; // 1 = primary formats, 2 = secondary formats
 }
 
-export type FileCategory = 'PDF' | 'Office' | 'OfficeLegacy' | 'Image' | 'Text' | 'Data';
+export type FileCategory = 'PDF' | 'Office' | 'OfficeLegacy' | 'Image' | 'Text' | 'Data' | 'Vector' | 'CAD';
 
 export type ConversionTool =
   | 'gotenberg'
   | 'imagemagick'
   | 'wkhtmltopdf'
   | 'libreoffice'
-  | 'inkscape';
+  | 'inkscape'
+  | 'ghostscript'
+  | 'dxf-parser';
 
 /**
  * All supported file types for the VDR platform
@@ -218,6 +220,42 @@ export const SUPPORTED_FILE_TYPES: SupportedFileType[] = [
     conversionTool: 'wkhtmltopdf',
     outputFormat: 'pdf',
     estimatedProcessingTime: 8,
+    tier: 2,
+  },
+
+  // Vector Graphics - EPS
+  {
+    ext: 'eps',
+    mimeType: 'application/postscript',
+    category: 'Vector',
+    previewable: true,
+    conversionTool: 'ghostscript',
+    outputFormat: 'png',
+    estimatedProcessingTime: 15,
+    tier: 2,
+  },
+
+  // Vector Graphics - Adobe Illustrator
+  {
+    ext: 'ai',
+    mimeType: 'application/illustrator',
+    category: 'Vector',
+    previewable: true,
+    conversionTool: 'ghostscript',
+    outputFormat: 'png',
+    estimatedProcessingTime: 20,
+    tier: 2,
+  },
+
+  // CAD - DXF
+  {
+    ext: 'dxf',
+    mimeType: 'application/dxf',
+    category: 'CAD',
+    previewable: true,
+    conversionTool: 'dxf-parser',
+    outputFormat: 'png',
+    estimatedProcessingTime: 10,
     tier: 2,
   },
 ];
