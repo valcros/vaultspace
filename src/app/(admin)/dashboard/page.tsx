@@ -1,119 +1,185 @@
 'use client';
 
 import * as React from 'react';
-import { FolderOpen, FileText, Users, HardDrive, Activity, Eye } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import Link from 'next/link';
+import { formatDistanceToNow } from 'date-fns';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
-import { getEventStyle } from '@/lib/activityUtils';
+import {
+  ActionRequiredWidget,
+  MessagesWidget,
+  MyRoomsWidget,
+  RecentActivityWidget,
+  ContinueReadingWidget,
+  BookmarksWidget,
+  NewDocumentsWidget,
+  MyQuestionsWidget,
+  ChecklistProgressWidget,
+  EngagementWidget,
+  AnnouncementsWidget,
+  FeaturedAnnouncement,
+  WelcomeBanner,
+} from '@/components/dashboard';
 
 // ---------------------------------------------------------------------------
-// Types
+// Types (matches API v2 response)
 // ---------------------------------------------------------------------------
 
-interface DashboardData {
-  stats: {
-    totalRooms: number;
-    totalDocuments: number;
-    totalMembers: number;
-    totalStorage: number;
+interface DashboardV2Data {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: 'ADMIN' | 'VIEWER';
+    lastLoginAt: string | null;
   };
-  roomBreakdown: {
-    DRAFT: number;
-    ACTIVE: number;
-    ARCHIVED: number;
-    CLOSED: number;
+  actionRequired?: {
+    totalCount: number;
+    unansweredQuestions: number;
+    pendingAccessRequests: number;
+    items: Array<{
+      id: string;
+      type: 'question' | 'access_request' | 'review';
+      title: string;
+      description: string;
+      roomId: string;
+      roomName: string;
+      createdAt: string;
+      priority: 'high' | 'normal';
+    }>;
   };
-  recentActivity: Array<{
+  messages?: {
+    unreadCount: number;
+    recent: Array<{
+      id: string;
+      senderName: string;
+      subject: string;
+      preview: string;
+      createdAt: string;
+      isRead: boolean;
+      roomName?: string;
+    }>;
+  };
+  myRooms?: Array<{
+    id: string;
+    name: string;
+    status: string;
+    documentCount: number;
+    viewerCount: number;
+    questionCount: number;
+    lastActivity?: string;
+  }>;
+  recentActivity?: Array<{
     id: string;
     eventType: string;
     actorName: string;
-    description: string | null;
-    roomName: string | null;
+    actorEmail?: string;
+    description: string;
+    roomId?: string;
+    roomName?: string;
+    documentId?: string;
+    documentName?: string;
     createdAt: string;
   }>;
-  topDocuments: Array<{
-    documentId: string;
+  engagementInsights?: {
+    period: '7d' | '30d';
+    totalViews: number;
+    uniqueViewers: number;
+    downloads: number;
+    dailyActivity: Array<{ date: string; views: number }>;
+    topDocuments: Array<{ id: string; name: string; roomName: string; views: number }>;
+  };
+  checklistProgress?: Array<{
+    id: string;
     name: string;
+    roomId: string;
     roomName: string;
-    viewCount: number;
+    completedCount: number;
+    totalCount: number;
+    missingItems: string[];
+  }>;
+  continueReading?: Array<{
+    documentId: string;
+    documentName: string;
+    roomId: string;
+    roomName: string;
+    lastPage?: number;
+    totalPages?: number;
+    lastViewedAt: string;
+  }>;
+  bookmarks?: Array<{
+    id: string;
+    documentId: string;
+    documentName: string;
+    roomId: string;
+    roomName: string;
+    folderPath?: string;
+    createdAt: string;
+  }>;
+  newSinceLastVisit?: {
+    newDocuments: Array<{
+      id: string;
+      name: string;
+      roomId: string;
+      roomName: string;
+      folderPath?: string;
+      createdAt: string;
+      isNew: boolean;
+    }>;
+    updatedDocuments: Array<{
+      id: string;
+      name: string;
+      roomId: string;
+      roomName: string;
+      folderPath?: string;
+      createdAt: string;
+      updatedAt?: string;
+      isNew: boolean;
+    }>;
+  };
+  myQuestions?: Array<{
+    id: string;
+    question: string;
+    status: 'OPEN' | 'ANSWERED' | 'CLOSED';
+    roomName: string;
+    documentName?: string;
+    createdAt: string;
+    answeredAt?: string;
+  }>;
+  announcements?: Array<{
+    id: string;
+    content: string;
+    authorName: string;
+    roomName: string;
+    createdAt: string;
   }>;
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) {
-    return '0 B';
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffSec = Math.floor((now - then) / 1000);
-
-  if (diffSec < 60) {
-    return 'just now';
-  }
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) {
-    return `${diffMin}m ago`;
-  }
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) {
-    return `${diffHr}h ago`;
-  }
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 30) {
-    return `${diffDay}d ago`;
-  }
-  return new Date(dateStr).toLocaleDateString();
-}
-
-function eventLabel(eventType: string): string {
-  return eventType
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/^\w/, (c) => c.toUpperCase());
-}
-
-// ---------------------------------------------------------------------------
-// Status badge colors
-// ---------------------------------------------------------------------------
-
-const statusColors: Record<string, string> = {
-  ACTIVE: 'bg-green-100 text-green-700 border-green-200',
-  DRAFT: 'bg-neutral-100 text-neutral-600 border-neutral-200',
-  ARCHIVED: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  CLOSED: 'bg-red-100 text-red-700 border-red-200',
-};
-
-// ---------------------------------------------------------------------------
-// Component
+// Main Component
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  const [data, setData] = React.useState<DashboardData | null>(null);
+  const [data, setData] = React.useState<DashboardV2Data | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('/api/dashboard', { credentials: 'include' });
+        const res = await fetch('/api/dashboard/v2', { credentials: 'include' });
         if (res.ok) {
           setData(await res.json());
+        } else {
+          setError('Failed to load dashboard');
         }
       } catch (err) {
         console.error('Failed to load dashboard:', err);
+        setError('Failed to load dashboard');
       } finally {
         setIsLoading(false);
       }
@@ -121,193 +187,251 @@ export default function DashboardPage() {
     load();
   }, []);
 
-  // ---------- Stat cards config ----------
-  const statCards = data
-    ? [
-        {
-          label: 'Rooms',
-          value: data.stats.totalRooms,
-          icon: FolderOpen,
-          color: 'text-primary-600 bg-primary-50',
-        },
-        {
-          label: 'Documents',
-          value: data.stats.totalDocuments,
-          icon: FileText,
-          color: 'text-green-600 bg-green-50',
-        },
-        {
-          label: 'Members',
-          value: data.stats.totalMembers,
-          icon: Users,
-          color: 'text-purple-600 bg-purple-50',
-        },
-        {
-          label: 'Storage',
-          value: formatBytes(data.stats.totalStorage),
-          icon: HardDrive,
-          color: 'text-amber-600 bg-amber-50',
-        },
-      ]
-    : [];
+  if (error) {
+    return (
+      <>
+        <PageHeader title="Dashboard" />
+        <div className="flex h-64 items-center justify-center text-neutral-500">
+          {error}. <button onClick={() => window.location.reload()} className="ml-2 text-primary-600 hover:underline">Try again</button>
+        </div>
+      </>
+    );
+  }
+
+  const isAdmin = data?.user?.role === 'ADMIN';
+  const isViewer = data?.user?.role === 'VIEWER';
+
+  // Greeting based on time of day
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   return (
     <>
-      <PageHeader title="Dashboard" description="Organization overview and key metrics" />
+      <PageHeader
+        title={isLoading ? 'Dashboard' : `${greeting}, ${data?.user?.name?.split(' ')[0] || 'there'}`}
+        description={
+          isLoading
+            ? undefined
+            : data?.user?.lastLoginAt
+              ? `Last login: ${formatDistanceToNow(new Date(data.user.lastLoginAt), { addSuffix: true })}`
+              : undefined
+        }
+        actions={
+          isAdmin ? (
+            <Link href="/rooms/new">
+              <Button size="sm">
+                <Plus className="mr-1 h-4 w-4" />
+                New Room
+              </Button>
+            </Link>
+          ) : undefined
+        }
+      />
 
       <div className="space-y-6">
-        {/* -------- Stat Cards -------- */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {isLoading
-            ? [...Array(4)].map((_, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 rounded-xl border bg-white px-4 py-3"
-                >
-                  <Skeleton className="h-10 w-10 rounded-lg" />
-                  <div className="space-y-1">
-                    <Skeleton className="h-5 w-12" />
-                    <Skeleton className="h-3 w-16" />
-                  </div>
-                </div>
-              ))
-            : statCards.map((stat) => (
-                <div
-                  key={stat.label}
-                  className="flex items-center gap-3 rounded-xl border bg-white px-4 py-3"
-                >
-                  <div className={`rounded-lg p-2 ${stat.color}`}>
-                    <stat.icon className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-lg font-semibold text-neutral-900">{stat.value}</p>
-                    <p className="text-xs text-neutral-500">{stat.label}</p>
-                  </div>
-                </div>
-              ))}
-        </div>
+        {/* Welcome banner for new users */}
+        {!isLoading && data?.myRooms && (
+          <WelcomeBanner roomCount={data.myRooms.length} />
+        )}
 
-        {/* -------- Room Status Breakdown -------- */}
-        {isLoading ? (
-          <div className="flex gap-2">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-6 w-24 rounded-full" />
-            ))}
-          </div>
-        ) : data ? (
-          <div className="flex flex-wrap gap-2">
-            {(Object.entries(data.roomBreakdown) as [string, number][]).map(([status, count]) => (
-              <Badge
-                key={status}
-                variant="outline"
-                className={`${statusColors[status] || ''} px-3 py-1 text-sm`}
-              >
-                {status}: {count}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
+        {/* Featured announcement */}
+        {!isLoading && data?.announcements && data.announcements.length > 0 && (
+          <FeaturedAnnouncement announcement={data.announcements[0] ?? null} />
+        )}
 
-        {/* -------- Two-Column: Activity + Top Documents -------- */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Activity className="h-4 w-4" />
-                Recent Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-4">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      <Skeleton className="h-8 w-8 rounded-full" />
-                      <div className="flex-1 space-y-1">
-                        <Skeleton className="h-4 w-3/4" />
-                        <Skeleton className="h-3 w-1/2" />
-                      </div>
-                    </div>
-                  ))}
+        {/* Admin Dashboard Layout */}
+        {isAdmin && (
+          <AdminDashboard data={data} isLoading={isLoading} />
+        )}
+
+        {/* Viewer Dashboard Layout */}
+        {isViewer && (
+          <ViewerDashboard data={data} isLoading={isLoading} />
+        )}
+
+        {/* Loading state (before we know the role) */}
+        {isLoading && (
+          <LoadingDashboard />
+        )}
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Admin Dashboard Layout
+// ---------------------------------------------------------------------------
+
+function AdminDashboard({ data, isLoading }: { data: DashboardV2Data | null; isLoading: boolean }) {
+  return (
+    <>
+      {/* Action Required + Messages row */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {data?.actionRequired && (
+          <ActionRequiredWidget
+            totalCount={data.actionRequired.totalCount}
+            unansweredQuestions={data.actionRequired.unansweredQuestions}
+            pendingAccessRequests={data.actionRequired.pendingAccessRequests}
+            items={data.actionRequired.items}
+            loading={isLoading}
+          />
+        )}
+        {data?.messages && (
+          <MessagesWidget
+            unreadCount={data.messages.unreadCount}
+            messages={data.messages.recent}
+            loading={isLoading}
+          />
+        )}
+      </div>
+
+      {/* Engagement + Rooms row */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {data?.engagementInsights && (
+          <div className="lg:col-span-2">
+            <EngagementWidget data={data.engagementInsights} loading={isLoading} />
+          </div>
+        )}
+        {data?.myRooms && (
+          <MyRoomsWidget rooms={data.myRooms} loading={isLoading} />
+        )}
+      </div>
+
+      {/* Activity + Checklists row */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {data?.recentActivity && (
+          <RecentActivityWidget activities={data.recentActivity} loading={isLoading} />
+        )}
+        {data?.checklistProgress && data.checklistProgress.length > 0 && (
+          <ChecklistProgressWidget checklists={data.checklistProgress} loading={isLoading} />
+        )}
+      </div>
+
+      {/* Personal widgets row */}
+      <div className="grid gap-6 md:grid-cols-3">
+        {data?.continueReading && data.continueReading.length > 0 && (
+          <ContinueReadingWidget items={data.continueReading} loading={isLoading} />
+        )}
+        {data?.bookmarks && (
+          <BookmarksWidget bookmarks={data.bookmarks} loading={isLoading} />
+        )}
+        {data?.newSinceLastVisit && (
+          <NewDocumentsWidget
+            newDocuments={data.newSinceLastVisit.newDocuments}
+            updatedDocuments={data.newSinceLastVisit.updatedDocuments}
+            loading={isLoading}
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Viewer Dashboard Layout
+// ---------------------------------------------------------------------------
+
+function ViewerDashboard({ data, isLoading }: { data: DashboardV2Data | null; isLoading: boolean }) {
+  return (
+    <>
+      {/* Messages + New Docs row - most important for viewers */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {data?.messages && (
+          <MessagesWidget
+            unreadCount={data.messages.unreadCount}
+            messages={data.messages.recent}
+            loading={isLoading}
+          />
+        )}
+        {data?.newSinceLastVisit && (
+          <NewDocumentsWidget
+            newDocuments={data.newSinceLastVisit.newDocuments}
+            updatedDocuments={data.newSinceLastVisit.updatedDocuments}
+            loading={isLoading}
+          />
+        )}
+      </div>
+
+      {/* Continue Reading + Bookmarks row */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {data?.continueReading && data.continueReading.length > 0 && (
+          <ContinueReadingWidget items={data.continueReading} loading={isLoading} />
+        )}
+        {data?.bookmarks && (
+          <BookmarksWidget bookmarks={data.bookmarks} loading={isLoading} />
+        )}
+      </div>
+
+      {/* My Questions + Rooms row */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {data?.myQuestions && (
+          <MyQuestionsWidget questions={data.myQuestions} loading={isLoading} />
+        )}
+        {data?.myRooms && (
+          <MyRoomsWidget rooms={data.myRooms} loading={isLoading} />
+        )}
+      </div>
+
+      {/* Announcements */}
+      {data?.announcements && data.announcements.length > 1 && (
+        <AnnouncementsWidget
+          announcements={data.announcements.slice(1)}
+          loading={isLoading}
+        />
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Loading State
+// ---------------------------------------------------------------------------
+
+function LoadingDashboard() {
+  return (
+    <>
+      {/* Skeleton stat cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Card key={i}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-lg" />
+                <div className="space-y-1">
+                  <Skeleton className="h-5 w-12" />
+                  <Skeleton className="h-3 w-16" />
                 </div>
-              ) : !data || data.recentActivity.length === 0 ? (
-                <p className="py-8 text-center text-sm text-neutral-500">No recent activity</p>
-              ) : (
-                <div className="space-y-3">
-                  {data.recentActivity.map((event) => {
-                    const style = getEventStyle(event.eventType);
-                    const Icon = style.icon;
-                    return (
-                      <div key={event.id} className="flex items-start gap-3">
-                        <div className={`rounded-full p-1.5 ${style.bg}`}>
-                          <Icon className={`h-3.5 w-3.5 ${style.text}`} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-neutral-900">
-                            <span className="font-medium">{event.actorName}</span>{' '}
-                            <span className="text-neutral-500">
-                              {event.description || eventLabel(event.eventType)}
-                            </span>
-                          </p>
-                          <div className="flex items-center gap-2 text-xs text-neutral-400">
-                            {event.roomName && <span>{event.roomName}</span>}
-                            <span>{relativeTime(event.createdAt)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              </div>
             </CardContent>
           </Card>
+        ))}
+      </div>
 
-          {/* Top Viewed Documents */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Eye className="h-4 w-4" />
-                Top Viewed Documents
-              </CardTitle>
+      {/* Skeleton widgets */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {[1, 2].map((i) => (
+          <Card key={i}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-4 rounded" />
+                <Skeleton className="h-4 w-24" />
+              </div>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="space-y-4">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <Skeleton className="h-6 w-6 rounded" />
-                      <div className="flex-1 space-y-1">
-                        <Skeleton className="h-4 w-3/4" />
-                        <Skeleton className="h-3 w-1/3" />
-                      </div>
+              <div className="space-y-3">
+                {[1, 2, 3].map((j) => (
+                  <div key={j} className="flex items-center gap-3">
+                    <Skeleton className="h-8 w-8 rounded-lg" />
+                    <div className="flex-1 space-y-1">
+                      <Skeleton className="h-3 w-2/3" />
+                      <Skeleton className="h-2 w-1/2" />
                     </div>
-                  ))}
-                </div>
-              ) : !data || data.topDocuments.length === 0 ? (
-                <p className="py-8 text-center text-sm text-neutral-500">No document views yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {data.topDocuments.map((doc, index) => (
-                    <div key={doc.documentId} className="flex items-center gap-3">
-                      <span className="flex h-6 w-6 items-center justify-center rounded bg-neutral-100 text-xs font-semibold text-neutral-600">
-                        {index + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-neutral-900">{doc.name}</p>
-                        <p className="text-xs text-neutral-400">{doc.roomName}</p>
-                      </div>
-                      <div className="flex items-center gap-1 text-sm text-neutral-500">
-                        <Eye className="h-3.5 w-3.5" />
-                        {doc.viewCount}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
-        </div>
+        ))}
       </div>
     </>
   );
