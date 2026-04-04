@@ -356,7 +356,10 @@ export function UploadZone({
           ref={inputRef}
           type="file"
           multiple={multiple}
-          accept={[...acceptedTypes, ...Object.keys(EXTENSION_MIME_MAP).map(ext => `.${ext}`)].join(',')}
+          accept={[
+            ...acceptedTypes,
+            ...Object.keys(EXTENSION_MIME_MAP).map((ext) => `.${ext}`),
+          ].join(',')}
           onChange={handleFileSelect}
           className="hidden"
         />

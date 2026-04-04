@@ -54,10 +54,7 @@ export class ThumbnailCropper {
    * @param options - Thumbnail options
    * @returns PNG thumbnail buffer
    */
-  async createSmartThumbnail(
-    imageBuffer: Buffer,
-    options: SmartThumbnailOptions
-  ): Promise<Buffer> {
+  async createSmartThumbnail(imageBuffer: Buffer, options: SmartThumbnailOptions): Promise<Buffer> {
     const { width, height } = options;
     const minContentRatio = options.minContentRatio ?? DEFAULT_OPTIONS.minContentRatio;
     const trimThreshold = options.trimThreshold ?? DEFAULT_OPTIONS.trimThreshold;
@@ -79,8 +76,7 @@ export class ThumbnailCropper {
 
       if (trimResult && trimResult.width >= minTrimSize && trimResult.height >= minTrimSize) {
         // Check if trimmed area is significantly different from original
-        const trimRatio =
-          (trimResult.width * trimResult.height) / (origWidth * origHeight);
+        const trimRatio = (trimResult.width * trimResult.height) / (origWidth * origHeight);
 
         if (trimRatio < 0.9) {
           // Trimming found content - use the trimmed region
@@ -237,11 +233,7 @@ export class ThumbnailCropper {
   /**
    * Simple resize fallback.
    */
-  private async simpleResize(
-    imageBuffer: Buffer,
-    width: number,
-    height: number
-  ): Promise<Buffer> {
+  private async simpleResize(imageBuffer: Buffer, width: number, height: number): Promise<Buffer> {
     return sharp(imageBuffer)
       .resize(width, height, { fit: 'cover', position: 'centre' })
       .png()

@@ -34,8 +34,10 @@ export function NewDocumentsWidget({
     ...newDocuments.map((d) => ({ ...d, type: 'new' as const })),
     ...updatedDocuments.map((d) => ({ ...d, type: 'updated' as const })),
   ].sort((a, b) => {
-    const dateA = a.type === 'updated' && a.updatedAt ? new Date(a.updatedAt) : new Date(a.createdAt);
-    const dateB = b.type === 'updated' && b.updatedAt ? new Date(b.updatedAt) : new Date(b.createdAt);
+    const dateA =
+      a.type === 'updated' && a.updatedAt ? new Date(a.updatedAt) : new Date(a.createdAt);
+    const dateB =
+      b.type === 'updated' && b.updatedAt ? new Date(b.updatedAt) : new Date(b.createdAt);
     return dateB.getTime() - dateA.getTime();
   });
 
@@ -60,11 +62,7 @@ export function NewDocumentsWidget({
               )
             }
             title={doc.name}
-            subtitle={
-              doc.folderPath
-                ? `${doc.roomName} / ${doc.folderPath}`
-                : doc.roomName
-            }
+            subtitle={doc.folderPath ? `${doc.roomName} / ${doc.folderPath}` : doc.roomName}
             badge={doc.type === 'new' ? 'New' : 'Updated'}
             badgeColor={doc.type === 'new' ? 'success' : 'primary'}
             href={`/rooms/${doc.roomId}/documents/${doc.id}`}

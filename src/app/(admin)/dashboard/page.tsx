@@ -192,7 +192,13 @@ export default function DashboardPage() {
       <>
         <PageHeader title="Dashboard" />
         <div className="flex h-64 items-center justify-center text-neutral-500">
-          {error}. <button onClick={() => window.location.reload()} className="ml-2 text-primary-600 hover:underline">Try again</button>
+          {error}.{' '}
+          <button
+            onClick={() => window.location.reload()}
+            className="ml-2 text-primary-600 hover:underline"
+          >
+            Try again
+          </button>
         </div>
       </>
     );
@@ -208,7 +214,9 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title={isLoading ? 'Dashboard' : `${greeting}, ${data?.user?.name?.split(' ')[0] || 'there'}`}
+        title={
+          isLoading ? 'Dashboard' : `${greeting}, ${data?.user?.name?.split(' ')[0] || 'there'}`
+        }
         description={
           isLoading
             ? undefined
@@ -230,9 +238,7 @@ export default function DashboardPage() {
 
       <div className="space-y-6">
         {/* Welcome banner for new users */}
-        {!isLoading && data?.myRooms && (
-          <WelcomeBanner roomCount={data.myRooms.length} />
-        )}
+        {!isLoading && data?.myRooms && <WelcomeBanner roomCount={data.myRooms.length} />}
 
         {/* Featured announcement */}
         {!isLoading && data?.announcements && data.announcements.length > 0 && (
@@ -240,19 +246,13 @@ export default function DashboardPage() {
         )}
 
         {/* Admin Dashboard Layout */}
-        {isAdmin && (
-          <AdminDashboard data={data} isLoading={isLoading} />
-        )}
+        {isAdmin && <AdminDashboard data={data} isLoading={isLoading} />}
 
         {/* Viewer Dashboard Layout */}
-        {isViewer && (
-          <ViewerDashboard data={data} isLoading={isLoading} />
-        )}
+        {isViewer && <ViewerDashboard data={data} isLoading={isLoading} />}
 
         {/* Loading state (before we know the role) */}
-        {isLoading && (
-          <LoadingDashboard />
-        )}
+        {isLoading && <LoadingDashboard />}
       </div>
     </>
   );
@@ -292,9 +292,7 @@ function AdminDashboard({ data, isLoading }: { data: DashboardV2Data | null; isL
             <EngagementWidget data={data.engagementInsights} loading={isLoading} />
           </div>
         )}
-        {data?.myRooms && (
-          <MyRoomsWidget rooms={data.myRooms} loading={isLoading} />
-        )}
+        {data?.myRooms && <MyRoomsWidget rooms={data.myRooms} loading={isLoading} />}
       </div>
 
       {/* Activity + Checklists row */}
@@ -312,9 +310,7 @@ function AdminDashboard({ data, isLoading }: { data: DashboardV2Data | null; isL
         {data?.continueReading && data.continueReading.length > 0 && (
           <ContinueReadingWidget items={data.continueReading} loading={isLoading} />
         )}
-        {data?.bookmarks && (
-          <BookmarksWidget bookmarks={data.bookmarks} loading={isLoading} />
-        )}
+        {data?.bookmarks && <BookmarksWidget bookmarks={data.bookmarks} loading={isLoading} />}
         {data?.newSinceLastVisit && (
           <NewDocumentsWidget
             newDocuments={data.newSinceLastVisit.newDocuments}
@@ -331,7 +327,13 @@ function AdminDashboard({ data, isLoading }: { data: DashboardV2Data | null; isL
 // Viewer Dashboard Layout
 // ---------------------------------------------------------------------------
 
-function ViewerDashboard({ data, isLoading }: { data: DashboardV2Data | null; isLoading: boolean }) {
+function ViewerDashboard({
+  data,
+  isLoading,
+}: {
+  data: DashboardV2Data | null;
+  isLoading: boolean;
+}) {
   return (
     <>
       {/* Messages + New Docs row - most important for viewers */}
@@ -357,9 +359,7 @@ function ViewerDashboard({ data, isLoading }: { data: DashboardV2Data | null; is
         {data?.continueReading && data.continueReading.length > 0 && (
           <ContinueReadingWidget items={data.continueReading} loading={isLoading} />
         )}
-        {data?.bookmarks && (
-          <BookmarksWidget bookmarks={data.bookmarks} loading={isLoading} />
-        )}
+        {data?.bookmarks && <BookmarksWidget bookmarks={data.bookmarks} loading={isLoading} />}
       </div>
 
       {/* My Questions + Rooms row */}
@@ -367,17 +367,12 @@ function ViewerDashboard({ data, isLoading }: { data: DashboardV2Data | null; is
         {data?.myQuestions && (
           <MyQuestionsWidget questions={data.myQuestions} loading={isLoading} />
         )}
-        {data?.myRooms && (
-          <MyRoomsWidget rooms={data.myRooms} loading={isLoading} />
-        )}
+        {data?.myRooms && <MyRoomsWidget rooms={data.myRooms} loading={isLoading} />}
       </div>
 
       {/* Announcements */}
       {data?.announcements && data.announcements.length > 1 && (
-        <AnnouncementsWidget
-          announcements={data.announcements.slice(1)}
-          loading={isLoading}
-        />
+        <AnnouncementsWidget announcements={data.announcements.slice(1)} loading={isLoading} />
       )}
     </>
   );

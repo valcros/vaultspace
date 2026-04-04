@@ -36,11 +36,7 @@ const typeLabels = {
   review: 'Review',
 };
 
-export function ActionRequiredWidget({
-  totalCount,
-  items,
-  loading,
-}: ActionRequiredWidgetProps) {
+export function ActionRequiredWidget({ totalCount, items, loading }: ActionRequiredWidgetProps) {
   return (
     <DashboardWidget
       title="Action Required"
