@@ -66,7 +66,11 @@ export class DxfRenderer {
    * @param height - Target height in pixels (default: 600)
    * @returns PNG buffer
    */
-  async render(data: Buffer, width: number = DEFAULT_WIDTH, height: number = DEFAULT_HEIGHT): Promise<Buffer> {
+  async render(
+    data: Buffer,
+    width: number = DEFAULT_WIDTH,
+    height: number = DEFAULT_HEIGHT
+  ): Promise<Buffer> {
     try {
       // Parse DXF content
       const parser = new DxfParser();
@@ -99,7 +103,12 @@ export class DxfRenderer {
   /**
    * Calculate the bounding box of all entities.
    */
-  private calculateBounds(entities: DxfEntity[]): { minX: number; minY: number; maxX: number; maxY: number } {
+  private calculateBounds(entities: DxfEntity[]): {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  } {
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -205,8 +214,8 @@ export class DxfRenderer {
             if (start && end) {
               svgElements.push(
                 `<line x1="${transformX(start.x)}" y1="${transformY(start.y)}" ` +
-                `x2="${transformX(end.x)}" y2="${transformY(end.y)}" ` +
-                `stroke="${strokeColor}" stroke-width="${strokeWidth}" />`
+                  `x2="${transformX(end.x)}" y2="${transformY(end.y)}" ` +
+                  `stroke="${strokeColor}" stroke-width="${strokeWidth}" />`
               );
             }
           }
@@ -216,7 +225,7 @@ export class DxfRenderer {
           if (entity.center && entity.radius !== undefined) {
             svgElements.push(
               `<circle cx="${transformX(entity.center.x)}" cy="${transformY(entity.center.y)}" ` +
-              `r="${entity.radius * scale}" stroke="${strokeColor}" stroke-width="${strokeWidth}" fill="none" />`
+                `r="${entity.radius * scale}" stroke="${strokeColor}" stroke-width="${strokeWidth}" fill="none" />`
             );
           }
           break;
@@ -240,7 +249,7 @@ export class DxfRenderer {
 
             svgElements.push(
               `<path d="M ${startX} ${startY} A ${r} ${r} 0 ${largeArc} ${sweep} ${endX} ${endY}" ` +
-              `stroke="${strokeColor}" stroke-width="${strokeWidth}" fill="none" />`
+                `stroke="${strokeColor}" stroke-width="${strokeWidth}" fill="none" />`
             );
           }
           break;
@@ -262,7 +271,7 @@ export class DxfRenderer {
             const pointSize = Math.max(2, scale);
             svgElements.push(
               `<circle cx="${transformX(entity.x)}" cy="${transformY(entity.y)}" ` +
-              `r="${pointSize}" fill="${strokeColor}" />`
+                `r="${pointSize}" fill="${strokeColor}" />`
             );
           }
           break;

@@ -62,7 +62,9 @@ export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
               </span>
             }
             badge={room.status}
-            badgeColor={room.status === 'ACTIVE' ? 'success' : room.status === 'DRAFT' ? 'neutral' : 'warning'}
+            badgeColor={
+              room.status === 'ACTIVE' ? 'success' : room.status === 'DRAFT' ? 'neutral' : 'warning'
+            }
             href={`/rooms/${room.id}`}
           />
         ))}

@@ -32,9 +32,10 @@ export function ChecklistProgressWidget({ checklists, loading }: ChecklistProgre
     >
       <div className="space-y-4">
         {checklists.slice(0, 3).map((checklist) => {
-          const progress = checklist.totalCount > 0
-            ? Math.round((checklist.completedCount / checklist.totalCount) * 100)
-            : 0;
+          const progress =
+            checklist.totalCount > 0
+              ? Math.round((checklist.completedCount / checklist.totalCount) * 100)
+              : 0;
           const isComplete = progress === 100;
 
           return (
@@ -76,7 +77,8 @@ export function ChecklistProgressWidget({ checklists, loading }: ChecklistProgre
               {!isComplete && checklist.missingItems.length > 0 && (
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">
                   Missing: {checklist.missingItems.slice(0, 2).join(', ')}
-                  {checklist.missingItems.length > 2 && ` +${checklist.missingItems.length - 2} more`}
+                  {checklist.missingItems.length > 2 &&
+                    ` +${checklist.missingItems.length - 2} more`}
                 </p>
               )}
               <p className="text-xs text-neutral-400">{checklist.roomName}</p>

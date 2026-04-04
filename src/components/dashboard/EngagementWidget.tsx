@@ -34,8 +34,16 @@ export function EngagementWidget({ data, loading }: EngagementWidgetProps) {
         {/* Stats row */}
         <div className="grid grid-cols-3 gap-4">
           <StatCard icon={<Eye className="h-4 w-4" />} label="Views" value={data.totalViews} />
-          <StatCard icon={<Users className="h-4 w-4" />} label="Viewers" value={data.uniqueViewers} />
-          <StatCard icon={<Download className="h-4 w-4" />} label="Downloads" value={data.downloads} />
+          <StatCard
+            icon={<Users className="h-4 w-4" />}
+            label="Viewers"
+            value={data.uniqueViewers}
+          />
+          <StatCard
+            icon={<Download className="h-4 w-4" />}
+            label="Downloads"
+            value={data.downloads}
+          />
         </div>
 
         {/* Mini chart */}
@@ -52,7 +60,9 @@ export function EngagementWidget({ data, loading }: EngagementWidgetProps) {
                 <li key={doc.id} className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2 truncate">
                     <span className="shrink-0 text-neutral-400">{index + 1}.</span>
-                    <span className="truncate text-neutral-700 dark:text-neutral-300">{doc.name}</span>
+                    <span className="truncate text-neutral-700 dark:text-neutral-300">
+                      {doc.name}
+                    </span>
                   </span>
                   <span className="shrink-0 text-xs text-neutral-500">{doc.views} views</span>
                 </li>

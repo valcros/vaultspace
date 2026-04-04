@@ -124,14 +124,18 @@ export function WidgetListItem({
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{title}</p>
+        <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+          {title}
+        </p>
         {subtitle && (
           <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</p>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {badge && (
-          <span className={clsx('rounded px-1.5 py-0.5 text-xs font-medium', badgeColors[badgeColor])}>
+          <span
+            className={clsx('rounded px-1.5 py-0.5 text-xs font-medium', badgeColors[badgeColor])}
+          >
             {badge}
           </span>
         )}

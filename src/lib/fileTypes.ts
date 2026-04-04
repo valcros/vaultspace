@@ -16,7 +16,15 @@ export interface SupportedFileType {
   tier: 1 | 2; // 1 = primary formats, 2 = secondary formats
 }
 
-export type FileCategory = 'PDF' | 'Office' | 'OfficeLegacy' | 'Image' | 'Text' | 'Data' | 'Vector' | 'CAD';
+export type FileCategory =
+  | 'PDF'
+  | 'Office'
+  | 'OfficeLegacy'
+  | 'Image'
+  | 'Text'
+  | 'Data'
+  | 'Vector'
+  | 'CAD';
 
 export type ConversionTool =
   | 'gotenberg'
@@ -437,7 +445,11 @@ export function getEstimatedProcessingTime(mimeType: string): number {
  */
 export function resolveMimeType(filename: string, browserMimeType: string): string {
   // If browser already sent a known MIME type, use it
-  if (browserMimeType && browserMimeType !== 'application/octet-stream' && MIME_TYPE_MAP.has(browserMimeType)) {
+  if (
+    browserMimeType &&
+    browserMimeType !== 'application/octet-stream' &&
+    MIME_TYPE_MAP.has(browserMimeType)
+  ) {
     return browserMimeType;
   }
 

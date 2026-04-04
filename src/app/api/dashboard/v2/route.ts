@@ -182,7 +182,10 @@ interface DashboardV2Response {
 // Helper functions
 // ---------------------------------------------------------------------------
 
-function getActorName(actor: { firstName: string | null; lastName: string | null; email: string } | null, fallbackEmail?: string | null): string {
+function getActorName(
+  actor: { firstName: string | null; lastName: string | null; email: string } | null,
+  fallbackEmail?: string | null
+): string {
   if (actor) {
     const name = [actor.firstName, actor.lastName].filter(Boolean).join(' ').trim();
     return name || actor.email;
@@ -619,7 +622,10 @@ export async function GET() {
         roomName: c.room.name,
         completedCount: c.items.filter((i) => i.status === 'COMPLETE').length,
         totalCount: c.items.length,
-        missingItems: c.items.filter((i) => i.status !== 'COMPLETE' && i.status !== 'NOT_APPLICABLE').map((i) => i.name).slice(0, 5),
+        missingItems: c.items
+          .filter((i) => i.status !== 'COMPLETE' && i.status !== 'NOT_APPLICABLE')
+          .map((i) => i.name)
+          .slice(0, 5),
       }));
 
       // Continue Reading
