@@ -11,6 +11,9 @@ import sharp from 'sharp';
 import { PDFDocument } from 'pdf-lib';
 
 import type { PreviewOptions, PreviewPage, PreviewProvider, PreviewResult } from '../types';
+import { DxfRenderer, DXF_SUPPORTED_TYPES } from './helpers/DxfRenderer';
+import { GhostscriptConverter, GHOSTSCRIPT_SUPPORTED_TYPES } from './helpers/GhostscriptConverter';
+import { PdfRasterizer } from './helpers/PdfRasterizer';
 
 // MIME types that Gotenberg can convert to PDF via LibreOffice
 const GOTENBERG_OFFICE_TYPES = new Set([
@@ -104,15 +107,30 @@ const EXTENSION_COLORS: Record<string, { bg: string; text: string }> = {
   TXT: { bg: '#f9fafb', text: '#6b7280' },
   SVG: { bg: '#faf5ff', text: '#9333ea' },
   VSDX: { bg: '#faf5ff', text: '#9333ea' },
+  // Vector Graphics
+  EPS: { bg: '#fef3c7', text: '#d97706' },
+  AI: { bg: '#fff7ed', text: '#ea580c' },
+  // CAD
+  DXF: { bg: '#e0f2fe', text: '#0284c7' },
 };
 
 export class GotenbergPreviewProvider implements PreviewProvider {
   private gotenbergUrl: string;
   private timeoutMs: number;
 
+  // Helper instances for new format support
+  private pdfRasterizer: PdfRasterizer;
+  private ghostscriptConverter: GhostscriptConverter;
+  private dxfRenderer: DxfRenderer;
+
   constructor(gotenbergUrl?: string, timeoutMs?: number) {
     this.gotenbergUrl = gotenbergUrl ?? process.env['GOTENBERG_URL'] ?? 'http://localhost:3001';
     this.timeoutMs = timeoutMs ?? 30000;
+
+    // Initialize helpers
+    this.pdfRasterizer = new PdfRasterizer();
+    this.ghostscriptConverter = new GhostscriptConverter();
+    this.dxfRenderer = new DxfRenderer();
   }
 
   isSupported(mimeType: string): boolean {
@@ -122,7 +140,9 @@ export class GotenbergPreviewProvider implements PreviewProvider {
       SHARP_TYPES.has(mimeType) ||
       TEXT_TYPES.has(mimeType) ||
       mimeType === PDF_TYPE ||
-      mimeType === 'image/svg+xml'
+      mimeType === 'image/svg+xml' ||
+      GHOSTSCRIPT_SUPPORTED_TYPES.has(mimeType) ||
+      DXF_SUPPORTED_TYPES.has(mimeType)
     );
   }
 
@@ -141,6 +161,16 @@ export class GotenbergPreviewProvider implements PreviewProvider {
     // SVG goes through image conversion (Sharp), not Chromium
     if (mimeType === 'image/svg+xml') {
       return this.convertSvg(data);
+    }
+
+    // EPS/AI via Ghostscript
+    if (GHOSTSCRIPT_SUPPORTED_TYPES.has(mimeType)) {
+      return this.convertViaGhostscript(data, mimeType);
+    }
+
+    // DXF via dxf-parser
+    if (DXF_SUPPORTED_TYPES.has(mimeType)) {
+      return this.convertDxf(data);
     }
 
     if (GOTENBERG_CHROMIUM_TYPES.has(mimeType)) {
@@ -229,6 +259,16 @@ export class GotenbergPreviewProvider implements PreviewProvider {
       // Office (DOCX/XLSX/PPTX) — LibreOffice→PDF, then PDF path
       if (GOTENBERG_OFFICE_TYPES.has(mimeType)) {
         return await this.thumbnailOffice(data, mimeType, width, height, fileName);
+      }
+
+      // EPS/AI — Ghostscript conversion
+      if (GHOSTSCRIPT_SUPPORTED_TYPES.has(mimeType)) {
+        return await this.thumbnailGhostscript(data, mimeType, width, height, fileName);
+      }
+
+      // DXF — dxf-parser conversion
+      if (DXF_SUPPORTED_TYPES.has(mimeType)) {
+        return await this.thumbnailDxf(data, width, height, fileName);
       }
 
       // Unknown type — branded extension card
@@ -404,20 +444,33 @@ body{width:${width * 2}px;padding:16px;background:#fff;font-family:'SF Mono',Mon
     height: number,
     fileName: string
   ): Promise<Buffer> {
+    // Try Sharp first (uses libvips/poppler if available)
     try {
-      // Render PDF page 1 via pdf.js in Gotenberg's Chromium
-      const png = await this.renderPdfPageToImage(data);
-      if (png.length > 1000) {
-        return await sharp(png)
+      const pngBuffer = await sharp(data, { density: 150 }).png().toBuffer();
+      if (pngBuffer.length > 1000) {
+        return await sharp(pngBuffer)
           .resize(width, height, { fit: 'cover', position: 'top' })
           .png()
           .toBuffer();
       }
     } catch {
-      // PDF rendering failed
+      // Sharp PDF rendering requires libvips with poppler support
     }
 
-    // Fallback to branded card for PDFs
+    // Fallback: try pdftoppm via PdfRasterizer
+    try {
+      const result = await this.pdfRasterizer.rasterizePage(data, 1);
+      if (result.image.length > 1000) {
+        return await sharp(result.image)
+          .resize(width, height, { fit: 'cover', position: 'top' })
+          .png()
+          .toBuffer();
+      }
+    } catch {
+      // pdftoppm failed or not available
+    }
+
+    // Last resort: branded placeholder card
     return await this.screenshotFallbackCard(fileName, width, height);
   }
 
@@ -567,57 +620,6 @@ body{width:${width * 2}px;padding:16px;background:#fff;font-family:'SF Mono',Mon
   }
 
   /**
-   * Render a PDF page to PNG using pdf.js in Gotenberg's Chromium.
-   * The <embed>/<object> approach doesn't work in headless Chromium
-   * because the PDF viewer plugin is disabled. pdf.js renders via canvas.
-   */
-  private async renderPdfPageToImage(pdfBuffer: Buffer, pageNum = 1): Promise<Buffer> {
-    const pdfBase64 = pdfBuffer.toString('base64');
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
-<style>*{margin:0;padding:0}body{background:#fff}</style>
-</head><body><canvas id="c"></canvas>
-<script type="module">
-const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs');
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
-const data=Uint8Array.from(atob('${pdfBase64}'),c=>c.charCodeAt(0));
-const pdf=await pdfjsLib.getDocument({data}).promise;
-const page=await pdf.getPage(${pageNum});
-const vp=page.getViewport({scale:1.5});
-const canvas=document.getElementById('c');
-canvas.width=vp.width;canvas.height=vp.height;
-await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-</script></body></html>`;
-
-    const boundary = `----GotenbergBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
-    const body = this.buildMultipartBodyWithFields(
-      boundary,
-      'index.html',
-      Buffer.from(html, 'utf-8'),
-      {
-        waitDelay: '3s',
-        format: 'png',
-        width: '800',
-        height: '1100',
-        optimizeForSpeed: 'true',
-      }
-    );
-
-    const response = await fetch(`${this.gotenbergUrl}/forms/chromium/screenshot/html`, {
-      method: 'POST',
-      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-      body: new Uint8Array(body),
-      signal: AbortSignal.timeout(this.timeoutMs + 5000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`PDF screenshot failed (${response.status})`);
-    }
-
-    return Buffer.from(await response.arrayBuffer());
-  }
-
-  /**
    * Render a branded placeholder card via Gotenberg Chromium screenshot.
    * Shows the file extension in a color-coded card with the filename.
    */
@@ -701,34 +703,55 @@ body{width:${width * 2}px;height:${height * 2}px;display:flex;align-items:center
       throw new Error(`Gotenberg conversion failed (${response.status}): ${errorText}`);
     }
 
-    // Gotenberg returns a PDF. Render page 1 to PNG using pdf.js in Chromium.
-    // The <embed> approach doesn't work in headless Chromium (PDF plugin disabled).
+    // Gotenberg returns a PDF. Render page 1 to PNG.
     const pdfBuffer = Buffer.from(await response.arrayBuffer());
 
-    let pngBuffer: Buffer | null = null;
+    // Try Sharp first (uses libvips/poppler if available)
     try {
-      pngBuffer = await this.renderPdfPageToImage(pdfBuffer);
+      const pngBuffer = await sharp(pdfBuffer, { density: 150 }).png().toBuffer();
+      if (pngBuffer.length > 1000) {
+        const metadata = await sharp(pngBuffer).metadata();
+        return {
+          pages: [
+            {
+              pageNumber: 1,
+              data: pngBuffer,
+              width: metadata.width ?? 800,
+              height: metadata.height ?? 1100,
+              mimeType: 'image/png',
+            },
+          ],
+          totalPages: 1,
+          mimeType: 'image/png',
+        };
+      }
     } catch {
-      // PDF rendering failed — fall back to PDF asset
+      // Sharp PDF rendering requires libvips with poppler support
     }
 
-    // Return PNG if available, otherwise PDF
-    if (pngBuffer && pngBuffer.length > 1000) {
-      return {
-        pages: [
-          {
-            pageNumber: 1,
-            data: pngBuffer,
-            width: 800,
-            height: 1100,
-            mimeType: 'image/png',
-          },
-        ],
-        totalPages: 1,
-        mimeType: 'image/png',
-      };
+    // Fallback: try pdftoppm via PdfRasterizer
+    try {
+      const result = await this.pdfRasterizer.rasterizePage(pdfBuffer, 1);
+      if (result.image.length > 1000) {
+        return {
+          pages: [
+            {
+              pageNumber: 1,
+              data: result.image,
+              width: result.width,
+              height: result.height,
+              mimeType: 'image/png',
+            },
+          ],
+          totalPages: 1,
+          mimeType: 'image/png',
+        };
+      }
+    } catch {
+      // pdftoppm failed or not available
     }
 
+    // Last resort: return PDF directly
     return {
       pages: [
         {
@@ -851,14 +874,14 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
             .toBuffer();
         } catch {
           // Sharp PDF rendering requires libvips with poppler support.
-          // Fallback: render via pdf.js in Gotenberg's Chromium.
+          // Fallback: render via pdftoppm (poppler-utils).
           try {
-            pageImage = await this.renderPdfPageToImage(Buffer.from(singlePagePdf), 1);
-            const meta = await sharp(pageImage).metadata();
-            width = meta.width ?? 800;
-            height = meta.height ?? 1100;
+            const result = await this.pdfRasterizer.rasterizePage(Buffer.from(singlePagePdf), 1);
+            pageImage = result.image;
+            width = result.width;
+            height = result.height;
           } catch {
-            // Both Sharp and Gotenberg failed — generate a placeholder page
+            // Both Sharp and pdftoppm failed - generate a placeholder page
             const page = pdfDoc.getPage(i);
             const pageSize = page.getSize();
             width = Math.round(pageSize.width * (150 / 72));
@@ -978,6 +1001,115 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
       totalPages: 1,
       mimeType: 'image/png',
     };
+  }
+
+  /**
+   * Convert EPS/AI via Ghostscript
+   */
+  private async convertViaGhostscript(data: Buffer, mimeType: string): Promise<PreviewResult> {
+    const pngBuffer = await this.ghostscriptConverter.convert(data, mimeType);
+
+    if (pngBuffer) {
+      const metadata = await sharp(pngBuffer).metadata();
+      return {
+        pages: [
+          {
+            pageNumber: 1,
+            data: pngBuffer,
+            width: metadata.width ?? 800,
+            height: metadata.height ?? 600,
+            mimeType: 'image/png',
+          },
+        ],
+        totalPages: 1,
+        mimeType: 'image/png',
+      };
+    }
+
+    // Ghostscript conversion failed - return placeholder
+    const placeholderPng = await sharp({
+      create: {
+        width: 800,
+        height: 600,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    return {
+      pages: [{ pageNumber: 1, data: placeholderPng, width: 800, height: 600, mimeType: 'image/png' }],
+      totalPages: 1,
+      mimeType: 'image/png',
+    };
+  }
+
+  /**
+   * Convert DXF via dxf-parser
+   */
+  private async convertDxf(data: Buffer): Promise<PreviewResult> {
+    const pngBuffer = await this.dxfRenderer.render(data);
+    const metadata = await sharp(pngBuffer).metadata();
+
+    return {
+      pages: [
+        {
+          pageNumber: 1,
+          data: pngBuffer,
+          width: metadata.width ?? 800,
+          height: metadata.height ?? 600,
+          mimeType: 'image/png',
+        },
+      ],
+      totalPages: 1,
+      mimeType: 'image/png',
+    };
+  }
+
+  /**
+   * Generate thumbnail for EPS/AI files via Ghostscript
+   */
+  private async thumbnailGhostscript(
+    data: Buffer,
+    mimeType: string,
+    width: number,
+    height: number,
+    fileName: string
+  ): Promise<Buffer> {
+    try {
+      const pngBuffer = await this.ghostscriptConverter.convert(data, mimeType);
+      if (pngBuffer) {
+        return await sharp(pngBuffer)
+          .resize(width, height, { fit: 'cover', position: 'top' })
+          .png()
+          .toBuffer();
+      }
+    } catch (error) {
+      console.error('[GotenbergProvider] Ghostscript thumbnail failed:', error);
+    }
+    return await this.screenshotFallbackCard(fileName, width, height);
+  }
+
+  /**
+   * Generate thumbnail for DXF files via dxf-parser
+   */
+  private async thumbnailDxf(
+    data: Buffer,
+    width: number,
+    height: number,
+    fileName: string
+  ): Promise<Buffer> {
+    try {
+      const pngBuffer = await this.dxfRenderer.render(data, width * 2, height * 2);
+      return await sharp(pngBuffer)
+        .resize(width, height, { fit: 'cover', position: 'top' })
+        .png()
+        .toBuffer();
+    } catch (error) {
+      console.error('[GotenbergProvider] DXF thumbnail failed:', error);
+      return await this.screenshotFallbackCard(fileName, width, height);
+    }
   }
 
   // ===========================================================================
