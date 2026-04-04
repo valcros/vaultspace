@@ -13,11 +13,13 @@ Post-MVP enhancements and technical debt items.
 Implemented role-based dashboard with actionable widgets:
 
 **Architecture:**
+
 - New `/api/dashboard/v2` endpoint with role-aware data aggregation
 - 11 specialized widget components in `src/components/dashboard/`
 - Role-based layouts: Admin dashboard vs Viewer dashboard
 
 **Admin Dashboard Features:**
+
 - Action Required widget (pending questions, access requests)
 - Engagement metrics (views, viewers, downloads, activity chart)
 - Room overview with status and document counts
@@ -25,6 +27,7 @@ Implemented role-based dashboard with actionable widgets:
 - Recent activity timeline
 
 **Viewer Dashboard Features:**
+
 - Messages widget (unread count, recent messages)
 - New Documents Since Last Visit
 - Continue Reading (resume where you left off)
@@ -33,6 +36,7 @@ Implemented role-based dashboard with actionable widgets:
 - Room announcements
 
 **Files created/modified:**
+
 - `src/app/api/dashboard/v2/route.ts` - New dashboard API
 - `src/app/(admin)/dashboard/page.tsx` - Role-based layouts
 - `src/components/dashboard/*.tsx` - 11 widget components
