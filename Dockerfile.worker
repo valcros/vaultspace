@@ -26,9 +26,12 @@ RUN npm run build
 FROM node:20-slim AS runner
 WORKDIR /app
 
-# Install dumb-init, OpenSSL for Prisma, and fonts for Sharp SVG text rendering
+# Install dumb-init, OpenSSL for Prisma, fonts for Sharp SVG text rendering,
+# poppler-utils for PDF rasterization (pdftoppm), and ghostscript for EPS/AI conversion
 RUN apt-get update && apt-get install -y \
     dumb-init openssl fontconfig fonts-dejavu-core \
+    poppler-utils \
+    ghostscript \
     && rm -rf /var/lib/apt/lists/*
 
 # Set production environment
