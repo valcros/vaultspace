@@ -429,3 +429,26 @@ export function validateFilename(filename: string): { valid: boolean; error?: st
 export function getEstimatedProcessingTime(mimeType: string): number {
   return getFileTypeByMime(mimeType)?.estimatedProcessingTime ?? 30;
 }
+
+/**
+ * Resolve MIME type from filename extension.
+ * Use when browser reports empty/unknown MIME type (e.g., application/octet-stream).
+ * Returns the browser-reported MIME type if extension lookup fails.
+ */
+export function resolveMimeType(filename: string, browserMimeType: string): string {
+  // If browser already sent a known MIME type, use it
+  if (browserMimeType && browserMimeType !== 'application/octet-stream' && MIME_TYPE_MAP.has(browserMimeType)) {
+    return browserMimeType;
+  }
+
+  // Fall back to extension-based detection
+  const ext = getExtensionFromFilename(filename);
+  const fileType = getFileTypeByExtension(ext);
+
+  if (fileType) {
+    return fileType.mimeType;
+  }
+
+  // Return whatever the browser sent if we can't determine
+  return browserMimeType || 'application/octet-stream';
+}
