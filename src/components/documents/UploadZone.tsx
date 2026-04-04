@@ -83,6 +83,24 @@ const DEFAULT_ACCEPTED_TYPES = [
   'image/x-dxf',
 ];
 
+/**
+ * Extension to MIME type mapping for files browsers don't recognize.
+ * Used as fallback when file.type is empty or application/octet-stream.
+ */
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  eps: 'application/postscript',
+  ai: 'application/illustrator',
+  dxf: 'application/dxf',
+};
+
+/**
+ * Get file extension from filename (lowercase, without dot).
+ */
+function getFileExtension(filename: string): string {
+  const parts = filename.split('.');
+  return parts.length > 1 ? (parts.pop() || '').toLowerCase() : '';
+}
+
 export function UploadZone({
   roomId,
   folderId,
@@ -127,10 +145,17 @@ export function UploadZone({
       if (file.size > maxFileSize) {
         return `File too large (max ${Math.round(maxFileSize / 1024 / 1024)}MB)`;
       }
-      if (!acceptedTypes.includes(file.type)) {
-        return 'File type not supported';
+      // Check MIME type directly first
+      if (acceptedTypes.includes(file.type)) {
+        return null;
       }
-      return null;
+      // Fall back to extension-based check for files browsers don't recognize
+      const ext = getFileExtension(file.name);
+      const mimeFromExt = EXTENSION_MIME_MAP[ext];
+      if (mimeFromExt && acceptedTypes.includes(mimeFromExt)) {
+        return null;
+      }
+      return 'File type not supported';
     },
     [maxFileSize, acceptedTypes]
   );
@@ -331,7 +356,7 @@ export function UploadZone({
           ref={inputRef}
           type="file"
           multiple={multiple}
-          accept={acceptedTypes.join(',')}
+          accept={[...acceptedTypes, ...Object.keys(EXTENSION_MIME_MAP).map(ext => `.${ext}`)].join(',')}
           onChange={handleFileSelect}
           className="hidden"
         />
