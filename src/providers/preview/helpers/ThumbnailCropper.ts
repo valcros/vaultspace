@@ -159,8 +159,8 @@ export class ThumbnailCropper {
    */
   private async analyzeContent(
     imageBuffer: Buffer,
-    width: number,
-    height: number
+    _width: number,
+    _height: number
   ): Promise<ContentAnalysis> {
     try {
       // Downsample to small size for fast analysis
