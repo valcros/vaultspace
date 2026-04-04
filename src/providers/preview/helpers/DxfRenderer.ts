@@ -115,11 +115,14 @@ export class DxfRenderer {
     for (const entity of entities) {
       switch (entity.type) {
         case 'LINE':
-          if (entity.x !== undefined && entity.y !== undefined) {
-            updateBounds(entity.x, entity.y);
-          }
-          if (entity.x2 !== undefined && entity.y2 !== undefined) {
-            updateBounds(entity.x2, entity.y2);
+          // dxf-parser returns LINE with vertices array [start, end]
+          if (entity.vertices && entity.vertices.length >= 2) {
+            const start = entity.vertices[0];
+            const end = entity.vertices[1];
+            if (start && end) {
+              updateBounds(start.x, start.y);
+              updateBounds(end.x, end.y);
+            }
           }
           break;
 
@@ -195,12 +198,17 @@ export class DxfRenderer {
 
       switch (entity.type) {
         case 'LINE':
-          if (entity.x !== undefined && entity.y !== undefined && entity.x2 !== undefined && entity.y2 !== undefined) {
-            svgElements.push(
-              `<line x1="${transformX(entity.x)}" y1="${transformY(entity.y)}" ` +
-              `x2="${transformX(entity.x2)}" y2="${transformY(entity.y2)}" ` +
-              `stroke="${strokeColor}" stroke-width="${strokeWidth}" />`
-            );
+          // dxf-parser returns LINE with vertices array [start, end]
+          if (entity.vertices && entity.vertices.length >= 2) {
+            const start = entity.vertices[0];
+            const end = entity.vertices[1];
+            if (start && end) {
+              svgElements.push(
+                `<line x1="${transformX(start.x)}" y1="${transformY(start.y)}" ` +
+                `x2="${transformX(end.x)}" y2="${transformY(end.y)}" ` +
+                `stroke="${strokeColor}" stroke-width="${strokeWidth}" />`
+              );
+            }
           }
           break;
 

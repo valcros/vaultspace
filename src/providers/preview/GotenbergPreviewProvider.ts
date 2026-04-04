@@ -14,6 +14,7 @@ import type { PreviewOptions, PreviewPage, PreviewProvider, PreviewResult } from
 import { DxfRenderer, DXF_SUPPORTED_TYPES } from './helpers/DxfRenderer';
 import { GhostscriptConverter, GHOSTSCRIPT_SUPPORTED_TYPES } from './helpers/GhostscriptConverter';
 import { PdfRasterizer } from './helpers/PdfRasterizer';
+import { ThumbnailCropper } from './helpers/ThumbnailCropper';
 
 // MIME types that Gotenberg can convert to PDF via LibreOffice
 const GOTENBERG_OFFICE_TYPES = new Set([
@@ -122,6 +123,7 @@ export class GotenbergPreviewProvider implements PreviewProvider {
   private pdfRasterizer: PdfRasterizer;
   private ghostscriptConverter: GhostscriptConverter;
   private dxfRenderer: DxfRenderer;
+  private thumbnailCropper: ThumbnailCropper;
 
   constructor(gotenbergUrl?: string, timeoutMs?: number) {
     this.gotenbergUrl = gotenbergUrl ?? process.env['GOTENBERG_URL'] ?? 'http://localhost:3001';
@@ -131,6 +133,7 @@ export class GotenbergPreviewProvider implements PreviewProvider {
     this.pdfRasterizer = new PdfRasterizer();
     this.ghostscriptConverter = new GhostscriptConverter();
     this.dxfRenderer = new DxfRenderer();
+    this.thumbnailCropper = new ThumbnailCropper();
   }
 
   isSupported(mimeType: string): boolean {
@@ -1068,7 +1071,8 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
   }
 
   /**
-   * Generate thumbnail for EPS/AI files via Ghostscript
+   * Generate thumbnail for EPS/AI files via Ghostscript.
+   * Uses smart cropping to find and focus on content.
    */
   private async thumbnailGhostscript(
     data: Buffer,
@@ -1078,12 +1082,16 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
     fileName: string
   ): Promise<Buffer> {
     try {
-      const pngBuffer = await this.ghostscriptConverter.convert(data, mimeType);
+      // Render at higher resolution for better quality
+      const pngBuffer = await this.ghostscriptConverter.convert(data, mimeType, 150);
       if (pngBuffer) {
-        return await sharp(pngBuffer)
-          .resize(width, height, { fit: 'cover', position: 'top' })
-          .png()
-          .toBuffer();
+        // Use smart cropper to find content and create meaningful thumbnail
+        return await this.thumbnailCropper.createSmartThumbnail(pngBuffer, {
+          width,
+          height,
+          minContentRatio: 0.01,
+          trimThreshold: 15,
+        });
       }
     } catch (error) {
       console.error('[GotenbergProvider] Ghostscript thumbnail failed:', error);
@@ -1092,7 +1100,8 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
   }
 
   /**
-   * Generate thumbnail for DXF files via dxf-parser
+   * Generate thumbnail for DXF files via dxf-parser.
+   * Uses smart cropping to find and focus on content.
    */
   private async thumbnailDxf(
     data: Buffer,
@@ -1101,11 +1110,16 @@ th{background:#f5f5f5}blockquote{border-left:4px solid #ddd;margin:0;padding-lef
     fileName: string
   ): Promise<Buffer> {
     try {
-      const pngBuffer = await this.dxfRenderer.render(data, width * 2, height * 2);
-      return await sharp(pngBuffer)
-        .resize(width, height, { fit: 'cover', position: 'top' })
-        .png()
-        .toBuffer();
+      // Render at higher resolution for better quality after cropping
+      const pngBuffer = await this.dxfRenderer.render(data, width * 3, height * 3);
+
+      // Use smart cropper to find content and create meaningful thumbnail
+      return await this.thumbnailCropper.createSmartThumbnail(pngBuffer, {
+        width,
+        height,
+        minContentRatio: 0.005, // DXF often has sparse content
+        trimThreshold: 15,
+      });
     } catch (error) {
       console.error('[GotenbergProvider] DXF thumbnail failed:', error);
       return await this.screenshotFallbackCard(fileName, width, height);
