@@ -14,6 +14,7 @@ import { UPLOAD_CONFIG, HTTP_STATUS } from '@/lib/constants';
 import { rateLimiters } from '@/lib/middleware/rateLimit';
 import { getProviders } from '@/providers';
 import { withOrgContext } from '@/lib/db';
+import { resolveMimeType } from '@/lib/fileTypes';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -148,13 +149,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
         // Read file data
         const buffer = Buffer.from(await file.arrayBuffer());
 
+        // Resolve MIME type - browsers may report incorrect type for some formats (e.g., DXF)
+        const mimeType = resolveMimeType(file.name, file.type || '');
+
         // Upload via service
         const doc = await documentService.upload(ctx, {
           roomId,
           folderId: folderId || undefined,
           file: {
             filename: file.name,
-            mimeType: file.type || 'application/octet-stream',
+            mimeType,
             size: file.size,
             data: buffer,
           },
