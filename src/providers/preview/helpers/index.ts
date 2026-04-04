@@ -10,3 +10,6 @@ export type { RasterizeResult } from './PdfRasterizer';
 export { GhostscriptConverter, GHOSTSCRIPT_SUPPORTED_TYPES } from './GhostscriptConverter';
 
 export { DxfRenderer, DXF_SUPPORTED_TYPES } from './DxfRenderer';
+
+export { ThumbnailCropper } from './ThumbnailCropper';
+export type { SmartThumbnailOptions } from './ThumbnailCropper';
