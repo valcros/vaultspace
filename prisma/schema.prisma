@@ -1615,8 +1615,9 @@ model Message {
   body    String  @db.Text
 
   // Status
-  isRead   Boolean   @default(false)
-  readAt   DateTime?
+  isRead         Boolean   @default(false)
+  readAt         DateTime?
+  isAnnouncement Boolean   @default(false) // Room-wide announcements visible to all viewers
 
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
