@@ -417,7 +417,9 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
         ) : (
           <DashboardGrid layout={layout} onLayoutChange={updateLayout}>
             {layout.map((item) => (
-              <div key={item.i}>{renderWidget(item.i as WidgetId)}</div>
+              <div key={item.i} className="h-full">
+                {renderWidget(item.i as WidgetId)}
+              </div>
             ))}
           </DashboardGrid>
         )}
