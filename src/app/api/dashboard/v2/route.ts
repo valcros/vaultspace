@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
-import { getDefaultLayout } from '@/lib/dashboard-defaults';
+import { getDefaultLayout, normalizeLayout } from '@/lib/dashboard-defaults';
 import type { WidgetPosition, DashboardLayoutResponse } from '@/types/dashboard';
 
 export const dynamic = 'force-dynamic';
@@ -249,22 +249,29 @@ export async function GET() {
       });
 
       // Build layout response
+      // Always normalize saved layouts to fix any corrupted y-positions
       const defaultLayout = getDefaultLayout(userRole);
-      const layoutResponse: DashboardLayoutResponse = savedLayout
-        ? {
-            desktopLayout: savedLayout.desktopLayout as unknown as WidgetPosition[],
-            collapsedWidgets: savedLayout.collapsedWidgets,
-            densityMode: savedLayout.densityMode as 'compact' | 'cozy',
-            welcomeBannerDismissed: savedLayout.welcomeBannerDismissed,
-            isDefault: false,
-          }
-        : {
-            desktopLayout: defaultLayout,
-            collapsedWidgets: [],
-            densityMode: 'cozy',
-            welcomeBannerDismissed: false,
-            isDefault: true,
-          };
+      const savedDesktopLayout = savedLayout?.desktopLayout as unknown as
+        | WidgetPosition[]
+        | undefined;
+      const normalizedSavedLayout = savedDesktopLayout ? normalizeLayout(savedDesktopLayout) : null;
+
+      const layoutResponse: DashboardLayoutResponse =
+        savedLayout && normalizedSavedLayout
+          ? {
+              desktopLayout: normalizedSavedLayout,
+              collapsedWidgets: savedLayout.collapsedWidgets,
+              densityMode: savedLayout.densityMode as 'compact' | 'cozy',
+              welcomeBannerDismissed: savedLayout.welcomeBannerDismissed,
+              isDefault: false,
+            }
+          : {
+              desktopLayout: defaultLayout,
+              collapsedWidgets: [],
+              densityMode: 'cozy',
+              welcomeBannerDismissed: false,
+              isDefault: true,
+            };
 
       // Build response based on role
       const response: DashboardV2Response = {
@@ -788,12 +795,15 @@ export async function PUT(request: NextRequest) {
       }
 
       // Upsert the layout
-      // Cast to JSON-compatible type for Prisma
-      const layoutJson = desktopLayout
-        ? JSON.parse(JSON.stringify(desktopLayout))
+      // Normalize layout to fix any corrupted y-positions before saving
+      const normalizedLayout = desktopLayout
+        ? normalizeLayout(desktopLayout)
         : getDefaultLayout(userOrg.role);
+
+      // Cast to JSON-compatible type for Prisma
+      const layoutJson = JSON.parse(JSON.stringify(normalizedLayout));
       const updateLayoutJson = desktopLayout
-        ? JSON.parse(JSON.stringify(desktopLayout))
+        ? JSON.parse(JSON.stringify(normalizedLayout))
         : undefined;
 
       await tx.userDashboardLayout.upsert({
