@@ -132,7 +132,7 @@ export function DashboardWidgetV2({
       <Card
         elevation={elevation}
         className={clsx(
-          'flex flex-col',
+          'flex h-full flex-col',
           editMode && 'ring-2 ring-primary-200 dark:ring-primary-800',
           className
         )}
@@ -150,16 +150,16 @@ export function DashboardWidgetV2({
         </div>
 
         {/* Collapsible content */}
-        <CollapsibleContent>
-          <div className={clsx(contentPadding, 'pt-3')}>
+        <CollapsibleContent className="flex min-h-0 flex-1 flex-col">
+          <div className={clsx(contentPadding, 'flex min-h-0 flex-1 flex-col pt-3')}>
             {loading ? (
               <WidgetSkeleton />
             ) : empty ? (
-              <div className="flex h-24 items-center justify-center text-sm text-neutral-400 dark:text-neutral-500">
+              <div className="flex flex-1 items-center justify-center text-sm text-neutral-400 dark:text-neutral-500">
                 {emptyMessage}
               </div>
             ) : (
-              <div style={contentStyle} className="scrollbar-thin">
+              <div style={contentStyle} className="scrollbar-thin flex-1 overflow-auto">
                 {children}
               </div>
             )}
