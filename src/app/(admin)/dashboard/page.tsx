@@ -304,7 +304,6 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     initialLayout,
   });
 
-
   // Render a widget by ID (returns null if data not available)
   const renderWidget = React.useCallback(
     (widgetId: WidgetId) => {
