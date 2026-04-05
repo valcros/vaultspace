@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { WidgetPosition, DashboardLayoutConfig } from '@/types/dashboard';
-import { getDefaultLayout } from '@/lib/dashboard-defaults';
+import { getDefaultLayout, normalizeLayout } from '@/lib/dashboard-defaults';
 
 interface UseDashboardLayoutOptions {
   role: 'ADMIN' | 'VIEWER';
@@ -124,13 +124,16 @@ export function useDashboardLayout({
     setSaveError(null);
 
     try {
+      // Normalize layout before saving to fix any potential y-position corruption
+      const normalizedLayout = normalizeLayout(layout);
+
       const response = await fetch('/api/dashboard/v2', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           layout: {
-            desktopLayout: layout,
+            desktopLayout: normalizedLayout,
             collapsedWidgets: Array.from(collapsedWidgets),
             densityMode: density,
             welcomeBannerDismissed,

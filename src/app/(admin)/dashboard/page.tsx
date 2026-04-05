@@ -30,7 +30,6 @@ import {
 } from '@/components/dashboard';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { useIsMobile } from '@/hooks/useMediaQuery';
-import { getDefaultLayout } from '@/lib/dashboard-defaults';
 import type { WidgetId, DashboardLayoutConfig } from '@/types/dashboard';
 
 // ---------------------------------------------------------------------------
@@ -242,10 +241,9 @@ export default function DashboardPage() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
-  // TEMPORARY FIX: Always use default layout to fix corrupted saved layouts
-  // TODO: Remove this once layout corruption issue is resolved
+  // Use the layout from the API (server normalizes corrupted layouts)
   const initialLayout: DashboardLayoutConfig = {
-    desktopLayout: getDefaultLayout(isAdmin ? 'ADMIN' : 'VIEWER'),
+    desktopLayout: data.layout.desktopLayout,
     collapsedWidgets: data.layout.collapsedWidgets,
     densityMode: data.layout.densityMode,
     welcomeBannerDismissed: data.layout.welcomeBannerDismissed,

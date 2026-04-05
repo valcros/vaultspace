@@ -154,3 +154,98 @@ export const WIDGET_SCROLL_HEIGHTS: Partial<Record<WidgetId, number>> = {
   'new-documents': 250,
   'my-questions': 250,
 };
+
+/**
+ * Grid configuration constants.
+ */
+const GRID_COLS = 12;
+
+/**
+ * Check if two layout items collide (overlap).
+ */
+function itemsCollide(a: WidgetPosition, b: WidgetPosition): boolean {
+  if (a.i === b.i) return false; // Same item
+  if (a.x + a.w <= b.x) return false; // a is left of b
+  if (a.x >= b.x + b.w) return false; // a is right of b
+  if (a.y + a.h <= b.y) return false; // a is above b
+  if (a.y >= b.y + b.h) return false; // a is below b
+  return true;
+}
+
+/**
+ * Find first collision in layout for a given item.
+ */
+function getFirstCollision(
+  layout: WidgetPosition[],
+  item: WidgetPosition
+): WidgetPosition | undefined {
+  for (const other of layout) {
+    if (itemsCollide(item, other)) {
+      return other;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Compact a layout vertically.
+ * Moves items up as far as possible without overlapping.
+ * This is a simplified version of react-grid-layout's compact algorithm.
+ */
+export function compactLayout(layout: WidgetPosition[]): WidgetPosition[] {
+  // Sort by y then x to process top-left items first
+  const sorted = [...layout].sort((a, b) => {
+    if (a.y !== b.y) return a.y - b.y;
+    return a.x - b.x;
+  });
+
+  const compacted: WidgetPosition[] = [];
+
+  for (const item of sorted) {
+    // Create a copy of the item
+    const compactedItem: WidgetPosition = { ...item };
+
+    // Move item up as far as possible
+    compactedItem.y = 0;
+
+    // While there's a collision, move down
+    let collision = getFirstCollision(compacted, compactedItem);
+    while (collision) {
+      // Move below the colliding item
+      compactedItem.y = collision.y + collision.h;
+      collision = getFirstCollision(compacted, compactedItem);
+    }
+
+    compacted.push(compactedItem);
+  }
+
+  // Sort back by original order (by id) for consistency
+  return compacted.sort((a, b) => {
+    const aIndex = layout.findIndex((l) => l.i === a.i);
+    const bIndex = layout.findIndex((l) => l.i === b.i);
+    return aIndex - bIndex;
+  });
+}
+
+/**
+ * Validate and sanitize a layout.
+ * Ensures all positions are within grid bounds and have valid dimensions.
+ */
+export function sanitizeLayout(layout: WidgetPosition[]): WidgetPosition[] {
+  return layout.map((item) => ({
+    ...item,
+    x: Math.max(0, Math.min(item.x, GRID_COLS - 1)),
+    y: Math.max(0, item.y),
+    w: Math.max(item.minW || 1, Math.min(item.w, GRID_COLS)),
+    h: Math.max(item.minH || 1, item.h),
+  }));
+}
+
+/**
+ * Normalize a layout by sanitizing and compacting it.
+ * Use this before saving to ensure consistent y-positions.
+ */
+export function normalizeLayout(layout: WidgetPosition[]): WidgetPosition[] {
+  const sanitized = sanitizeLayout(layout);
+  return compactLayout(sanitized);
+}
