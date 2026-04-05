@@ -304,69 +304,98 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     initialLayout,
   });
 
+  // Check if a widget has data to display
+  const hasWidgetData = React.useCallback(
+    (widgetId: WidgetId): boolean => {
+      switch (widgetId) {
+        case 'action-required':
+          return !!data.actionRequired;
+        case 'messages':
+          return !!data.messages;
+        case 'engagement':
+          return !!data.engagementInsights;
+        case 'my-rooms':
+          return !!data.myRooms;
+        case 'recent-activity':
+          return !!data.recentActivity;
+        case 'checklist-progress':
+          return !!(data.checklistProgress && data.checklistProgress.length > 0);
+        case 'continue-reading':
+          return !!(data.continueReading && data.continueReading.length > 0);
+        case 'bookmarks':
+          return !!data.bookmarks;
+        case 'new-documents':
+          return !!data.newSinceLastVisit;
+        case 'my-questions':
+          return !!data.myQuestions;
+        case 'announcements':
+          return !!(data.announcements && data.announcements.length > 1);
+        default:
+          return false;
+      }
+    },
+    [data]
+  );
+
+  // Filter layout to only include widgets with data
+  const filteredLayout = React.useMemo(
+    () => layout.filter((item) => hasWidgetData(item.i as WidgetId)),
+    [layout, hasWidgetData]
+  );
+
   // Render a widget by ID
   const renderWidget = React.useCallback(
     (widgetId: WidgetId) => {
       switch (widgetId) {
         case 'action-required':
-          return data.actionRequired ? (
+          return (
             <ActionRequiredWidget
-              totalCount={data.actionRequired.totalCount}
-              unansweredQuestions={data.actionRequired.unansweredQuestions}
-              pendingAccessRequests={data.actionRequired.pendingAccessRequests}
-              items={data.actionRequired.items}
+              totalCount={data.actionRequired!.totalCount}
+              unansweredQuestions={data.actionRequired!.unansweredQuestions}
+              pendingAccessRequests={data.actionRequired!.pendingAccessRequests}
+              items={data.actionRequired!.items}
             />
-          ) : null;
+          );
 
         case 'messages':
-          return data.messages ? (
+          return (
             <MessagesWidget
-              unreadCount={data.messages.unreadCount}
-              messages={data.messages.recent}
+              unreadCount={data.messages!.unreadCount}
+              messages={data.messages!.recent}
             />
-          ) : null;
+          );
 
         case 'engagement':
-          return data.engagementInsights ? (
-            <EngagementWidget data={data.engagementInsights} />
-          ) : null;
+          return <EngagementWidget data={data.engagementInsights!} />;
 
         case 'my-rooms':
-          return data.myRooms ? <MyRoomsWidget rooms={data.myRooms} /> : null;
+          return <MyRoomsWidget rooms={data.myRooms!} />;
 
         case 'recent-activity':
-          return data.recentActivity ? (
-            <RecentActivityWidget activities={data.recentActivity} />
-          ) : null;
+          return <RecentActivityWidget activities={data.recentActivity!} />;
 
         case 'checklist-progress':
-          return data.checklistProgress && data.checklistProgress.length > 0 ? (
-            <ChecklistProgressWidget checklists={data.checklistProgress} />
-          ) : null;
+          return <ChecklistProgressWidget checklists={data.checklistProgress!} />;
 
         case 'continue-reading':
-          return data.continueReading && data.continueReading.length > 0 ? (
-            <ContinueReadingWidget items={data.continueReading} />
-          ) : null;
+          return <ContinueReadingWidget items={data.continueReading!} />;
 
         case 'bookmarks':
-          return data.bookmarks ? <BookmarksWidget bookmarks={data.bookmarks} /> : null;
+          return <BookmarksWidget bookmarks={data.bookmarks!} />;
 
         case 'new-documents':
-          return data.newSinceLastVisit ? (
+          return (
             <NewDocumentsWidget
-              newDocuments={data.newSinceLastVisit.newDocuments}
-              updatedDocuments={data.newSinceLastVisit.updatedDocuments}
+              newDocuments={data.newSinceLastVisit!.newDocuments}
+              updatedDocuments={data.newSinceLastVisit!.updatedDocuments}
             />
-          ) : null;
+          );
 
         case 'my-questions':
-          return data.myQuestions ? <MyQuestionsWidget questions={data.myQuestions} /> : null;
+          return <MyQuestionsWidget questions={data.myQuestions!} />;
 
         case 'announcements':
-          return data.announcements && data.announcements.length > 1 ? (
-            <AnnouncementsWidget announcements={data.announcements.slice(1)} />
-          ) : null;
+          return <AnnouncementsWidget announcements={data.announcements!.slice(1)} />;
 
         default:
           return null;
@@ -415,8 +444,8 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
         {isMobile ? (
           <MobileStackedDashboard role={role} renderWidget={renderWidget} />
         ) : (
-          <DashboardGrid layout={layout} onLayoutChange={updateLayout}>
-            {layout.map((item) => (
+          <DashboardGrid layout={filteredLayout} onLayoutChange={updateLayout}>
+            {filteredLayout.map((item) => (
               <div key={item.i} className="h-full">
                 {renderWidget(item.i as WidgetId)}
               </div>
