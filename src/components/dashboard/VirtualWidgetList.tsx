@@ -54,7 +54,10 @@ export function VirtualWidgetList<T>({
   // For small lists, don't virtualize
   if (items.length < 20) {
     return (
-      <div className={clsx('overflow-y-auto scrollbar-thin', className)} style={{ maxHeight: adjustedHeight }}>
+      <div
+        className={clsx('scrollbar-thin overflow-y-auto', className)}
+        style={{ maxHeight: adjustedHeight }}
+      >
         {items.map((item, index) => (
           <React.Fragment key={index}>{renderItem(item, index)}</React.Fragment>
         ))}
@@ -99,7 +102,7 @@ export function ScrollableContent({ maxHeight, children, className }: Scrollable
 
   return (
     <div
-      className={clsx('overflow-y-auto scrollbar-thin', className)}
+      className={clsx('scrollbar-thin overflow-y-auto', className)}
       style={{ maxHeight: adjustedHeight }}
     >
       {children}

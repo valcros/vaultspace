@@ -47,8 +47,7 @@ export function WelcomeBanner({ roomCount, dismissed = false, onDismiss }: Welco
             icon: FolderPlus,
             title: '1. Create a Room',
             desc: 'Organize documents by deal or project',
-            color:
-              'text-primary-600 bg-primary-100 dark:text-primary-400 dark:bg-primary-900/50',
+            color: 'text-primary-600 bg-primary-100 dark:text-primary-400 dark:bg-primary-900/50',
           },
           {
             icon: Upload,

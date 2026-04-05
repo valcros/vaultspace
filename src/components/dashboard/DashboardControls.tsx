@@ -26,14 +26,14 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
   return (
     <div
       className={clsx(
-        'flex items-center justify-end gap-2 mb-4',
-        'py-2 px-3 rounded-lg bg-neutral-50 dark:bg-neutral-800/50',
+        'mb-4 flex items-center justify-end gap-2',
+        'rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-800/50',
         className
       )}
     >
       {/* Save indicator */}
       {isSaving && (
-        <span className="text-xs text-neutral-500 dark:text-neutral-400 mr-2">Saving...</span>
+        <span className="mr-2 text-xs text-neutral-500 dark:text-neutral-400">Saving...</span>
       )}
 
       {/* Density toggle - always visible at md+ */}
@@ -69,7 +69,7 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
       {/* Edit mode toggle - only visible at lg breakpoint */}
       {canEdit && (
         <>
-          <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-700 mx-1" />
+          <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
 
           <Button
             variant={editMode ? 'default' : 'outline'}
@@ -83,7 +83,12 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
 
           {/* Reset button - only visible in edit mode */}
           {editMode && onReset && (
-            <Button variant="ghost" size="sm" onClick={onReset} className="gap-1.5 text-neutral-500">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onReset}
+              className="gap-1.5 text-neutral-500"
+            >
               <RotateCcw className="h-3.5 w-3.5" />
               Reset
             </Button>
@@ -106,7 +111,7 @@ export function EditModeNotice() {
   }
 
   return (
-    <div className="text-center py-2 px-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400">
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
       Dashboard customization is available on larger screens (1200px+)
     </div>
   );

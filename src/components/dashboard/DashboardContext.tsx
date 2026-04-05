@@ -80,7 +80,16 @@ export function DashboardProvider({
       breakpoint,
       canEdit,
     }),
-    [editMode, density, setDensity, collapsedWidgets, toggleCollapsed, isMobile, breakpoint, canEdit]
+    [
+      editMode,
+      density,
+      setDensity,
+      collapsedWidgets,
+      toggleCollapsed,
+      isMobile,
+      breakpoint,
+      canEdit,
+    ]
   );
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
