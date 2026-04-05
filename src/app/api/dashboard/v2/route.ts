@@ -1,7 +1,8 @@
 /**
  * Dashboard API v2
  *
- * GET /api/dashboard/v2 - Get role-aware dashboard data
+ * GET /api/dashboard/v2 - Get role-aware dashboard data with layout
+ * PUT /api/dashboard/v2 - Save dashboard layout
  *
  * Returns different data based on user role:
  * - Org Owner/Admin: Full organization overview
@@ -9,10 +10,12 @@
  * - Member: Basic room access
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getDefaultLayout } from '@/lib/dashboard-defaults';
+import type { WidgetPosition, DashboardLayoutResponse } from '@/types/dashboard';
 
 export const dynamic = 'force-dynamic';
 
@@ -142,6 +145,9 @@ interface DashboardV2Response {
     lastLoginAt: string | null;
   };
 
+  // Dashboard layout configuration
+  layout: DashboardLayoutResponse;
+
   // Admin-focused widgets
   actionRequired?: {
     totalCount: number;
@@ -194,7 +200,7 @@ function getActorName(
 }
 
 // ---------------------------------------------------------------------------
-// Main handler
+// GET handler
 // ---------------------------------------------------------------------------
 
 export async function GET() {
@@ -231,6 +237,35 @@ export async function GET() {
       const isAdmin = userRole === 'ADMIN';
       const lastLoginAt = user.lastLoginAt;
 
+      // Get user's dashboard layout
+      const savedLayout = await tx.userDashboardLayout.findUnique({
+        where: {
+          organizationId_userId_role: {
+            organizationId: orgId,
+            userId,
+            role: userRole,
+          },
+        },
+      });
+
+      // Build layout response
+      const defaultLayout = getDefaultLayout(userRole);
+      const layoutResponse: DashboardLayoutResponse = savedLayout
+        ? {
+            desktopLayout: savedLayout.desktopLayout as unknown as WidgetPosition[],
+            collapsedWidgets: savedLayout.collapsedWidgets,
+            densityMode: savedLayout.densityMode as 'compact' | 'cozy',
+            welcomeBannerDismissed: savedLayout.welcomeBannerDismissed,
+            isDefault: false,
+          }
+        : {
+            desktopLayout: defaultLayout,
+            collapsedWidgets: [],
+            densityMode: 'cozy',
+            welcomeBannerDismissed: false,
+            isDefault: true,
+          };
+
       // Build response based on role
       const response: DashboardV2Response = {
         user: {
@@ -240,6 +275,7 @@ export async function GET() {
           role: userRole,
           lastLoginAt: lastLoginAt?.toISOString() || null,
         },
+        layout: layoutResponse,
       };
 
       // Run queries in parallel for efficiency
@@ -706,7 +742,89 @@ export async function GET() {
 
     return NextResponse.json(data);
   } catch (error) {
-    console.error('[DashboardV2] Error:', error);
+    console.error('[DashboardV2] GET Error:', error);
     return NextResponse.json({ error: 'Failed to get dashboard data' }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PUT handler - Save dashboard layout
+// ---------------------------------------------------------------------------
+
+interface LayoutUpdatePayload {
+  layout: {
+    desktopLayout?: WidgetPosition[];
+    collapsedWidgets?: string[];
+    densityMode?: 'compact' | 'cozy';
+    welcomeBannerDismissed?: boolean;
+  };
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const session = await requireAuth();
+    const orgId = session.organizationId;
+    const userId = session.userId;
+
+    const body = (await request.json()) as LayoutUpdatePayload;
+
+    if (!body.layout) {
+      return NextResponse.json({ error: 'Missing layout data' }, { status: 400 });
+    }
+
+    const { desktopLayout, collapsedWidgets, densityMode, welcomeBannerDismissed } = body.layout;
+
+    await withOrgContext(orgId, async (tx) => {
+      // Get user's role
+      const userOrg = await tx.userOrganization.findUnique({
+        where: {
+          organizationId_userId: { organizationId: orgId, userId },
+        },
+        select: { role: true },
+      });
+
+      if (!userOrg) {
+        throw new Error('User not found in organization');
+      }
+
+      // Upsert the layout
+      // Cast to JSON-compatible type for Prisma
+      const layoutJson = desktopLayout
+        ? JSON.parse(JSON.stringify(desktopLayout))
+        : getDefaultLayout(userOrg.role);
+      const updateLayoutJson = desktopLayout
+        ? JSON.parse(JSON.stringify(desktopLayout))
+        : undefined;
+
+      await tx.userDashboardLayout.upsert({
+        where: {
+          organizationId_userId_role: {
+            organizationId: orgId,
+            userId,
+            role: userOrg.role,
+          },
+        },
+        create: {
+          organizationId: orgId,
+          userId,
+          role: userOrg.role,
+          desktopLayout: layoutJson,
+          collapsedWidgets: collapsedWidgets ?? [],
+          densityMode: densityMode ?? 'cozy',
+          welcomeBannerDismissed: welcomeBannerDismissed ?? false,
+        },
+        update: {
+          ...(updateLayoutJson !== undefined && { desktopLayout: updateLayoutJson }),
+          ...(collapsedWidgets !== undefined && { collapsedWidgets }),
+          ...(densityMode !== undefined && { densityMode }),
+          ...(welcomeBannerDismissed !== undefined && { welcomeBannerDismissed }),
+        },
+      });
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[DashboardV2] PUT Error:', error);
+    return NextResponse.json({ error: 'Failed to save layout' }, { status: 500 });
   }
 }

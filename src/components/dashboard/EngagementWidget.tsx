@@ -25,7 +25,6 @@ export function EngagementWidget({ data, loading }: EngagementWidgetProps) {
     <DashboardWidget
       title="Engagement (7 days)"
       icon={<BarChart3 className="h-4 w-4" />}
-      viewAllHref="/analytics"
       loading={loading}
       empty={data.totalViews === 0 && data.uniqueViewers === 0}
       emptyMessage="No activity in the last 7 days"
