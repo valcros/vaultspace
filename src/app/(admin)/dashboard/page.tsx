@@ -30,6 +30,7 @@ import {
 } from '@/components/dashboard';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { compactLayout } from '@/lib/dashboard-defaults';
 import type { WidgetId, DashboardLayoutConfig } from '@/types/dashboard';
 
 // ---------------------------------------------------------------------------
@@ -337,11 +338,12 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     [data]
   );
 
-  // Filter layout to only include widgets with data
-  const filteredLayout = React.useMemo(
-    () => layout.filter((item) => hasWidgetData(item.i as WidgetId)),
-    [layout, hasWidgetData]
-  );
+  // Filter layout to only include widgets with data, then re-compact
+  // to eliminate gaps from removed widgets
+  const filteredLayout = React.useMemo(() => {
+    const filtered = layout.filter((item) => hasWidgetData(item.i as WidgetId));
+    return compactLayout(filtered);
+  }, [layout, hasWidgetData]);
 
   // Render a widget by ID (returns null if data not available)
   const renderWidget = React.useCallback(
