@@ -310,7 +310,9 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     (widgetId: WidgetId) => {
       switch (widgetId) {
         case 'action-required':
-          if (!data.actionRequired) return null;
+          if (!data.actionRequired) {
+            return null;
+          }
           return (
             <ActionRequiredWidget
               totalCount={data.actionRequired.totalCount}
@@ -321,7 +323,9 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           );
 
         case 'messages':
-          if (!data.messages) return null;
+          if (!data.messages) {
+            return null;
+          }
           return (
             <MessagesWidget
               unreadCount={data.messages.unreadCount}
@@ -330,31 +334,45 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           );
 
         case 'engagement':
-          if (!data.engagementInsights) return null;
+          if (!data.engagementInsights) {
+            return null;
+          }
           return <EngagementWidget data={data.engagementInsights} />;
 
         case 'my-rooms':
-          if (!data.myRooms) return null;
+          if (!data.myRooms) {
+            return null;
+          }
           return <MyRoomsWidget rooms={data.myRooms} />;
 
         case 'recent-activity':
-          if (!data.recentActivity) return null;
+          if (!data.recentActivity) {
+            return null;
+          }
           return <RecentActivityWidget activities={data.recentActivity} />;
 
         case 'checklist-progress':
-          if (!data.checklistProgress || data.checklistProgress.length === 0) return null;
+          if (!data.checklistProgress || data.checklistProgress.length === 0) {
+            return null;
+          }
           return <ChecklistProgressWidget checklists={data.checklistProgress} />;
 
         case 'continue-reading':
-          if (!data.continueReading || data.continueReading.length === 0) return null;
+          if (!data.continueReading || data.continueReading.length === 0) {
+            return null;
+          }
           return <ContinueReadingWidget items={data.continueReading} />;
 
         case 'bookmarks':
-          if (!data.bookmarks) return null;
+          if (!data.bookmarks) {
+            return null;
+          }
           return <BookmarksWidget bookmarks={data.bookmarks} />;
 
         case 'new-documents':
-          if (!data.newSinceLastVisit) return null;
+          if (!data.newSinceLastVisit) {
+            return null;
+          }
           return (
             <NewDocumentsWidget
               newDocuments={data.newSinceLastVisit.newDocuments}
@@ -363,11 +381,15 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           );
 
         case 'my-questions':
-          if (!data.myQuestions) return null;
+          if (!data.myQuestions) {
+            return null;
+          }
           return <MyQuestionsWidget questions={data.myQuestions} />;
 
         case 'announcements':
-          if (!data.announcements || data.announcements.length <= 1) return null;
+          if (!data.announcements || data.announcements.length <= 1) {
+            return null;
+          }
           return <AnnouncementsWidget announcements={data.announcements.slice(1)} />;
 
         default:
@@ -420,7 +442,9 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           <DashboardGrid layout={layout} onLayoutChange={updateLayout}>
             {layout.map((item) => {
               const widget = renderWidget(item.i as WidgetId);
-              if (!widget) return null;
+              if (!widget) {
+                return null;
+              }
               return (
                 <div key={item.i} className="h-full">
                   {widget}
