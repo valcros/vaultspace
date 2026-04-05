@@ -338,10 +338,12 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
   );
 
   // Filter layout to only include widgets with data
-  const filteredLayout = React.useMemo(
-    () => layout.filter((item) => hasWidgetData(item.i as WidgetId)),
-    [layout, hasWidgetData]
-  );
+  // Reset y positions to 0 so compactType="vertical" can stack them properly
+  const filteredLayout = React.useMemo(() => {
+    const filtered = layout.filter((item) => hasWidgetData(item.i as WidgetId));
+    // Set all y=0 and let grid compaction handle vertical stacking
+    return filtered.map((item) => ({ ...item, y: 0 }));
+  }, [layout, hasWidgetData]);
 
   // Render a widget by ID
   const renderWidget = React.useCallback(
