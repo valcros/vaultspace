@@ -164,11 +164,21 @@ const GRID_COLS = 12;
  * Check if two layout items collide (overlap).
  */
 function itemsCollide(a: WidgetPosition, b: WidgetPosition): boolean {
-  if (a.i === b.i) return false; // Same item
-  if (a.x + a.w <= b.x) return false; // a is left of b
-  if (a.x >= b.x + b.w) return false; // a is right of b
-  if (a.y + a.h <= b.y) return false; // a is above b
-  if (a.y >= b.y + b.h) return false; // a is below b
+  if (a.i === b.i) {
+    return false; // Same item
+  }
+  if (a.x + a.w <= b.x) {
+    return false; // a is left of b
+  }
+  if (a.x >= b.x + b.w) {
+    return false; // a is right of b
+  }
+  if (a.y + a.h <= b.y) {
+    return false; // a is above b
+  }
+  if (a.y >= b.y + b.h) {
+    return false; // a is below b
+  }
   return true;
 }
 
@@ -195,7 +205,9 @@ function getFirstCollision(
 export function compactLayout(layout: WidgetPosition[]): WidgetPosition[] {
   // Sort by y then x to process top-left items first
   const sorted = [...layout].sort((a, b) => {
-    if (a.y !== b.y) return a.y - b.y;
+    if (a.y !== b.y) {
+      return a.y - b.y;
+    }
     return a.x - b.x;
   });
 
