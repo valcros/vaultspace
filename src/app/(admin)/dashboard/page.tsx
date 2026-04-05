@@ -304,6 +304,45 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     initialLayout,
   });
 
+  // Check if widget has data (used for layout filtering)
+  const hasWidgetData = React.useCallback(
+    (widgetId: WidgetId): boolean => {
+      switch (widgetId) {
+        case 'action-required':
+          return !!data.actionRequired;
+        case 'messages':
+          return !!data.messages;
+        case 'engagement':
+          return !!data.engagementInsights;
+        case 'my-rooms':
+          return !!data.myRooms;
+        case 'recent-activity':
+          return !!data.recentActivity;
+        case 'checklist-progress':
+          return !!(data.checklistProgress && data.checklistProgress.length > 0);
+        case 'continue-reading':
+          return !!(data.continueReading && data.continueReading.length > 0);
+        case 'bookmarks':
+          return !!data.bookmarks;
+        case 'new-documents':
+          return !!data.newSinceLastVisit;
+        case 'my-questions':
+          return !!data.myQuestions;
+        case 'announcements':
+          return !!(data.announcements && data.announcements.length > 1);
+        default:
+          return false;
+      }
+    },
+    [data]
+  );
+
+  // Filter layout to only include widgets with data
+  const filteredLayout = React.useMemo(
+    () => layout.filter((item) => hasWidgetData(item.i as WidgetId)),
+    [layout, hasWidgetData]
+  );
+
   // Render a widget by ID (returns null if data not available)
   const renderWidget = React.useCallback(
     (widgetId: WidgetId) => {
@@ -438,18 +477,12 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
         {isMobile ? (
           <MobileStackedDashboard role={role} renderWidget={renderWidget} />
         ) : (
-          <DashboardGrid layout={layout} onLayoutChange={updateLayout}>
-            {layout.map((item) => {
-              const widget = renderWidget(item.i as WidgetId);
-              if (!widget) {
-                return null;
-              }
-              return (
-                <div key={item.i} className="h-full">
-                  {widget}
-                </div>
-              );
-            })}
+          <DashboardGrid layout={filteredLayout} onLayoutChange={updateLayout}>
+            {filteredLayout.map((item) => (
+              <div key={item.i} className="h-full">
+                {renderWidget(item.i as WidgetId)}
+              </div>
+            ))}
           </DashboardGrid>
         )}
       </div>
