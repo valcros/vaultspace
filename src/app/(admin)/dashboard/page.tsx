@@ -337,11 +337,39 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     [data]
   );
 
-  // Filter layout to only include widgets with data
-  const filteredLayout = React.useMemo(
-    () => layout.filter((item) => hasWidgetData(item.i as WidgetId)),
-    [layout, hasWidgetData]
-  );
+  // Filter layout to only include widgets with data and compact y-positions
+  const filteredLayout = React.useMemo(() => {
+    // First filter to only widgets with data
+    const filtered = layout.filter((item) => hasWidgetData(item.i as WidgetId));
+
+    // Sort by y then x to process top-to-bottom, left-to-right
+    const sorted = [...filtered].sort((a, b) => a.y - b.y || a.x - b.x);
+
+    // Compact the layout by recalculating y positions
+    // This fixes corrupted saved layouts with large gaps
+    const compacted: typeof sorted = [];
+
+    for (const item of sorted) {
+      // Find the minimum y position where this item can fit
+      let minY = 0;
+
+      for (const placed of compacted) {
+        // Check if there's horizontal overlap
+        const horizontalOverlap = !(
+          item.x + item.w <= placed.x || item.x >= placed.x + placed.w
+        );
+
+        if (horizontalOverlap) {
+          // This item must be below the placed item
+          minY = Math.max(minY, placed.y + placed.h);
+        }
+      }
+
+      compacted.push({ ...item, y: minY });
+    }
+
+    return compacted;
+  }, [layout, hasWidgetData]);
 
   // Render a widget by ID (returns null if data not available)
   const renderWidget = React.useCallback(
