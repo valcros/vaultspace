@@ -45,7 +45,7 @@ export function MessagesWidget({ unreadCount, messages, loading }: MessagesWidge
             }
             title={message.subject}
             subtitle={`From ${message.senderName}${message.roomName ? ` - ${message.roomName}` : ''}`}
-            href={`/messages/${message.id}`}
+            href="/messages"
             timestamp={formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
           />
         ))}

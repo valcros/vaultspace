@@ -46,7 +46,6 @@ export function MyQuestionsWidget({ questions, loading }: MyQuestionsWidgetProps
       title="My Questions"
       icon={<MessageCircle className="h-4 w-4" />}
       badge={pendingCount > 0 ? `${pendingCount} pending` : undefined}
-      viewAllHref="/questions"
       loading={loading}
       empty={questions.length === 0}
       emptyMessage="No questions asked"

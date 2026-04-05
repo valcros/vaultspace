@@ -1,0 +1,156 @@
+/**
+ * Default Dashboard Layouts
+ *
+ * Role-specific default widget layouts for the dashboard grid.
+ * These are used when a user has no saved layout configuration.
+ *
+ * Grid specs:
+ * - 12 columns at lg breakpoint (>=1200px)
+ * - react-grid-layout auto-calculates md/sm/xs from lg layout
+ * - Row height is 60px with 16px margin
+ */
+
+import type { WidgetPosition, WidgetId } from '@/types/dashboard';
+
+/**
+ * Admin default layout (11 widgets).
+ * Optimized for organization management and oversight.
+ */
+export const ADMIN_DEFAULT_LAYOUT: WidgetPosition[] = [
+  // Row 1: Action items and messages (most critical)
+  { i: 'action-required', x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'messages', x: 6, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
+
+  // Row 2: Engagement chart and rooms
+  { i: 'engagement', x: 0, y: 4, w: 8, h: 5, minW: 6, minH: 4 },
+  { i: 'my-rooms', x: 8, y: 4, w: 4, h: 5, minW: 3, minH: 3 },
+
+  // Row 3: Activity and checklists
+  { i: 'recent-activity', x: 0, y: 9, w: 6, h: 5, minW: 4, minH: 3 },
+  { i: 'checklist-progress', x: 6, y: 9, w: 6, h: 5, minW: 4, minH: 3 },
+
+  // Row 4: Personal productivity
+  { i: 'continue-reading', x: 0, y: 14, w: 4, h: 3, minW: 3, minH: 2 },
+  { i: 'bookmarks', x: 4, y: 14, w: 4, h: 3, minW: 3, minH: 2 },
+  { i: 'new-documents', x: 8, y: 14, w: 4, h: 3, minW: 3, minH: 2 },
+];
+
+/**
+ * Viewer default layout (8 widgets).
+ * Optimized for document discovery and access.
+ */
+export const VIEWER_DEFAULT_LAYOUT: WidgetPosition[] = [
+  // Row 1: Messages and new documents (most relevant for viewers)
+  { i: 'messages', x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'new-documents', x: 6, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
+
+  // Row 2: Continue reading and bookmarks
+  { i: 'continue-reading', x: 0, y: 4, w: 6, h: 3, minW: 4, minH: 2 },
+  { i: 'bookmarks', x: 6, y: 4, w: 6, h: 3, minW: 4, minH: 2 },
+
+  // Row 3: Questions and rooms
+  { i: 'my-questions', x: 0, y: 7, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'my-rooms', x: 6, y: 7, w: 6, h: 4, minW: 4, minH: 3 },
+
+  // Row 4: Announcements (full width)
+  { i: 'announcements', x: 0, y: 11, w: 12, h: 3, minW: 6, minH: 2 },
+];
+
+/**
+ * Get the default layout for a given role.
+ */
+export function getDefaultLayout(role: 'ADMIN' | 'VIEWER'): WidgetPosition[] {
+  return role === 'ADMIN' ? ADMIN_DEFAULT_LAYOUT : VIEWER_DEFAULT_LAYOUT;
+}
+
+/**
+ * Get the list of widget IDs available for a role.
+ */
+export function getWidgetsForRole(role: 'ADMIN' | 'VIEWER'): WidgetId[] {
+  if (role === 'ADMIN') {
+    return [
+      'action-required',
+      'messages',
+      'engagement',
+      'my-rooms',
+      'recent-activity',
+      'checklist-progress',
+      'continue-reading',
+      'bookmarks',
+      'new-documents',
+    ];
+  }
+
+  return [
+    'messages',
+    'new-documents',
+    'continue-reading',
+    'bookmarks',
+    'my-questions',
+    'my-rooms',
+    'announcements',
+  ];
+}
+
+/**
+ * Mobile stacked layout order by role.
+ * On mobile (<768px), widgets are displayed in a fixed vertical stack.
+ */
+export const ADMIN_MOBILE_ORDER: WidgetId[] = [
+  'action-required',
+  'messages',
+  'my-rooms',
+  'engagement',
+  'recent-activity',
+  'checklist-progress',
+  'continue-reading',
+  'bookmarks',
+  'new-documents',
+];
+
+export const VIEWER_MOBILE_ORDER: WidgetId[] = [
+  'messages',
+  'new-documents',
+  'continue-reading',
+  'bookmarks',
+  'my-questions',
+  'my-rooms',
+  'announcements',
+];
+
+/**
+ * Get mobile widget order for a role.
+ */
+export function getMobileOrder(role: 'ADMIN' | 'VIEWER'): WidgetId[] {
+  return role === 'ADMIN' ? ADMIN_MOBILE_ORDER : VIEWER_MOBILE_ORDER;
+}
+
+/**
+ * Widget display names.
+ */
+export const WIDGET_TITLES: Record<WidgetId, string> = {
+  'action-required': 'Action Required',
+  messages: 'Messages',
+  engagement: 'Engagement Insights',
+  'my-rooms': 'My Rooms',
+  'recent-activity': 'Recent Activity',
+  'checklist-progress': 'Checklist Progress',
+  'continue-reading': 'Continue Reading',
+  bookmarks: 'Bookmarks',
+  'new-documents': 'New Documents',
+  'my-questions': 'My Questions',
+  announcements: 'Announcements',
+};
+
+/**
+ * Default internal scroll heights for widgets (in pixels).
+ */
+export const WIDGET_SCROLL_HEIGHTS: Partial<Record<WidgetId, number>> = {
+  'action-required': 300,
+  messages: 250,
+  'my-rooms': 300,
+  'recent-activity': 350,
+  bookmarks: 250,
+  'new-documents': 250,
+  'my-questions': 250,
+};
