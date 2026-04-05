@@ -355,9 +355,7 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
 
       for (const placed of compacted) {
         // Check if there's horizontal overlap
-        const horizontalOverlap = !(
-          item.x + item.w <= placed.x || item.x >= placed.x + placed.w
-        );
+        const horizontalOverlap = !(item.x + item.w <= placed.x || item.x >= placed.x + placed.w);
 
         if (horizontalOverlap) {
           // This item must be below the placed item
