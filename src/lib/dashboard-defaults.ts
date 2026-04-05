@@ -18,21 +18,21 @@ import type { WidgetPosition, WidgetId } from '@/types/dashboard';
  */
 export const ADMIN_DEFAULT_LAYOUT: WidgetPosition[] = [
   // Row 1: Action items and messages (most critical)
-  { i: 'action-required', x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
-  { i: 'messages', x: 6, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'action-required', x: 0, y: 0, w: 6, h: 3, minW: 4, minH: 2 },
+  { i: 'messages', x: 6, y: 0, w: 6, h: 3, minW: 4, minH: 2 },
 
   // Row 2: Engagement chart and rooms
-  { i: 'engagement', x: 0, y: 4, w: 8, h: 5, minW: 6, minH: 4 },
-  { i: 'my-rooms', x: 8, y: 4, w: 4, h: 5, minW: 3, minH: 3 },
+  { i: 'engagement', x: 0, y: 3, w: 8, h: 4, minW: 6, minH: 3 },
+  { i: 'my-rooms', x: 8, y: 3, w: 4, h: 4, minW: 3, minH: 2 },
 
   // Row 3: Activity and checklists
-  { i: 'recent-activity', x: 0, y: 9, w: 6, h: 5, minW: 4, minH: 3 },
-  { i: 'checklist-progress', x: 6, y: 9, w: 6, h: 5, minW: 4, minH: 3 },
+  { i: 'recent-activity', x: 0, y: 7, w: 6, h: 4, minW: 4, minH: 2 },
+  { i: 'checklist-progress', x: 6, y: 7, w: 6, h: 4, minW: 4, minH: 2 },
 
   // Row 4: Personal productivity
-  { i: 'continue-reading', x: 0, y: 14, w: 4, h: 3, minW: 3, minH: 2 },
-  { i: 'bookmarks', x: 4, y: 14, w: 4, h: 3, minW: 3, minH: 2 },
-  { i: 'new-documents', x: 8, y: 14, w: 4, h: 3, minW: 3, minH: 2 },
+  { i: 'continue-reading', x: 0, y: 11, w: 4, h: 3, minW: 3, minH: 2 },
+  { i: 'bookmarks', x: 4, y: 11, w: 4, h: 3, minW: 3, minH: 2 },
+  { i: 'new-documents', x: 8, y: 11, w: 4, h: 3, minW: 3, minH: 2 },
 ];
 
 /**
