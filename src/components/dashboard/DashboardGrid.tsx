@@ -38,9 +38,14 @@ interface DashboardGridProps {
   className?: string;
 }
 
+// Grid configuration constants
 const ROW_HEIGHT = 60;
-const MARGIN: [number, number] = [16, 16];
+const MARGIN: readonly [number, number] = [16, 16];
 const COLS = 12;
+const CONTAINER_PADDING: readonly [number, number] = [0, 0];
+
+// Import compactor from react-grid-layout for vertical compaction
+const { verticalCompactor } = RGL;
 
 export function DashboardGrid({ layout, onLayoutChange, children, className }: DashboardGridProps) {
   const { editMode, breakpoint, isMobile } = useDashboardContext();
@@ -94,22 +99,34 @@ export function DashboardGrid({ layout, onLayoutChange, children, className }: D
   const isDraggable = editMode && isLargeBreakpoint;
   const isResizable = editMode && isLargeBreakpoint;
 
+  // react-grid-layout v2 API: use gridConfig and dragConfig objects
+  const gridConfig = {
+    cols: COLS,
+    rowHeight: ROW_HEIGHT,
+    margin: MARGIN,
+    containerPadding: CONTAINER_PADDING,
+  };
+
+  const dragConfig = {
+    enabled: isDraggable,
+    handle: '.drag-handle',
+  };
+
+  const resizeConfig = {
+    enabled: isResizable,
+  };
+
   return (
     <div ref={containerRef} className={clsx('dashboard-grid', className)}>
       {mounted && width > 0 && (
         <GridLayout
           layout={gridLayout}
           width={width}
-          cols={COLS}
-          rowHeight={ROW_HEIGHT}
-          margin={MARGIN}
-          containerPadding={[0, 0]}
-          isDraggable={isDraggable}
-          isResizable={isResizable}
-          draggableHandle=".drag-handle"
+          gridConfig={gridConfig}
+          dragConfig={dragConfig}
+          resizeConfig={resizeConfig}
+          compactor={verticalCompactor}
           onLayoutChange={handleLayoutChange}
-          useCSSTransforms={true}
-          compactType="vertical"
         >
           {children}
         </GridLayout>
