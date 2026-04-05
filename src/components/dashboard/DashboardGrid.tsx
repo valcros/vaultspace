@@ -32,18 +32,20 @@ export function DashboardGrid({ layout, onLayoutChange, children, className }: D
   // Convert WidgetPosition[] to react-grid-layout Layout format
   const gridLayout: Layout = React.useMemo(
     () =>
-      layout.map((item): LayoutItem => ({
-        i: item.i,
-        x: item.x,
-        y: item.y,
-        w: item.w,
-        h: item.h,
-        minW: item.minW,
-        minH: item.minH,
-        maxW: item.maxW,
-        maxH: item.maxH,
-        static: item.static,
-      })),
+      layout.map(
+        (item): LayoutItem => ({
+          i: item.i,
+          x: item.x,
+          y: item.y,
+          w: item.w,
+          h: item.h,
+          minW: item.minW,
+          minH: item.minH,
+          maxW: item.maxW,
+          maxH: item.maxH,
+          static: item.static,
+        })
+      ),
     [layout]
   );
 
@@ -78,7 +80,10 @@ export function DashboardGrid({ layout, onLayoutChange, children, className }: D
   const isResizable = editMode && isLargeBreakpoint;
 
   return (
-    <div ref={containerRef as React.RefObject<HTMLDivElement>} className={clsx('dashboard-grid', className)}>
+    <div
+      ref={containerRef as React.RefObject<HTMLDivElement>}
+      className={clsx('dashboard-grid', className)}
+    >
       {mounted && width > 0 && (
         <GridLayout
           layout={gridLayout}

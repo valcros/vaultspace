@@ -69,8 +69,8 @@ export function DashboardWidgetV2({
     : {};
 
   const headerContent = (
-    <div className={clsx('flex flex-row items-center justify-between w-full', headerPadding)}>
-      <div className="flex items-center gap-2 min-w-0 flex-1">
+    <div className={clsx('flex w-full flex-row items-center justify-between', headerPadding)}>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {/* Drag handle - only visible in edit mode */}
         {editMode && (
           <div className="drag-handle cursor-grab text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300">
@@ -99,16 +99,16 @@ export function DashboardWidgetV2({
         )}
 
         {/* Icon */}
-        {icon && <span className="text-neutral-400 dark:text-neutral-500 shrink-0">{icon}</span>}
+        {icon && <span className="shrink-0 text-neutral-400 dark:text-neutral-500">{icon}</span>}
 
         {/* Title */}
-        <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+        <h3 className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
           {title}
         </h3>
 
         {/* Badge */}
         {badge !== undefined && badge !== 0 && (
-          <span className="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900 dark:text-primary-300 shrink-0">
+          <span className="shrink-0 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900 dark:text-primary-300">
             {badge}
           </span>
         )}
@@ -118,7 +118,7 @@ export function DashboardWidgetV2({
       {viewAllHref && !isCollapsed && (
         <Link
           href={viewAllHref}
-          className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 shrink-0 ml-2"
+          className="ml-2 flex shrink-0 items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
         >
           {viewAllLabel}
           <ChevronRight className="h-3 w-3" />
