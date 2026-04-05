@@ -304,125 +304,71 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     initialLayout,
   });
 
-  // Check if a widget has data to display
-  const hasWidgetData = React.useCallback(
-    (widgetId: WidgetId): boolean => {
-      switch (widgetId) {
-        case 'action-required':
-          return !!data.actionRequired;
-        case 'messages':
-          return !!data.messages;
-        case 'engagement':
-          return !!data.engagementInsights;
-        case 'my-rooms':
-          return !!data.myRooms;
-        case 'recent-activity':
-          return !!data.recentActivity;
-        case 'checklist-progress':
-          return !!(data.checklistProgress && data.checklistProgress.length > 0);
-        case 'continue-reading':
-          return !!(data.continueReading && data.continueReading.length > 0);
-        case 'bookmarks':
-          return !!data.bookmarks;
-        case 'new-documents':
-          return !!data.newSinceLastVisit;
-        case 'my-questions':
-          return !!data.myQuestions;
-        case 'announcements':
-          return !!(data.announcements && data.announcements.length > 1);
-        default:
-          return false;
-      }
-    },
-    [data]
-  );
 
-  // Filter layout to only include widgets with data and recalculate y positions
-  const filteredLayout = React.useMemo(() => {
-    const filtered = layout.filter((item) => hasWidgetData(item.i as WidgetId));
-
-    // Group widgets by their original row (y position)
-    const rowGroups = new Map<number, typeof filtered>();
-    for (const item of filtered) {
-      const row = item.y;
-      if (!rowGroups.has(row)) {
-        rowGroups.set(row, []);
-      }
-      rowGroups.get(row)!.push(item);
-    }
-
-    // Recalculate y positions: assign new y based on cumulative row heights
-    const sortedRows = Array.from(rowGroups.keys()).sort((a, b) => a - b);
-    let currentY = 0;
-    const result: typeof filtered = [];
-
-    for (const originalY of sortedRows) {
-      const rowWidgets = rowGroups.get(originalY)!;
-      // Find max height in this row
-      const maxH = Math.max(...rowWidgets.map((w) => w.h));
-      // Assign new y position to all widgets in this row
-      for (const widget of rowWidgets) {
-        result.push({ ...widget, y: currentY });
-      }
-      currentY += maxH;
-    }
-
-    return result;
-  }, [layout, hasWidgetData]);
-
-  // Render a widget by ID
+  // Render a widget by ID (returns null if data not available)
   const renderWidget = React.useCallback(
     (widgetId: WidgetId) => {
       switch (widgetId) {
         case 'action-required':
+          if (!data.actionRequired) return null;
           return (
             <ActionRequiredWidget
-              totalCount={data.actionRequired!.totalCount}
-              unansweredQuestions={data.actionRequired!.unansweredQuestions}
-              pendingAccessRequests={data.actionRequired!.pendingAccessRequests}
-              items={data.actionRequired!.items}
+              totalCount={data.actionRequired.totalCount}
+              unansweredQuestions={data.actionRequired.unansweredQuestions}
+              pendingAccessRequests={data.actionRequired.pendingAccessRequests}
+              items={data.actionRequired.items}
             />
           );
 
         case 'messages':
+          if (!data.messages) return null;
           return (
             <MessagesWidget
-              unreadCount={data.messages!.unreadCount}
-              messages={data.messages!.recent}
+              unreadCount={data.messages.unreadCount}
+              messages={data.messages.recent}
             />
           );
 
         case 'engagement':
-          return <EngagementWidget data={data.engagementInsights!} />;
+          if (!data.engagementInsights) return null;
+          return <EngagementWidget data={data.engagementInsights} />;
 
         case 'my-rooms':
-          return <MyRoomsWidget rooms={data.myRooms!} />;
+          if (!data.myRooms) return null;
+          return <MyRoomsWidget rooms={data.myRooms} />;
 
         case 'recent-activity':
-          return <RecentActivityWidget activities={data.recentActivity!} />;
+          if (!data.recentActivity) return null;
+          return <RecentActivityWidget activities={data.recentActivity} />;
 
         case 'checklist-progress':
-          return <ChecklistProgressWidget checklists={data.checklistProgress!} />;
+          if (!data.checklistProgress || data.checklistProgress.length === 0) return null;
+          return <ChecklistProgressWidget checklists={data.checklistProgress} />;
 
         case 'continue-reading':
-          return <ContinueReadingWidget items={data.continueReading!} />;
+          if (!data.continueReading || data.continueReading.length === 0) return null;
+          return <ContinueReadingWidget items={data.continueReading} />;
 
         case 'bookmarks':
-          return <BookmarksWidget bookmarks={data.bookmarks!} />;
+          if (!data.bookmarks) return null;
+          return <BookmarksWidget bookmarks={data.bookmarks} />;
 
         case 'new-documents':
+          if (!data.newSinceLastVisit) return null;
           return (
             <NewDocumentsWidget
-              newDocuments={data.newSinceLastVisit!.newDocuments}
-              updatedDocuments={data.newSinceLastVisit!.updatedDocuments}
+              newDocuments={data.newSinceLastVisit.newDocuments}
+              updatedDocuments={data.newSinceLastVisit.updatedDocuments}
             />
           );
 
         case 'my-questions':
-          return <MyQuestionsWidget questions={data.myQuestions!} />;
+          if (!data.myQuestions) return null;
+          return <MyQuestionsWidget questions={data.myQuestions} />;
 
         case 'announcements':
-          return <AnnouncementsWidget announcements={data.announcements!.slice(1)} />;
+          if (!data.announcements || data.announcements.length <= 1) return null;
+          return <AnnouncementsWidget announcements={data.announcements.slice(1)} />;
 
         default:
           return null;
@@ -471,12 +417,16 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
         {isMobile ? (
           <MobileStackedDashboard role={role} renderWidget={renderWidget} />
         ) : (
-          <DashboardGrid layout={filteredLayout} onLayoutChange={updateLayout}>
-            {filteredLayout.map((item) => (
-              <div key={item.i} className="h-full">
-                {renderWidget(item.i as WidgetId)}
-              </div>
-            ))}
+          <DashboardGrid layout={layout} onLayoutChange={updateLayout}>
+            {layout.map((item) => {
+              const widget = renderWidget(item.i as WidgetId);
+              if (!widget) return null;
+              return (
+                <div key={item.i} className="h-full">
+                  {widget}
+                </div>
+              );
+            })}
           </DashboardGrid>
         )}
       </div>
