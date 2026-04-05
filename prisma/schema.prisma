@@ -324,6 +324,7 @@ model Organization {
   pageViews              PageView[]
   webhooks               Webhook[]
   signatureRequests      SignatureRequest[]
+  dashboardLayouts       UserDashboardLayout[]
 
   @@index([slug])
   @@index([isActive])
@@ -379,6 +380,7 @@ model User {
   messagesSent            Message[]          @relation("MessagesSent")
   messagesReceived        Message[]          @relation("MessagesReceived")
   signatureRequests       SignatureRequest[]
+  dashboardLayouts        UserDashboardLayout[]
 
   @@index([email])
   @@index([isActive])
@@ -1752,4 +1754,38 @@ model Webhook {
   @@index([roomId])
   @@index([isActive])
   @@map("webhooks")
+}
+
+// =============================================================================
+// USER DASHBOARD LAYOUTS
+// =============================================================================
+
+model UserDashboardLayout {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  userId         String
+  role           UserRole // Uses existing enum (ADMIN, VIEWER)
+  version        Int      @default(1)
+
+  // Desktop layout (lg breakpoint >=1200px, 12 columns)
+  // Format: [{ i: "widget-id", x: 0, y: 0, w: 4, h: 3 }, ...]
+  desktopLayout Json
+
+  // Widget state
+  collapsedWidgets String[] @default([])
+
+  // Preferences
+  densityMode            String  @default("cozy") @db.VarChar(20)
+  welcomeBannerDismissed Boolean @default(false)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, role])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("user_dashboard_layouts")
 }

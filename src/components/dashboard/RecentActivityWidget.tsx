@@ -75,7 +75,7 @@ export function RecentActivityWidget({ activities, loading }: RecentActivityWidg
     <DashboardWidget
       title="Recent Activity"
       icon={<Activity className="h-4 w-4" />}
-      viewAllHref="/audit-log"
+      viewAllHref="/activity"
       loading={loading}
       empty={activities.length === 0}
       emptyMessage="No recent activity"

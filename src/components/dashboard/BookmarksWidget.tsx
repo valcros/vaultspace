@@ -25,7 +25,6 @@ export function BookmarksWidget({ bookmarks, loading }: BookmarksWidgetProps) {
     <DashboardWidget
       title="Bookmarks"
       icon={<Bookmark className="h-4 w-4" />}
-      viewAllHref="/bookmarks"
       loading={loading}
       empty={bookmarks.length === 0}
       emptyMessage="No bookmarked documents"

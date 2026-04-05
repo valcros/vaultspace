@@ -23,7 +23,14 @@ import {
   AnnouncementsWidget,
   FeaturedAnnouncement,
   WelcomeBanner,
+  DashboardProvider,
+  DashboardControls,
+  DashboardGrid,
+  MobileStackedDashboard,
 } from '@/components/dashboard';
+import { useDashboardLayout } from '@/hooks/useDashboardLayout';
+import { useIsMobile } from '@/hooks/useMediaQuery';
+import type { WidgetId, DashboardLayoutConfig } from '@/types/dashboard';
 
 // ---------------------------------------------------------------------------
 // Types (matches API v2 response)
@@ -36,6 +43,21 @@ interface DashboardV2Data {
     email: string;
     role: 'ADMIN' | 'VIEWER';
     lastLoginAt: string | null;
+  };
+  layout: {
+    desktopLayout: Array<{
+      i: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      minW?: number;
+      minH?: number;
+    }>;
+    collapsedWidgets: string[];
+    densityMode: 'compact' | 'cozy';
+    welcomeBannerDismissed: boolean;
+    isDefault: boolean;
   };
   actionRequired?: {
     totalCount: number;
@@ -204,25 +226,37 @@ export default function DashboardPage() {
     );
   }
 
-  const isAdmin = data?.user?.role === 'ADMIN';
-  const isViewer = data?.user?.role === 'VIEWER';
+  if (isLoading || !data) {
+    return (
+      <>
+        <PageHeader title="Dashboard" />
+        <LoadingDashboard />
+      </>
+    );
+  }
+
+  const isAdmin = data.user.role === 'ADMIN';
 
   // Greeting based on time of day
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
+  // Convert API layout to DashboardLayoutConfig
+  const initialLayout: DashboardLayoutConfig = {
+    desktopLayout: data.layout.desktopLayout,
+    collapsedWidgets: data.layout.collapsedWidgets,
+    densityMode: data.layout.densityMode,
+    welcomeBannerDismissed: data.layout.welcomeBannerDismissed,
+  };
+
   return (
     <>
       <PageHeader
-        title={
-          isLoading ? 'Dashboard' : `${greeting}, ${data?.user?.name?.split(' ')[0] || 'there'}`
-        }
+        title={`${greeting}, ${data.user.name?.split(' ')[0] || 'there'}`}
         description={
-          isLoading
-            ? undefined
-            : data?.user?.lastLoginAt
-              ? `Last login: ${formatDistanceToNow(new Date(data.user.lastLoginAt), { addSuffix: true })}`
-              : undefined
+          data.user.lastLoginAt
+            ? `Last login: ${formatDistanceToNow(new Date(data.user.lastLoginAt), { addSuffix: true })}`
+            : undefined
         }
         actions={
           isAdmin ? (
@@ -236,145 +270,159 @@ export default function DashboardPage() {
         }
       />
 
+      <DashboardContent data={data} initialLayout={initialLayout} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard Content with Layout
+// ---------------------------------------------------------------------------
+
+interface DashboardContentProps {
+  data: DashboardV2Data;
+  initialLayout: DashboardLayoutConfig;
+}
+
+function DashboardContent({ data, initialLayout }: DashboardContentProps) {
+  const role = data.user.role;
+  const isMobile = useIsMobile();
+
+  const {
+    layout,
+    collapsedWidgets,
+    density,
+    welcomeBannerDismissed,
+    isSaving,
+    updateLayout,
+    toggleCollapsed,
+    setDensity,
+    dismissWelcomeBanner,
+    resetLayout,
+  } = useDashboardLayout({
+    role,
+    initialLayout,
+  });
+
+  // Render a widget by ID
+  const renderWidget = React.useCallback(
+    (widgetId: WidgetId) => {
+      switch (widgetId) {
+        case 'action-required':
+          return data.actionRequired ? (
+            <ActionRequiredWidget
+              totalCount={data.actionRequired.totalCount}
+              unansweredQuestions={data.actionRequired.unansweredQuestions}
+              pendingAccessRequests={data.actionRequired.pendingAccessRequests}
+              items={data.actionRequired.items}
+            />
+          ) : null;
+
+        case 'messages':
+          return data.messages ? (
+            <MessagesWidget
+              unreadCount={data.messages.unreadCount}
+              messages={data.messages.recent}
+            />
+          ) : null;
+
+        case 'engagement':
+          return data.engagementInsights ? (
+            <EngagementWidget data={data.engagementInsights} />
+          ) : null;
+
+        case 'my-rooms':
+          return data.myRooms ? <MyRoomsWidget rooms={data.myRooms} /> : null;
+
+        case 'recent-activity':
+          return data.recentActivity ? (
+            <RecentActivityWidget activities={data.recentActivity} />
+          ) : null;
+
+        case 'checklist-progress':
+          return data.checklistProgress && data.checklistProgress.length > 0 ? (
+            <ChecklistProgressWidget checklists={data.checklistProgress} />
+          ) : null;
+
+        case 'continue-reading':
+          return data.continueReading && data.continueReading.length > 0 ? (
+            <ContinueReadingWidget items={data.continueReading} />
+          ) : null;
+
+        case 'bookmarks':
+          return data.bookmarks ? <BookmarksWidget bookmarks={data.bookmarks} /> : null;
+
+        case 'new-documents':
+          return data.newSinceLastVisit ? (
+            <NewDocumentsWidget
+              newDocuments={data.newSinceLastVisit.newDocuments}
+              updatedDocuments={data.newSinceLastVisit.updatedDocuments}
+            />
+          ) : null;
+
+        case 'my-questions':
+          return data.myQuestions ? <MyQuestionsWidget questions={data.myQuestions} /> : null;
+
+        case 'announcements':
+          return data.announcements && data.announcements.length > 1 ? (
+            <AnnouncementsWidget announcements={data.announcements.slice(1)} />
+          ) : null;
+
+        default:
+          return null;
+      }
+    },
+    [data]
+  );
+
+  return (
+    <DashboardProvider
+      initialCollapsed={Array.from(collapsedWidgets)}
+      initialDensity={density}
+      onCollapsedChange={(collapsed) => {
+        collapsed.forEach((id) => {
+          if (!collapsedWidgets.has(id)) {
+            toggleCollapsed(id);
+          }
+        });
+        Array.from(collapsedWidgets).forEach((id) => {
+          if (!collapsed.includes(id)) {
+            toggleCollapsed(id);
+          }
+        });
+      }}
+      onDensityChange={setDensity}
+    >
       <div className="space-y-6">
         {/* Welcome banner for new users */}
-        {!isLoading && data?.myRooms && <WelcomeBanner roomCount={data.myRooms.length} />}
+        {data.myRooms && (
+          <WelcomeBanner
+            roomCount={data.myRooms.length}
+            dismissed={welcomeBannerDismissed}
+            onDismiss={dismissWelcomeBanner}
+          />
+        )}
 
         {/* Featured announcement */}
-        {!isLoading && data?.announcements && data.announcements.length > 0 && (
+        {data.announcements && data.announcements.length > 0 && (
           <FeaturedAnnouncement announcement={data.announcements[0] ?? null} />
         )}
 
-        {/* Admin Dashboard Layout */}
-        {isAdmin && <AdminDashboard data={data} isLoading={isLoading} />}
+        {/* Dashboard controls (hidden on mobile) */}
+        <DashboardControls onReset={resetLayout} isSaving={isSaving} />
 
-        {/* Viewer Dashboard Layout */}
-        {isViewer && <ViewerDashboard data={data} isLoading={isLoading} />}
-
-        {/* Loading state (before we know the role) */}
-        {isLoading && <LoadingDashboard />}
-      </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Admin Dashboard Layout
-// ---------------------------------------------------------------------------
-
-function AdminDashboard({ data, isLoading }: { data: DashboardV2Data | null; isLoading: boolean }) {
-  return (
-    <>
-      {/* Action Required + Messages row */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {data?.actionRequired && (
-          <ActionRequiredWidget
-            totalCount={data.actionRequired.totalCount}
-            unansweredQuestions={data.actionRequired.unansweredQuestions}
-            pendingAccessRequests={data.actionRequired.pendingAccessRequests}
-            items={data.actionRequired.items}
-            loading={isLoading}
-          />
-        )}
-        {data?.messages && (
-          <MessagesWidget
-            unreadCount={data.messages.unreadCount}
-            messages={data.messages.recent}
-            loading={isLoading}
-          />
+        {/* Dashboard grid or mobile stack */}
+        {isMobile ? (
+          <MobileStackedDashboard role={role} renderWidget={renderWidget} />
+        ) : (
+          <DashboardGrid layout={layout} onLayoutChange={updateLayout}>
+            {layout.map((item) => (
+              <div key={item.i}>{renderWidget(item.i as WidgetId)}</div>
+            ))}
+          </DashboardGrid>
         )}
       </div>
-
-      {/* Engagement + Rooms row */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {data?.engagementInsights && (
-          <div className="lg:col-span-2">
-            <EngagementWidget data={data.engagementInsights} loading={isLoading} />
-          </div>
-        )}
-        {data?.myRooms && <MyRoomsWidget rooms={data.myRooms} loading={isLoading} />}
-      </div>
-
-      {/* Activity + Checklists row */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {data?.recentActivity && (
-          <RecentActivityWidget activities={data.recentActivity} loading={isLoading} />
-        )}
-        {data?.checklistProgress && data.checklistProgress.length > 0 && (
-          <ChecklistProgressWidget checklists={data.checklistProgress} loading={isLoading} />
-        )}
-      </div>
-
-      {/* Personal widgets row */}
-      <div className="grid gap-6 md:grid-cols-3">
-        {data?.continueReading && data.continueReading.length > 0 && (
-          <ContinueReadingWidget items={data.continueReading} loading={isLoading} />
-        )}
-        {data?.bookmarks && <BookmarksWidget bookmarks={data.bookmarks} loading={isLoading} />}
-        {data?.newSinceLastVisit && (
-          <NewDocumentsWidget
-            newDocuments={data.newSinceLastVisit.newDocuments}
-            updatedDocuments={data.newSinceLastVisit.updatedDocuments}
-            loading={isLoading}
-          />
-        )}
-      </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Viewer Dashboard Layout
-// ---------------------------------------------------------------------------
-
-function ViewerDashboard({
-  data,
-  isLoading,
-}: {
-  data: DashboardV2Data | null;
-  isLoading: boolean;
-}) {
-  return (
-    <>
-      {/* Messages + New Docs row - most important for viewers */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {data?.messages && (
-          <MessagesWidget
-            unreadCount={data.messages.unreadCount}
-            messages={data.messages.recent}
-            loading={isLoading}
-          />
-        )}
-        {data?.newSinceLastVisit && (
-          <NewDocumentsWidget
-            newDocuments={data.newSinceLastVisit.newDocuments}
-            updatedDocuments={data.newSinceLastVisit.updatedDocuments}
-            loading={isLoading}
-          />
-        )}
-      </div>
-
-      {/* Continue Reading + Bookmarks row */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {data?.continueReading && data.continueReading.length > 0 && (
-          <ContinueReadingWidget items={data.continueReading} loading={isLoading} />
-        )}
-        {data?.bookmarks && <BookmarksWidget bookmarks={data.bookmarks} loading={isLoading} />}
-      </div>
-
-      {/* My Questions + Rooms row */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {data?.myQuestions && (
-          <MyQuestionsWidget questions={data.myQuestions} loading={isLoading} />
-        )}
-        {data?.myRooms && <MyRoomsWidget rooms={data.myRooms} loading={isLoading} />}
-      </div>
-
-      {/* Announcements */}
-      {data?.announcements && data.announcements.length > 1 && (
-        <AnnouncementsWidget announcements={data.announcements.slice(1)} loading={isLoading} />
-      )}
-    </>
+    </DashboardProvider>
   );
 }
 
@@ -384,7 +432,7 @@ function ViewerDashboard({
 
 function LoadingDashboard() {
   return (
-    <>
+    <div className="space-y-6">
       {/* Skeleton stat cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[1, 2, 3, 4].map((i) => (
@@ -428,6 +476,6 @@ function LoadingDashboard() {
           </Card>
         ))}
       </div>
-    </>
+    </div>
   );
 }

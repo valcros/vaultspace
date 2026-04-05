@@ -42,7 +42,6 @@ export function ActionRequiredWidget({ totalCount, items, loading }: ActionRequi
       title="Action Required"
       icon={<AlertCircle className="h-4 w-4" />}
       badge={totalCount}
-      viewAllHref="/notifications"
       loading={loading}
       empty={items.length === 0}
       emptyMessage="No pending actions"
