@@ -337,12 +337,37 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     [data]
   );
 
-  // Filter layout to only include widgets with data
-  // Reset y positions to 0 so compactType="vertical" can stack them properly
+  // Filter layout to only include widgets with data and recalculate y positions
   const filteredLayout = React.useMemo(() => {
     const filtered = layout.filter((item) => hasWidgetData(item.i as WidgetId));
-    // Set all y=0 and let grid compaction handle vertical stacking
-    return filtered.map((item) => ({ ...item, y: 0 }));
+
+    // Group widgets by their original row (y position)
+    const rowGroups = new Map<number, typeof filtered>();
+    for (const item of filtered) {
+      const row = item.y;
+      if (!rowGroups.has(row)) {
+        rowGroups.set(row, []);
+      }
+      rowGroups.get(row)!.push(item);
+    }
+
+    // Recalculate y positions: assign new y based on cumulative row heights
+    const sortedRows = Array.from(rowGroups.keys()).sort((a, b) => a - b);
+    let currentY = 0;
+    const result: typeof filtered = [];
+
+    for (const originalY of sortedRows) {
+      const rowWidgets = rowGroups.get(originalY)!;
+      // Find max height in this row
+      const maxH = Math.max(...rowWidgets.map((w) => w.h));
+      // Assign new y position to all widgets in this row
+      for (const widget of rowWidgets) {
+        result.push({ ...widget, y: currentY });
+      }
+      currentY += maxH;
+    }
+
+    return result;
   }, [layout, hasWidgetData]);
 
   // Render a widget by ID
