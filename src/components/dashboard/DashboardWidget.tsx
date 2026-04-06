@@ -1,10 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, GripVertical } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { clsx } from 'clsx';
+import { useDashboardContext } from './DashboardContext';
 
 interface DashboardWidgetProps {
   title: string;
@@ -31,10 +32,18 @@ export function DashboardWidget({
   empty,
   emptyMessage = 'No items to display',
 }: DashboardWidgetProps) {
+  const { editMode } = useDashboardContext();
+
   return (
     <Card className={clsx('flex flex-col', className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex items-center gap-2">
+          {/* Drag handle - only visible in edit mode */}
+          {editMode && (
+            <div className="drag-handle cursor-grab text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300">
+              <GripVertical className="h-4 w-4" />
+            </div>
+          )}
           {icon && <span className="text-neutral-400 dark:text-neutral-500">{icon}</span>}
           <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{title}</h3>
           {badge !== undefined && badge !== 0 && (
