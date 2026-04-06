@@ -1,10 +1,12 @@
 'use client';
 
 import * as React from 'react';
-// react-grid-layout v2 has different exports than types suggest
+// Use legacy API for stability - v1 flat props API
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-const RGL = require('react-grid-layout') as any;
-const { GridLayout, useContainerWidth } = RGL;
+const RGL = require('react-grid-layout/legacy') as any;
+const WidthProvider = RGL.WidthProvider;
+const ReactGridLayout = RGL.default;
+const WidthProviderGrid = WidthProvider(ReactGridLayout);
 import { clsx } from 'clsx';
 import { useDashboardContext } from './DashboardContext';
 import type { WidgetPosition } from '@/types/dashboard';
@@ -40,16 +42,12 @@ interface DashboardGridProps {
 
 // Grid configuration constants
 const ROW_HEIGHT = 60;
-const MARGIN: readonly [number, number] = [16, 16];
+const MARGIN: [number, number] = [16, 16];
 const COLS = 12;
-const CONTAINER_PADDING: readonly [number, number] = [0, 0];
-
-// Import compactor from react-grid-layout for vertical compaction
-const { verticalCompactor } = RGL;
+const CONTAINER_PADDING: [number, number] = [0, 0];
 
 export function DashboardGrid({ layout, onLayoutChange, children, className }: DashboardGridProps) {
   const { editMode, breakpoint, isMobile } = useDashboardContext();
-  const { width, containerRef, mounted } = useContainerWidth();
 
   // Convert WidgetPosition[] to react-grid-layout Layout format
   const gridLayout: LayoutItem[] = React.useMemo(
@@ -99,38 +97,24 @@ export function DashboardGrid({ layout, onLayoutChange, children, className }: D
   const isDraggable = editMode && isLargeBreakpoint;
   const isResizable = editMode && isLargeBreakpoint;
 
-  // react-grid-layout v2 API: use gridConfig and dragConfig objects
-  const gridConfig = {
-    cols: COLS,
-    rowHeight: ROW_HEIGHT,
-    margin: MARGIN,
-    containerPadding: CONTAINER_PADDING,
-  };
-
-  const dragConfig = {
-    enabled: isDraggable,
-    handle: '.drag-handle',
-  };
-
-  const resizeConfig = {
-    enabled: isResizable,
-  };
-
   return (
-    <div ref={containerRef} className={clsx('dashboard-grid', className)}>
-      {mounted && width > 0 && (
-        <GridLayout
-          layout={gridLayout}
-          width={width}
-          gridConfig={gridConfig}
-          dragConfig={dragConfig}
-          resizeConfig={resizeConfig}
-          compactor={verticalCompactor}
-          onLayoutChange={handleLayoutChange}
-        >
-          {children}
-        </GridLayout>
-      )}
+    <div className={clsx('dashboard-grid', className)}>
+      <WidthProviderGrid
+        className="layout"
+        layout={gridLayout}
+        cols={COLS}
+        rowHeight={ROW_HEIGHT}
+        margin={MARGIN}
+        containerPadding={CONTAINER_PADDING}
+        isDraggable={isDraggable}
+        isResizable={isResizable}
+        draggableHandle=".drag-handle"
+        compactType="vertical"
+        onLayoutChange={handleLayoutChange}
+        useCSSTransforms={true}
+      >
+        {children}
+      </WidthProviderGrid>
     </div>
   );
 }
