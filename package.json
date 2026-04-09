@@ -25,6 +25,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:standalone": "DEPLOYMENT_MODE=standalone vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
+    "mcp:playwright": "playwright-mcp --config ./playwright.mcp.config.json",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "DEPLOYMENT_MODE=standalone prisma migrate dev",
@@ -96,6 +97,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/mcp": "^0.0.70",
     "@playwright/test": "^1.49.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
