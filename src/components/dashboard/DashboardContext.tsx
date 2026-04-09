@@ -34,8 +34,8 @@ export function DashboardProvider({
   const isMobile = useIsMobile();
   const breakpoint = useBreakpoint();
 
-  // Edit mode is only allowed at lg breakpoint
-  const canEdit = breakpoint === 'lg';
+  // Edit mode is only allowed at lg+ breakpoints
+  const canEdit = breakpoint === 'lg' || breakpoint === 'xl' || breakpoint === '2xl';
 
   // Disable edit mode if breakpoint changes to smaller
   React.useEffect(() => {
