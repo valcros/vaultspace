@@ -32,4 +32,13 @@ describe('twoFactorTempToken', () => {
 
     expect(verifyTwoFactorTempToken(token, now + 1000)).toEqual({ userId: 'user-1' });
   });
+
+  it('rejects future-dated temp tokens', () => {
+    process.env['SESSION_SECRET'] = 'test-session-secret';
+
+    const now = Date.now();
+    const token = generateTwoFactorTempToken('user-1', now + 1000);
+
+    expect(verifyTwoFactorTempToken(token, now)).toBeNull();
+  });
 });

@@ -7,6 +7,7 @@ import { db } from '@/lib/db';
 export const viewerSessionBaseSelect = {
   id: true,
   createdAt: true,
+  isActive: true,
   organizationId: true,
   link: {
     select: {
@@ -21,6 +22,7 @@ export const viewerSessionBaseSelect = {
 
 type ViewerSessionGuardable = {
   createdAt: Date;
+  isActive: boolean;
   link: {
     slug: string | null;
     maxSessionMinutes: number | null;
@@ -49,6 +51,7 @@ export async function getViewerSession<T extends Prisma.ViewSessionSelect>(
   return db.viewSession.findFirst({
     where: {
       sessionToken: viewerToken,
+      isActive: true,
     },
     select,
   });
@@ -58,7 +61,7 @@ export function getViewerSessionGuardResponse(
   shareToken: string,
   session: ViewerSessionGuardable | null
 ): NextResponse | null {
-  if (!session || !session.link || session.link.slug !== shareToken) {
+  if (!session || !session.isActive || !session.link || session.link.slug !== shareToken) {
     return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
   }
 

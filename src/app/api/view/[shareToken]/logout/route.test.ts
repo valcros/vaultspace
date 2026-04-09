@@ -38,6 +38,7 @@ describe('POST /api/view/[shareToken]/logout', () => {
     mockViewSessionFindFirst.mockResolvedValue({
       id: 'view-session-1',
       createdAt: new Date(),
+      isActive: true,
       organizationId: 'org-1',
       link: {
         slug: 'share-token',

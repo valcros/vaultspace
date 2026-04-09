@@ -8,7 +8,8 @@ const mockUserUpdate = vi.fn();
 const mockTokenUpdate = vi.fn();
 const mockTokenUpdateMany = vi.fn();
 const mockTransaction = vi.fn();
-const mockInvalidateAllUserSessions = vi.fn();
+const mockDeactivateAllUserSessionsInTx = vi.fn();
+const mockClearSessionCache = vi.fn();
 
 vi.mock('bcryptjs', () => ({
   default: {
@@ -17,8 +18,10 @@ vi.mock('bcryptjs', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  invalidateAllUserSessions: (...args: Parameters<typeof mockInvalidateAllUserSessions>) =>
-    mockInvalidateAllUserSessions(...args),
+  clearSessionCache: (...args: Parameters<typeof mockClearSessionCache>) =>
+    mockClearSessionCache(...args),
+  deactivateAllUserSessionsInTx: (...args: Parameters<typeof mockDeactivateAllUserSessionsInTx>) =>
+    mockDeactivateAllUserSessionsInTx(...args),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -45,14 +48,26 @@ describe('POST /api/auth/reset-password', () => {
     mockHash.mockResolvedValue('hashed-password');
     mockFindFirst.mockResolvedValue({ id: 'reset-1', userId: 'user-1' });
     mockUserFindUnique.mockResolvedValue({ id: 'user-1', isActive: true });
-    mockUserUpdate.mockReturnValue({ op: 'user.update' });
-    mockTokenUpdate.mockReturnValue({ op: 'token.update' });
-    mockTokenUpdateMany.mockReturnValue({ op: 'token.updateMany' });
-    mockTransaction.mockResolvedValue(undefined);
-    mockInvalidateAllUserSessions.mockResolvedValue(undefined);
+    mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1', 'token-2']);
+    mockClearSessionCache.mockResolvedValue(undefined);
+    mockTransaction.mockImplementation(async (callback) => {
+      const tx = {
+        user: { update: mockUserUpdate.mockResolvedValue(undefined) },
+        passwordResetToken: {
+          update: mockTokenUpdate.mockResolvedValue(undefined),
+          updateMany: mockTokenUpdateMany.mockResolvedValue(undefined),
+        },
+        session: {
+          findMany: vi.fn(),
+          updateMany: vi.fn(),
+        },
+      };
+
+      return callback(tx as Parameters<typeof callback>[0]);
+    });
   });
 
-  it('invalidates all existing sessions after a successful password reset', async () => {
+  it('deactivates sessions inside the password reset transaction and clears cache after commit', async () => {
     const request = new NextRequest('http://localhost/api/auth/reset-password', {
       method: 'POST',
       body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
@@ -64,6 +79,7 @@ describe('POST /api/auth/reset-password', () => {
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(mockTransaction).toHaveBeenCalledTimes(1);
-    expect(mockInvalidateAllUserSessions).toHaveBeenCalledWith('user-1');
+    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-1');
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1', 'token-2']);
   });
 });

@@ -1,11 +1,55 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getViewerSessionGuardResponse } from './viewerSession';
+const mockCookieStore = {
+  get: vi.fn(),
+};
+
+const mockViewSessionFindFirst = vi.fn();
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => mockCookieStore),
+}));
+
+vi.mock('@/lib/db', () => ({
+  db: {
+    viewSession: {
+      findFirst: (...args: unknown[]) => mockViewSessionFindFirst(...args),
+    },
+  },
+}));
+
+import { getViewerSession, getViewerSessionGuardResponse } from './viewerSession';
 
 describe('viewerSession guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('only resolves active viewer sessions', async () => {
+    mockCookieStore.get.mockReturnValue({ value: 'viewer-session-token' });
+    mockViewSessionFindFirst.mockResolvedValue(null);
+
+    await getViewerSession('share-token', {
+      id: true,
+      isActive: true,
+    });
+
+    expect(mockViewSessionFindFirst).toHaveBeenCalledWith({
+      where: {
+        sessionToken: 'viewer-session-token',
+        isActive: true,
+      },
+      select: {
+        id: true,
+        isActive: true,
+      },
+    });
+  });
+
   it('rejects sessions whose link slug does not match the requested share token', async () => {
     const response = getViewerSessionGuardResponse('share-token', {
       createdAt: new Date(),
+      isActive: true,
       link: {
         slug: 'different-token',
         maxSessionMinutes: 30,
@@ -23,6 +67,7 @@ describe('viewerSession guard', () => {
 
     const response = getViewerSessionGuardResponse('share-token', {
       createdAt: new Date(now.getTime() - 31 * 60 * 1000),
+      isActive: true,
       link: {
         slug: 'share-token',
         maxSessionMinutes: 30,
