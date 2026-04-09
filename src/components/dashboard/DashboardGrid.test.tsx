@@ -6,10 +6,6 @@
  *   2. DashboardWidget renders with h-full, overflow-hidden, and scrollable content
  *   3. DashboardContext canEdit is true at lg, xl, and 2xl breakpoints
  *
- * Uses jsdom environment for React component rendering.
- * If jsdom is not installed (incomplete node_modules), these tests are skipped
- * gracefully — the CI environment has full dependencies.
- *
  * @vitest-environment jsdom
  */
 
@@ -20,25 +16,24 @@ import * as React from 'react';
 let capturedGridProps: Record<string, unknown> = {};
 
 vi.mock('react-grid-layout/legacy', () => {
-  const MockGrid = React.forwardRef(function MockGrid(
-    props: Record<string, unknown> & { children?: React.ReactNode },
-    _ref: React.Ref<HTMLDivElement>
-  ) {
-    capturedGridProps = props;
-    return React.createElement('div', { 'data-testid': 'mock-grid' }, props.children);
-  });
+  const MockGrid = React.forwardRef<HTMLDivElement, { children?: React.ReactNode }>(
+    function MockGrid(props, _ref) {
+      capturedGridProps = props as Record<string, unknown>;
+      return <div data-testid="mock-grid">{props.children}</div>;
+    }
+  );
   MockGrid.displayName = 'MockGrid';
 
-  const WidthProvider = (Component: React.ComponentType<Record<string, unknown>>) => {
-    const Wrapped = React.forwardRef(function Wrapped(
-      props: Record<string, unknown>,
-      ref: React.Ref<HTMLDivElement>
-    ) {
-      return React.createElement(Component, { ...props, ref });
-    });
-    Wrapped.displayName = 'WidthProviderGrid';
-    return Wrapped;
-  };
+  const WidthProvider =
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (Component: React.ComponentType<any>) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const Wrapped = React.forwardRef<HTMLDivElement, any>(function Wrapped(props, ref) {
+        return <Component {...props} ref={ref} />;
+      });
+      Wrapped.displayName = 'WidthProviderGrid';
+      return Wrapped;
+    };
 
   return { default: MockGrid, WidthProvider };
 });
@@ -69,13 +64,15 @@ const TEST_LAYOUT: WidgetPosition[] = [
   { i: 'c', x: 0, y: 3, w: 12, h: 4 },
 ];
 
+const noop = () => {};
+
 function renderWithProvider(
   ui: React.ReactElement,
   options?: { breakpoint?: string; mobile?: boolean }
 ) {
   mockBreakpoint = options?.breakpoint ?? 'lg';
   mockIsMobile = options?.mobile ?? false;
-  return render(React.createElement(DashboardProvider, null, ui));
+  return render(<DashboardProvider>{ui}</DashboardProvider>);
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -89,13 +86,11 @@ describe('DashboardGrid', () => {
 
   it('passes compactType="vertical" to react-grid-layout', () => {
     renderWithProvider(
-      React.createElement(
-        DashboardGrid,
-        { layout: TEST_LAYOUT, onLayoutChange: () => {} },
-        React.createElement('div', { key: 'a' }, 'A'),
-        React.createElement('div', { key: 'b' }, 'B'),
-        React.createElement('div', { key: 'c' }, 'C')
-      )
+      <DashboardGrid layout={TEST_LAYOUT} onLayoutChange={noop}>
+        <div key="a">A</div>
+        <div key="b">B</div>
+        <div key="c">C</div>
+      </DashboardGrid>
     );
 
     expect(capturedGridProps['compactType']).toBe('vertical');
@@ -103,27 +98,22 @@ describe('DashboardGrid', () => {
 
   it('passes the layout positions through without modification', () => {
     renderWithProvider(
-      React.createElement(
-        DashboardGrid,
-        { layout: TEST_LAYOUT, onLayoutChange: () => {} },
-        React.createElement('div', { key: 'a' }, 'A')
-      )
+      <DashboardGrid layout={TEST_LAYOUT} onLayoutChange={noop}>
+        <div key="a">A</div>
+      </DashboardGrid>
     );
 
     const passedLayout = capturedGridProps['layout'] as WidgetPosition[];
     expect(passedLayout).toHaveLength(3);
-    // Positions are passed as-is, not re-compacted
     expect(passedLayout[0]).toMatchObject({ i: 'a', x: 0, y: 0 });
     expect(passedLayout[2]).toMatchObject({ i: 'c', x: 0, y: 3 });
   });
 
   it('disables drag and resize when not in edit mode', () => {
     renderWithProvider(
-      React.createElement(
-        DashboardGrid,
-        { layout: TEST_LAYOUT, onLayoutChange: () => {} },
-        React.createElement('div', { key: 'a' }, 'A')
-      )
+      <DashboardGrid layout={TEST_LAYOUT} onLayoutChange={noop}>
+        <div key="a">A</div>
+      </DashboardGrid>
     );
 
     expect(capturedGridProps['isDraggable']).toBe(false);
@@ -132,11 +122,9 @@ describe('DashboardGrid', () => {
 
   it('returns null on mobile viewport', () => {
     const { container } = renderWithProvider(
-      React.createElement(
-        DashboardGrid,
-        { layout: TEST_LAYOUT, onLayoutChange: () => {} },
-        React.createElement('div', { key: 'a' }, 'A')
-      ),
+      <DashboardGrid layout={TEST_LAYOUT} onLayoutChange={noop}>
+        <div key="a">A</div>
+      </DashboardGrid>,
       { mobile: true, breakpoint: 'xs' }
     );
 
@@ -145,11 +133,9 @@ describe('DashboardGrid', () => {
 
   it('renders grid at xl breakpoint', () => {
     renderWithProvider(
-      React.createElement(
-        DashboardGrid,
-        { layout: TEST_LAYOUT, onLayoutChange: () => {} },
-        React.createElement('div', { key: 'a' }, 'A')
-      ),
+      <DashboardGrid layout={TEST_LAYOUT} onLayoutChange={noop}>
+        <div key="a">A</div>
+      </DashboardGrid>,
       { breakpoint: 'xl' }
     );
 
@@ -158,11 +144,9 @@ describe('DashboardGrid', () => {
 
   it('renders grid at 2xl breakpoint', () => {
     renderWithProvider(
-      React.createElement(
-        DashboardGrid,
-        { layout: TEST_LAYOUT, onLayoutChange: () => {} },
-        React.createElement('div', { key: 'a' }, 'A')
-      ),
+      <DashboardGrid layout={TEST_LAYOUT} onLayoutChange={noop}>
+        <div key="a">A</div>
+      </DashboardGrid>,
       { breakpoint: '2xl' }
     );
 
@@ -173,7 +157,7 @@ describe('DashboardGrid', () => {
 describe('DashboardWidget', () => {
   it('renders Card with h-full and overflow-hidden for grid cell sizing', () => {
     const { container } = renderWithProvider(
-      React.createElement(DashboardWidget, { title: 'Test' }, 'Content')
+      <DashboardWidget title="Test">Content</DashboardWidget>
     );
 
     const card = container.firstElementChild as HTMLElement;
@@ -183,7 +167,7 @@ describe('DashboardWidget', () => {
 
   it('renders content area with overflow-auto for internal scrolling', () => {
     const { container } = renderWithProvider(
-      React.createElement(DashboardWidget, { title: 'Test' }, 'Content')
+      <DashboardWidget title="Test">Content</DashboardWidget>
     );
 
     const scrollable = container.querySelector('.overflow-auto');
@@ -192,7 +176,7 @@ describe('DashboardWidget', () => {
 
   it('renders header with shrink-0 to prevent compression', () => {
     const { container } = renderWithProvider(
-      React.createElement(DashboardWidget, { title: 'Test' }, 'Content')
+      <DashboardWidget title="Test">Content</DashboardWidget>
     );
 
     const header = container.querySelector('.shrink-0');
@@ -201,7 +185,7 @@ describe('DashboardWidget', () => {
 
   it('renders content area with min-h-0 for flex overflow', () => {
     const { container } = renderWithProvider(
-      React.createElement(DashboardWidget, { title: 'Test' }, 'Content')
+      <DashboardWidget title="Test">Content</DashboardWidget>
     );
 
     const minH0 = container.querySelector('.min-h-0');
