@@ -1,3 +1,5 @@
+/* eslint-disable no-console */
+
 /**
  * Azure Runtime Guard
  *
@@ -138,6 +140,10 @@ export function validateConfig(): { valid: boolean; errors: string[]; warnings: 
   const dbUrl = process.env['DATABASE_URL'];
   if (!dbUrl) {
     errors.push('DATABASE_URL is not set');
+  }
+
+  if (!process.env['SESSION_SECRET']) {
+    errors.push('SESSION_SECRET is not set');
   }
 
   if (mode === 'azure') {

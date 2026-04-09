@@ -309,6 +309,7 @@ export function DocumentViewer({
     isImage,
     isTextPreview,
     previewUrl,
+    mimeType,
     documentName,
     allowDownload,
     onDocumentLoadSuccess,

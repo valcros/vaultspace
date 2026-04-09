@@ -35,7 +35,7 @@ VaultSpace provides enterprise-grade document security and collaboration for M&A
 
 ## Status
 
-**MVP implementation in progress.** Backend APIs complete (61 routes), admin UI fully wired, CI/CD pipeline operational.
+**MVP implementation in progress.** Backend APIs complete (61 routes), admin UI fully wired, and local validation currently passes with 479 unit tests.
 
 See [MASTER_PLAN.md](MASTER_PLAN.md) for the full sprint plan and [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for current progress.
 
@@ -57,8 +57,24 @@ npm install
 # Run checks (no Azure services required)
 npm run type-check    # TypeScript
 npm run lint          # ESLint
-npm run test          # Unit tests (74 tests)
+npm run test          # Unit tests (479 tests)
 ```
+
+### Playwright MCP
+
+VaultSpace includes a project-local Playwright MCP server setup for browser-driven agent workflows.
+
+```bash
+# Start the project MCP server
+npm run mcp:playwright
+```
+
+Notes:
+
+- The server uses `playwright.mcp.config.json`
+- Browser profile and artifacts are stored under `.playwright-mcp/`
+- If the Chromium browser binary is missing locally, run `npx playwright install chromium`
+- MCP clients can point at the project command `npm run mcp:playwright` from the repo root
 
 ### Deployment Options
 

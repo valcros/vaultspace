@@ -79,21 +79,27 @@ export function EnhancedCommandMenu({
     room.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const allItems = [
-    ...filteredRecent.map((r) => ({ ...r, type: 'recent' as const })),
-    ...filteredNav.map((n) => ({ ...n, type: 'nav' as const })),
-    ...filteredActions.map((a) => ({ ...a, type: 'action' as const })),
-  ];
+  const allItems = React.useMemo(
+    () => [
+      ...filteredRecent.map((r) => ({ ...r, type: 'recent' as const })),
+      ...filteredNav.map((n) => ({ ...n, type: 'nav' as const })),
+      ...filteredActions.map((a) => ({ ...a, type: 'action' as const })),
+    ],
+    [filteredRecent, filteredNav, filteredActions]
+  );
 
-  const handleSelect = (item: CommandAction | { id: string; name: string; type: string }) => {
-    if ('href' in item && item.href) {
-      router.push(item.href);
-    } else if ('name' in item) {
-      router.push(`/rooms/${item.id}`);
-    }
-    onOpenChange(false);
-    setSearch('');
-  };
+  const handleSelect = React.useCallback(
+    (item: CommandAction | { id: string; name: string; type: string }) => {
+      if ('href' in item && item.href) {
+        router.push(item.href);
+      } else if ('name' in item) {
+        router.push(`/rooms/${item.id}`);
+      }
+      onOpenChange(false);
+      setSearch('');
+    },
+    [onOpenChange, router]
+  );
 
   // Handle keyboard navigation
   React.useEffect(() => {
@@ -116,7 +122,7 @@ export function EnhancedCommandMenu({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, selectedIndex, allItems]);
+  }, [open, selectedIndex, allItems, handleSelect]);
 
   // Reset selection when search changes
   React.useEffect(() => {

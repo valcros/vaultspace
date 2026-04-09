@@ -9,7 +9,9 @@ export {
 } from './token';
 
 export {
+  clearSessionCache,
   createSession,
+  deactivateAllUserSessionsInTx,
   validateSession,
   invalidateSession,
   invalidateAllUserSessions,

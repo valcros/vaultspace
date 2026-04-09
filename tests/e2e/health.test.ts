@@ -13,7 +13,7 @@ test.describe('Health API', () => {
     expect(response.ok()).toBeTruthy();
 
     const body = await response.json();
-    expect(body.status).toBe('ok');
+    expect(body.status).toBe('healthy');
   });
 
   test('should include version info', async ({ request }) => {
