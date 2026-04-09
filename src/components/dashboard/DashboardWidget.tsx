@@ -35,8 +35,8 @@ export function DashboardWidget({
   const { editMode } = useDashboardContext();
 
   return (
-    <Card className={clsx('flex flex-col', className)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <Card className={clsx('flex h-full flex-col overflow-hidden', className)}>
+      <CardHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex items-center gap-2">
           {/* Drag handle - only visible in edit mode */}
           {editMode && (
@@ -62,7 +62,7 @@ export function DashboardWidget({
           </Link>
         )}
       </CardHeader>
-      <CardContent className="flex-1 pt-2">
+      <CardContent className="min-h-0 flex-1 overflow-auto pt-2">
         {loading ? (
           <WidgetSkeleton />
         ) : empty ? (
