@@ -14,7 +14,8 @@ vi.mock('@/lib/middleware', () => ({
 }));
 
 vi.mock('@/lib/auth', () => ({
-  invalidateAllUserSessions: vi.fn(),
+  clearSessionCache: vi.fn(),
+  deactivateAllUserSessionsInTx: vi.fn(),
 }));
 
 // Mock database
@@ -23,11 +24,12 @@ vi.mock('@/lib/db', () => ({
 }));
 
 import { requireAuth } from '@/lib/middleware';
-import { invalidateAllUserSessions } from '@/lib/auth';
+import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
 import { withOrgContext } from '@/lib/db';
 
 const mockRequireAuth = vi.mocked(requireAuth);
-const mockInvalidateAllUserSessions = vi.mocked(invalidateAllUserSessions);
+const mockClearSessionCache = vi.mocked(clearSessionCache);
+const mockDeactivateAllUserSessionsInTx = vi.mocked(deactivateAllUserSessionsInTx);
 const mockWithOrgContext = vi.mocked(withOrgContext);
 
 describe('GET /api/users/:userId', () => {
@@ -42,7 +44,8 @@ describe('GET /api/users/:userId', () => {
     mockRequireAuth.mockResolvedValue(
       mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
     );
-    mockInvalidateAllUserSessions.mockResolvedValue(undefined);
+    mockClearSessionCache.mockResolvedValue(undefined);
+    mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1']);
   });
 
   it('returns 500 for unauthenticated requests', async () => {
@@ -361,8 +364,9 @@ describe('DELETE /api/users/:userId', () => {
       },
     });
 
-    // Verify sessions were invalidated
-    expect(mockInvalidateAllUserSessions).toHaveBeenCalledWith('user-2');
+    // Verify sessions were invalidated atomically and cache was cleared after commit
+    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-2');
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
   });
 
   it('returns 500 when database error occurs', async () => {

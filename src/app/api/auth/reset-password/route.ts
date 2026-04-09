@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
-import { invalidateAllUserSessions } from '@/lib/auth';
+import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { z } from 'zod';
 
@@ -47,28 +47,31 @@ export async function POST(request: NextRequest) {
     // Hash new password
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Update password and mark token as used
-    await db.$transaction([
-      db.user.update({
+    // Update password, consume tokens, and deactivate sessions in one transaction.
+    const sessionTokens = await db.$transaction(async (tx) => {
+      await tx.user.update({
         where: { id: resetToken.userId },
         data: { passwordHash },
-      }),
-      db.passwordResetToken.update({
+      });
+
+      await tx.passwordResetToken.update({
         where: { id: resetToken.id },
         data: { usedAt: new Date() },
-      }),
-      // Invalidate all other reset tokens for this user
-      db.passwordResetToken.updateMany({
+      });
+
+      await tx.passwordResetToken.updateMany({
         where: {
           userId: resetToken.userId,
           id: { not: resetToken.id },
           usedAt: null,
         },
         data: { usedAt: new Date() },
-      }),
-    ]);
+      });
 
-    await invalidateAllUserSessions(resetToken.userId);
+      return deactivateAllUserSessionsInTx(tx, resetToken.userId);
+    });
+
+    await clearSessionCache(sessionTokens);
 
     return NextResponse.json({ success: true });
   } catch (error) {

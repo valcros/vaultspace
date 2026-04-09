@@ -37,6 +37,7 @@ describe('GET /api/view/[shareToken]/documents', () => {
     mockViewSessionFindFirst.mockResolvedValue({
       id: 'view-session-1',
       createdAt: new Date(),
+      isActive: true,
       organizationId: 'org-1',
       roomId: 'room-1',
       link: {
@@ -86,5 +87,17 @@ describe('GET /api/view/[shareToken]/documents', () => {
     expect(mockCookieStore.get).toHaveBeenCalledWith('viewer_share-token');
     expect(body.session.roomName).toBe('Room Name');
     expect(body.documents).toEqual([]);
+  });
+
+  it('rejects revoked viewer sessions', async () => {
+    mockViewSessionFindFirst.mockResolvedValue(null);
+
+    const request = new NextRequest('http://localhost:3000/api/view/share-token/documents');
+
+    const response = await GET(request, makeContext('share-token'));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error).toBe('Session expired or invalid');
   });
 });

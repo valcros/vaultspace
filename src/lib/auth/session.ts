@@ -5,7 +5,7 @@
  * Session tokens are the sole source of truth for authentication.
  */
 
-import type { Session } from '@prisma/client';
+import type { Prisma, Session } from '@prisma/client';
 
 import { SESSION_CONFIG } from '../constants';
 import { db, withOrgContext } from '../db';
@@ -40,6 +40,8 @@ export interface SessionData {
   expiresAt: Date;
   issuedAt: Date;
 }
+
+type SessionMutationClient = Pick<Prisma.TransactionClient, 'session'>;
 
 /**
  * Create a new session for a user
@@ -81,14 +83,6 @@ export async function createSession(
  * Returns session data if valid, throws otherwise
  */
 export async function validateSession(token: string): Promise<SessionData> {
-  // Try cache first
-  const cached = await getCachedSession(token);
-  if (cached) {
-    // Refresh session activity in background
-    refreshSessionActivity(cached.sessionId).catch(() => {});
-    return cached;
-  }
-
   // Fetch from database
   const session = await db.session.findUnique({
     where: { token },
@@ -194,33 +188,23 @@ export async function validateSession(token: string): Promise<SessionData> {
  * Invalidate a session
  */
 export async function invalidateSession(token: string): Promise<void> {
-  await db.session.updateMany({
-    where: { token },
-    data: { isActive: false },
-  });
-
-  // Remove from cache
-  const cache = getProviders().cache;
-  await cache.delete(`session:${token}`);
+  const tokens = await deactivateSessions(db, { token });
+  await clearSessionCache(tokens);
 }
 
 /**
  * Invalidate all sessions for a user
  */
 export async function invalidateAllUserSessions(userId: string): Promise<void> {
-  const sessions = await db.session.findMany({
-    where: { userId, isActive: true },
-    select: { token: true },
-  });
+  const tokens = await deactivateSessions(db, { userId });
+  await clearSessionCache(tokens);
+}
 
-  await db.session.updateMany({
-    where: { userId },
-    data: { isActive: false },
-  });
-
-  // Remove all from cache
-  const cache = getProviders().cache;
-  await Promise.all(sessions.map((s) => cache.delete(`session:${s.token}`)));
+export async function deactivateAllUserSessionsInTx(
+  tx: SessionMutationClient,
+  userId: string
+): Promise<string[]> {
+  return deactivateSessions(tx, { userId });
 }
 
 /**
@@ -239,6 +223,31 @@ async function refreshSessionActivity(sessionId: string): Promise<void> {
   });
 }
 
+async function deactivateSessions(
+  client: SessionMutationClient,
+  where: Prisma.SessionWhereInput
+): Promise<string[]> {
+  const sessions = await client.session.findMany({
+    where: {
+      ...where,
+      isActive: true,
+    },
+    select: { token: true },
+  });
+
+  await client.session.updateMany({
+    where,
+    data: { isActive: false },
+  });
+
+  return sessions.map((session) => session.token);
+}
+
+export async function clearSessionCache(tokens: string[]): Promise<void> {
+  const cache = getProviders().cache;
+  await Promise.allSettled(tokens.map((token) => cache.delete(`session:${token}`)));
+}
+
 /**
  * Cache session data in Redis
  */
@@ -246,12 +255,4 @@ async function cacheSessionData(token: string, data: Partial<SessionData>): Prom
   const cache = getProviders().cache;
   const ttl = SESSION_CONFIG.IDLE_TIMEOUT_HOURS * 60 * 60;
   await cache.set(`session:${token}`, data, ttl);
-}
-
-/**
- * Get cached session data
- */
-async function getCachedSession(token: string): Promise<SessionData | null> {
-  const cache = getProviders().cache;
-  return cache.get<SessionData>(`session:${token}`);
 }

@@ -35,7 +35,11 @@ export function verifyTwoFactorTempToken(
   }
 
   const parsedTimestamp = parseInt(timestamp, 10);
-  if (Number.isNaN(parsedTimestamp) || now - parsedTimestamp > TEMP_TOKEN_MAX_AGE_MS) {
+  if (
+    Number.isNaN(parsedTimestamp) ||
+    parsedTimestamp > now ||
+    now - parsedTimestamp > TEMP_TOKEN_MAX_AGE_MS
+  ) {
     return null;
   }
 
