@@ -1,19 +1,14 @@
 'use client';
 
 import * as React from 'react';
-// Use legacy API for stability - v1 flat props API
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-const RGL = require('react-grid-layout/legacy') as any;
-const WidthProvider = RGL.WidthProvider;
-const ReactGridLayout = RGL.default;
-const WidthProviderGrid = WidthProvider(ReactGridLayout);
+import GridLayout, { WidthProvider } from 'react-grid-layout/legacy';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { clsx } from 'clsx';
 import { useDashboardContext } from './DashboardContext';
 import type { WidgetPosition } from '@/types/dashboard';
 
-// Import react-grid-layout styles
-import 'react-grid-layout/css/styles.css';
-import 'react-resizable/css/styles.css';
+const WidthProviderGrid = WidthProvider(GridLayout);
 
 // Type for layout items
 type LayoutItem = {

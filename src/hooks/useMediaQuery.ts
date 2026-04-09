@@ -59,7 +59,11 @@ export function useBreakpoint(): Breakpoint {
 
     const updateBreakpoint = () => {
       const width = window.innerWidth;
-      if (width >= BREAKPOINTS.lg) {
+      if (width >= BREAKPOINTS['2xl']) {
+        setBreakpoint('2xl');
+      } else if (width >= BREAKPOINTS.xl) {
+        setBreakpoint('xl');
+      } else if (width >= BREAKPOINTS.lg) {
         setBreakpoint('lg');
       } else if (width >= BREAKPOINTS.md) {
         setBreakpoint('md');
