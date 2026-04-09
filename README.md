@@ -60,6 +60,22 @@ npm run lint          # ESLint
 npm run test          # Unit tests (479 tests)
 ```
 
+### Playwright MCP
+
+VaultSpace includes a project-local Playwright MCP server setup for browser-driven agent workflows.
+
+```bash
+# Start the project MCP server
+npm run mcp:playwright
+```
+
+Notes:
+
+- The server uses `playwright.mcp.config.json`
+- Browser profile and artifacts are stored under `.playwright-mcp/`
+- If the Chromium browser binary is missing locally, run `npx playwright install chromium`
+- MCP clients can point at the project command `npm run mcp:playwright` from the repo root
+
 ### Deployment Options
 
 VaultSpace supports two deployment modes:
