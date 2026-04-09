@@ -71,6 +71,7 @@ describe('azure-guard', () => {
 
       it('returns errors when Azure storage not configured', async () => {
         process.env['DATABASE_URL'] = 'postgresql://azure.postgres.database.azure.com/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['REDIS_URL'] = 'rediss://azure.redis.cache.windows.net:6380';
         delete process.env['AZURE_STORAGE_ACCOUNT_NAME'];
         delete process.env['AZURE_STORAGE_ACCOUNT_KEY'];
@@ -84,6 +85,7 @@ describe('azure-guard', () => {
 
       it('returns errors when using localhost database', async () => {
         process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['REDIS_URL'] = 'rediss://azure.redis.cache.windows.net:6380';
         process.env['AZURE_STORAGE_ACCOUNT_NAME'] = 'test';
         process.env['AZURE_STORAGE_ACCOUNT_KEY'] = 'key';
@@ -97,6 +99,7 @@ describe('azure-guard', () => {
 
       it('returns no errors with valid Azure config', async () => {
         process.env['DATABASE_URL'] = 'postgresql://azure.postgres.database.azure.com/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['REDIS_URL'] = 'rediss://azure.redis.cache.windows.net:6380';
         process.env['AZURE_STORAGE_ACCOUNT_NAME'] = 'teststorage';
         process.env['AZURE_STORAGE_ACCOUNT_KEY'] = 'base64key==';
@@ -109,6 +112,7 @@ describe('azure-guard', () => {
 
       it('accepts Azure storage connection string format', async () => {
         process.env['DATABASE_URL'] = 'postgresql://azure.postgres.database.azure.com/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['REDIS_URL'] = 'rediss://azure.redis.cache.windows.net:6380';
         process.env['AZURE_STORAGE_CONNECTION_STRING'] =
           'DefaultEndpointsProtocol=https;AccountName=test;AccountKey=key==;EndpointSuffix=core.windows.net';
@@ -119,6 +123,18 @@ describe('azure-guard', () => {
         // Should accept connection string as valid config
         expect(errors.filter((e) => e.toLowerCase().includes('storage'))).toEqual([]);
       });
+      it('requires SESSION_SECRET', async () => {
+        process.env['DATABASE_URL'] = 'postgresql://azure.postgres.database.azure.com/db';
+        process.env['REDIS_URL'] = 'rediss://azure.redis.cache.windows.net:6380';
+        process.env['AZURE_STORAGE_ACCOUNT_NAME'] = 'teststorage';
+        process.env['AZURE_STORAGE_ACCOUNT_KEY'] = 'base64key==';
+        delete process.env['SESSION_SECRET'];
+
+        const { validateConfig } = await import('./azure-guard');
+        const { errors } = validateConfig();
+
+        expect(errors).toContain('SESSION_SECRET is not set');
+      });
     });
 
     describe('in Standalone mode', () => {
@@ -128,6 +144,7 @@ describe('azure-guard', () => {
 
       it('allows localhost database', async () => {
         process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['STORAGE_PROVIDER'] = 'local';
         process.env['STORAGE_LOCAL_PATH'] = './storage';
 
@@ -139,6 +156,7 @@ describe('azure-guard', () => {
 
       it('allows local storage provider', async () => {
         process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['STORAGE_PROVIDER'] = 'local';
         process.env['STORAGE_LOCAL_PATH'] = './storage';
 
@@ -150,6 +168,7 @@ describe('azure-guard', () => {
 
       it('allows S3-compatible storage', async () => {
         process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['S3_ENDPOINT'] = 'http://minio:9000';
 
         const { validateConfig } = await import('./azure-guard');
@@ -160,6 +179,7 @@ describe('azure-guard', () => {
 
       it('does not require Redis', async () => {
         process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['STORAGE_PROVIDER'] = 'local';
         process.env['STORAGE_LOCAL_PATH'] = './storage';
         delete process.env['REDIS_URL'];
@@ -174,6 +194,7 @@ describe('azure-guard', () => {
 
       it('returns warnings for missing optional services', async () => {
         process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['STORAGE_PROVIDER'] = 'local';
         process.env['STORAGE_LOCAL_PATH'] = './storage';
         delete process.env['REDIS_URL'];
@@ -187,6 +208,7 @@ describe('azure-guard', () => {
 
       it('warns about local storage limitations', async () => {
         process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
         process.env['STORAGE_PROVIDER'] = 'local';
         process.env['STORAGE_LOCAL_PATH'] = './storage';
 
@@ -196,6 +218,18 @@ describe('azure-guard', () => {
         expect(
           warnings.some((w) => w.includes('Local filesystem') || w.includes('single-node'))
         ).toBe(true);
+      });
+
+      it('requires SESSION_SECRET', async () => {
+        process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
+        process.env['STORAGE_PROVIDER'] = 'local';
+        process.env['STORAGE_LOCAL_PATH'] = './storage';
+        delete process.env['SESSION_SECRET'];
+
+        const { validateConfig } = await import('./azure-guard');
+        const { errors } = validateConfig();
+
+        expect(errors).toContain('SESSION_SECRET is not set');
       });
     });
   });

@@ -149,7 +149,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       expires: expiresAt,
-      path: `/view/${shareToken}`,
+      // The viewer session must be available to both /view and /api/view routes.
+      path: '/',
     });
 
     return NextResponse.json({ success: true });

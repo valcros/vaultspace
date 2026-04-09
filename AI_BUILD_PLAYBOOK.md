@@ -4,6 +4,8 @@
 
 This document is the **single entrypoint for AI coding agents** (Claude Code, Codex, etc.) implementing VaultSpace MVP. It defines reading order, precedence rules, generated artifacts, implementation constraints, and MVP completion criteria.
 
+VaultSpace also uses shared operating roles across AI tools. See `AI_ROLES.md` for the canonical definitions of `Advisor` and `Lead Dev` and for role-switching rules.
+
 **Golden Rule:** Read documents in order, follow precedence rules, implement phases sequentially, and stop when MVP criteria are met. Do NOT skip phases, do NOT implement V1 features during MVP.
 
 ---

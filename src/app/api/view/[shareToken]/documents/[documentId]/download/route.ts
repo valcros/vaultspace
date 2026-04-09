@@ -7,62 +7,39 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
+import {
+  getViewerSession,
+  requireViewerSession,
+  viewerSessionBaseSelect,
+} from '@/lib/viewerSession';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
 }
 
-/**
- * PRE-RLS BOOTSTRAP: Resolve viewer session from token
- * Returns organizationId for subsequent RLS context
- */
-async function getViewerSession(shareToken: string) {
-  const cookieStore = await cookies();
-  const viewerToken = cookieStore.get(`viewer_${shareToken}`)?.value;
-
-  if (!viewerToken) {
-    return null;
-  }
-
-  const session = await db.viewSession.findFirst({
-    where: {
-      sessionToken: viewerToken,
-    },
-    select: {
-      organizationId: true,
-      link: {
-        select: {
-          scope: true,
-          scopedDocumentId: true,
-        },
-      },
+export async function GET(_request: NextRequest, context: RouteContext) {
+  try {
+    const { shareToken, documentId } = await context.params;
+    const session = await getViewerSession(shareToken, {
+      ...viewerSessionBaseSelect,
       room: {
         select: {
           id: true,
           allowDownloads: true,
         },
       },
-    },
-  });
-
-  return session;
-}
-
-export async function GET(_request: NextRequest, context: RouteContext) {
-  try {
-    const { shareToken, documentId } = await context.params;
-    const session = await getViewerSession(shareToken);
-
-    if (!session) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
+    });
+    const sessionResult = requireViewerSession(shareToken, session);
+    if ('response' in sessionResult) {
+      return sessionResult.response;
     }
+    const viewerSession = sessionResult.session;
 
     // Check if downloads are allowed at room level
-    if (!session.room.allowDownloads) {
+    if (!viewerSession.room.allowDownloads) {
       return NextResponse.json(
         { error: 'Downloads are not allowed for this room' },
         { status: 403 }
@@ -70,17 +47,20 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     // Check if document is allowed by link scope
-    if (session.link?.scope === 'DOCUMENT' && session.link.scopedDocumentId !== documentId) {
+    if (
+      viewerSession.link.scope === 'DOCUMENT' &&
+      viewerSession.link.scopedDocumentId !== documentId
+    ) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
     // Use RLS context for all org-scoped queries
-    const result = await withOrgContext(session.organizationId, async (tx) => {
+    const result = await withOrgContext(viewerSession.organizationId, async (tx) => {
       // Get document with its latest version and file blob
       const document = await tx.document.findFirst({
         where: {
           id: documentId,
-          roomId: session.room.id,
+          roomId: viewerSession.room.id,
           status: 'ACTIVE',
         },
         include: {
