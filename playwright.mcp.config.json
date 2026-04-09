@@ -1,0 +1,15 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "userDataDir": ".playwright-mcp/profile",
+    "launchOptions": {
+      "headless": true
+    }
+  },
+  "outputDir": ".playwright-mcp/output",
+  "saveSession": true,
+  "testIdAttribute": "data-testid",
+  "console": {
+    "level": "warning"
+  }
+}
