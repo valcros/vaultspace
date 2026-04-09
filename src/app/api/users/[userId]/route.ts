@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { invalidateAllUserSessions } from '@/lib/auth';
+import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -174,14 +174,16 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
         },
       });
 
-      return { success: true };
+      const sessionTokens = await deactivateAllUserSessionsInTx(tx, userId);
+
+      return { success: true, sessionTokens };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    await invalidateAllUserSessions(userId);
+    await clearSessionCache(result.sessionTokens);
 
     return NextResponse.json({
       success: true,

@@ -88,7 +88,7 @@ The application is **deployed and operational** on Azure Container Apps with all
 
 | Check               | Status                                                                                          |
 | ------------------- | ----------------------------------------------------------------------------------------------- |
-| Unit tests          | 474 passing (Vitest)                                                                            |
+| Unit tests          | 479 passing (Vitest)                                                                            |
 | Type check          | Passing (tsc --noEmit)                                                                          |
 | ESLint              | Passing (no errors)                                                                             |
 | Prettier            | Passing (all files formatted)                                                                   |
