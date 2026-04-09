@@ -1,6 +1,7 @@
 # Dashboard Fix - Work In Progress
 
 ## Current Status: STILL BROKEN
+
 User reports overlapping cards and massive spaces remain despite fixes applied.
 
 ---
@@ -62,20 +63,21 @@ User reports overlapping cards and massive spaces remain despite fixes applied.
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `src/components/dashboard/DashboardGrid.tsx` | Grid wrapper, react-grid-layout config |
-| `src/components/dashboard/DashboardWidget.tsx` | Widget card with drag handle |
-| `src/lib/dashboard-defaults.ts` | Default layouts, compactLayout function |
-| `src/app/(admin)/dashboard/page.tsx` | Dashboard page, filtering logic |
-| `src/app/api/dashboard/v2/route.ts` | API returning layout data |
-| `src/hooks/useDashboardLayout.ts` | Layout state management |
+| File                                           | Purpose                                 |
+| ---------------------------------------------- | --------------------------------------- |
+| `src/components/dashboard/DashboardGrid.tsx`   | Grid wrapper, react-grid-layout config  |
+| `src/components/dashboard/DashboardWidget.tsx` | Widget card with drag handle            |
+| `src/lib/dashboard-defaults.ts`                | Default layouts, compactLayout function |
+| `src/app/(admin)/dashboard/page.tsx`           | Dashboard page, filtering logic         |
+| `src/app/api/dashboard/v2/route.ts`            | API returning layout data               |
+| `src/hooks/useDashboardLayout.ts`              | Layout state management                 |
 
 ---
 
 ## Default Layouts Reference
 
 ### ADMIN_DEFAULT_LAYOUT (9 widgets)
+
 ```
 Row 0-3:  action-required (x=0, w=6, h=3), messages (x=6, w=6, h=3)
 Row 3-7:  engagement (x=0, w=8, h=4), my-rooms (x=8, w=4, h=4)
@@ -84,6 +86,7 @@ Row 11-14: continue-reading (x=0, w=4, h=3), bookmarks (x=4, w=4, h=3), new-docu
 ```
 
 ### VIEWER_DEFAULT_LAYOUT (7 widgets)
+
 ```
 Row 0-4:  messages (x=0, w=6, h=4), new-documents (x=6, w=6, h=4)
 Row 4-7:  continue-reading (x=0, w=6, h=3), bookmarks (x=6, w=6, h=3)

@@ -5,42 +5,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
+import {
+  getViewerSession,
+  requireViewerSession,
+  viewerSessionBaseSelect,
+} from '@/lib/viewerSession';
 
 interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
-}
-
-/**
- * PRE-RLS BOOTSTRAP: Resolve viewer session from token
- */
-async function getViewerSession(shareToken: string) {
-  const cookieStore = await cookies();
-  const viewerToken = cookieStore.get(`viewer_${shareToken}`)?.value;
-
-  if (!viewerToken) {
-    return null;
-  }
-
-  const session = await db.viewSession.findFirst({
-    where: {
-      sessionToken: viewerToken,
-    },
-    select: {
-      id: true,
-      organizationId: true,
-      visitorEmail: true,
-      room: {
-        select: {
-          id: true,
-        },
-      },
-    },
-  });
-
-  return session;
 }
 
 /**
@@ -51,11 +25,20 @@ async function getViewerSession(shareToken: string) {
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { shareToken, documentId } = await context.params;
-    const session = await getViewerSession(shareToken);
-
-    if (!session) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
+    const session = await getViewerSession(shareToken, {
+      ...viewerSessionBaseSelect,
+      visitorEmail: true,
+      room: {
+        select: {
+          id: true,
+        },
+      },
+    });
+    const sessionResult = requireViewerSession(shareToken, session);
+    if ('response' in sessionResult) {
+      return sessionResult.response;
     }
+    const viewerSession = sessionResult.session;
 
     const body = await request.json();
     const { pageNumber, timeSpentMs } = body;
@@ -69,13 +52,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Invalid time spent' }, { status: 400 });
     }
 
-    await withOrgContext(session.organizationId, async (tx) => {
+    await withOrgContext(viewerSession.organizationId, async (tx) => {
       // Verify document exists in this room
       const document = await tx.document.findFirst({
         where: {
           id: documentId,
-          roomId: session.room.id,
-          organizationId: session.organizationId,
+          roomId: viewerSession.room.id,
+          organizationId: viewerSession.organizationId,
           status: 'ACTIVE',
         },
         select: { id: true, currentVersionId: true },
@@ -89,10 +72,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const existingView = await tx.pageView.findFirst({
         where: {
           documentId,
-          roomId: session.room.id,
-          organizationId: session.organizationId,
-          viewerEmail: session.visitorEmail ?? undefined,
-          viewSessionId: session.id,
+          roomId: viewerSession.room.id,
+          organizationId: viewerSession.organizationId,
+          viewerEmail: viewerSession.visitorEmail ?? undefined,
+          viewSessionId: viewerSession.id,
           pageNumber,
         },
         select: { id: true },
@@ -110,12 +93,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
         // Create new page view
         await tx.pageView.create({
           data: {
-            organizationId: session.organizationId,
+            organizationId: viewerSession.organizationId,
             documentId,
             versionId: document.currentVersionId,
-            roomId: session.room.id,
-            viewerEmail: session.visitorEmail,
-            viewSessionId: session.id,
+            roomId: viewerSession.room.id,
+            viewerEmail: viewerSession.visitorEmail,
+            viewSessionId: viewerSession.id,
             pageNumber,
             timeSpentMs,
           },

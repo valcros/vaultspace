@@ -380,44 +380,6 @@ export default function RoomDetailPage() {
     }
   }, [documents, selectedDocs.size]);
 
-  const handleBulkCategory = React.useCallback(
-    async (category: string | null) => {
-      for (const docId of Array.from(selectedDocs)) {
-        await fetch(`/api/rooms/${roomId}/documents/${docId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category }),
-        });
-      }
-      setSelectedDocs(new Set());
-      fetchDocuments();
-    },
-    [selectedDocs, roomId]
-  );
-
-  const handleBulkConfidential = React.useCallback(
-    async (confidential: boolean) => {
-      for (const docId of Array.from(selectedDocs)) {
-        await fetch(`/api/rooms/${roomId}/documents/${docId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ confidential }),
-        });
-      }
-      setSelectedDocs(new Set());
-      fetchDocuments();
-    },
-    [selectedDocs, roomId]
-  );
-
-  const handleBulkDelete = React.useCallback(async () => {
-    for (const docId of Array.from(selectedDocs)) {
-      await fetch(`/api/rooms/${roomId}/documents/${docId}`, { method: 'DELETE' });
-    }
-    setSelectedDocs(new Set());
-    fetchDocuments();
-  }, [selectedDocs, roomId]);
-
   const fetchDocuments = React.useCallback(async () => {
     try {
       const params = new URLSearchParams();
@@ -437,6 +399,44 @@ export default function RoomDetailPage() {
       console.error('Failed to fetch documents:', error);
     }
   }, [roomId, currentFolderId, categoryFilter]);
+
+  const handleBulkCategory = React.useCallback(
+    async (category: string | null) => {
+      for (const docId of Array.from(selectedDocs)) {
+        await fetch(`/api/rooms/${roomId}/documents/${docId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category }),
+        });
+      }
+      setSelectedDocs(new Set());
+      fetchDocuments();
+    },
+    [selectedDocs, roomId, fetchDocuments]
+  );
+
+  const handleBulkConfidential = React.useCallback(
+    async (confidential: boolean) => {
+      for (const docId of Array.from(selectedDocs)) {
+        await fetch(`/api/rooms/${roomId}/documents/${docId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confidential }),
+        });
+      }
+      setSelectedDocs(new Set());
+      fetchDocuments();
+    },
+    [selectedDocs, roomId, fetchDocuments]
+  );
+
+  const handleBulkDelete = React.useCallback(async () => {
+    for (const docId of Array.from(selectedDocs)) {
+      await fetch(`/api/rooms/${roomId}/documents/${docId}`, { method: 'DELETE' });
+    }
+    setSelectedDocs(new Set());
+    fetchDocuments();
+  }, [selectedDocs, roomId, fetchDocuments]);
 
   const handleSaveTags = React.useCallback(
     async (doc: Document, tags: string[]) => {
@@ -780,8 +780,7 @@ export default function RoomDetailPage() {
 
   // Handle upload completion - refresh document list
   const handleUploadComplete = React.useCallback(
-    (results: Array<{ documentId: string; name: string }>) => {
-      console.log('Upload complete:', results);
+    (_results: Array<{ documentId: string; name: string }>) => {
       setShowUploadDialog(false);
       fetchDocuments();
     },

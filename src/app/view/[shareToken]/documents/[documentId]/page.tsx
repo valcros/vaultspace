@@ -81,15 +81,15 @@ export default function ViewerDocumentPage() {
     setRotation((rotation + 90) % 360);
   };
 
-  const handlePrevPage = () => {
-    setCurrentPage(Math.max(currentPage - 1, 1));
-  };
+  const handlePrevPage = React.useCallback(() => {
+    setCurrentPage((page) => Math.max(page - 1, 1));
+  }, []);
 
-  const handleNextPage = () => {
+  const handleNextPage = React.useCallback(() => {
     if (document) {
-      setCurrentPage(Math.min(currentPage + 1, document.pageCount));
+      setCurrentPage((page) => Math.min(page + 1, document.pageCount));
     }
-  };
+  }, [document]);
 
   // Touch gesture handlers for mobile
   const handleTouchStart = React.useCallback((e: React.TouchEvent) => {

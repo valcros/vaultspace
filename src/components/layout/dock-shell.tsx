@@ -636,25 +636,31 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
     };
   }, [search]);
 
-  const allItems = [
-    ...docResults.map((d) => ({ ...d, id: d.documentId, type: 'document' as const })),
-    ...filteredRecent.map((r) => ({ ...r, type: 'recent' as const })),
-    ...filteredNav.map((n) => ({ ...n, type: 'nav' as const })),
-    ...filteredActions.map((a) => ({ ...a, type: 'action' as const })),
-  ];
+  const allItems = React.useMemo(
+    () => [
+      ...docResults.map((d) => ({ ...d, id: d.documentId, type: 'document' as const })),
+      ...filteredRecent.map((r) => ({ ...r, type: 'recent' as const })),
+      ...filteredNav.map((n) => ({ ...n, type: 'nav' as const })),
+      ...filteredActions.map((a) => ({ ...a, type: 'action' as const })),
+    ],
+    [docResults, filteredRecent, filteredNav, filteredActions]
+  );
 
-  const handleSelect = (item: (typeof allItems)[number]) => {
-    if (item.type === 'document') {
-      const doc = item as DocumentSearchResult & { type: 'document' };
-      router.push(`/rooms/${doc.roomId}?doc=${doc.documentId}`);
-    } else if ('href' in item && item.href) {
-      router.push(item.href);
-    } else if ('name' in item) {
-      router.push(`/rooms/${item.id}`);
-    }
-    onOpenChange(false);
-    setSearch('');
-  };
+  const handleSelect = React.useCallback(
+    (item: (typeof allItems)[number]) => {
+      if (item.type === 'document') {
+        const doc = item as DocumentSearchResult & { type: 'document' };
+        router.push(`/rooms/${doc.roomId}?doc=${doc.documentId}`);
+      } else if ('href' in item && item.href) {
+        router.push(item.href);
+      } else if ('name' in item) {
+        router.push(`/rooms/${item.id}`);
+      }
+      onOpenChange(false);
+      setSearch('');
+    },
+    [onOpenChange, router]
+  );
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -676,7 +682,7 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, selectedIndex, allItems.length]);
+  }, [open, selectedIndex, allItems, handleSelect]);
 
   React.useEffect(() => {
     setSelectedIndex(0);

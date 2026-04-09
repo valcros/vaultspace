@@ -10,9 +10,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createHmac } from 'crypto';
 
 import { db } from '@/lib/db';
+import { verifyTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
 import { setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { verifyTOTP, verifyBackupCode } from '@/lib/totp';
@@ -23,46 +23,13 @@ const validateSchema = z.object({
   tempToken: z.string().min(1, 'Temporary token is required'),
 });
 
-/**
- * Verify the temp token and extract the userId.
- * Temp token format: userId:timestamp:hmac
- */
-function verifyTempToken(tempToken: string): { userId: string } | null {
-  const secret =
-    process.env['SESSION_SECRET'] || process.env['NEXTAUTH_SECRET'] || 'vaultspace-2fa-temp-secret';
-  const parts = tempToken.split(':');
-  if (parts.length !== 3) {
-    return null;
-  }
-
-  const [userId, timestamp, signature] = parts;
-  if (!userId || !timestamp || !signature) {
-    return null;
-  }
-
-  // Check expiry (5 minutes)
-  const ts = parseInt(timestamp, 10);
-  if (isNaN(ts) || Date.now() - ts > 5 * 60 * 1000) {
-    return null;
-  }
-
-  // Verify HMAC signature
-  const expected = createHmac('sha256', secret).update(`${userId}:${timestamp}`).digest('hex');
-
-  if (signature !== expected) {
-    return null;
-  }
-
-  return { userId };
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { code, tempToken } = validateSchema.parse(body);
 
     // Verify temp token
-    const tokenData = verifyTempToken(tempToken);
+    const tokenData = verifyTwoFactorTempToken(tempToken);
     if (!tokenData) {
       return NextResponse.json(
         { error: 'Invalid or expired temporary token. Please log in again.' },
