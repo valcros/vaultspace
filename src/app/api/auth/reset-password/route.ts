@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
+import { invalidateAllUserSessions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { z } from 'zod';
 
@@ -65,11 +66,9 @@ export async function POST(request: NextRequest) {
         },
         data: { usedAt: new Date() },
       }),
-      // Optionally: invalidate all existing sessions for security
-      db.session.deleteMany({
-        where: { userId: resetToken.userId },
-      }),
     ]);
+
+    await invalidateAllUserSessions(resetToken.userId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

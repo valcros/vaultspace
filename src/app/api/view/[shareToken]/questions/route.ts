@@ -6,50 +6,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { z } from 'zod';
 
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
+import {
+  getViewerSession,
+  requireViewerSession,
+  viewerSessionBaseSelect,
+} from '@/lib/viewerSession';
 
 interface RouteContext {
   params: Promise<{ shareToken: string }>;
-}
-
-/**
- * PRE-RLS BOOTSTRAP: Resolve viewer session from token
- *
- * Narrowly scoped raw db lookup to bootstrap viewer context.
- * The sessionToken is a secret that proves the viewer has already
- * been authenticated via /api/view/[shareToken]/access.
- * Once we have the session, we use its organizationId to enter RLS context.
- */
-async function getViewerSession(shareToken: string) {
-  const cookieStore = await cookies();
-  const viewerToken = cookieStore.get(`viewer_${shareToken}`)?.value;
-
-  if (!viewerToken) {
-    return null;
-  }
-
-  const session = await db.viewSession.findFirst({
-    where: {
-      sessionToken: viewerToken,
-    },
-    select: {
-      id: true,
-      organizationId: true,
-      roomId: true,
-      visitorEmail: true,
-      visitorName: true,
-      link: {
-        select: {
-          slug: true,
-        },
-      },
-    },
-  });
-
-  return session;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,23 +26,24 @@ async function getViewerSession(shareToken: string) {
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const { shareToken } = await context.params;
-    const session = await getViewerSession(shareToken);
-
-    if (!session) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
+    const session = await getViewerSession(shareToken, {
+      ...viewerSessionBaseSelect,
+      roomId: true,
+      visitorEmail: true,
+      visitorName: true,
+    });
+    const sessionResult = requireViewerSession(shareToken, session);
+    if ('response' in sessionResult) {
+      return sessionResult.response;
     }
+    const viewerSession = sessionResult.session;
 
-    // Verify the session's link matches the shareToken
-    if (session.link?.slug !== shareToken) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
-    }
-
-    const questions = await withOrgContext(session.organizationId, async (tx) => {
+    const questions = await withOrgContext(viewerSession.organizationId, async (tx) => {
       // 1. Viewer's own questions (all statuses)
       const ownQuestions = await tx.question.findMany({
         where: {
-          roomId: session.roomId,
-          askedByEmail: session.visitorEmail ?? undefined,
+          roomId: viewerSession.roomId,
+          askedByEmail: viewerSession.visitorEmail ?? undefined,
         },
         include: {
           answers: {
@@ -102,12 +70,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       // 2. Public answered questions from anyone (excluding own to avoid duplicates)
       const publicAnswered = await tx.question.findMany({
         where: {
-          roomId: session.roomId,
+          roomId: viewerSession.roomId,
           isPublic: true,
           status: 'ANSWERED',
           // Exclude the viewer's own questions (already included above)
           NOT: {
-            askedByEmail: session.visitorEmail ?? undefined,
+            askedByEmail: viewerSession.visitorEmail ?? undefined,
           },
         },
         include: {
@@ -179,16 +147,17 @@ const createQuestionSchema = z.object({
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { shareToken } = await context.params;
-    const session = await getViewerSession(shareToken);
-
-    if (!session) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
+    const session = await getViewerSession(shareToken, {
+      ...viewerSessionBaseSelect,
+      roomId: true,
+      visitorEmail: true,
+      visitorName: true,
+    });
+    const sessionResult = requireViewerSession(shareToken, session);
+    if ('response' in sessionResult) {
+      return sessionResult.response;
     }
-
-    // Verify the session's link matches the shareToken
-    if (session.link?.slug !== shareToken) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
-    }
+    const viewerSession = sessionResult.session;
 
     const rawBody = await request.json();
     const parsed = createQuestionSchema.safeParse(rawBody);
@@ -202,13 +171,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const { subject, body, documentId } = parsed.data;
 
-    const question = await withOrgContext(session.organizationId, async (tx) => {
+    const question = await withOrgContext(viewerSession.organizationId, async (tx) => {
       // If documentId provided, verify it belongs to this room
       if (documentId) {
         const doc = await tx.document.findFirst({
           where: {
             id: documentId,
-            roomId: session.roomId,
+            roomId: viewerSession.roomId,
           },
           select: { id: true },
         });
@@ -220,13 +189,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       // Create the question
       const created = await tx.question.create({
         data: {
-          organizationId: session.organizationId,
-          roomId: session.roomId,
+          organizationId: viewerSession.organizationId,
+          roomId: viewerSession.roomId,
           documentId: documentId ?? null,
           askedByUserId: null,
-          askedByEmail: session.visitorEmail ?? '',
-          askedByName: session.visitorName ?? null,
-          viewSessionId: session.id,
+          askedByEmail: viewerSession.visitorEmail ?? '',
+          askedByName: viewerSession.visitorName ?? null,
+          viewSessionId: viewerSession.id,
           subject,
           body,
           status: 'OPEN',
@@ -238,13 +207,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       // Create audit event
       await tx.event.create({
         data: {
-          organizationId: session.organizationId,
+          organizationId: viewerSession.organizationId,
           eventType: 'QUESTION_SUBMITTED',
           actorType: 'VIEWER',
-          actorEmail: session.visitorEmail,
-          roomId: session.roomId,
+          actorEmail: viewerSession.visitorEmail,
+          roomId: viewerSession.roomId,
           documentId: documentId ?? null,
-          sessionId: session.id,
+          sessionId: viewerSession.id,
           description: `Question submitted: ${subject}`,
           metadata: {
             questionId: created.id,

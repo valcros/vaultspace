@@ -4,6 +4,10 @@
 > If anything here conflicts with AI_BUILD_PLAYBOOK.md or the linked design documents,
 > those documents take precedence. See AI_BUILD_PLAYBOOK.md for full reading order.
 
+## Shared AI Roles
+
+VaultSpace uses shared operating roles across AI tools. See `AI_ROLES.md` for the canonical definitions of `Advisor` and `Lead Dev` and for role-switching rules.
+
 ## Project Overview
 
 VaultSpace is an open-source, self-hosted secure Virtual Data Room (VDR) platform. License: AGPLv3. Tech stack: Next.js 14+ (App Router), TypeScript, React 18+, Prisma ORM, PostgreSQL 15+, TailwindCSS, Redis/BullMQ.

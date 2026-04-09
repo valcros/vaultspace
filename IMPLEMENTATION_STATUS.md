@@ -1,7 +1,7 @@
 # VaultSpace Implementation Status
 
 > **Current Milestone:** Sprint 1 — UI Wiring Complete
-> **Last Updated:** 2026-03-25
+> **Last Updated:** 2026-04-09
 > **MVP Status:** In progress — see MASTER_PLAN.md for full sprint plan
 
 ## Current State
@@ -86,15 +86,15 @@ The application is **deployed and operational** on Azure Container Apps with all
 
 ### Tests & CI
 
-| Check               | Status                                          |
-| ------------------- | ----------------------------------------------- |
-| Unit tests          | 34 passing (Vitest)                             |
-| Type check          | Passing (tsc --noEmit)                          |
-| ESLint              | Passing (no errors)                             |
-| Prettier            | Passing (all files formatted)                   |
-| CI (GitHub Actions) | All 4 jobs green: Lint, Test, Type Check, Build |
-| Integration tests   | Scaffolded (requires Docker)                    |
-| E2E tests           | Scaffolded (requires Playwright)                |
+| Check               | Status                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| Unit tests          | 474 passing (Vitest)                                                                            |
+| Type check          | Passing (tsc --noEmit)                                                                          |
+| ESLint              | Passing (no errors)                                                                             |
+| Prettier            | Passing (all files formatted)                                                                   |
+| CI (GitHub Actions) | Workflow covers lint, test, type-check, build, security, deployment-mode, and Docker validation |
+| Integration tests   | Scaffolded (requires Docker)                                                                    |
+| E2E tests           | Scaffolded (requires Playwright)                                                                |
 
 ## What Remains for MVP
 
