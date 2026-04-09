@@ -25,6 +25,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:standalone": "DEPLOYMENT_MODE=standalone vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
+    "mcp:playwright": "playwright-mcp --config ./playwright.mcp.config.json",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "DEPLOYMENT_MODE=standalone prisma migrate dev",
@@ -76,7 +77,7 @@
     "ioredis": "^5.4.1",
     "lucide-react": "^0.460.0",
     "markdown-it": "^14.1.1",
-    "next": "14.2.18",
+    "next": "^14.2.35",
     "next-themes": "^0.4.6",
     "nodemailer": "^6.9.16",
     "papaparse": "^5.5.3",
@@ -96,6 +97,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/mcp": "^0.0.70",
     "@playwright/test": "^1.49.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
@@ -115,7 +117,7 @@
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.18",
+    "eslint-config-next": "^14.2.35",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
     "postcss": "^8.4.49",

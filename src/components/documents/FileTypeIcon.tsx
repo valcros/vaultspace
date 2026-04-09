@@ -1,6 +1,13 @@
 'use client';
 
-import { File, FileSpreadsheet, FileText, Image, FileCode, Presentation } from 'lucide-react';
+import {
+  File,
+  FileSpreadsheet,
+  FileText,
+  Image as ImageIcon,
+  FileCode,
+  Presentation,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface FileTypeIconProps {
@@ -41,7 +48,7 @@ export function FileTypeIcon({ mimeType, className }: FileTypeIconProps) {
 
   // Images
   if (mimeType.startsWith('image/')) {
-    return <Image className={clsx(size, 'text-purple-500')} />;
+    return <ImageIcon className={clsx(size, 'text-purple-500')} />;
   }
 
   // Code / structured text

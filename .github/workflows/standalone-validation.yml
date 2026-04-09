@@ -30,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -46,9 +46,9 @@ jobs:
 
       - name: Verify standalone mode detection
         run: |
-          node -e "
-            process.env.DEPLOYMENT_MODE = 'standalone';
-            const { getDeploymentMode, isStandaloneMode } = require('./src/lib/deployment-mode');
+          npx tsx --eval "
+            import { getDeploymentMode, isStandaloneMode } from './src/lib/deployment-mode.ts';
+
             const mode = getDeploymentMode();
             const isStandalone = isStandaloneMode();
             if (mode !== 'standalone' || !isStandalone) {
@@ -58,6 +58,7 @@ jobs:
             console.log('✓ Standalone mode detection works correctly');
           "
         env:
+          DEPLOYMENT_MODE: standalone
           NODE_OPTIONS: --experimental-vm-modules
 
   standalone-degraded-mode:
@@ -84,7 +85,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -100,12 +101,12 @@ jobs:
 
       - name: Verify degraded capabilities (no Redis)
         run: |
-          node -e "
-            process.env.DEPLOYMENT_MODE = 'standalone';
-            process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
-            // No REDIS_URL set - should degrade gracefully
+          npx tsx --eval "
+            import {
+              getDegradedCapabilities,
+              resolveCapabilities,
+            } from './src/lib/deployment-capabilities.ts';
 
-            const { resolveCapabilities, getDegradedCapabilities } = require('./src/lib/deployment-capabilities');
             const caps = resolveCapabilities();
             const degraded = getDegradedCapabilities();
 
@@ -136,6 +137,8 @@ jobs:
             console.log('\\n✓ All degraded mode validations passed');
           "
         env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          DEPLOYMENT_MODE: standalone
           NODE_OPTIONS: --experimental-vm-modules
 
   standalone-full-stack:
@@ -173,7 +176,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -189,12 +192,12 @@ jobs:
 
       - name: Verify full capabilities with Redis
         run: |
-          node -e "
-            process.env.DEPLOYMENT_MODE = 'standalone';
-            process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
-            process.env.REDIS_URL = 'redis://localhost:6379';
+          npx tsx --eval "
+            import {
+              getDegradedCapabilities,
+              resolveCapabilities,
+            } from './src/lib/deployment-capabilities.ts';
 
-            const { resolveCapabilities, getDegradedCapabilities } = require('./src/lib/deployment-capabilities');
             const caps = resolveCapabilities();
             const degraded = getDegradedCapabilities();
 
@@ -217,7 +220,10 @@ jobs:
             console.log('\\n✓ All full stack validations passed');
           "
         env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          DEPLOYMENT_MODE: standalone
           NODE_OPTIONS: --experimental-vm-modules
+          REDIS_URL: redis://localhost:6379
 
   azure-guard-validation:
     name: Azure Guard Validation
@@ -228,7 +234,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -239,11 +245,9 @@ jobs:
 
       - name: Verify Azure mode blocks localhost
         run: |
-          node -e "
-            process.env.DEPLOYMENT_MODE = 'azure';
-            process.env.DATABASE_URL = 'postgresql://localhost:5432/test';
+          npx tsx --eval "
+            import { validateConfig } from './src/lib/azure-guard.ts';
 
-            const { validateConfig } = require('./src/lib/azure-guard');
             const { errors } = validateConfig();
 
             if (errors.length === 0) {
@@ -254,17 +258,16 @@ jobs:
             console.log('  Errors:', errors);
           "
         env:
+          DATABASE_URL: postgresql://localhost:5432/test
+          DEPLOYMENT_MODE: azure
           NODE_OPTIONS: --experimental-vm-modules
+          SESSION_SECRET: standalone-validation-secret
 
       - name: Verify standalone mode allows localhost
         run: |
-          node -e "
-            process.env.DEPLOYMENT_MODE = 'standalone';
-            process.env.DATABASE_URL = 'postgresql://localhost:5432/test';
-            process.env.STORAGE_PROVIDER = 'local';
-            process.env.STORAGE_LOCAL_PATH = './storage';
+          npx tsx --eval "
+            import { validateConfig } from './src/lib/azure-guard.ts';
 
-            const { validateConfig } = require('./src/lib/azure-guard');
             const { errors } = validateConfig();
 
             const localhostErrors = errors.filter(e => e.includes('localhost'));
@@ -276,12 +279,17 @@ jobs:
             console.log('✓ Standalone mode correctly allows localhost database');
           "
         env:
+          DATABASE_URL: postgresql://localhost:5432/test
+          DEPLOYMENT_MODE: standalone
           NODE_OPTIONS: --experimental-vm-modules
+          SESSION_SECRET: standalone-validation-secret
+          STORAGE_LOCAL_PATH: ./storage
+          STORAGE_PROVIDER: local
 
       - name: Verify isLocalhost detection
         run: |
-          node -e "
-            const { isLocalhost } = require('./src/lib/azure-guard');
+          npx tsx --eval "
+            import { isLocalhost } from './src/lib/azure-guard.ts';
 
             const testCases = [
               ['postgresql://localhost:5432/db', true],

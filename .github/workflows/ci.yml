@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -40,7 +40,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -86,7 +86,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -117,7 +117,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -138,25 +138,31 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run npm audit
-        run: npm audit --audit-level=critical || true
-
-      - name: Check for high/critical vulnerabilities
+      - name: Check dependency vulnerabilities
         run: |
-          RESULT=$(npm audit --json 2>/dev/null | node -e "
-            const data = require('fs').readFileSync('/dev/stdin', 'utf8');
-            const audit = JSON.parse(data);
+          AUDIT_JSON=$(npm audit --json 2>/dev/null || true)
+          RESULT=$(printf '%s' "$AUDIT_JSON" | node -e "
+            const data = require('fs').readFileSync('/dev/stdin', 'utf8').trim();
+            const audit = data ? JSON.parse(data) : {};
             const critical = audit.metadata?.vulnerabilities?.critical || 0;
             const high = audit.metadata?.vulnerabilities?.high || 0;
             console.log(JSON.stringify({ critical, high }));
           " 2>/dev/null || echo '{"critical":0,"high":0}')
           echo "Vulnerability summary: $RESULT"
+          CRITICAL=$(printf '%s' "$RESULT" | node -e "
+            const data = require('fs').readFileSync('/dev/stdin', 'utf8');
+            console.log(JSON.parse(data).critical || 0);
+          ")
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "Critical vulnerabilities found. Failing CI."
+            exit 1
+          fi
 
   # Test deployment mode system in both modes
   deployment-mode-tests:
@@ -196,7 +202,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies

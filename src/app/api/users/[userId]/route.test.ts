@@ -13,15 +13,23 @@ vi.mock('@/lib/middleware', () => ({
   requireAuth: vi.fn(),
 }));
 
+vi.mock('@/lib/auth', () => ({
+  clearSessionCache: vi.fn(),
+  deactivateAllUserSessionsInTx: vi.fn(),
+}));
+
 // Mock database
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn(),
 }));
 
 import { requireAuth } from '@/lib/middleware';
+import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
 import { withOrgContext } from '@/lib/db';
 
 const mockRequireAuth = vi.mocked(requireAuth);
+const mockClearSessionCache = vi.mocked(clearSessionCache);
+const mockDeactivateAllUserSessionsInTx = vi.mocked(deactivateAllUserSessionsInTx);
 const mockWithOrgContext = vi.mocked(withOrgContext);
 
 describe('GET /api/users/:userId', () => {
@@ -36,6 +44,8 @@ describe('GET /api/users/:userId', () => {
     mockRequireAuth.mockResolvedValue(
       mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
     );
+    mockClearSessionCache.mockResolvedValue(undefined);
+    mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1']);
   });
 
   it('returns 500 for unauthenticated requests', async () => {
@@ -265,7 +275,6 @@ describe('DELETE /api/users/:userId', () => {
     const mockDocVersionUpdateMany = vi.fn().mockResolvedValue({ count: 3 });
     const mockPermissionDeleteMany = vi.fn().mockResolvedValue({ count: 2 });
     const mockRoleDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
-    const mockSessionDeleteMany = vi.fn().mockResolvedValue({ count: 2 });
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
@@ -282,7 +291,6 @@ describe('DELETE /api/users/:userId', () => {
         documentVersion: { updateMany: mockDocVersionUpdateMany },
         permission: { deleteMany: mockPermissionDeleteMany },
         roleAssignment: { deleteMany: mockRoleDeleteMany },
-        session: { deleteMany: mockSessionDeleteMany },
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
@@ -356,10 +364,9 @@ describe('DELETE /api/users/:userId', () => {
       },
     });
 
-    // Verify sessions were invalidated
-    expect(mockSessionDeleteMany).toHaveBeenCalledWith({
-      where: { userId: 'user-2' },
-    });
+    // Verify sessions were invalidated atomically and cache was cleared after commit
+    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-2');
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
   });
 
   it('returns 500 when database error occurs', async () => {
