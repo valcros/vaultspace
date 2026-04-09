@@ -1,4 +1,4 @@
-# GEMINI.md - VaultSpace AI Agent Context
+# CODEX.md - VaultSpace AI Agent Context
 
 > **This file is a summary pointer. The authoritative sources are listed below.**
 > If this file conflicts with any linked document, the linked document takes precedence.

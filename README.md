@@ -35,7 +35,7 @@ VaultSpace provides enterprise-grade document security and collaboration for M&A
 
 ## Status
 
-**MVP implementation in progress.** Backend APIs complete (61 routes), admin UI fully wired, CI/CD pipeline operational.
+**MVP implementation in progress.** Backend APIs complete (61 routes), admin UI fully wired, and local validation currently passes with 474 unit tests.
 
 See [MASTER_PLAN.md](MASTER_PLAN.md) for the full sprint plan and [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for current progress.
 
@@ -57,7 +57,7 @@ npm install
 # Run checks (no Azure services required)
 npm run type-check    # TypeScript
 npm run lint          # ESLint
-npm run test          # Unit tests (74 tests)
+npm run test          # Unit tests (474 tests)
 ```
 
 ### Deployment Options

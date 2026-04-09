@@ -5,41 +5,26 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
+import {
+  getViewerSession,
+  requireViewerSession,
+  viewerSessionBaseSelect,
+} from '@/lib/viewerSession';
 
 interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
 }
 
-/**
- * PRE-RLS BOOTSTRAP: Resolve viewer session from token
- * Returns organizationId for subsequent RLS context
- */
-async function getViewerSession(shareToken: string) {
-  const cookieStore = await cookies();
-  const viewerToken = cookieStore.get(`viewer_${shareToken}`)?.value;
-
-  if (!viewerToken) {
-    return null;
-  }
-
-  const session = await db.viewSession.findFirst({
-    where: {
-      sessionToken: viewerToken,
-    },
-    select: {
-      organizationId: true,
+export async function GET(_request: NextRequest, context: RouteContext) {
+  try {
+    const { shareToken, documentId } = await context.params;
+    const session = await getViewerSession(shareToken, {
+      ...viewerSessionBaseSelect,
       visitorEmail: true,
       visitorName: true,
       ipAddress: true,
-      link: {
-        select: {
-          scope: true,
-          scopedDocumentId: true,
-        },
-      },
       room: {
         select: {
           id: true,
@@ -48,32 +33,27 @@ async function getViewerSession(shareToken: string) {
           watermarkTemplate: true,
         },
       },
-    },
-  });
-
-  return session;
-}
-
-export async function GET(_request: NextRequest, context: RouteContext) {
-  try {
-    const { shareToken, documentId } = await context.params;
-    const session = await getViewerSession(shareToken);
-
-    if (!session) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
+    });
+    const sessionResult = requireViewerSession(shareToken, session);
+    if ('response' in sessionResult) {
+      return sessionResult.response;
     }
+    const viewerSession = sessionResult.session;
 
     // Check if document is allowed by link scope
-    if (session.link?.scope === 'DOCUMENT' && session.link.scopedDocumentId !== documentId) {
+    if (
+      viewerSession.link.scope === 'DOCUMENT' &&
+      viewerSession.link.scopedDocumentId !== documentId
+    ) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
     // Use RLS context for all org-scoped queries
-    const result = await withOrgContext(session.organizationId, async (tx) => {
+    const result = await withOrgContext(viewerSession.organizationId, async (tx) => {
       const document = await tx.document.findFirst({
         where: {
           id: documentId,
-          roomId: session.room.id,
+          roomId: viewerSession.room.id,
           status: 'ACTIVE',
         },
         select: {
@@ -122,15 +102,15 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // Generate watermark text only if room has watermarks enabled (F130)
     let watermarkText: string | null = null;
-    if (session.room.enableWatermark && session.visitorEmail) {
+    if (viewerSession.room.enableWatermark && viewerSession.visitorEmail) {
       // Use room's template if configured, otherwise default format
-      const template = session.room.watermarkTemplate || '{{email}} • {{date}}';
+      const template = viewerSession.room.watermarkTemplate || '{{email}} • {{date}}';
       const now = new Date().toISOString();
       watermarkText = template
-        .replace('{{email}}', session.visitorEmail)
+        .replace('{{email}}', viewerSession.visitorEmail)
         .replace('{{date}}', now.split('T')[0] ?? '')
         .replace('{{time}}', now.split('T')[1]?.slice(0, 5) ?? '')
-        .replace('{{ip}}', session.ipAddress ?? '');
+        .replace('{{ip}}', viewerSession.ipAddress ?? '');
     }
 
     return NextResponse.json({
@@ -140,10 +120,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         mimeType: document.mimeType,
         pageCount,
         previewUrl: `/api/view/${shareToken}/documents/${documentId}/preview`,
-        downloadEnabled: session.room.allowDownloads && document.allowDownload,
+        downloadEnabled: viewerSession.room.allowDownloads && document.allowDownload,
         watermarkText,
-        viewerEmail: session.visitorEmail ?? null,
-        viewerName: session.visitorName ?? null,
+        viewerEmail: viewerSession.visitorEmail ?? null,
+        viewerName: viewerSession.visitorName ?? null,
       },
     });
   } catch (error) {

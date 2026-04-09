@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { invalidateAllUserSessions } from '@/lib/auth';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -173,17 +174,14 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
         },
       });
 
-      // 7. Invalidate all sessions
-      await tx.session.deleteMany({
-        where: { userId },
-      });
-
       return { success: true };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+
+    await invalidateAllUserSessions(userId);
 
     return NextResponse.json({
       success: true,

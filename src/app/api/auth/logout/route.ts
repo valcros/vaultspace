@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-import { db } from '@/lib/db';
+import { invalidateSession } from '@/lib/auth';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { clearSessionCookie } from '@/lib/middleware';
 
@@ -17,10 +17,7 @@ export async function POST() {
     const sessionToken = cookieStore.get(SESSION_CONFIG.COOKIE_NAME)?.value;
 
     if (sessionToken) {
-      // Delete session from database
-      await db.session.deleteMany({
-        where: { token: sessionToken },
-      });
+      await invalidateSession(sessionToken);
     }
 
     // Clear session cookie
