@@ -196,6 +196,7 @@ interface DocumentVersionInfo {
 interface ActivityEvent {
   id: string;
   type: string;
+  description: string | null;
   actor: { firstName: string; lastName: string } | null;
   metadata: Record<string, unknown>;
   createdAt: string;
@@ -1370,36 +1371,38 @@ export default function RoomDetailPage() {
 
       <div>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="documents" className="gap-2">
-              <FileText className="h-4 w-4" />
-              Documents
-            </TabsTrigger>
-            <TabsTrigger value="members" className="gap-2">
-              <Users className="h-4 w-4" />
-              Members
-            </TabsTrigger>
-            <TabsTrigger value="links" className="gap-2">
-              <LinkIcon className="h-4 w-4" />
-              Share Links
-            </TabsTrigger>
-            <TabsTrigger value="qa" className="gap-2">
-              <MessageSquare className="h-4 w-4" />
-              Q&A
-            </TabsTrigger>
-            <TabsTrigger value="checklist" className="gap-2">
-              <ClipboardCheck className="h-4 w-4" />
-              Checklist
-            </TabsTrigger>
-            <TabsTrigger value="calendar" className="gap-2">
-              <CalendarDays className="h-4 w-4" />
-              Calendar
-            </TabsTrigger>
-            <TabsTrigger value="activity" className="gap-2">
-              <Activity className="h-4 w-4" />
-              Activity
-            </TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto pb-1">
+            <TabsList className="h-auto w-max min-w-full justify-start">
+              <TabsTrigger value="documents" className="gap-2">
+                <FileText className="h-4 w-4" />
+                Documents
+              </TabsTrigger>
+              <TabsTrigger value="members" className="gap-2">
+                <Users className="h-4 w-4" />
+                Access
+              </TabsTrigger>
+              <TabsTrigger value="links" className="gap-2">
+                <LinkIcon className="h-4 w-4" />
+                Share Links
+              </TabsTrigger>
+              <TabsTrigger value="qa" className="gap-2">
+                <MessageSquare className="h-4 w-4" />
+                Q&amp;A
+              </TabsTrigger>
+              <TabsTrigger value="checklist" className="gap-2">
+                <ClipboardCheck className="h-4 w-4" />
+                Checklist
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="gap-2">
+                <CalendarDays className="h-4 w-4" />
+                Calendar
+              </TabsTrigger>
+              <TabsTrigger value="activity" className="gap-2">
+                <Activity className="h-4 w-4" />
+                Activity
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Documents Tab */}
           <TabsContent value="documents" className="mt-4">
@@ -2388,26 +2391,14 @@ export default function RoomDetailPage() {
                         <EventIcon className={`h-3.5 w-3.5 ${style.text}`} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm">
-                          <span className="font-medium">
-                            {event.actor
-                              ? `${event.actor.firstName} ${event.actor.lastName}`
-                              : 'System'}
-                          </span>{' '}
-                          <span className="text-neutral-500">
-                            {event.type.replace(/_/g, ' ').toLowerCase()}
-                            {event.metadata?.['documentName'] ? (
-                              <>
-                                {' '}
-                                —{' '}
-                                <span className="font-medium text-neutral-700">
-                                  {String(event.metadata['documentName'])}
-                                </span>
-                              </>
-                            ) : null}
-                          </span>
+                        <p className="text-sm font-medium text-neutral-900">
+                          {event.description || event.type.replace(/_/g, ' ').toLowerCase()}
                         </p>
-                        <p className="mt-0.5 text-xs text-neutral-400">
+                        <p className="mt-0.5 text-xs text-neutral-500">
+                          {event.actor
+                            ? `${event.actor.firstName} ${event.actor.lastName}`
+                            : 'System'}
+                          {' • '}
                           {new Date(event.createdAt).toLocaleString()}
                         </p>
                       </div>
