@@ -40,6 +40,12 @@ Before running manual QA against staging:
 - Dashboard edit mode was verified to enter successfully on staging
 - Remaining work is the full manual pass through the checklist below, especially feature areas not covered by the current smoke run
 
+### Demo Naming Clarification
+
+- The VaultSpace application is hosted on VaultSpace-controlled domains such as `www.vaultspace.org` and `app.vaultspace.org`
+- The currently documented seeded demo content is the room `Due Diligence Package` with the surrounding business narrative `Series A Funding`
+- If stakeholders refer to a `cloudvault.io` demo room, that naming is not currently reflected in the repository's seed-data or QA documentation and should be treated as separate business-language that needs explicit documentation before using it as a QA target name
+
 ---
 
 ## Test Execution Checklist
