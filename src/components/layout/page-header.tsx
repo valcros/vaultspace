@@ -20,20 +20,28 @@ export function PageHeader({
   return (
     <div
       className={clsx(
-        '-mx-4 -mt-4 mb-4 rounded-b-xl bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-4 lg:-mx-6 lg:-mt-6 lg:px-8 lg:py-5',
+        'relative -mx-4 -mt-4 mb-6 overflow-hidden rounded-b-[1.75rem] border-b border-white/10 bg-gradient-to-br from-slate-950 via-primary-950 to-primary-700 px-6 py-5 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.7)] lg:-mx-6 lg:-mt-6 lg:px-8 lg:py-6',
         className
       )}
     >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(96,165,250,0.28),transparent_32%)]" />
+      <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-white/20" />
       {breadcrumbs && breadcrumbs.length > 0 && (
         <Breadcrumbs
           items={breadcrumbs}
-          className="mb-2 [&_a]:text-primary-200 [&_span]:text-primary-200 [&_svg]:text-primary-300"
+          className="relative mb-3 [&_a]:text-primary-100/90 [&_span]:text-primary-100/85 [&_svg]:text-primary-300"
         />
       )}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">{title}</h1>
-          {description && <p className="mt-0.5 text-sm text-primary-100">{description}</p>}
+      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[2rem]">
+            {title}
+          </h1>
+          {description && (
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-primary-100/85 sm:text-[0.95rem]">
+              {description}
+            </p>
+          )}
         </div>
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </div>
