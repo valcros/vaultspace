@@ -4,7 +4,41 @@
 
 This document contains comprehensive QA tests for all 63 MVP features defined in `dataroom-feature-matrix-v6.md`. Tests are organized by functional area and include manual test steps with expected results.
 
-**Test Environment:** https://www.vaultspace.org (Azure Container Apps deployment)
+**Primary Test Environment:** Azure staging deployment
+
+- **Current staging URL:** `https://ca-vaultspace-web.victoriousglacier-374689f2.eastus.azurecontainerapps.io`
+- **Source of truth for staging URL:** GitHub repository variable `APP_URL` and the latest successful `deploy-staging.yml` workflow run
+- **Seed credentials:**
+  - Admin: `admin@demo.vaultspace.app` / `Demo123!`
+  - Viewer 1: `investor1@demo.vaultspace.app` / `Demo123!`
+  - Viewer 2: `investor2@demo.vaultspace.app` / `Demo123!`
+
+### Execution Guidance
+
+Before running manual QA against staging:
+
+1. Confirm the latest `main` CI run is green
+2. Confirm the latest `Deploy to Staging` workflow completed successfully
+3. Run the automated baseline locally when validating a code change:
+   - `npm run format:check`
+   - `npm run lint`
+   - `npm run type-check`
+   - `npm run test`
+4. For browser smoke coverage, use Playwright against staging rather than the local dev server when validating deployed behavior
+
+### Notes
+
+- This plan is the canonical manual QA checklist referenced by `MASTER_PLAN.md`
+- Some checklist items depend on optional services such as Redis, ClamAV, Gotenberg, and email delivery; mark those as blocked or partial if the staging environment does not expose the required capability
+- Record failures with reproduction steps, environment details, and screenshots or logs where possible
+
+### Current QA Status
+
+- `main` CI and staging deployment are currently green
+- Staging browser smoke validation has been completed for login, `/api/health`, and `/dashboard`
+- Desktop dashboard validation has been completed at `lg`, `xl`, and `2xl` breakpoints with no detected widget overlap in the executed staging pass
+- Dashboard edit mode was verified to enter successfully on staging
+- Remaining work is the full manual pass through the checklist below, especially feature areas not covered by the current smoke run
 
 ---
 
