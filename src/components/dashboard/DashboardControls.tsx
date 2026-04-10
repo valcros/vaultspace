@@ -26,8 +26,7 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
   return (
     <div
       className={clsx(
-        'mb-4 flex items-center justify-end gap-2',
-        'rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-800/50',
+        'bg-white/72 mb-5 flex items-center justify-end gap-2 rounded-2xl border border-white/70 px-3 py-2.5 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.42)] backdrop-blur-sm dark:border-neutral-700/80 dark:bg-neutral-900/70',
         className
       )}
     >
@@ -37,7 +36,7 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
       )}
 
       {/* Density toggle - always visible at md+ */}
-      <div className="flex items-center gap-1 rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-700">
+      <div className="flex items-center gap-1 rounded-xl border border-neutral-200/80 bg-neutral-50/80 p-1 dark:border-neutral-700 dark:bg-neutral-800/70">
         <button
           onClick={() => setDensity('compact')}
           className={clsx(
@@ -75,7 +74,7 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
             variant={editMode ? 'default' : 'outline'}
             size="sm"
             onClick={() => setEditMode(!editMode)}
-            className="gap-1.5"
+            className="gap-1.5 rounded-xl"
           >
             <LayoutGrid className="h-3.5 w-3.5" />
             {editMode ? 'Done Editing' : 'Edit Layout'}
@@ -87,7 +86,7 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
               variant="ghost"
               size="sm"
               onClick={onReset}
-              className="gap-1.5 text-neutral-500"
+              className="gap-1.5 rounded-xl text-neutral-500"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Reset
