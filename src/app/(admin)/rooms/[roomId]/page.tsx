@@ -1321,6 +1321,16 @@ export default function RoomDetailPage() {
     return null;
   }
 
+  const roomTabs = [
+    { value: 'documents', label: 'Documents' },
+    { value: 'members', label: 'Access' },
+    { value: 'links', label: 'Share Links' },
+    { value: 'qa', label: 'Q&A' },
+    { value: 'checklist', label: 'Checklist' },
+    { value: 'calendar', label: 'Calendar' },
+    { value: 'activity', label: 'Activity' },
+  ] as const;
+
   return (
     <>
       <PageHeader
@@ -1328,13 +1338,17 @@ export default function RoomDetailPage() {
         description={room.description || 'No description'}
         breadcrumbs={[{ label: 'Rooms', href: '/rooms' }, { label: room.name }]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="text-white hover:bg-white/20 hover:text-white">
-                  <MoreHorizontal className="mr-2 h-4 w-4" />
-                  More
+                <Button
+                  variant="ghost"
+                  className="text-white hover:bg-white/20 hover:text-white"
+                  aria-label="More room actions"
+                >
+                  <MoreHorizontal className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">More</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -1360,10 +1374,11 @@ export default function RoomDetailPage() {
             <Button
               variant="ghost"
               className="text-white hover:bg-white/20 hover:text-white"
+              aria-label="Room settings"
               onClick={() => router.push(`/rooms/${roomId}/settings`)}
             >
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
+              <Settings className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Settings</span>
             </Button>
           </div>
         }
@@ -1371,7 +1386,22 @@ export default function RoomDetailPage() {
 
       <div>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <div className="overflow-x-auto pb-1">
+          <div className="md:hidden">
+            <Select value={activeTab} onValueChange={setActiveTab}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Choose a room section" />
+              </SelectTrigger>
+              <SelectContent>
+                {roomTabs.map((tab) => (
+                  <SelectItem key={tab.value} value={tab.value}>
+                    {tab.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="hidden overflow-x-auto pb-1 md:block">
             <TabsList className="h-auto w-max min-w-full justify-start">
               <TabsTrigger value="documents" className="gap-2">
                 <FileText className="h-4 w-4" />
