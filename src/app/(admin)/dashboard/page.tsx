@@ -546,14 +546,14 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
             <div className="mt-6 flex flex-wrap items-center gap-3">
               {firstRoom ? (
                 <Link href={`/rooms/${firstRoom.id}`}>
-                  <Button className="rounded-xl bg-white text-primary-800 shadow-lg shadow-primary-950/30 hover:bg-primary-50">
+                  <Button className="rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-100 text-slate-950 shadow-[0_18px_36px_-20px_rgba(251,191,36,0.58)] hover:from-amber-200 hover:via-orange-100 hover:to-amber-50">
                     Open {firstRoom.name}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
               ) : role === 'ADMIN' ? (
                 <Link href="/rooms/new">
-                  <Button className="rounded-xl bg-white text-primary-800 shadow-lg shadow-primary-950/30 hover:bg-primary-50">
+                  <Button className="rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-100 text-slate-950 shadow-[0_18px_36px_-20px_rgba(251,191,36,0.58)] hover:from-amber-200 hover:via-orange-100 hover:to-amber-50">
                     Create your first room
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
@@ -618,7 +618,7 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
       </Card>
 
       <Card
-        className="bg-white/86 border-white/70 ring-1 ring-white/40 backdrop-blur-sm"
+        className="overflow-hidden border-primary-200/60 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.18),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(239,246,255,0.96))] shadow-[0_26px_54px_-34px_rgba(15,23,42,0.48)] ring-1 ring-white/45 backdrop-blur-sm"
         elevation="high"
       >
         <CardHeader className="pb-4">
@@ -642,7 +642,7 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
               <Link
                 key={room.id}
                 href={`/rooms/${room.id}`}
-                className="group block rounded-[1.25rem] border border-neutral-200/80 bg-gradient-to-br from-white to-primary-50/70 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary-100 hover:shadow-[0_18px_36px_-24px_rgba(37,99,235,0.25)] dark:border-neutral-700 dark:from-neutral-900 dark:to-primary-950/20"
+                className="group block rounded-[1.25rem] border border-primary-100/90 bg-gradient-to-br from-white via-white to-primary-100/80 p-4 shadow-[0_18px_38px_-26px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-[0_24px_44px_-24px_rgba(37,99,235,0.28)] dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-primary-950/20"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -672,7 +672,7 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
           )}
 
           <div className="grid grid-cols-2 gap-3 pt-1 text-sm">
-            <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/90 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900/40">
+            <div className="bg-white/88 rounded-2xl border border-primary-100/80 px-4 py-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/40">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
                 Unread Messages
               </p>
@@ -680,7 +680,7 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
                 {unreadMessages}
               </p>
             </div>
-            <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/90 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900/40">
+            <div className="bg-white/88 rounded-2xl border border-primary-100/80 px-4 py-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/40">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
                 Questions
               </p>
