@@ -56,6 +56,11 @@ interface Question {
   _count?: { answers: number };
 }
 
+interface RoomDocumentOption {
+  id: string;
+  name: string;
+}
+
 type StatusFilter = 'ALL' | 'OPEN' | 'ANSWERED' | 'CLOSED';
 
 function timeAgo(dateStr: string): string {
@@ -125,6 +130,7 @@ function priorityBadge(priority: Question['priority']) {
 
 export function QATab({ roomId }: { roomId: string }) {
   const [questions, setQuestions] = React.useState<Question[]>([]);
+  const [roomDocuments, setRoomDocuments] = React.useState<RoomDocumentOption[]>([]);
   const [selectedQuestion, setSelectedQuestion] = React.useState<Question | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('ALL');
@@ -164,9 +170,28 @@ export function QATab({ roomId }: { roomId: string }) {
     }
   }, [roomId, statusFilter]);
 
+  const fetchRoomDocuments = React.useCallback(async () => {
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/documents?limit=100`);
+      if (!res.ok) {
+        throw new Error('Failed to fetch room documents');
+      }
+      const data = await res.json();
+      setRoomDocuments(
+        (data.documents ?? []).map((doc: RoomDocumentOption) => ({ id: doc.id, name: doc.name }))
+      );
+    } catch {
+      setRoomDocuments([]);
+    }
+  }, [roomId]);
+
   React.useEffect(() => {
     fetchQuestions();
   }, [fetchQuestions]);
+
+  React.useEffect(() => {
+    fetchRoomDocuments();
+  }, [fetchRoomDocuments]);
 
   const handleCreateQuestion = async () => {
     if (!newSubject.trim() || !newBody.trim()) {
@@ -523,13 +548,23 @@ export function QATab({ roomId }: { roomId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="q-docid">Document ID (optional)</Label>
-              <Input
-                id="q-docid"
-                placeholder="Link to a specific document"
-                value={newDocumentId}
-                onChange={(e) => setNewDocumentId(e.target.value)}
-              />
+              <Label>Linked Document (optional)</Label>
+              <Select
+                value={newDocumentId || '__none'}
+                onValueChange={(value) => setNewDocumentId(value === '__none' ? '' : value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="No specific document" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">No specific document</SelectItem>
+                  {roomDocuments.map((doc) => (
+                    <SelectItem key={doc.id} value={doc.id}>
+                      {doc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center gap-4">
               <div className="space-y-2">
