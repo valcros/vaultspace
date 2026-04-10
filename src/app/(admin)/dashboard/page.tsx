@@ -1,7 +1,16 @@
 'use client';
 
 import * as React from 'react';
-import { Plus } from 'lucide-react';
+import {
+  ArrowRight,
+  Compass,
+  Eye,
+  FileText,
+  FolderOpen,
+  MessageSquare,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -261,7 +270,10 @@ export default function DashboardPage() {
         actions={
           isAdmin ? (
             <Link href="/rooms/new">
-              <Button size="sm">
+              <Button
+                size="sm"
+                className="bg-white/12 hover:bg-white/18 rounded-xl border border-white/20 text-white backdrop-blur-sm"
+              >
                 <Plus className="mr-1 h-4 w-4" />
                 New Room
               </Button>
@@ -455,7 +467,9 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
       }}
       onDensityChange={setDensity}
     >
-      <div className="space-y-6">
+      <div className="space-y-7">
+        <DashboardHero data={data} role={role} />
+
         {/* Welcome banner for new users */}
         {data.myRooms && (
           <WelcomeBanner
@@ -494,9 +508,218 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
 // Loading State
 // ---------------------------------------------------------------------------
 
+function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 'VIEWER' }) {
+  const rooms = data.myRooms ?? [];
+  const firstRoom = rooms[0] ?? null;
+  const totalDocuments = rooms.reduce((sum, room) => sum + room.documentCount, 0);
+  const totalQuestions = rooms.reduce((sum, room) => sum + room.questionCount, 0);
+  const pendingActions = data.actionRequired?.totalCount ?? 0;
+  const unreadMessages = data.messages?.unreadCount ?? 0;
+  const totalViews = data.engagementInsights?.totalViews ?? 0;
+
+  const spotlightRooms = rooms.slice(0, 3);
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[1.45fr_1fr]">
+      <Card
+        className="overflow-hidden border-primary-200/60 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.22),transparent_26%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.92)_40%,rgba(37,99,235,0.86))] text-white shadow-[0_30px_70px_-34px_rgba(15,23,42,0.8)]"
+        elevation="high"
+      >
+        <CardContent className="relative p-6 md:p-8">
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.18),transparent_56%)]" />
+          <div className="relative max-w-2xl">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary-50/90">
+              <Sparkles className="h-3.5 w-3.5" />
+              Command Center
+            </div>
+            <h2 className="max-w-2xl text-3xl font-semibold leading-tight tracking-tight md:text-[2.5rem]">
+              {firstRoom
+                ? `Jump straight into ${firstRoom.name}.`
+                : 'Build your first secure room.'}
+            </h2>
+            <p className="text-primary-50/78 mt-3 max-w-xl text-sm leading-6 md:text-base">
+              {firstRoom
+                ? 'Use the dashboard as your launch point: open active rooms, triage the newest questions, and keep investor traffic moving without hunting through the navigation.'
+                : 'Start from a room, not a blank grid. Create a room, upload your first documents, and invite reviewers from a single flow.'}
+            </p>
+
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              {firstRoom ? (
+                <Link href={`/rooms/${firstRoom.id}`}>
+                  <Button className="rounded-xl bg-white text-primary-800 shadow-lg shadow-primary-950/30 hover:bg-primary-50">
+                    Open {firstRoom.name}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              ) : role === 'ADMIN' ? (
+                <Link href="/rooms/new">
+                  <Button className="rounded-xl bg-white text-primary-800 shadow-lg shadow-primary-950/30 hover:bg-primary-50">
+                    Create your first room
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              ) : null}
+
+              <Link href="/rooms">
+                <Button
+                  variant="outline"
+                  className="hover:bg-white/14 rounded-xl border-white/20 bg-white/10 text-white hover:text-white"
+                >
+                  Browse all rooms
+                </Button>
+              </Link>
+            </div>
+
+            <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  label: 'Rooms',
+                  value: rooms.length,
+                  icon: FolderOpen,
+                  tone: 'from-white/16 to-white/8',
+                },
+                {
+                  label: 'Documents',
+                  value: totalDocuments,
+                  icon: FileText,
+                  tone: 'from-emerald-400/24 to-white/8',
+                },
+                {
+                  label: 'Pending',
+                  value: pendingActions,
+                  icon: MessageSquare,
+                  tone: 'from-amber-400/24 to-white/8',
+                },
+                {
+                  label: 'Views (7d)',
+                  value: totalViews,
+                  icon: Eye,
+                  tone: 'from-sky-400/24 to-white/8',
+                },
+              ].map((stat) => (
+                <div
+                  key={stat.label}
+                  className={`border-white/12 rounded-2xl border bg-gradient-to-br ${stat.tone} px-4 py-3 backdrop-blur-sm`}
+                >
+                  <div className="flex items-center gap-2 text-primary-100/80">
+                    <stat.icon className="h-4 w-4" />
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.2em]">
+                      {stat.label}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-2xl font-semibold text-white">
+                    {stat.value.toLocaleString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card
+        className="bg-white/86 border-white/70 ring-1 ring-white/40 backdrop-blur-sm"
+        elevation="high"
+      >
+        <CardHeader className="pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-500">
+                Room Runway
+              </p>
+              <h3 className="mt-2 text-xl font-semibold tracking-tight text-neutral-950 dark:text-white">
+                Your fastest path into live work.
+              </h3>
+            </div>
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">
+              <Compass className="h-5 w-5" />
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {spotlightRooms.length > 0 ? (
+            spotlightRooms.map((room, index) => (
+              <Link
+                key={room.id}
+                href={`/rooms/${room.id}`}
+                className="group block rounded-[1.25rem] border border-neutral-200/80 bg-gradient-to-br from-white to-primary-50/70 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary-100 hover:shadow-[0_18px_36px_-24px_rgba(37,99,235,0.25)] dark:border-neutral-700 dark:from-neutral-900 dark:to-primary-950/20"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+                      {index === 0 ? 'Start Here' : 'Next Room'}
+                    </p>
+                    <p className="mt-2 text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                      {room.name}
+                    </p>
+                    <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                      {room.documentCount} documents, {room.viewerCount} viewers,{' '}
+                      {room.questionCount} open questions.
+                    </p>
+                  </div>
+                  <span className="text-neutral-300 transition-transform group-hover:translate-x-1 group-hover:text-primary-500">
+                    <ArrowRight className="h-4 w-4" />
+                  </span>
+                </div>
+              </Link>
+            ))
+          ) : (
+            <div className="rounded-[1.25rem] border border-dashed border-neutral-200 bg-neutral-50/90 p-5 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900/40 dark:text-neutral-400">
+              {role === 'ADMIN'
+                ? 'No rooms yet. Create one from the command center and the dashboard will start guiding users into active deal spaces.'
+                : 'No rooms have been shared with you yet.'}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 pt-1 text-sm">
+            <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/90 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900/40">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+                Unread Messages
+              </p>
+              <p className="mt-2 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+                {unreadMessages}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/90 px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900/40">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+                Questions
+              </p>
+              <p className="mt-2 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+                {totalQuestions}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function LoadingDashboard() {
   return (
     <div className="space-y-6">
+      <Card className="overflow-hidden" elevation="high">
+        <CardContent className="p-6 md:p-8">
+          <div className="grid gap-6 xl:grid-cols-[1.45fr_1fr]">
+            <div className="space-y-4">
+              <Skeleton className="h-6 w-32 rounded-full" />
+              <Skeleton className="h-12 w-3/4 rounded-2xl" />
+              <Skeleton className="h-5 w-2/3 rounded-xl" />
+              <div className="flex gap-3">
+                <Skeleton className="h-10 w-40 rounded-xl" />
+                <Skeleton className="h-10 w-28 rounded-xl" />
+              </div>
+              <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-24 rounded-2xl" />
+                ))}
+              </div>
+            </div>
+            <Skeleton className="h-full min-h-[300px] rounded-[1.5rem]" />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Skeleton stat cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[1, 2, 3, 4].map((i) => (

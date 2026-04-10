@@ -3,14 +3,15 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { clsx } from 'clsx';
 
 const cardVariants = cva(
-  'rounded-xl border bg-white text-neutral-900 transition-shadow duration-200 dark:bg-neutral-800 dark:text-neutral-100',
+  'rounded-2xl border bg-white/88 text-neutral-900 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)] backdrop-blur-sm transition-all duration-200 dark:bg-neutral-900/82 dark:text-neutral-100',
   {
     variants: {
       elevation: {
-        flat: 'border-neutral-200 shadow-none dark:border-neutral-700',
-        low: 'border-neutral-200 shadow-sm hover:shadow dark:border-neutral-700',
-        medium: 'border-neutral-100 shadow hover:shadow-md dark:border-neutral-700',
-        high: 'border-neutral-100 shadow-md hover:shadow-lg dark:border-neutral-600',
+        flat: 'border-neutral-200/80 shadow-none dark:border-neutral-700/80',
+        low: 'border-white/70 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.38)] hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-26px_rgba(37,99,235,0.28)] dark:border-neutral-700/80',
+        medium:
+          'border-white/80 shadow-[0_16px_38px_-24px_rgba(15,23,42,0.42)] hover:-translate-y-0.5 hover:shadow-[0_24px_44px_-26px_rgba(37,99,235,0.3)] dark:border-neutral-700/80',
+        high: 'border-white/80 shadow-[0_24px_48px_-26px_rgba(15,23,42,0.48)] hover:-translate-y-0.5 hover:shadow-[0_28px_52px_-26px_rgba(37,99,235,0.32)] dark:border-neutral-700/80',
       },
     },
     defaultVariants: { elevation: 'low' },
