@@ -43,7 +43,7 @@ export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
           <a
             key={room.id}
             href={`/rooms/${room.id}`}
-            className="group block rounded-[1.25rem] border border-white/80 bg-gradient-to-br from-white via-white to-primary-50/80 p-4 shadow-sm transition-all hover:-translate-y-1 hover:border-primary-100 hover:shadow-[0_18px_38px_-24px_rgba(37,99,235,0.35)] dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-primary-950/30"
+            className="group block rounded-[1.25rem] border border-primary-100/90 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(239,246,255,0.92))] p-4 shadow-[0_18px_38px_-24px_rgba(15,23,42,0.26)] transition-all hover:-translate-y-1 hover:border-primary-200 hover:shadow-[0_22px_42px_-22px_rgba(37,99,235,0.32)] dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-primary-950/30"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -75,7 +75,7 @@ export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-              <div className="rounded-xl bg-white/80 px-3 py-2 dark:bg-neutral-800/70">
+              <div className="bg-white/92 rounded-xl border border-white/80 px-3 py-2 shadow-sm dark:bg-neutral-800/70">
                 <div className="flex items-center gap-1 text-neutral-400">
                   <FileText className="h-3.5 w-3.5" />
                   Files
@@ -84,7 +84,7 @@ export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
                   {room.documentCount}
                 </p>
               </div>
-              <div className="rounded-xl bg-white/80 px-3 py-2 dark:bg-neutral-800/70">
+              <div className="bg-white/92 rounded-xl border border-white/80 px-3 py-2 shadow-sm dark:bg-neutral-800/70">
                 <div className="flex items-center gap-1 text-neutral-400">
                   <Users className="h-3.5 w-3.5" />
                   Viewers
@@ -93,7 +93,7 @@ export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
                   {room.viewerCount}
                 </p>
               </div>
-              <div className="rounded-xl bg-white/80 px-3 py-2 dark:bg-neutral-800/70">
+              <div className="bg-white/92 rounded-xl border border-white/80 px-3 py-2 shadow-sm dark:bg-neutral-800/70">
                 <div className="flex items-center gap-1 text-neutral-400">
                   <HelpCircle className="h-3.5 w-3.5" />
                   Questions
