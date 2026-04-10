@@ -37,11 +37,11 @@ export function DashboardWidget({
   return (
     <Card
       className={clsx(
-        'bg-white/86 group flex h-full flex-col overflow-hidden border-white/70 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.5)] ring-1 ring-white/45 backdrop-blur-sm hover:border-primary-100/80 hover:shadow-[0_24px_48px_-30px_rgba(37,99,235,0.28)]',
+        'group flex h-full flex-col overflow-hidden border border-primary-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,247,255,0.94))] shadow-[0_18px_40px_-28px_rgba(15,23,42,0.42)] ring-1 ring-white/55 backdrop-blur-sm hover:border-primary-200 hover:shadow-[0_24px_48px_-28px_rgba(37,99,235,0.28)]',
         className
       )}
     >
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 border-b border-neutral-100/80 bg-gradient-to-r from-white to-primary-50/60 pb-3 pt-4 dark:border-neutral-800 dark:from-neutral-900 dark:to-primary-950/25">
+      <CardHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 border-b border-primary-100/80 bg-gradient-to-r from-white via-white to-primary-100/75 pb-3 pt-4 dark:border-neutral-800 dark:from-neutral-900 dark:to-primary-950/25">
         <div className="flex items-center gap-3">
           {/* Drag handle - only visible in edit mode */}
           {editMode && (
@@ -76,7 +76,7 @@ export function DashboardWidget({
           </Link>
         )}
       </CardHeader>
-      <CardContent className="min-h-0 flex-1 overflow-auto pt-4">
+      <CardContent className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.56),rgba(255,255,255,0.88))] pt-4 dark:bg-transparent">
         {loading ? (
           <WidgetSkeleton />
         ) : empty ? (
