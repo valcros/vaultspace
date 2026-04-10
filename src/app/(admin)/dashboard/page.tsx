@@ -484,21 +484,40 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           <FeaturedAnnouncement announcement={data.announcements[0] ?? null} />
         )}
 
-        {/* Dashboard controls (hidden on mobile) */}
-        <DashboardControls onReset={resetLayout} isSaving={isSaving} />
+        <section className="rounded-[2rem] border border-slate-200/80 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_18%),linear-gradient(180deg,rgba(248,250,252,0.98),rgba(238,244,255,0.96)_22%,rgba(248,250,252,0.98)_100%)] p-4 shadow-[0_28px_60px_-42px_rgba(15,23,42,0.35)] ring-1 ring-white/55 md:p-5">
+          <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-500">
+                Active Workspace
+              </p>
+              <h3 className="mt-2 text-xl font-semibold tracking-tight text-neutral-950">
+                Workloads, rooms, and movement in one view.
+              </h3>
+              <p className="mt-1 text-sm text-neutral-500">
+                The cards below are intentionally structured to surface what needs attention and
+                where to go next.
+              </p>
+            </div>
+            <DashboardControls
+              onReset={resetLayout}
+              isSaving={isSaving}
+              className="bg-white/84 mb-0 border-white/80 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.28)]"
+            />
+          </div>
 
-        {/* Dashboard grid or mobile stack */}
-        {isMobile ? (
-          <MobileStackedDashboard role={role} renderWidget={renderWidget} />
-        ) : (
-          <DashboardGrid layout={filteredLayout} onLayoutChange={updateLayout}>
-            {filteredLayout.map((item) => (
-              <div key={item.i} className="h-full overflow-hidden">
-                {renderWidget(item.i as WidgetId)}
-              </div>
-            ))}
-          </DashboardGrid>
-        )}
+          {/* Dashboard grid or mobile stack */}
+          {isMobile ? (
+            <MobileStackedDashboard role={role} renderWidget={renderWidget} />
+          ) : (
+            <DashboardGrid layout={filteredLayout} onLayoutChange={updateLayout}>
+              {filteredLayout.map((item) => (
+                <div key={item.i} className="h-full overflow-hidden">
+                  {renderWidget(item.i as WidgetId)}
+                </div>
+              ))}
+            </DashboardGrid>
+          )}
+        </section>
       </div>
     </DashboardProvider>
   );
@@ -618,20 +637,20 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
       </Card>
 
       <Card
-        className="overflow-hidden border-primary-200/60 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.18),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(239,246,255,0.96))] shadow-[0_26px_54px_-34px_rgba(15,23,42,0.48)] ring-1 ring-white/45 backdrop-blur-sm"
+        className="overflow-hidden border-primary-200/40 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.22),transparent_18%),linear-gradient(145deg,rgba(15,23,42,0.98),rgba(30,41,59,0.94)_42%,rgba(37,99,235,0.86))] text-white shadow-[0_30px_70px_-34px_rgba(15,23,42,0.7)] ring-1 ring-white/10 backdrop-blur-sm"
         elevation="high"
       >
         <CardHeader className="pb-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-500">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-100/90">
                 Room Runway
               </p>
-              <h3 className="mt-2 text-xl font-semibold tracking-tight text-neutral-950 dark:text-white">
+              <h3 className="mt-2 text-xl font-semibold tracking-tight text-white">
                 Your fastest path into live work.
               </h3>
             </div>
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-primary-50 shadow-inner shadow-white/10">
               <Compass className="h-5 w-5" />
             </span>
           </div>
@@ -642,29 +661,27 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
               <Link
                 key={room.id}
                 href={`/rooms/${room.id}`}
-                className="group block rounded-[1.25rem] border border-primary-100/90 bg-gradient-to-br from-white via-white to-primary-100/80 p-4 shadow-[0_18px_38px_-26px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-[0_24px_44px_-24px_rgba(37,99,235,0.28)] dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-primary-950/20"
+                className="border-white/12 from-white/16 to-white/6 hover:border-white/18 hover:bg-white/14 group block rounded-[1.25rem] border bg-gradient-to-br via-white/10 p-4 shadow-[0_18px_38px_-26px_rgba(2,6,23,0.45)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_44px_-24px_rgba(37,99,235,0.32)]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary-100/65">
                       {index === 0 ? 'Start Here' : 'Next Room'}
                     </p>
-                    <p className="mt-2 text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                      {room.name}
-                    </p>
-                    <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                    <p className="mt-2 text-base font-semibold text-white">{room.name}</p>
+                    <p className="text-primary-100/78 mt-1 text-sm">
                       {room.documentCount} documents, {room.viewerCount} viewers,{' '}
                       {room.questionCount} open questions.
                     </p>
                   </div>
-                  <span className="text-neutral-300 transition-transform group-hover:translate-x-1 group-hover:text-primary-500">
+                  <span className="text-primary-100/60 transition-transform group-hover:translate-x-1 group-hover:text-white">
                     <ArrowRight className="h-4 w-4" />
                   </span>
                 </div>
               </Link>
             ))
           ) : (
-            <div className="rounded-[1.25rem] border border-dashed border-neutral-200 bg-neutral-50/90 p-5 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900/40 dark:text-neutral-400">
+            <div className="border-white/18 bg-white/8 rounded-[1.25rem] border border-dashed p-5 text-sm text-primary-100/70">
               {role === 'ADMIN'
                 ? 'No rooms yet. Create one from the command center and the dashboard will start guiding users into active deal spaces.'
                 : 'No rooms have been shared with you yet.'}
@@ -672,21 +689,17 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
           )}
 
           <div className="grid grid-cols-2 gap-3 pt-1 text-sm">
-            <div className="bg-white/88 rounded-2xl border border-primary-100/80 px-4 py-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/40">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+            <div className="border-white/12 rounded-2xl border bg-white/10 px-4 py-3 shadow-sm backdrop-blur-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-100/60">
                 Unread Messages
               </p>
-              <p className="mt-2 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-                {unreadMessages}
-              </p>
+              <p className="mt-2 text-xl font-semibold text-white">{unreadMessages}</p>
             </div>
-            <div className="bg-white/88 rounded-2xl border border-primary-100/80 px-4 py-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/40">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+            <div className="border-white/12 rounded-2xl border bg-white/10 px-4 py-3 shadow-sm backdrop-blur-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-100/60">
                 Questions
               </p>
-              <p className="mt-2 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-                {totalQuestions}
-              </p>
+              <p className="mt-2 text-xl font-semibold text-white">{totalQuestions}</p>
             </div>
           </div>
         </CardContent>
