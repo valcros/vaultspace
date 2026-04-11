@@ -43,23 +43,21 @@ export function ChecklistProgressWidget({ checklists, loading }: ChecklistProgre
               <div className="flex items-center justify-between">
                 <Link
                   href={`/rooms/${checklist.roomId}/checklists/${checklist.id}`}
-                  className="text-sm font-medium text-neutral-900 hover:text-primary-600 dark:text-neutral-100 dark:hover:text-primary-400"
+                  className="text-sm font-medium text-slate-50 hover:text-sky-100"
                 >
                   {checklist.name}
                 </Link>
                 <span
                   className={clsx(
                     'text-xs font-medium',
-                    isComplete
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-neutral-500 dark:text-neutral-400'
+                    isComplete ? 'text-emerald-300' : 'text-slate-400'
                   )}
                 >
                   {checklist.completedCount}/{checklist.totalCount}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-700">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
                   <div
                     className={clsx(
                       'h-full rounded-full transition-all duration-500',
@@ -72,16 +70,16 @@ export function ChecklistProgressWidget({ checklists, loading }: ChecklistProgre
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <span className="w-10 text-right text-xs text-neutral-400">{progress}%</span>
+                <span className="w-10 text-right text-xs text-slate-500">{progress}%</span>
               </div>
               {!isComplete && checklist.missingItems.length > 0 && (
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                <p className="text-xs text-slate-400">
                   Missing: {checklist.missingItems.slice(0, 2).join(', ')}
                   {checklist.missingItems.length > 2 &&
                     ` +${checklist.missingItems.length - 2} more`}
                 </p>
               )}
-              <p className="text-xs text-neutral-400">{checklist.roomName}</p>
+              <p className="text-xs text-slate-500">{checklist.roomName}</p>
             </div>
           );
         })}

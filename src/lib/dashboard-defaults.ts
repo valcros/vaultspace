@@ -17,22 +17,22 @@ import type { WidgetPosition, WidgetId } from '@/types/dashboard';
  * Optimized for organization management and oversight.
  */
 export const ADMIN_DEFAULT_LAYOUT: WidgetPosition[] = [
-  // Row 1: Action items and messages (most critical)
-  { i: 'action-required', x: 0, y: 0, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'messages', x: 6, y: 0, w: 6, h: 3, minW: 4, minH: 2 },
+  // Row 1: Triage and navigation
+  { i: 'action-required', x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'my-rooms', x: 6, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
 
-  // Row 2: Engagement chart and rooms
-  { i: 'engagement', x: 0, y: 3, w: 8, h: 4, minW: 6, minH: 3 },
-  { i: 'my-rooms', x: 8, y: 3, w: 4, h: 4, minW: 3, minH: 2 },
+  // Row 2: Operational context
+  { i: 'recent-activity', x: 0, y: 4, w: 7, h: 4, minW: 5, minH: 3 },
+  { i: 'messages', x: 7, y: 4, w: 5, h: 4, minW: 4, minH: 3 },
 
-  // Row 3: Activity and checklists
-  { i: 'recent-activity', x: 0, y: 7, w: 6, h: 4, minW: 4, minH: 2 },
-  { i: 'checklist-progress', x: 6, y: 7, w: 6, h: 4, minW: 4, minH: 2 },
+  // Row 3: New movement and trends
+  { i: 'new-documents', x: 0, y: 8, w: 6, h: 3, minW: 4, minH: 2 },
+  { i: 'engagement', x: 6, y: 8, w: 6, h: 3, minW: 4, minH: 2 },
 
-  // Row 4: Personal productivity
-  { i: 'continue-reading', x: 0, y: 11, w: 4, h: 3, minW: 3, minH: 2 },
+  // Row 4: Supporting utility
+  { i: 'checklist-progress', x: 0, y: 11, w: 4, h: 3, minW: 3, minH: 2 },
   { i: 'bookmarks', x: 4, y: 11, w: 4, h: 3, minW: 3, minH: 2 },
-  { i: 'new-documents', x: 8, y: 11, w: 4, h: 3, minW: 3, minH: 2 },
+  { i: 'continue-reading', x: 8, y: 11, w: 4, h: 3, minW: 3, minH: 2 },
 ];
 
 /**
@@ -40,17 +40,17 @@ export const ADMIN_DEFAULT_LAYOUT: WidgetPosition[] = [
  * Optimized for document discovery and access.
  */
 export const VIEWER_DEFAULT_LAYOUT: WidgetPosition[] = [
-  // Row 1: Messages and new documents (most relevant for viewers)
+  // Row 1: Inbox and new movement
   { i: 'messages', x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
   { i: 'new-documents', x: 6, y: 0, w: 6, h: 4, minW: 4, minH: 3 },
 
-  // Row 2: Continue reading and bookmarks
-  { i: 'continue-reading', x: 0, y: 4, w: 6, h: 3, minW: 4, minH: 2 },
-  { i: 'bookmarks', x: 6, y: 4, w: 6, h: 3, minW: 4, minH: 2 },
+  // Row 2: Navigation and questions
+  { i: 'my-rooms', x: 0, y: 4, w: 6, h: 4, minW: 4, minH: 3 },
+  { i: 'my-questions', x: 6, y: 4, w: 6, h: 4, minW: 4, minH: 3 },
 
-  // Row 3: Questions and rooms
-  { i: 'my-questions', x: 0, y: 7, w: 6, h: 4, minW: 4, minH: 3 },
-  { i: 'my-rooms', x: 6, y: 7, w: 6, h: 4, minW: 4, minH: 3 },
+  // Row 3: Personal utility
+  { i: 'continue-reading', x: 0, y: 8, w: 6, h: 3, minW: 4, minH: 2 },
+  { i: 'bookmarks', x: 6, y: 8, w: 6, h: 3, minW: 4, minH: 2 },
 
   // Row 4: Announcements (full width)
   { i: 'announcements', x: 0, y: 11, w: 12, h: 3, minW: 6, minH: 2 },
@@ -98,23 +98,23 @@ export function getWidgetsForRole(role: 'ADMIN' | 'VIEWER'): WidgetId[] {
  */
 export const ADMIN_MOBILE_ORDER: WidgetId[] = [
   'action-required',
-  'messages',
   'my-rooms',
-  'engagement',
   'recent-activity',
-  'checklist-progress',
-  'continue-reading',
-  'bookmarks',
+  'messages',
   'new-documents',
+  'engagement',
+  'checklist-progress',
+  'bookmarks',
+  'continue-reading',
 ];
 
 export const VIEWER_MOBILE_ORDER: WidgetId[] = [
   'messages',
   'new-documents',
+  'my-rooms',
+  'my-questions',
   'continue-reading',
   'bookmarks',
-  'my-questions',
-  'my-rooms',
   'announcements',
 ];
 

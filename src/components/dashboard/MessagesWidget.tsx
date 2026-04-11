@@ -40,7 +40,7 @@ export function MessagesWidget({ unreadCount, messages, loading }: MessagesWidge
               message.isRead ? (
                 <MailOpen className="h-4 w-4" />
               ) : (
-                <Mail className="h-4 w-4 text-primary-600" />
+                <Mail className="h-4 w-4 text-sky-300" />
               )
             }
             title={message.subject}
