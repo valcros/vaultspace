@@ -176,14 +176,18 @@ export function validateConfig(): { valid: boolean; errors: string[]; warnings: 
     }
   } else {
     // Standalone mode: check for required services
-    // Storage must be configured (S3-compatible or local)
-    const hasS3 = !!process.env['S3_ENDPOINT'] || !!process.env['AWS_S3_BUCKET'];
-    const hasLocalStorage =
-      process.env['STORAGE_PROVIDER'] === 'local' && !!process.env['STORAGE_LOCAL_PATH'];
+    // Storage must be explicitly configured for the selected provider.
+    const storageProvider = process.env['STORAGE_PROVIDER'];
+    const hasLocalStorage = storageProvider === 'local' && !!process.env['STORAGE_LOCAL_PATH'];
+    const hasS3 =
+      storageProvider === 's3' &&
+      !!process.env['STORAGE_BUCKET'] &&
+      !!(process.env['STORAGE_KEY_ID'] ?? process.env['AWS_ACCESS_KEY_ID']) &&
+      !!(process.env['STORAGE_SECRET_KEY'] ?? process.env['AWS_SECRET_ACCESS_KEY']);
 
     if (!hasS3 && !hasLocalStorage) {
       errors.push(
-        'Storage configuration required: S3-compatible (S3_ENDPOINT or AWS_S3_BUCKET) or local (STORAGE_PROVIDER=local + STORAGE_LOCAL_PATH)'
+        'Storage configuration required: local (STORAGE_PROVIDER=local + STORAGE_LOCAL_PATH) or s3 (STORAGE_PROVIDER=s3 + STORAGE_BUCKET + STORAGE_KEY_ID + STORAGE_SECRET_KEY)'
       );
     }
 

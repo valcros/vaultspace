@@ -48,14 +48,14 @@ describe('GET /api/users/:userId', () => {
     mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1']);
   });
 
-  it('returns 500 for unauthenticated requests', async () => {
+  it('returns 401 for unauthenticated requests', async () => {
     mockRequireAuth.mockRejectedValue(new Error('Authentication required'));
 
     const request = new NextRequest('http://localhost/api/users/user-1');
     const context = { params: Promise.resolve({ userId: 'user-1' }) };
 
     const response = await GET(request, context);
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(401);
   });
 
   it('returns 403 for non-admin users', async () => {
@@ -207,7 +207,7 @@ describe('DELETE /api/users/:userId', () => {
     );
   });
 
-  it('returns 500 for unauthenticated requests', async () => {
+  it('returns 401 for unauthenticated requests', async () => {
     mockRequireAuth.mockRejectedValue(new Error('Authentication required'));
 
     const request = new NextRequest('http://localhost/api/users/user-1', {
@@ -216,7 +216,7 @@ describe('DELETE /api/users/:userId', () => {
     const context = { params: Promise.resolve({ userId: 'user-1' }) };
 
     const response = await DELETE(request, context);
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(401);
   });
 
   it('returns 403 for non-admin users', async () => {

@@ -88,7 +88,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/analytics', () => {
   });
 
   it('returns 403 for non-admin', async () => {
-    mockSession.organization.role = 'MEMBER';
+    mockSession.organization.role = 'VIEWER';
 
     const req = new NextRequest('http://localhost:3000/api/rooms/room-1/documents/doc-1/analytics');
     const res = await GET(req, makeContext());

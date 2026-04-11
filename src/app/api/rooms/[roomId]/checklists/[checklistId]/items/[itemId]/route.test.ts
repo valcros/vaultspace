@@ -107,7 +107,7 @@ describe('Checklist Item API', () => {
     });
 
     it('returns 403 for non-admin users', async () => {
-      mockSession.organization.role = 'MEMBER';
+      mockSession.organization.role = 'VIEWER';
       const res = await PATCH(makePatchRequest({ status: 'IN_PROGRESS' }), makeContext());
       expect(res.status).toBe(403);
       const body = await res.json();

@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -59,6 +60,9 @@ export async function GET() {
 
     return NextResponse.json({ preferences: result.preferences });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[NotificationsAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to get notification preferences' }, { status: 500 });
   }
@@ -156,6 +160,9 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ preferences: result.preferences });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[NotificationsAPI] PATCH error:', error);
     return NextResponse.json(
       { error: 'Failed to update notification preferences' },

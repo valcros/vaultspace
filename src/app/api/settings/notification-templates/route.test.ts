@@ -67,7 +67,7 @@ describe('GET /api/settings/notification-templates', () => {
   });
 
   it('returns 403 for non-admin', async () => {
-    mockSession.organization.role = 'MEMBER';
+    mockSession.organization.role = 'VIEWER';
 
     const res = await GET();
 

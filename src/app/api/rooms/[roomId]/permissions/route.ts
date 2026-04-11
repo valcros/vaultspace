@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PermissionGranteeType, PermissionLevel, PermissionResourceType } from '@prisma/client';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -84,6 +85,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ permissions: result.permissions });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[PermissionsAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to list permissions' }, { status: 500 });
   }
@@ -305,6 +309,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: result.isNew ? 201 : 200 }
     );
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[PermissionsAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to grant permission' }, { status: 500 });
   }

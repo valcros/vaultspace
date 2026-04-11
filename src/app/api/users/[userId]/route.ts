@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -72,6 +73,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       },
     });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[UserAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to get user' }, { status: 500 });
   }
@@ -190,6 +194,9 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       message: 'User deleted and data redacted per GDPR requirements',
     });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[UserAPI] DELETE error:', error);
     return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 });
   }

@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -42,6 +43,9 @@ export async function GET() {
 
     return NextResponse.json({ branding: organization });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[BrandingAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to get branding' }, { status: 500 });
   }
@@ -114,6 +118,9 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ branding: updatedOrg });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[BrandingAPI] PATCH error:', error);
     return NextResponse.json({ error: 'Failed to update branding' }, { status: 500 });
   }

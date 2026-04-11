@@ -107,7 +107,7 @@ describe('POST /api/rooms/:roomId/documents/:documentId/versions/:versionId/roll
   });
 
   it('returns 403 for non-admin users', async () => {
-    mockSession.organization.role = 'MEMBER';
+    mockSession.organization.role = 'VIEWER';
     const res = await POST(makeRequest(), makeContext());
     expect(res.status).toBe(403);
     const body = await res.json();

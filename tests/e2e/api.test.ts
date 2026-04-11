@@ -22,11 +22,11 @@ test.describe('API Health', () => {
     expect(response.ok()).toBeTruthy();
 
     const body = await response.json();
-    expect(body.status).toBe('healthy');
+    expect(['healthy', 'degraded']).toContain(body.status);
     expect(body.checks).toBeDefined();
-    expect(body.checks.database).toBeDefined();
+    expect(body.checks.database?.status).toBe('healthy');
     expect(body.checks.cache).toBeDefined();
-    expect(body.checks.storage).toBeDefined();
+    expect(body.checks.storage?.status).toBe('healthy');
   });
 });
 

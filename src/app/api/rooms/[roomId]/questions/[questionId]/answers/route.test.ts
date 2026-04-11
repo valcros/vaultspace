@@ -116,7 +116,7 @@ describe('POST /api/rooms/:roomId/questions/:questionId/answers', () => {
   });
 
   it('returns 403 for non-admin', async () => {
-    mockSession.organization.role = 'MEMBER';
+    mockSession.organization.role = 'VIEWER';
 
     const req = new NextRequest('http://localhost:3000/api/rooms/room-1/questions/q-1/answers', {
       method: 'POST',

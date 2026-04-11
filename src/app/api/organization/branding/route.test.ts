@@ -38,11 +38,11 @@ describe('GET /api/organization/branding', () => {
     );
   });
 
-  it('returns 500 for unauthenticated requests', async () => {
+  it('returns 401 for unauthenticated requests', async () => {
     mockRequireAuth.mockRejectedValue(new Error('Authentication required'));
 
     const response = await GET();
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(401);
   });
 
   it('returns 404 when organization not found', async () => {

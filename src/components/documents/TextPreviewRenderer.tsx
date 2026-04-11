@@ -209,13 +209,12 @@ function CodeRenderer({ content, language }: { content: string; language: string
 
   React.useEffect(() => {
     async function highlight() {
-      const hljs = (await import('highlight.js/lib/core')).default;
+      const hljs = (await import('highlight.js')).default;
 
-      // Dynamically import the language
       try {
-        const langModule = await import(`highlight.js/lib/languages/${language}`);
-        hljs.registerLanguage(language, langModule.default);
-        const result = hljs.highlight(content, { language });
+        const result = hljs.getLanguage(language)
+          ? hljs.highlight(content, { language })
+          : { value: content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') };
         setHighlighted(result.value);
       } catch {
         // Language not available, show unhighlighted
