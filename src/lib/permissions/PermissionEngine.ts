@@ -221,7 +221,7 @@ export class PermissionEngine {
         };
       }
       reasoning.push(
-        `Layer 1: User role is ${orgMembership?.role ?? 'MEMBER'} (not ADMIN) → continue`
+        `Layer 1: User role is ${orgMembership?.role ?? 'VIEWER'} (not ADMIN) → continue`
       );
 
       // Layer 2: Room-level role assignment

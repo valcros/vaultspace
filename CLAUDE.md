@@ -103,7 +103,7 @@ Standalone mode uses graceful degradation. Missing optional services (Redis, Cla
 - Custom DB-backed sessions (NOT NextAuth.js)
 - Cookie name: `vaultspace-session` (HttpOnly, Secure, SameSite=Lax)
 - Idle timeout: 24 hours (sliding window); Absolute max: 7 days
-- Org roles: Owner, Admin, Member. Room roles: Admin, Viewer.
+- Persisted roles: `ADMIN` and `VIEWER`; room-level admin elevation is stored via scoped role assignments.
 
 ### Security
 

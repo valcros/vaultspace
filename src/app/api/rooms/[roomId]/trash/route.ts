@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -112,6 +113,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       retentionDays: result.retentionDays,
     });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[TrashAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to list trash' }, { status: 500 });
   }

@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuthFromRequest } from '@/lib/middleware';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -64,6 +65,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[RoomsAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to list rooms' }, { status: 500 });
   }
@@ -153,6 +157,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ room }, { status: 201 });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[RoomsAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to create room' }, { status: 500 });
   }

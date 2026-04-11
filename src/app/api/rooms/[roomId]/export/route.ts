@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
@@ -91,6 +92,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 202 }
     );
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[ExportAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to start export' }, { status: 500 });
   }
@@ -160,6 +164,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ exports: result.exportEvents });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[ExportAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to get export status' }, { status: 500 });
   }

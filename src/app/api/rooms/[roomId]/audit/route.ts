@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { EventType } from '@prisma/client';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -176,6 +177,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       },
     });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[AuditAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to list audit events' }, { status: 500 });
   }

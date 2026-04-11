@@ -8,6 +8,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env['PLAYWRIGHT_BASE_URL'] || 'http://localhost:3000';
+const usesLocalServer = /localhost|127\.0\.0\.1/.test(baseURL);
+const webServerCommand =
+  process.env['PLAYWRIGHT_WEB_SERVER_COMMAND'] ||
+  (usesLocalServer ? 'npm run dev:standalone' : 'npm run dev');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -41,11 +45,13 @@ export default defineConfig({
       : []),
   ],
 
-  // Run local dev server before tests
-  webServer: {
-    command: 'npm run dev',
-    url: baseURL,
-    reuseExistingServer: !process.env['CI'],
-    timeout: 120000,
-  },
+  // Launch a local standalone server only when the test target is local.
+  webServer: usesLocalServer
+    ? {
+        command: webServerCommand,
+        url: baseURL,
+        reuseExistingServer: !process.env['CI'],
+        timeout: 120000,
+      }
+    : undefined,
 });

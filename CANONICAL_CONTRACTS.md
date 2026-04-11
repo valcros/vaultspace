@@ -40,38 +40,34 @@
 
 ## 2. Role Enums
 
-**Decision:** Two separate role enums, not one.
+**Decision:** The current implementation persists a single `UserRole` enum and uses scoped role assignments for room-level elevation.
 
-### Organization Roles (persisted on `OrganizationMembership.role`)
+### Persisted Role Enum
 
 ```typescript
-enum OrgRole {
-  OWNER = 'owner', // Full control, billing, can delete org
-  ADMIN = 'admin', // Manage rooms, users, settings
-  MEMBER = 'member', // Viewer-level access on assigned rooms only
+enum UserRole {
+  ADMIN = 'ADMIN',
+  VIEWER = 'VIEWER',
 }
 ```
 
-### Room Roles (persisted on `RoomMembership.role`)
+### Where Roles Live
 
-```typescript
-enum RoomRole {
-  ADMIN = 'admin', // Full control within the room
-  VIEWER = 'viewer', // View/download per document permissions
-}
-```
+| Context                 | Storage                                       | Meaning                                                                               |
+| ----------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Organization membership | `UserOrganization.role`                       | `ADMIN` has org-wide administrative access. `VIEWER` is the non-admin baseline role.  |
+| Room-scoped elevation   | `RoleAssignment.role` with `scopeType='ROOM'` | `ADMIN` grants elevated access within a specific room.                                |
+| Share-link access       | `Link.permission`                             | Link-only viewers are authorized by link scope and permission, not by org membership. |
 
-### Mapping Table
+### Interpretation Notes
 
-| Org Role | Default Room Access      | Can Create Rooms | Can Manage Users |
-| -------- | ------------------------ | ---------------- | ---------------- |
-| Owner    | Admin on all rooms       | Yes              | Yes              |
-| Admin    | Admin on all rooms       | Yes              | Yes              |
-| Member   | No access until assigned | No               | No               |
+- Historical references to `MEMBER` in tests or planning docs should be read as the non-admin path and aligned to `VIEWER` in code.
+- Historical references to room-level `VIEWER` membership describe effective access, not a persisted `RoomRole` enum in the current schema.
+- Owner-specific org semantics are not implemented in the current schema or session model.
 
 **What to ignore in other docs:**
 
-- AI_BUILD_PLAYBOOK.md's `Admin, Viewer, TeamMember` is **wrong**. The correct enums are above.
+- Any reference to persisted `OWNER`/`MEMBER` enums is stale for the current codebase.
 
 ---
 
