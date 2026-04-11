@@ -12,6 +12,8 @@
 
 import type { WidgetPosition, WidgetId } from '@/types/dashboard';
 
+export const CURRENT_DASHBOARD_LAYOUT_VERSION = 2;
+
 /**
  * Admin default layout (11 widgets).
  * Optimized for organization management and oversight.
