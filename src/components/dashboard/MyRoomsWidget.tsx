@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { FolderOpen, FileText, Users, HelpCircle } from 'lucide-react';
+import Link from 'next/link';
 import { DashboardWidget } from './DashboardWidget';
 import { clsx } from 'clsx';
 
@@ -21,10 +22,10 @@ interface MyRoomsWidgetProps {
 }
 
 const statusColors: Record<string, string> = {
-  DRAFT: 'bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300',
-  ACTIVE: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
-  ARCHIVED: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
-  CLOSED: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
+  DRAFT: 'border border-slate-700 bg-slate-800/85 text-slate-200',
+  ACTIVE: 'border border-emerald-400/20 bg-emerald-500/15 text-emerald-100',
+  ARCHIVED: 'border border-amber-400/20 bg-amber-500/15 text-amber-100',
+  CLOSED: 'border border-rose-400/20 bg-rose-500/15 text-rose-100',
 };
 
 export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
@@ -40,25 +41,23 @@ export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
     >
       <div className="space-y-3">
         {rooms.slice(0, 4).map((room, index) => (
-          <a
+          <Link
             key={room.id}
             href={`/rooms/${room.id}`}
-            className="group block rounded-[1.25rem] border border-primary-100/90 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(239,246,255,0.92))] p-4 shadow-[0_18px_38px_-24px_rgba(15,23,42,0.26)] transition-all hover:-translate-y-1 hover:border-primary-200 hover:shadow-[0_22px_42px_-22px_rgba(37,99,235,0.32)] dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-primary-950/30"
+            className="group block rounded-[1.25rem] border border-slate-700/75 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.12),transparent_22%),linear-gradient(180deg,rgba(15,23,42,0.72),rgba(2,6,23,0.82))] p-4 shadow-[0_20px_38px_-28px_rgba(2,6,23,0.92)] transition-all hover:-translate-y-1 hover:border-sky-400/20 hover:bg-slate-900/95 hover:shadow-[0_24px_42px_-24px_rgba(56,189,248,0.18)]"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary-100 text-primary-700 dark:bg-primary-900/60 dark:text-primary-300">
+                  <span className="border-sky-400/18 bg-sky-500/12 flex h-9 w-9 items-center justify-center rounded-2xl border text-sky-100">
                     <FolderOpen className="h-4 w-4" />
                   </span>
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100/65">
                     {index === 0 ? 'Start Here' : 'Available Room'}
                   </span>
                 </div>
-                <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                  {room.name}
-                </p>
-                <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                <p className="text-base font-semibold text-white">{room.name}</p>
+                <p className="mt-1 text-sm text-slate-300">
                   {room.status === 'ACTIVE'
                     ? 'Open the room to review documents, questions, and recent activity.'
                     : 'This room is available but not currently active.'}
@@ -74,41 +73,35 @@ export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
               </span>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-              <div className="bg-white/92 rounded-xl border border-white/80 px-3 py-2 shadow-sm dark:bg-neutral-800/70">
-                <div className="flex items-center gap-1 text-neutral-400">
+            <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-slate-400">
+              <div className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <div className="flex items-center gap-1 text-slate-400">
                   <FileText className="h-3.5 w-3.5" />
                   Files
                 </div>
-                <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                  {room.documentCount}
-                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-50">{room.documentCount}</p>
               </div>
-              <div className="bg-white/92 rounded-xl border border-white/80 px-3 py-2 shadow-sm dark:bg-neutral-800/70">
-                <div className="flex items-center gap-1 text-neutral-400">
+              <div className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <div className="flex items-center gap-1 text-slate-400">
                   <Users className="h-3.5 w-3.5" />
                   Viewers
                 </div>
-                <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                  {room.viewerCount}
-                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-50">{room.viewerCount}</p>
               </div>
-              <div className="bg-white/92 rounded-xl border border-white/80 px-3 py-2 shadow-sm dark:bg-neutral-800/70">
-                <div className="flex items-center gap-1 text-neutral-400">
+              <div className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <div className="flex items-center gap-1 text-slate-400">
                   <HelpCircle className="h-3.5 w-3.5" />
                   Questions
                 </div>
-                <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                  {room.questionCount}
-                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-50">{room.questionCount}</p>
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-between text-sm font-medium text-primary-700 dark:text-primary-300">
+            <div className="mt-4 flex items-center justify-between text-sm font-medium text-sky-100">
               <span>Open room</span>
               <span className="transition-transform group-hover:translate-x-1">&rarr;</span>
             </div>
-          </a>
+          </Link>
         ))}
       </div>
     </DashboardWidget>

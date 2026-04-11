@@ -484,16 +484,16 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           <FeaturedAnnouncement announcement={data.announcements[0] ?? null} />
         )}
 
-        <section className="rounded-[2rem] border border-slate-200/80 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_18%),linear-gradient(180deg,rgba(248,250,252,0.98),rgba(238,244,255,0.96)_22%,rgba(248,250,252,0.98)_100%)] p-4 shadow-[0_28px_60px_-42px_rgba(15,23,42,0.35)] ring-1 ring-white/55 md:p-5">
+        <section className="ring-white/6 rounded-[2rem] border border-slate-700/80 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_18%),radial-gradient(circle_at_bottom_left,rgba(37,99,235,0.16),transparent_24%),linear-gradient(180deg,rgba(2,6,23,0.96),rgba(15,23,42,0.98)_18%,rgba(30,41,59,0.96)_100%)] p-4 shadow-[0_30px_72px_-42px_rgba(2,6,23,0.92)] ring-1 md:p-5">
           <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-500">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/85">
                 Active Workspace
               </p>
-              <h3 className="mt-2 text-xl font-semibold tracking-tight text-neutral-950">
+              <h3 className="mt-2 text-xl font-semibold tracking-tight text-white">
                 Workloads, rooms, and movement in one view.
               </h3>
-              <p className="mt-1 text-sm text-neutral-500">
+              <p className="mt-1 text-sm text-slate-400">
                 The cards below are intentionally structured to surface what needs attention and
                 where to go next.
               </p>
@@ -501,7 +501,7 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
             <DashboardControls
               onReset={resetLayout}
               isSaving={isSaving}
-              className="bg-white/84 mb-0 border-white/80 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.28)]"
+              className="shadow-[0_18px_40px_-30px_rgba(2,6,23,0.95)]"
             />
           </div>
 
