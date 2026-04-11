@@ -48,10 +48,10 @@ test.describe('Authentication', () => {
     await page.fill('input[type="password"]', 'Demo123!');
     await page.click('button[type="submit"]');
 
-    // Should redirect to rooms dashboard
-    await page.waitForURL('**/rooms', { timeout: 10000 });
-    await expect(page).toHaveURL(/\/rooms/);
-    await expect(page.locator('text=Data Rooms')).toBeVisible();
+    // The dashboard is the post-login landing page.
+    await page.waitForURL('**/dashboard', { timeout: 10000 });
+    await expect(page).toHaveURL(/\/dashboard/);
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   });
 
   test('unauthenticated access redirects to login', async ({ page }) => {

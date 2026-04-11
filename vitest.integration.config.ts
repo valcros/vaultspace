@@ -1,8 +1,8 @@
 /**
  * Vitest Integration Test Configuration
  *
- * AZURE-ONLY: Integration tests must run against Azure-hosted services.
- * Local execution is not permitted.
+ * Azure mode: Integration tests must run against Azure-hosted services.
+ * Standalone mode: Local execution is permitted for self-hosted validation.
  *
  * Required environment variables:
  * - DATABASE_URL: Azure PostgreSQL connection string
@@ -12,16 +12,20 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 
-// Validate Azure-only configuration
+const isStandalone = process.env['DEPLOYMENT_MODE'] === 'standalone';
+
+// Validate integration test configuration
 const databaseUrl = process.env['DATABASE_URL'];
 if (!databaseUrl) {
   throw new Error(
     '\n\n🚫 DATABASE_URL is required for integration tests.\n' +
-      'Set DATABASE_URL to point to Azure PostgreSQL.\n'
+      (isStandalone
+        ? 'Set DATABASE_URL to point to your standalone PostgreSQL instance.\n'
+        : 'Set DATABASE_URL to point to Azure PostgreSQL.\n')
   );
 }
 
-if (databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1')) {
+if (!isStandalone && (databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1'))) {
   throw new Error(
     '\n\n🚫 INTEGRATION TESTS BLOCKED\n\n' +
       'DATABASE_URL points to localhost, which is not permitted.\n' +
@@ -29,7 +33,8 @@ if (databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1')) {
       'Current value: ' +
       databaseUrl.replace(/:[^:@]+@/, ':****@') +
       '\n\n' +
-      'Required: Azure PostgreSQL URL (.database.azure.com)\n'
+      'Required: Azure PostgreSQL URL (.database.azure.com)\n' +
+      'Or run with DEPLOYMENT_MODE=standalone for local integration testing.\n'
   );
 }
 
@@ -53,7 +58,7 @@ export default defineConfig({
       // No defaults - Azure configuration is required
       DATABASE_URL: process.env['DATABASE_URL'],
       REDIS_URL: process.env['REDIS_URL'],
-      AZURE_ONLY: 'true',
+      AZURE_ONLY: isStandalone ? 'false' : 'true',
     },
   },
   resolve: {

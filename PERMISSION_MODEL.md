@@ -34,8 +34,8 @@ The **PermissionEngine** is the single source of truth for all access control de
 
 The PermissionEngine evaluates whether a given user can perform a specific action on a specific resource. It synthesizes information from:
 
-- **Organization membership and role** (Owner, Admin, Member)
-- **Room-level membership and role** (Admin, Viewer)
+- **Organization membership and persisted role** (`ADMIN`, `VIEWER`)
+- **Room-level scoped admin assignments** (room `ADMIN` elevation via `RoleAssignment`)
 - **Folder and document inheritance chains**
 - **Explicit permission grants and denials**
 - **Group membership** (transitive permissions)
@@ -124,14 +124,13 @@ if (!user.organizationMemberships.includes(org.id)) {
 
 Organization roles define the upper bound of what a user can do:
 
-- **Organization Owner**: Full control. No layer-3 restrictions.
-- **Organization Admin**: Can manage rooms, users, settings. Some admin actions require higher privilege.
-- **Organization Member**: Limited to viewer-level actions on assigned rooms.
+- **Organization Admin**: Full administrative access within the organization.
+- **Organization Viewer**: Non-admin baseline role. Additional access comes from explicit permissions, groups, links, or room-scoped admin assignment.
 
 ```typescript
-const orgRole = user.roleInOrganization; // 'owner' | 'admin' | 'member'
+const orgRole = user.roleInOrganization; // 'ADMIN' | 'VIEWER'
 
-if (orgRole === 'member' && action.requiresAdminRole) {
+if (orgRole === 'VIEWER' && action.requiresAdminRole) {
   return { allowed: false, reason: 'ORG_ROLE_INSUFFICIENT' };
 }
 ```
@@ -147,7 +146,7 @@ const roomMembership = await db.roomMembership.findUnique({
   where: { userId_roomId: { userId: user.id, roomId: resource.room_id } },
 });
 
-if (!roomMembership && orgRole !== 'admin') {
+if (!roomMembership && orgRole !== 'ADMIN') {
   return { allowed: false, reason: 'NOT_ROOM_MEMBER' };
 }
 ```

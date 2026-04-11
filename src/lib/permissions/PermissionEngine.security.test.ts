@@ -157,7 +157,7 @@ describe('PermissionEngine Security Tests', () => {
   describe('Default deny policy', () => {
     it('should deny when no permissions match at any layer', async () => {
       mockedDb.userOrganization.findUnique.mockResolvedValue({
-        role: 'MEMBER',
+        role: 'VIEWER',
         userId: 'user-1',
         organizationId: 'org-1',
       } as never);
@@ -196,7 +196,7 @@ describe('PermissionEngine Security Tests', () => {
 
     it('should not grant room admin access to other rooms', async () => {
       mockedDb.userOrganization.findUnique.mockResolvedValue({
-        role: 'MEMBER',
+        role: 'VIEWER',
         userId: 'room-admin',
         organizationId: 'org-1',
       } as never);
@@ -218,7 +218,7 @@ describe('PermissionEngine Security Tests', () => {
   describe('Permission level enforcement', () => {
     it('should deny download with only VIEW permission', async () => {
       mockedDb.userOrganization.findUnique.mockResolvedValue({
-        role: 'MEMBER',
+        role: 'VIEWER',
         userId: 'user-1',
         organizationId: 'org-1',
       } as never);
@@ -241,7 +241,7 @@ describe('PermissionEngine Security Tests', () => {
 
     it('should allow view with VIEW permission', async () => {
       mockedDb.userOrganization.findUnique.mockResolvedValue({
-        role: 'MEMBER',
+        role: 'VIEWER',
         userId: 'user-1',
         organizationId: 'org-1',
       } as never);

@@ -169,7 +169,10 @@ describe('azure-guard', () => {
       it('allows S3-compatible storage', async () => {
         process.env['DATABASE_URL'] = 'postgresql://localhost:5432/db';
         process.env['SESSION_SECRET'] = 'test-session-secret';
-        process.env['S3_ENDPOINT'] = 'http://minio:9000';
+        process.env['STORAGE_PROVIDER'] = 's3';
+        process.env['STORAGE_BUCKET'] = 'vaultspace-test';
+        process.env['STORAGE_KEY_ID'] = 'minio';
+        process.env['STORAGE_SECRET_KEY'] = 'minio-secret';
 
         const { validateConfig } = await import('./azure-guard');
         const { errors } = validateConfig();

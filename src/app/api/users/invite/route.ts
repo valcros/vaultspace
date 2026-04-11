@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { db, withOrgContext } from '@/lib/db';
 import { EmailNotificationService } from '@/services/notifications';
@@ -183,6 +184,9 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[InviteAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to send invitation' }, { status: 500 });
   }
@@ -235,6 +239,9 @@ export async function GET() {
       })),
     });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[InviteAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to list invitations' }, { status: 500 });
   }

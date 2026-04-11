@@ -38,12 +38,12 @@ describe('GET /api/organization/activity', () => {
     );
   });
 
-  it('returns 500 for unauthenticated requests', async () => {
+  it('returns 401 for unauthenticated requests', async () => {
     mockRequireAuth.mockRejectedValue(new Error('Authentication required'));
 
     const request = new NextRequest('http://localhost/api/organization/activity');
     const response = await GET(request);
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(401);
   });
 
   it('returns 403 for non-admin users', async () => {

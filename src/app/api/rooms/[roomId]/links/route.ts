@@ -10,6 +10,7 @@ import { LinkScope, LinkPermission } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 
+import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
@@ -88,6 +89,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ links: result.links });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[LinksAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to list links' }, { status: 500 });
   }
@@ -246,6 +250,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 201 }
     );
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[LinksAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to create link' }, { status: 500 });
   }

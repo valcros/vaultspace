@@ -161,7 +161,7 @@ Implementation must follow this sequence. Do NOT skip phases or reorder tasks.
 - Session management: `lib/auth/sessionManager.ts`
   - PostgreSQL-backed sessions with Redis caching (see AUTH_AND_SESSIONS.md)
   - Session timeout: 24-hour idle (sliding window), 7-day absolute maximum. See AUTH_AND_SESSIONS.md.
-- Role system: Organization roles: Owner, Admin, Member. Room roles: Admin, Viewer. (constants in `lib/constants.ts`)
+- Role system: persisted `UserRole` values are `ADMIN` and `VIEWER`, with room-level admin elevation stored via scoped `RoleAssignment` records.
 - User model with hashed password (bcrypt)
 
 #### Organization & Multi-Tenancy (F142)

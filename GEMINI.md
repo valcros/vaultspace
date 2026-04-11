@@ -43,7 +43,7 @@ VaultSpace: open-source, self-hosted Virtual Data Room. AGPLv3 license.
 - **Layout:** src/app/, src/lib/, src/services/, src/providers/, src/workers/
 - **Ports:** Next.js 3000, PostgreSQL 5432, Redis 6379, Gotenberg 3001
 - **Auth:** Custom DB sessions (NOT NextAuth.js), cookie: `vaultspace-session`
-- **Org roles:** Owner, Admin, Member. **Room roles:** Admin, Viewer.
+- **Persisted roles:** `ADMIN`, `VIEWER`. Room-level admin access is granted via scoped role assignments.
 - **License:** AGPLv3
 
 ## Status

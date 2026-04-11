@@ -59,7 +59,7 @@ describe('POST /api/users/invite', () => {
     process.env['APP_URL'] = 'https://example.com';
   });
 
-  it('returns 500 for unauthenticated requests', async () => {
+  it('returns 401 for unauthenticated requests', async () => {
     mockRequireAuth.mockRejectedValue(new Error('Authentication required'));
 
     const request = new NextRequest('http://localhost/api/users/invite', {
@@ -68,7 +68,7 @@ describe('POST /api/users/invite', () => {
     });
 
     const response = await POST(request);
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(401);
   });
 
   it('returns 403 for non-admin users', async () => {
@@ -256,11 +256,11 @@ describe('GET /api/users/invite', () => {
     );
   });
 
-  it('returns 500 for unauthenticated requests', async () => {
+  it('returns 401 for unauthenticated requests', async () => {
     mockRequireAuth.mockRejectedValue(new Error('Authentication required'));
 
     const response = await GET();
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(401);
   });
 
   it('returns 403 for non-admin users', async () => {

@@ -60,9 +60,9 @@ export async function POST(request: NextRequest) {
     // Send reset email via job queue (fallback to sync if async unavailable)
     const providers = getProviders();
     const orgName = user.organizations[0]?.organization.name || 'VaultSpace';
-    const baseUrl = process.env['NEXTAUTH_URL'] || process.env['APP_URL'];
+    const baseUrl = process.env['APP_URL'];
     if (!baseUrl) {
-      console.error('[ForgotPasswordAPI] NEXTAUTH_URL or APP_URL must be configured');
+      console.error('[ForgotPasswordAPI] APP_URL must be configured');
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
     const resetUrl = `${baseUrl}/auth/reset-password?token=${resetToken}`;

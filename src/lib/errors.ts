@@ -69,6 +69,13 @@ export class AuthenticationError extends AppError {
   }
 }
 
+export function isAuthenticationError(error: unknown): error is AuthenticationError {
+  return (
+    error instanceof AuthenticationError ||
+    (error instanceof Error && error.message === 'Authentication required')
+  );
+}
+
 /**
  * Authorization error (403)
  */

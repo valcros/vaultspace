@@ -11,7 +11,7 @@ import { NextRequest } from 'next/server';
 const mockSession = {
   userId: 'user-1',
   organizationId: 'org-1',
-  organization: { role: 'MEMBER' },
+  organization: { role: 'VIEWER' },
   user: { email: 'member@example.com' },
 };
 vi.mock('@/lib/middleware', () => ({
