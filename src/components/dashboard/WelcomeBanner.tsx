@@ -27,50 +27,47 @@ export function WelcomeBanner({ roomCount, dismissed = false, onDismiss }: Welco
   };
 
   return (
-    <div className="relative mb-4 overflow-hidden rounded-xl border border-primary-100 bg-gradient-to-r from-primary-50 to-white p-5 dark:border-primary-800 dark:from-primary-900/20 dark:to-neutral-800">
+    <div className="relative mb-4 overflow-hidden rounded-[1.75rem] border border-slate-700/80 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_26%),linear-gradient(145deg,rgba(15,23,42,0.96),rgba(30,41,59,0.94)_58%,rgba(37,99,235,0.72))] p-5 text-white shadow-[0_24px_48px_-32px_rgba(2,6,23,0.92)]">
       <button
         onClick={handleDismiss}
-        className="absolute right-3 top-3 rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300"
+        className="absolute right-3 top-3 rounded-md p-1 text-slate-300 hover:bg-white/10 hover:text-white"
         aria-label="Dismiss welcome banner"
       >
         <X className="h-4 w-4" />
       </button>
-      <h3 className="mb-1 text-base font-semibold text-neutral-900 dark:text-neutral-100">
-        Welcome to VaultSpace
-      </h3>
-      <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-        Get started in three steps:
-      </p>
+      <h3 className="mb-1 text-base font-semibold text-white">Welcome to VaultSpace</h3>
+      <p className="mb-4 text-sm text-slate-300">Get started in three steps:</p>
       <div className="grid gap-3 sm:grid-cols-3">
         {[
           {
             icon: FolderPlus,
             title: '1. Create a Room',
             desc: 'Organize documents by deal or project',
-            color: 'text-primary-600 bg-primary-100 dark:text-primary-400 dark:bg-primary-900/50',
+            color: 'border border-sky-400/20 bg-sky-500/14 text-sky-100',
           },
           {
             icon: Upload,
             title: '2. Upload Documents',
             desc: 'Drag and drop files into your room',
-            color: 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/50',
+            color: 'border border-emerald-400/20 bg-emerald-500/14 text-emerald-100',
           },
           {
             icon: Share2,
             title: '3. Share Securely',
             desc: 'Invite stakeholders with controlled access',
-            color: 'text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50',
+            color: 'border border-fuchsia-400/20 bg-fuchsia-500/14 text-fuchsia-100',
           },
         ].map((step) => (
-          <div key={step.title} className="flex items-start gap-3">
-            <div className={`shrink-0 rounded-lg p-2 ${step.color}`}>
+          <div
+            key={step.title}
+            className="flex items-start gap-3 rounded-2xl border border-slate-700/70 bg-slate-950/40 p-3"
+          >
+            <div className={`shrink-0 rounded-xl p-2 ${step.color}`}>
               <step.icon className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                {step.title}
-              </p>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">{step.desc}</p>
+              <p className="text-sm font-medium text-slate-100">{step.title}</p>
+              <p className="text-xs text-slate-400">{step.desc}</p>
             </div>
           </div>
         ))}

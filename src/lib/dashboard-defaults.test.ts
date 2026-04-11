@@ -121,7 +121,7 @@ describe('render-path filtering (no compaction)', () => {
 
   it('filtered layout may have visual gaps that RGL compactType handles', () => {
     // Remove row 0 widgets, leaving row 1+ with original y-positions
-    const widgetsWithData = ['my-rooms', 'recent-activity', 'checklist-progress'];
+    const widgetsWithData = ['messages', 'new-documents', 'engagement'];
     const filtered = ADMIN_DEFAULT_LAYOUT.filter((item) => widgetsWithData.includes(item.i));
 
     // All remaining widgets have y > 0 — there are gaps

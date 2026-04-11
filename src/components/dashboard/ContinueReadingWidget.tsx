@@ -40,14 +40,12 @@ export function ContinueReadingWidget({ items, loading }: ContinueReadingWidgetP
               <span>
                 {item.roomName}
                 {item.lastPage && item.totalPages && (
-                  <span className="ml-2 text-primary-600 dark:text-primary-400">
+                  <span className="ml-2 text-sky-300">
                     Page {item.lastPage}/{item.totalPages}
                   </span>
                 )}
                 {item.lastPage && !item.totalPages && (
-                  <span className="ml-2 text-primary-600 dark:text-primary-400">
-                    Page {item.lastPage}
-                  </span>
+                  <span className="ml-2 text-sky-300">Page {item.lastPage}</span>
                 )}
               </span>
             }
