@@ -14,7 +14,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
-import { getDefaultLayout, normalizeLayout } from '@/lib/dashboard-defaults';
+import {
+  CURRENT_DASHBOARD_LAYOUT_VERSION,
+  getDefaultLayout,
+  normalizeLayout,
+} from '@/lib/dashboard-defaults';
 import type { WidgetPosition, DashboardLayoutResponse } from '@/types/dashboard';
 
 export const dynamic = 'force-dynamic';
@@ -248,16 +252,27 @@ export async function GET() {
         },
       });
 
-      // Build layout response
-      // Always normalize saved layouts to fix any corrupted y-positions
       const defaultLayout = getDefaultLayout(userRole);
+      const layoutNeedsMigration =
+        !!savedLayout && savedLayout.version < CURRENT_DASHBOARD_LAYOUT_VERSION;
       const savedDesktopLayout = savedLayout?.desktopLayout as unknown as
         | WidgetPosition[]
         | undefined;
       const normalizedSavedLayout = savedDesktopLayout ? normalizeLayout(savedDesktopLayout) : null;
 
+      if (savedLayout && layoutNeedsMigration) {
+        await tx.userDashboardLayout.update({
+          where: { id: savedLayout.id },
+          data: {
+            version: CURRENT_DASHBOARD_LAYOUT_VERSION,
+            desktopLayout: JSON.parse(JSON.stringify(defaultLayout)),
+            collapsedWidgets: [],
+          },
+        });
+      }
+
       const layoutResponse: DashboardLayoutResponse =
-        savedLayout && normalizedSavedLayout
+        savedLayout && normalizedSavedLayout && !layoutNeedsMigration
           ? {
               desktopLayout: normalizedSavedLayout,
               collapsedWidgets: savedLayout.collapsedWidgets,
@@ -268,8 +283,8 @@ export async function GET() {
           : {
               desktopLayout: defaultLayout,
               collapsedWidgets: [],
-              densityMode: 'cozy',
-              welcomeBannerDismissed: false,
+              densityMode: (savedLayout?.densityMode as 'compact' | 'cozy' | undefined) ?? 'cozy',
+              welcomeBannerDismissed: savedLayout?.welcomeBannerDismissed ?? false,
               isDefault: true,
             };
 
@@ -818,12 +833,14 @@ export async function PUT(request: NextRequest) {
           organizationId: orgId,
           userId,
           role: userOrg.role,
+          version: CURRENT_DASHBOARD_LAYOUT_VERSION,
           desktopLayout: layoutJson,
           collapsedWidgets: collapsedWidgets ?? [],
           densityMode: densityMode ?? 'cozy',
           welcomeBannerDismissed: welcomeBannerDismissed ?? false,
         },
         update: {
+          version: CURRENT_DASHBOARD_LAYOUT_VERSION,
           ...(updateLayoutJson !== undefined && { desktopLayout: updateLayoutJson }),
           ...(collapsedWidgets !== undefined && { collapsedWidgets }),
           ...(densityMode !== undefined && { densityMode }),
