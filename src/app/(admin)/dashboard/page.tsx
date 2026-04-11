@@ -321,25 +321,37 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     (widgetId: WidgetId): boolean => {
       switch (widgetId) {
         case 'action-required':
-          return !!data.actionRequired;
+          return !!data.actionRequired && data.actionRequired.totalCount > 0;
         case 'messages':
-          return !!data.messages;
+          return (
+            !!data.messages && (data.messages.unreadCount > 0 || data.messages.recent.length > 0)
+          );
         case 'engagement':
-          return !!data.engagementInsights;
+          return (
+            !!data.engagementInsights &&
+            (data.engagementInsights.totalViews > 0 ||
+              data.engagementInsights.uniqueViewers > 0 ||
+              data.engagementInsights.downloads > 0 ||
+              data.engagementInsights.topDocuments.length > 0)
+          );
         case 'my-rooms':
-          return !!data.myRooms;
+          return !!data.myRooms && data.myRooms.length > 0;
         case 'recent-activity':
-          return !!data.recentActivity;
+          return !!data.recentActivity && data.recentActivity.length > 0;
         case 'checklist-progress':
           return !!(data.checklistProgress && data.checklistProgress.length > 0);
         case 'continue-reading':
           return !!(data.continueReading && data.continueReading.length > 0);
         case 'bookmarks':
-          return !!data.bookmarks;
+          return !!data.bookmarks && data.bookmarks.length > 0;
         case 'new-documents':
-          return !!data.newSinceLastVisit;
+          return (
+            !!data.newSinceLastVisit &&
+            (data.newSinceLastVisit.newDocuments.length > 0 ||
+              data.newSinceLastVisit.updatedDocuments.length > 0)
+          );
         case 'my-questions':
-          return !!data.myQuestions;
+          return !!data.myQuestions && data.myQuestions.length > 0;
         case 'announcements':
           return !!(data.announcements && data.announcements.length > 1);
         default:
