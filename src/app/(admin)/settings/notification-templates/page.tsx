@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/layout/page-header';
+import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 
 // Human-readable labels for template keys
 const TEMPLATE_LABELS: Record<string, string> = {
@@ -53,6 +54,8 @@ export default function NotificationTemplatesPage() {
   const [editSubject, setEditSubject] = React.useState('');
   const [editBodyHtml, setEditBodyHtml] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
+  const sectionCardClass =
+    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
 
   const fetchTemplates = React.useCallback(async () => {
     try {
@@ -175,7 +178,11 @@ export default function NotificationTemplatesPage() {
         }
       />
 
-      <div className="max-w-3xl">
+      <AdminPageContent className="max-w-4xl">
+        <AdminToolbar
+          title="Email template controls"
+          description="Enable or customize notification templates without losing track of available placeholders and delivery defaults."
+        />
         {error && !editingTemplate && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
@@ -191,7 +198,7 @@ export default function NotificationTemplatesPage() {
           </Alert>
         )}
 
-        <Card className="mb-4">
+        <Card className={sectionCardClass}>
           <CardHeader>
             <CardTitle>Available Placeholders</CardTitle>
             <CardDescription>
@@ -219,12 +226,12 @@ export default function NotificationTemplatesPage() {
 
         <div className="space-y-3">
           {templates.map((template) => (
-            <Card key={template.templateKey}>
+            <Card key={template.templateKey} className={sectionCardClass}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary-50">
-                      <Mail className="h-5 w-5 text-primary-600" />
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-sky-200/60 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300">
+                      <Mail className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -254,7 +261,7 @@ export default function NotificationTemplatesPage() {
             </Card>
           ))}
         </div>
-      </div>
+      </AdminPageContent>
 
       {/* Edit Template Dialog */}
       <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>

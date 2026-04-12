@@ -5,6 +5,7 @@ import { ExternalLink, Copy, Check } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
+import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 
 const endpointGroups = [
   {
@@ -152,9 +153,13 @@ export default function ApiDocsPage() {
         description="REST API reference for VaultSpace integrations"
       />
 
-      <div className="space-y-6 p-6">
+      <AdminPageContent>
+        <AdminToolbar
+          title="Integration reference"
+          description="Reference the active REST surfaces, authentication model, and endpoint groups used by internal and external integrations."
+        />
         {/* API Base URL */}
-        <Card>
+        <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
           <CardContent className="p-6">
             <h3 className="text-sm font-medium text-neutral-500">API Base URL</h3>
             <div className="mt-2 flex items-center gap-2">
@@ -177,7 +182,7 @@ export default function ApiDocsPage() {
         </Card>
 
         {/* OpenAPI Spec Link */}
-        <Card>
+        <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
           <CardContent className="p-6">
             <h3 className="text-sm font-medium text-neutral-500">OpenAPI Specification</h3>
             <p className="mt-1 text-sm text-neutral-600">
@@ -206,7 +211,7 @@ export default function ApiDocsPage() {
         </Card>
 
         {/* Authentication Info */}
-        <Card>
+        <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
           <CardContent className="p-6">
             <h3 className="font-medium text-neutral-900">Authentication</h3>
             <p className="mt-2 text-sm text-neutral-600">
@@ -235,10 +240,15 @@ export default function ApiDocsPage() {
 
         {/* Endpoint Groups */}
         <div>
-          <h2 className="mb-4 text-lg font-semibold text-neutral-900">Endpoint Groups</h2>
+          <h2 className="mb-4 text-lg font-semibold text-slate-950 dark:text-white">
+            Endpoint Groups
+          </h2>
           <div className="space-y-4">
             {endpointGroups.map((group) => (
-              <Card key={group.name}>
+              <Card
+                key={group.name}
+                className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
+              >
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div>
@@ -273,7 +283,7 @@ export default function ApiDocsPage() {
             ))}
           </div>
         </div>
-      </div>
+      </AdminPageContent>
     </>
   );
 }

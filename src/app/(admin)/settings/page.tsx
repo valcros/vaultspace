@@ -16,6 +16,7 @@ import {
 
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
+import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 
 interface SettingsSection {
   id: string;
@@ -94,33 +95,41 @@ export default function SettingsPage() {
         description="Manage your organization settings and preferences"
       />
 
-      <div className="p-6">
-        <div className="grid gap-4 md:grid-cols-2">
+      <AdminPageContent>
+        <AdminToolbar
+          title="Configuration surfaces"
+          description="Everything below maps to a distinct operational area so teams can move quickly without guessing where controls live."
+        />
+        <div className="grid gap-5 md:grid-cols-2">
           {settingsSections.map((section) => {
             const Icon = section.icon;
             return (
               <Card
                 key={section.id}
-                className="cursor-pointer transition-all hover:border-primary-200 hover:shadow-md"
+                className="bg-white/88 cursor-pointer rounded-[1.5rem] border-slate-200/80 transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] dark:border-slate-800 dark:bg-slate-950/75 dark:hover:border-sky-800"
                 onClick={() => router.push(section.href)}
               >
                 <CardContent className="p-6">
                   <div className="flex items-start gap-4">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary-50">
-                      <Icon className="h-5 w-5 text-primary-600" />
+                    <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-sky-200/60 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300">
+                      <Icon className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-medium text-neutral-900">{section.title}</h3>
-                      <p className="mt-1 text-sm text-neutral-500">{section.description}</p>
+                      <h3 className="font-medium text-slate-950 dark:text-white">
+                        {section.title}
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {section.description}
+                      </p>
                     </div>
-                    <ChevronRight className="h-5 w-5 flex-shrink-0 text-neutral-400" />
+                    <ChevronRight className="h-5 w-5 flex-shrink-0 text-slate-400" />
                   </div>
                 </CardContent>
               </Card>
             );
           })}
         </div>
-      </div>
+      </AdminPageContent>
     </>
   );
 }

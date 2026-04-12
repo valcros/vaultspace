@@ -5,7 +5,7 @@ import { Plus, Search, MoreHorizontal, Users, Trash2, Edit } from 'lucide-react'
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardHeader } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +25,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  AdminEmptyState,
+  AdminPageContent,
+  AdminSurface,
+  AdminToolbar,
+} from '@/components/layout/admin-page';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface Group {
@@ -229,23 +235,32 @@ export default function GroupsPage() {
         }
       />
 
-      <div className="p-6">
-        {/* Search */}
-        <div className="relative mb-6 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-          <Input
-            placeholder="Search groups..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
+      <AdminPageContent>
+        <AdminToolbar
+          title="Group directory"
+          description="Organize members into reusable groups and manage membership from one place."
+          actions={
+            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              {filteredGroups.length} groups
+            </div>
+          }
+        >
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search groups..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+            />
+          </div>
+        </AdminToolbar>
 
         {/* Groups Grid */}
         {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
-              <Card key={i}>
+              <AdminSurface key={i}>
                 <CardHeader>
                   <Skeleton className="h-5 w-3/4" />
                   <Skeleton className="mt-2 h-4 w-1/2" />
@@ -253,33 +268,41 @@ export default function GroupsPage() {
                 <CardContent>
                   <Skeleton className="h-4 w-full" />
                 </CardContent>
-              </Card>
+              </AdminSurface>
             ))}
           </div>
         ) : groups.length === 0 ? (
-          <Card className="p-12 text-center">
-            <Users className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
-            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No groups yet</h3>
-            <p className="mx-auto mb-6 max-w-sm text-neutral-500">
-              Create groups to organize users and manage permissions more efficiently.
-            </p>
-            <Button onClick={() => setShowCreateDialog(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create your first group
-            </Button>
-          </Card>
+          <AdminEmptyState
+            icon={<Users className="h-6 w-6" />}
+            title="No groups yet"
+            description="Create reusable groups to assign access faster and keep permissions consistent as your room portfolio grows."
+            action={
+              <Button onClick={() => setShowCreateDialog(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create your first group
+              </Button>
+            }
+          />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {filteredGroups.map((group) => (
-              <Card key={group.id} className="transition-colors hover:border-primary-200">
-                <CardHeader className="pb-2">
+              <AdminSurface
+                key={group.id}
+                className="transition-all hover:-translate-y-0.5 hover:border-sky-200 dark:hover:border-sky-800"
+              >
+                <CardHeader className="px-0 pb-2 pt-0">
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
-                      <CardTitle className="text-base">{group.name}</CardTitle>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+                        Group
+                      </p>
+                      <h3 className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
+                        {group.name}
+                      </h3>
                       {group.description && (
-                        <CardDescription className="mt-1 line-clamp-2">
+                        <p className="mt-2 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
                           {group.description}
-                        </CardDescription>
+                        </p>
                       )}
                     </div>
                     <DropdownMenu>
@@ -314,22 +337,22 @@ export default function GroupsPage() {
                     </DropdownMenu>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4 text-sm text-neutral-500">
+                <CardContent className="px-0 pb-0 pt-3">
+                  <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
                     <div className="flex items-center gap-1">
                       <Users className="h-4 w-4" />
                       <span>{group.memberCount} members</span>
                     </div>
                   </div>
-                  <p className="mt-3 text-xs text-neutral-400">
+                  <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
                     Created {formatDate(group.createdAt)}
                   </p>
                 </CardContent>
-              </Card>
+              </AdminSurface>
             ))}
           </div>
         )}
-      </div>
+      </AdminPageContent>
 
       {/* Create Group Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

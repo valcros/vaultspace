@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageHeader } from '@/components/layout/page-header';
+import { AdminEmptyState, AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 
 interface WebhookRoom {
   id: string;
@@ -98,6 +99,8 @@ export default function WebhooksSettingsPage() {
   // Delete confirmation dialog
   const [deleteWebhookId, setDeleteWebhookId] = React.useState<string | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
+  const sectionCardClass =
+    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
 
   React.useEffect(() => {
     fetchWebhooks();
@@ -312,7 +315,16 @@ export default function WebhooksSettingsPage() {
         }
       />
 
-      <div className="space-y-4 p-6">
+      <AdminPageContent>
+        <AdminToolbar
+          title="Webhook endpoints"
+          description="Send room and document events to downstream systems without leaving the admin app."
+          actions={
+            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              {webhooks.length} endpoints
+            </div>
+          }
+        />
         {error && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
@@ -323,7 +335,7 @@ export default function WebhooksSettingsPage() {
         {isLoading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
-              <Card key={i}>
+              <Card key={i} className={sectionCardClass}>
                 <CardContent className="p-6">
                   <Skeleton className="mb-2 h-6 w-64" />
                   <Skeleton className="h-4 w-96" />
@@ -332,29 +344,26 @@ export default function WebhooksSettingsPage() {
             ))}
           </div>
         ) : webhooks.length === 0 ? (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <Webhook className="mx-auto mb-4 h-12 w-12 text-neutral-300" />
-              <h3 className="mb-1 text-lg font-medium text-neutral-900">No webhooks configured</h3>
-              <p className="mb-4 text-sm text-neutral-500">
-                Add a webhook endpoint to receive real-time notifications about events in your
-                organization.
-              </p>
+          <AdminEmptyState
+            icon={<Webhook className="h-6 w-6" />}
+            title="No webhooks configured"
+            description="Add an endpoint to receive real-time notifications about room, document, and access events in your organization."
+            action={
               <Button onClick={() => setShowCreateDialog(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add Webhook
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
         ) : (
           <div className="space-y-4">
             {webhooks.map((webhook) => (
-              <Card key={webhook.id}>
+              <Card key={webhook.id} className={sectionCardClass}>
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex items-center gap-2">
-                        <code className="truncate font-mono text-sm text-neutral-700">
+                        <code className="truncate font-mono text-sm text-slate-700 dark:text-slate-200">
                           {truncateUrl(webhook.url)}
                         </code>
                         {!webhook.isActive && <Badge variant="secondary">Disabled</Badge>}
@@ -366,7 +375,9 @@ export default function WebhooksSettingsPage() {
                       </div>
 
                       {webhook.description && (
-                        <p className="mb-2 text-sm text-neutral-500">{webhook.description}</p>
+                        <p className="mb-2 text-sm text-slate-500 dark:text-slate-400">
+                          {webhook.description}
+                        </p>
                       )}
 
                       <div className="mb-2 flex flex-wrap gap-1.5">
@@ -385,7 +396,7 @@ export default function WebhooksSettingsPage() {
                         {webhook.room && <Badge variant="outline">Room: {webhook.room.name}</Badge>}
                       </div>
 
-                      <div className="flex items-center gap-4 text-xs text-neutral-400">
+                      <div className="flex items-center gap-4 text-xs text-slate-400 dark:text-slate-500">
                         {webhook.lastTriggeredAt && (
                           <span>Last triggered: {formatTimeAgo(webhook.lastTriggeredAt)}</span>
                         )}
@@ -421,7 +432,7 @@ export default function WebhooksSettingsPage() {
 
                   {testResult && testResult.id === webhook.id && (
                     <div
-                      className={`mt-3 rounded p-2 text-sm ${
+                      className={`mt-3 rounded-xl p-2 text-sm ${
                         testResult.success
                           ? 'bg-success-50 text-success-700'
                           : 'bg-danger-50 text-danger-700'
@@ -440,7 +451,7 @@ export default function WebhooksSettingsPage() {
             ))}
           </div>
         )}
-      </div>
+      </AdminPageContent>
 
       {/* Create Webhook Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

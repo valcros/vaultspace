@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -28,6 +27,12 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  AdminEmptyState,
+  AdminPageContent,
+  AdminSurface,
+  AdminToolbar,
+} from '@/components/layout/admin-page';
 
 interface ActivityEvent {
   id: string;
@@ -219,39 +224,51 @@ export default function SettingsActivityPage() {
         }
       />
 
-      <div className="p-6">
-        {/* Filters */}
-        <div className="mb-6 flex items-center gap-4">
-          <Select
-            value={eventTypeFilter}
-            onValueChange={(value) => {
-              setEventTypeFilter(value);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Filter by type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Events</SelectItem>
-              <SelectItem value="USER_LOGIN">User Login</SelectItem>
-              <SelectItem value="USER_LOGOUT">User Logout</SelectItem>
-              <SelectItem value="USER_INVITED">User Invited</SelectItem>
-              <SelectItem value="SETTINGS_UPDATED">Settings Updated</SelectItem>
-              <SelectItem value="PERMISSION_GRANTED">Permission Granted</SelectItem>
-              <SelectItem value="PERMISSION_REVOKED">Permission Revoked</SelectItem>
-              <SelectItem value="DOCUMENT_UPLOADED">Document Uploaded</SelectItem>
-              <SelectItem value="DOCUMENT_VIEWED">Document Viewed</SelectItem>
-              <SelectItem value="DOCUMENT_DOWNLOADED">Document Downloaded</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <AdminPageContent>
+        <AdminToolbar
+          title="Organization event stream"
+          description="Review organization-wide operational and security activity, then export the filtered stream when needed."
+          actions={
+            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              {pagination?.total ?? events.length} events
+            </div>
+          }
+        >
+          <div className="flex items-center gap-4">
+            <Select
+              value={eventTypeFilter}
+              onValueChange={(value) => {
+                setEventTypeFilter(value);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter by type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Events</SelectItem>
+                <SelectItem value="USER_LOGIN">User Login</SelectItem>
+                <SelectItem value="USER_LOGOUT">User Logout</SelectItem>
+                <SelectItem value="USER_INVITED">User Invited</SelectItem>
+                <SelectItem value="SETTINGS_UPDATED">Settings Updated</SelectItem>
+                <SelectItem value="PERMISSION_GRANTED">Permission Granted</SelectItem>
+                <SelectItem value="PERMISSION_REVOKED">Permission Revoked</SelectItem>
+                <SelectItem value="DOCUMENT_UPLOADED">Document Uploaded</SelectItem>
+                <SelectItem value="DOCUMENT_VIEWED">Document Viewed</SelectItem>
+                <SelectItem value="DOCUMENT_DOWNLOADED">Document Downloaded</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </AdminToolbar>
 
         {/* Activity List */}
         {isLoading ? (
-          <div className="space-y-4">
+          <AdminSurface className="space-y-4">
             {[...Array(10)].map((_, i) => (
-              <div key={i} className="flex items-start gap-4 rounded-lg border p-4">
+              <div
+                key={i}
+                className="flex items-start gap-4 rounded-xl border border-slate-200/80 p-4 dark:border-slate-800"
+              >
                 <Skeleton className="h-10 w-10 rounded-full" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-3/4" />
@@ -259,17 +276,15 @@ export default function SettingsActivityPage() {
                 </div>
               </div>
             ))}
-          </div>
+          </AdminSurface>
         ) : events.length === 0 ? (
-          <Card className="p-12 text-center">
-            <Activity className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
-            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No activity yet</h3>
-            <p className="mx-auto max-w-sm text-neutral-500">
-              Activity will appear here as changes are made to your organization.
-            </p>
-          </Card>
+          <AdminEmptyState
+            icon={<Activity className="h-6 w-6" />}
+            title="No activity yet"
+            description="Activity will appear here as users, documents, permissions, and settings change across your organization."
+          />
         ) : (
-          <div className="space-y-2">
+          <AdminSurface className="space-y-2">
             {events.map((event) => {
               const Icon = eventIcons[event.eventType] || Activity;
               const label =
@@ -280,7 +295,7 @@ export default function SettingsActivityPage() {
               return (
                 <div
                   key={event.id}
-                  className={`flex items-start gap-4 rounded-lg border p-4 transition-colors hover:bg-neutral-50 ${
+                  className={`flex items-start gap-4 rounded-xl border p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/45 ${
                     isSecurityEvent ? 'border-warning-200 bg-warning-50' : ''
                   }`}
                 >
@@ -328,7 +343,7 @@ export default function SettingsActivityPage() {
                 </div>
               );
             })}
-          </div>
+          </AdminSurface>
         )}
 
         {/* Pagination */}
@@ -361,7 +376,7 @@ export default function SettingsActivityPage() {
             </div>
           </div>
         )}
-      </div>
+      </AdminPageContent>
     </>
   );
 }
