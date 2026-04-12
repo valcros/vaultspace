@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PageHeader } from '@/components/layout/page-header';
+import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 
 interface NotificationPreferences {
   emailOnDocumentViewed: boolean;
@@ -43,6 +44,8 @@ export default function NotificationSettingsPage() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const sectionCardClass =
+    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
 
   React.useEffect(() => {
     fetchPreferences();
@@ -127,7 +130,17 @@ export default function NotificationSettingsPage() {
         }
       />
 
-      <div className="max-w-3xl p-6">
+      <AdminPageContent className="max-w-4xl">
+        <AdminToolbar
+          title="Notification delivery"
+          description="Control which events trigger emails and how frequently activity digests are delivered."
+          actions={
+            <Button onClick={handleSave} loading={isSaving}>
+              <Save className="mr-2 h-4 w-4" />
+              Save Preferences
+            </Button>
+          }
+        />
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
@@ -144,11 +157,11 @@ export default function NotificationSettingsPage() {
         )}
 
         {/* Email Notifications */}
-        <Card className="mb-6">
+        <Card className={sectionCardClass}>
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50">
-                <Mail className="h-5 w-5 text-primary-600" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-200/60 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300">
+                <Mail className="h-5 w-5" />
               </div>
               <div>
                 <CardTitle>Email Notifications</CardTitle>
@@ -244,15 +257,7 @@ export default function NotificationSettingsPage() {
             )}
           </CardContent>
         </Card>
-
-        {/* Save Button */}
-        <div className="flex justify-end">
-          <Button onClick={handleSave} loading={isSaving}>
-            <Save className="mr-2 h-4 w-4" />
-            Save Preferences
-          </Button>
-        </div>
-      </div>
+      </AdminPageContent>
     </>
   );
 }

@@ -6,7 +6,6 @@ import { Search, FileText, FolderOpen, Loader2, Filter, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -17,6 +16,12 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  AdminEmptyState,
+  AdminPageContent,
+  AdminSurface,
+  AdminToolbar,
+} from '@/components/layout/admin-page';
 
 interface SearchResult {
   documentId: string;
@@ -137,66 +142,76 @@ export default function SearchPage() {
     <>
       <PageHeader title="Search" breadcrumbs={[{ label: 'Search' }]} />
 
-      <div className="max-w-4xl p-6">
+      <AdminPageContent className="max-w-5xl">
         {/* Search Bar */}
-        <form onSubmit={handleSubmit} className="mb-6">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search documents by name, content, or tags..."
-                className="pl-10"
-                autoFocus
-              />
+        <form onSubmit={handleSubmit}>
+          <AdminToolbar
+            title="Search across documents"
+            description="Look up file names, extracted text, and tags across your rooms from one indexed search surface."
+          >
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search documents by name, content, or tags..."
+                  className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+                  autoFocus
+                />
+              </div>
+              <Button type="submit" disabled={isLoading || !query.trim()}>
+                {isLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="mr-2 h-4 w-4" />
+                )}
+                Search
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowFilters(!showFilters)}>
+                <Filter className="h-4 w-4" />
+              </Button>
             </div>
-            <Button type="submit" disabled={isLoading || !query.trim()}>
-              {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="mr-2 h-4 w-4" />
-              )}
-              Search
-            </Button>
-            <Button type="button" variant="outline" onClick={() => setShowFilters(!showFilters)}>
-              <Filter className="h-4 w-4" />
-            </Button>
-          </div>
 
-          {/* Filters */}
-          {showFilters && (
-            <div className="mt-3 flex items-center gap-3 rounded-lg border bg-neutral-50 p-3">
-              <span className="text-sm font-medium text-neutral-700">Filters:</span>
-              <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v === 'all' ? '' : v)}>
-                <SelectTrigger className="w-44">
-                  <SelectValue placeholder="File type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  <SelectItem value="application/pdf">PDF</SelectItem>
-                  <SelectItem value="image/">Images</SelectItem>
-                  <SelectItem value="application/vnd.openxmlformats">Office docs</SelectItem>
-                  <SelectItem value="text/">Text files</SelectItem>
-                </SelectContent>
-              </Select>
-              {typeFilter && (
-                <Button variant="ghost" size="sm" onClick={() => setTypeFilter('')}>
-                  <X className="mr-1 h-3 w-3" />
-                  Clear
-                </Button>
-              )}
-            </div>
-          )}
+            {/* Filters */}
+            {showFilters && (
+              <div className="mt-3 flex items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/85 p-3 dark:border-slate-800 dark:bg-slate-900/70">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Filters:
+                </span>
+                <Select
+                  value={typeFilter}
+                  onValueChange={(v) => setTypeFilter(v === 'all' ? '' : v)}
+                >
+                  <SelectTrigger className="w-44 rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950">
+                    <SelectValue placeholder="File type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    <SelectItem value="application/pdf">PDF</SelectItem>
+                    <SelectItem value="image/">Images</SelectItem>
+                    <SelectItem value="application/vnd.openxmlformats">Office docs</SelectItem>
+                    <SelectItem value="text/">Text files</SelectItem>
+                  </SelectContent>
+                </Select>
+                {typeFilter && (
+                  <Button variant="ghost" size="sm" onClick={() => setTypeFilter('')}>
+                    <X className="mr-1 h-3 w-3" />
+                    Clear
+                  </Button>
+                )}
+              </div>
+            )}
+          </AdminToolbar>
         </form>
 
         {/* Results */}
         {isLoading && !hasSearched && (
-          <div className="space-y-3">
+          <AdminSurface className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-24 w-full rounded-lg" />
             ))}
-          </div>
+          </AdminSurface>
         )}
 
         {isLoading && hasSearched && (
@@ -207,31 +222,28 @@ export default function SearchPage() {
         )}
 
         {!isLoading && hasSearched && results.length === 0 && (
-          <Card className="p-8 text-center">
-            <Search className="mx-auto mb-3 h-10 w-10 text-neutral-400" />
-            <h3 className="mb-1 text-base font-semibold text-neutral-900">No results found</h3>
-            <p className="mx-auto max-w-sm text-sm text-neutral-500">
-              Try different keywords or check your spelling. Search looks through document names,
-              content, and tags.
-            </p>
-          </Card>
+          <AdminEmptyState
+            icon={<Search className="h-5 w-5" />}
+            title="No results found"
+            description="Try different keywords or check your spelling. Search looks through document names, extracted content, and tags."
+          />
         )}
 
         {!isLoading && results.length > 0 && (
           <>
-            <div className="mb-4 text-sm text-neutral-500">
+            <div className="mb-4 text-sm text-slate-500 dark:text-slate-400">
               {total} result{total !== 1 ? 's' : ''} found in {took}ms
             </div>
 
-            <div className="space-y-2">
+            <AdminSurface className="space-y-2">
               {results.map((result) => (
                 <button
                   key={`${result.documentId}-${result.versionId}`}
                   onClick={() => router.push(`/rooms/${result.roomId}?doc=${result.documentId}`)}
-                  className="flex w-full items-start gap-4 rounded-lg border bg-white p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/50"
+                  className="flex w-full items-start gap-4 rounded-xl border border-slate-200/80 bg-white p-4 text-left transition-colors hover:border-sky-200 hover:bg-sky-50/40 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-sky-800 dark:hover:bg-sky-950/20"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100">
-                    <FileText className="h-5 w-5 text-neutral-500" />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-900">
+                    <FileText className="h-5 w-5 text-slate-500 dark:text-slate-300" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -258,7 +270,7 @@ export default function SearchPage() {
                   </div>
                 </button>
               ))}
-            </div>
+            </AdminSurface>
 
             {/* Pagination */}
             {total > limit && (
@@ -288,16 +300,13 @@ export default function SearchPage() {
         )}
 
         {!hasSearched && (
-          <Card className="p-8 text-center">
-            <Search className="mx-auto mb-3 h-10 w-10 text-neutral-400" />
-            <h3 className="mb-1 text-base font-semibold text-neutral-900">Search documents</h3>
-            <p className="mx-auto max-w-sm text-sm text-neutral-500">
-              Search across all documents by name, content, or tags. Full-text search looks inside
-              PDFs and other document formats.
-            </p>
-          </Card>
+          <AdminEmptyState
+            icon={<Search className="h-5 w-5" />}
+            title="Search documents"
+            description="Search across all documents by name, content, or tags. Full-text search looks inside PDFs and other supported formats."
+          />
         )}
-      </div>
+      </AdminPageContent>
     </>
   );
 }

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PageHeader } from '@/components/layout/page-header';
+import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 
 type SetupStep = 'idle' | 'setup' | 'verify' | 'backup' | 'disable';
 
@@ -26,6 +27,8 @@ export default function SecuritySettingsPage() {
   const [backupCodes, setBackupCodes] = React.useState<string[]>([]);
   const [disableCode, setDisableCode] = React.useState('');
   const [copiedField, setCopiedField] = React.useState<string | null>(null);
+  const sectionCardClass =
+    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
 
   // Fetch 2FA status on mount
   React.useEffect(() => {
@@ -158,8 +161,12 @@ export default function SecuritySettingsPage() {
         breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Security' }]}
       />
 
-      <div className="p-6">
-        <div className="mx-auto max-w-2xl space-y-6">
+      <AdminPageContent className="mx-auto max-w-3xl">
+        <AdminToolbar
+          title="Authentication safeguards"
+          description="Manage two-factor authentication and recovery codes so account access stays resilient even when devices change."
+        />
+        <div className="space-y-6">
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
@@ -173,12 +180,14 @@ export default function SecuritySettingsPage() {
           )}
 
           {/* 2FA Status Card */}
-          <Card>
+          <Card className={sectionCardClass}>
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
                 <div
-                  className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${
-                    twoFactorEnabled ? 'bg-green-50' : 'bg-neutral-50'
+                  className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${
+                    twoFactorEnabled
+                      ? 'bg-green-50 dark:bg-green-950/30'
+                      : 'bg-slate-50 dark:bg-slate-900/70'
                   }`}
                 >
                   {twoFactorEnabled ? (
@@ -226,7 +235,7 @@ export default function SecuritySettingsPage() {
 
           {/* Setup Step: Show secret and URI */}
           {step === 'setup' && (
-            <Card>
+            <Card className={sectionCardClass}>
               <CardContent className="space-y-4 p-6">
                 <h3 className="font-medium text-neutral-900">Set up your authenticator app</h3>
                 <p className="text-sm text-neutral-500">
@@ -323,12 +332,12 @@ export default function SecuritySettingsPage() {
                   </div>
                 </div>
 
-                <div className="rounded-lg border bg-neutral-50 p-4">
+                <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/70">
                   <div className="grid grid-cols-2 gap-2">
                     {backupCodes.map((code, i) => (
                       <code
                         key={i}
-                        className="rounded border bg-white px-3 py-2 text-center font-mono text-sm tracking-wider"
+                        className="rounded border border-slate-200 bg-white px-3 py-2 text-center font-mono text-sm tracking-wider dark:border-slate-700 dark:bg-slate-950"
                       >
                         {code}
                       </code>
@@ -362,7 +371,7 @@ export default function SecuritySettingsPage() {
 
           {/* Disable 2FA */}
           {step === 'disable' && (
-            <Card>
+            <Card className={sectionCardClass}>
               <CardContent className="space-y-4 p-6">
                 <h3 className="font-medium text-neutral-900">Disable two-factor authentication</h3>
                 <p className="text-sm text-neutral-500">
@@ -400,7 +409,7 @@ export default function SecuritySettingsPage() {
             </Card>
           )}
         </div>
-      </div>
+      </AdminPageContent>
     </>
   );
 }

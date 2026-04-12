@@ -45,7 +45,7 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200 bg-white/80 px-4 backdrop-blur-xl dark:border-neutral-700 dark:bg-neutral-900/80 lg:px-6">
+    <header className="bg-white/96 dark:bg-slate-950/96 sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200/90 px-4 backdrop-blur-xl dark:border-slate-700 lg:px-6">
       {/* Logo */}
       <Link href="/rooms" className="flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
@@ -61,9 +61,9 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
         onClick={onSearchClick}
         className={clsx(
           'flex items-center gap-3 rounded-xl px-4 py-2',
-          'bg-neutral-100 dark:bg-neutral-800',
-          'text-sm text-neutral-500',
-          'hover:bg-neutral-200 dark:hover:bg-neutral-700',
+          'bg-slate-100 dark:bg-slate-900',
+          'text-sm text-slate-700 dark:text-slate-200',
+          'hover:bg-slate-200 dark:hover:bg-slate-800',
           'transition-colors duration-200',
           'w-64 md:w-80'
         )}
@@ -71,10 +71,10 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
         <Search className="h-4 w-4" />
         <span className="flex-1 text-left">Search...</span>
         <div className="hidden items-center gap-1 sm:flex">
-          <kbd className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs dark:bg-neutral-700">
+          <kbd className="rounded bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-800">
             <Command className="inline h-3 w-3" />
           </kbd>
-          <kbd className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs dark:bg-neutral-700">K</kbd>
+          <kbd className="rounded bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-800">K</kbd>
         </div>
       </button>
 
@@ -101,15 +101,17 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">{user.name}</p>
-                <p className="text-xs leading-none text-neutral-500">{user.email}</p>
+                <p className="text-xs leading-none text-slate-600 dark:text-slate-300">
+                  {user.email}
+                </p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/settings/profile">Profile</Link>
+              <Link href="/settings/notifications">Notifications</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/settings/notifications">Notifications</Link>
+              <Link href="/settings/security">Security</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>

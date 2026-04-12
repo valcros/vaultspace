@@ -88,8 +88,13 @@ export default function LoginPage() {
     return (
       <>
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-neutral-900">Two-Factor Authentication</h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+            Security Check
+          </p>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">
+            Two-Factor Authentication
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
             Enter the 6-digit code from your authenticator app, or use a backup code
           </p>
         </div>
@@ -114,6 +119,9 @@ export default function LoginPage() {
               autoFocus
               maxLength={8}
             />
+            <p className="text-xs text-slate-500">
+              Backup codes also work here if you cannot access your authenticator app.
+            </p>
           </div>
 
           <Button type="submit" className="w-full" loading={isLoading}>
@@ -140,8 +148,13 @@ export default function LoginPage() {
   return (
     <>
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-neutral-900">Welcome back</h1>
-        <p className="mt-1 text-sm text-neutral-500">Sign in to your account to continue</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+          Secure Sign In
+        </p>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Welcome back</h1>
+        <p className="mt-2 text-sm text-slate-500">
+          Sign in to your account to continue into your rooms and workflows.
+        </p>
       </div>
 
       {error && (
@@ -163,6 +176,9 @@ export default function LoginPage() {
             autoComplete="email"
             autoFocus
           />
+          <p className="text-xs text-slate-500">
+            Use the work email associated with your organization or invitation.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -184,6 +200,9 @@ export default function LoginPage() {
             required
             autoComplete="current-password"
           />
+          <p className="text-xs text-slate-500">
+            Your session is protected with secure, database-backed authentication.
+          </p>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -207,6 +226,11 @@ export default function LoginPage() {
         <Link href="/auth/register" className="font-medium text-primary-600 hover:text-primary-700">
           Sign up
         </Link>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500">
+        Need access? Ask a room or organization admin to invite you so VaultSpace can place you in
+        the correct workspace automatically.
       </div>
     </>
   );

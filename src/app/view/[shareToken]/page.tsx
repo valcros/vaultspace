@@ -106,8 +106,8 @@ export default function ViewerAccessPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
-        <Card className="w-full max-w-md">
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] p-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
+        <Card className="w-full max-w-md rounded-[1.75rem] border-slate-200/80 bg-white/90 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/80 dark:ring-white/5">
           <CardContent className="p-8">
             <Skeleton className="mx-auto mb-4 h-12 w-12 rounded-full" />
             <Skeleton className="mx-auto mb-2 h-6 w-48" />
@@ -120,14 +120,14 @@ export default function ViewerAccessPage() {
 
   if (error && !linkInfo) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
-        <Card className="w-full max-w-md">
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] p-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
+        <Card className="w-full max-w-md rounded-[1.75rem] border-slate-200/80 bg-white/90 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/80 dark:ring-white/5">
           <CardContent className="p-8 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-danger-100">
+            <div className="dark:bg-danger-950/30 mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-danger-100">
               <Shield className="h-6 w-6 text-danger-600" />
             </div>
-            <h1 className="mb-2 text-xl font-bold text-neutral-900">Access Denied</h1>
-            <p className="text-neutral-500">{error}</p>
+            <h1 className="mb-2 text-xl font-bold text-slate-950 dark:text-white">Access Denied</h1>
+            <p className="text-slate-500 dark:text-slate-400">{error}</p>
           </CardContent>
         </Card>
       </div>
@@ -136,14 +136,18 @@ export default function ViewerAccessPage() {
 
   if (accessGranted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
-        <Card className="w-full max-w-md">
+      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] p-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
+        <Card className="w-full max-w-md rounded-[1.75rem] border-slate-200/80 bg-white/90 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/80 dark:ring-white/5">
           <CardContent className="p-8 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success-100">
+            <div className="dark:bg-success-950/30 mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success-100">
               <CheckCircle className="h-6 w-6 text-success-600" />
             </div>
-            <h1 className="mb-2 text-xl font-bold text-neutral-900">Access Granted</h1>
-            <p className="text-neutral-500">Redirecting you to the data room...</p>
+            <h1 className="mb-2 text-xl font-bold text-slate-950 dark:text-white">
+              Access Granted
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400">
+              Redirecting you to the data room...
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -151,8 +155,8 @@ export default function ViewerAccessPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] p-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
+      <Card className="w-full max-w-md rounded-[1.75rem] border-slate-200/80 bg-white/90 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/80 dark:ring-white/5">
         <CardHeader className="text-center">
           {/* Organization Logo or Default */}
           <div className="mb-4 flex justify-center">
@@ -164,13 +168,18 @@ export default function ViewerAccessPage() {
                 className="h-12 object-contain"
               />
             ) : (
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-600 text-xl font-bold text-white">
+              <div
+                className="flex h-12 w-12 items-center justify-center rounded-xl text-xl font-bold text-white shadow-[0_18px_36px_-24px_rgba(37,99,235,0.7)]"
+                style={{ backgroundColor: linkInfo?.brandColor || '#2563eb' }}
+              >
                 {linkInfo?.organizationName.charAt(0) || 'V'}
               </div>
             )}
           </div>
-          <CardTitle>{linkInfo?.roomName}</CardTitle>
-          <CardDescription>Shared by {linkInfo?.organizationName}</CardDescription>
+          <CardTitle className="text-slate-950 dark:text-white">{linkInfo?.roomName}</CardTitle>
+          <CardDescription className="text-slate-500 dark:text-slate-400">
+            Shared by {linkInfo?.organizationName}
+          </CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -186,7 +195,7 @@ export default function ViewerAccessPage() {
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
                     id="email"
                     type="email"
@@ -194,11 +203,11 @@ export default function ViewerAccessPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="pl-10"
+                    className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
                     autoFocus
                   />
                 </div>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Your email will be recorded for access tracking
                 </p>
               </div>
@@ -209,7 +218,7 @@ export default function ViewerAccessPage() {
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
                     id="password"
                     type="password"
@@ -217,11 +226,11 @@ export default function ViewerAccessPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="pl-10"
+                    className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
                     autoFocus
                   />
                 </div>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Contact the sender if you don&apos;t have the password
                 </p>
               </div>
@@ -229,9 +238,11 @@ export default function ViewerAccessPage() {
 
             {/* NDA Acceptance */}
             {linkInfo?.ndaRequired && (
-              <div className="space-y-3 rounded-lg border bg-neutral-50 p-4">
-                <p className="text-sm font-medium text-neutral-900">Non-Disclosure Agreement</p>
-                <div className="max-h-32 overflow-y-auto rounded border bg-white p-3 text-xs text-neutral-600">
+              <div className="space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/70">
+                <p className="text-sm font-medium text-slate-950 dark:text-white">
+                  Non-Disclosure Agreement
+                </p>
+                <div className="max-h-32 overflow-y-auto rounded-xl border border-slate-200/80 bg-white p-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
                   {linkInfo.ndaText || 'You agree to keep all information confidential.'}
                 </div>
                 <div className="flex items-start gap-2">
@@ -240,7 +251,10 @@ export default function ViewerAccessPage() {
                     checked={ndaAccepted}
                     onCheckedChange={(checked) => setNdaAccepted(checked === true)}
                   />
-                  <Label htmlFor="nda" className="text-sm leading-tight">
+                  <Label
+                    htmlFor="nda"
+                    className="text-sm leading-tight text-slate-700 dark:text-slate-200"
+                  >
                     I have read and agree to the terms above
                   </Label>
                 </div>
@@ -263,8 +277,10 @@ export default function ViewerAccessPage() {
             </Button>
           </form>
 
-          <div className="mt-6 border-t pt-4 text-center">
-            <p className="text-xs text-neutral-400">Protected by VaultSpace • Secure data room</p>
+          <div className="mt-6 border-t border-slate-200/80 pt-4 text-center dark:border-slate-800">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Protected by VaultSpace • Secure data room
+            </p>
           </div>
         </CardContent>
       </Card>

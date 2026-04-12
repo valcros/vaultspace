@@ -58,12 +58,17 @@ export default function ForgotPasswordPage() {
               />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-neutral-900">Check your email</h1>
-          <p className="mb-6 text-sm text-neutral-500">
-            We&apos;ve sent a password reset link to{' '}
-            <span className="font-medium text-neutral-900">{email}</span>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+            Recovery Email Sent
           </p>
-          <p className="mb-6 text-sm text-neutral-500">
+          <h1 className="mb-2 mt-3 text-2xl font-bold tracking-tight text-slate-950">
+            Check your email
+          </h1>
+          <p className="mb-6 text-sm text-slate-500">
+            We&apos;ve sent a password reset link to{' '}
+            <span className="font-medium text-slate-950">{email}</span>
+          </p>
+          <p className="mb-6 text-sm text-slate-500">
             Didn&apos;t receive the email? Check your spam folder or try again.
           </p>
           <Button variant="outline" onClick={() => setSuccess(false)} className="w-full">
@@ -83,8 +88,13 @@ export default function ForgotPasswordPage() {
   return (
     <>
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-neutral-900">Reset your password</h1>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+          Password Recovery
+        </p>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">
+          Reset your password
+        </h1>
+        <p className="mt-2 text-sm text-slate-500">
           Enter your email and we&apos;ll send you a reset link
         </p>
       </div>
@@ -108,6 +118,9 @@ export default function ForgotPasswordPage() {
             autoComplete="email"
             autoFocus
           />
+          <p className="text-xs text-slate-500">
+            We&apos;ll email a secure link if an account exists for this address.
+          </p>
         </div>
 
         <Button type="submit" className="w-full" loading={isLoading}>
