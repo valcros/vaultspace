@@ -69,10 +69,15 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
           <div className="mx-1 h-4 w-px bg-slate-700" />
 
           <Button
-            variant={editMode ? 'default' : 'outline'}
+            variant="ghost"
             size="sm"
             onClick={() => setEditMode(!editMode)}
-            className="gap-1.5 rounded-xl border-slate-700 bg-slate-900/65 text-slate-100 hover:bg-slate-800"
+            className={clsx(
+              'gap-1.5 rounded-xl border px-3 transition-colors',
+              editMode
+                ? 'bg-sky-400/14 border-sky-400/25 text-sky-50 hover:bg-sky-400/20'
+                : 'border-slate-700 bg-slate-900/65 text-slate-100 hover:border-slate-500 hover:bg-slate-800'
+            )}
           >
             <LayoutGrid className="h-3.5 w-3.5" />
             {editMode ? 'Done Editing' : 'Edit Layout'}
