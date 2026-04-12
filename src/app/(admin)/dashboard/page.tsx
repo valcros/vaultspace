@@ -36,6 +36,7 @@ import {
   DashboardControls,
   DashboardGrid,
   MobileStackedDashboard,
+  useDashboardContext,
 } from '@/components/dashboard';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { useIsMobile } from '@/hooks/useMediaQuery';
@@ -367,6 +368,11 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
     return layout.filter((item) => hasWidgetData(item.i as WidgetId));
   }, [layout, hasWidgetData]);
 
+  const visibleWidgetIds = React.useMemo(
+    () => filteredLayout.map((item) => item.i as WidgetId),
+    [filteredLayout]
+  );
+
   // Render a widget by ID (returns null if data not available)
   const renderWidget = React.useCallback(
     (widgetId: WidgetId) => {
@@ -521,17 +527,220 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           {isMobile ? (
             <MobileStackedDashboard role={role} renderWidget={renderWidget} />
           ) : (
-            <DashboardGrid layout={filteredLayout} onLayoutChange={updateLayout}>
-              {filteredLayout.map((item) => (
-                <div key={item.i} className="h-full overflow-hidden">
-                  {renderWidget(item.i as WidgetId)}
-                </div>
-              ))}
-            </DashboardGrid>
+            <DesktopWorkspace
+              role={role}
+              visibleWidgetIds={visibleWidgetIds}
+              renderWidget={renderWidget}
+              layout={filteredLayout}
+              onLayoutChange={updateLayout}
+            />
           )}
         </section>
       </div>
     </DashboardProvider>
+  );
+}
+
+function DesktopWorkspace({
+  role,
+  visibleWidgetIds,
+  renderWidget,
+  layout,
+  onLayoutChange,
+}: {
+  role: 'ADMIN' | 'VIEWER';
+  visibleWidgetIds: WidgetId[];
+  renderWidget: (widgetId: WidgetId) => React.ReactNode;
+  layout: DashboardLayoutConfig['desktopLayout'];
+  onLayoutChange: (layout: DashboardLayoutConfig['desktopLayout']) => void;
+}) {
+  const { editMode } = useDashboardContext();
+
+  if (editMode) {
+    return (
+      <DashboardGrid layout={layout} onLayoutChange={onLayoutChange}>
+        {layout.map((item) => (
+          <div key={item.i} className="h-full overflow-hidden">
+            {renderWidget(item.i as WidgetId)}
+          </div>
+        ))}
+      </DashboardGrid>
+    );
+  }
+
+  return (
+    <CuratedDesktopWorkspace
+      role={role}
+      visibleWidgetIds={visibleWidgetIds}
+      renderWidget={renderWidget}
+    />
+  );
+}
+
+function CuratedDesktopWorkspace({
+  role,
+  visibleWidgetIds,
+  renderWidget,
+}: {
+  role: 'ADMIN' | 'VIEWER';
+  visibleWidgetIds: WidgetId[];
+  renderWidget: (widgetId: WidgetId) => React.ReactNode;
+}) {
+  const uniqueIds = Array.from(new Set(visibleWidgetIds));
+  const pool = new Set(uniqueIds);
+
+  const takeFirst = (candidates: WidgetId[]) => {
+    const match = candidates.find((id) => pool.has(id));
+    if (!match) {
+      return null;
+    }
+    pool.delete(match);
+    return match;
+  };
+
+  const takeMany = (candidates: WidgetId[], limit: number) => {
+    const items: WidgetId[] = [];
+    for (const candidate of candidates) {
+      if (items.length >= limit) {
+        break;
+      }
+      if (pool.has(candidate)) {
+        pool.delete(candidate);
+        items.push(candidate);
+      }
+    }
+    return items;
+  };
+
+  const adminPrimaryOrder: WidgetId[] = [
+    'my-rooms',
+    'recent-activity',
+    'messages',
+    'action-required',
+    'new-documents',
+    'engagement',
+    'checklist-progress',
+    'bookmarks',
+    'continue-reading',
+  ];
+  const adminSecondaryOrder: WidgetId[] = [
+    'recent-activity',
+    'messages',
+    'action-required',
+    'new-documents',
+    'engagement',
+    'checklist-progress',
+    'bookmarks',
+    'continue-reading',
+    'my-rooms',
+  ];
+  const adminRailOrder: WidgetId[] = [
+    'action-required',
+    'messages',
+    'new-documents',
+    'engagement',
+    'checklist-progress',
+    'bookmarks',
+    'continue-reading',
+  ];
+
+  const viewerPrimaryOrder: WidgetId[] = [
+    'my-rooms',
+    'messages',
+    'new-documents',
+    'my-questions',
+    'continue-reading',
+    'bookmarks',
+    'announcements',
+  ];
+  const viewerSecondaryOrder: WidgetId[] = [
+    'messages',
+    'new-documents',
+    'my-questions',
+    'continue-reading',
+    'bookmarks',
+    'announcements',
+    'my-rooms',
+  ];
+  const viewerRailOrder: WidgetId[] = [
+    'messages',
+    'new-documents',
+    'my-questions',
+    'continue-reading',
+    'bookmarks',
+    'announcements',
+  ];
+
+  const primary = takeFirst(role === 'ADMIN' ? adminPrimaryOrder : viewerPrimaryOrder);
+  const secondary = takeFirst(role === 'ADMIN' ? adminSecondaryOrder : viewerSecondaryOrder);
+  const rail = takeMany(role === 'ADMIN' ? adminRailOrder : viewerRailOrder, 3);
+  const remaining = uniqueIds.filter((id) => pool.has(id));
+
+  const primaryNode = primary ? renderWidget(primary) : null;
+  const secondaryNode = secondary ? renderWidget(secondary) : null;
+  const railNodes = rail
+    .map((id) => ({ id, node: renderWidget(id) }))
+    .filter((item): item is { id: WidgetId; node: React.ReactNode } => Boolean(item.node));
+  const remainingNodes = remaining
+    .map((id) => ({ id, node: renderWidget(id) }))
+    .filter((item): item is { id: WidgetId; node: React.ReactNode } => Boolean(item.node));
+
+  return (
+    <div className="space-y-5">
+      {(primaryNode || secondaryNode) && (
+        <div
+          className={
+            primaryNode && secondaryNode ? 'grid gap-5 xl:grid-cols-[1.2fr_0.8fr]' : 'grid gap-5'
+          }
+        >
+          {primaryNode && <div className="min-w-0">{primaryNode}</div>}
+          {secondaryNode && <div className="min-w-0">{secondaryNode}</div>}
+        </div>
+      )}
+
+      {railNodes.length > 0 && (
+        <div
+          className={
+            railNodes.length === 1
+              ? 'grid gap-5'
+              : railNodes.length === 2
+                ? 'grid gap-5 xl:grid-cols-2'
+                : 'grid gap-5 xl:grid-cols-3'
+          }
+        >
+          {railNodes.map(({ id, node }) => (
+            <div key={id} className="min-w-0">
+              {node}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {remainingNodes.length > 0 && (
+        <div className="grid gap-5 xl:grid-cols-2">
+          {remainingNodes.map(({ id, node }) => (
+            <div key={id} className="min-w-0">
+              {node}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {primaryNode === null &&
+        secondaryNode === null &&
+        railNodes.length === 0 &&
+        remainingNodes.length === 0 && (
+          <Card className="rounded-[1.75rem] border border-slate-700/80 bg-slate-950/55 text-slate-100 shadow-[0_24px_48px_-32px_rgba(2,6,23,0.92)]">
+            <CardContent className="p-8">
+              <p className="text-sm font-medium text-slate-100">Workspace is quiet</p>
+              <p className="mt-2 max-w-2xl text-sm text-slate-400">
+                There are no active tasks, messages, recent updates, or activity to surface right
+                now. Use the command center above to jump into rooms or create new work.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+    </div>
   );
 }
 
