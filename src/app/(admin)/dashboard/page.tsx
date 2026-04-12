@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
+import { clsx } from 'clsx';
 
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -502,7 +503,7 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           <FeaturedAnnouncement announcement={data.announcements[0] ?? null} />
         )}
 
-        <section className="ring-white/6 rounded-[2rem] border border-slate-700/80 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_18%),radial-gradient(circle_at_bottom_left,rgba(37,99,235,0.16),transparent_24%),linear-gradient(180deg,rgba(2,6,23,0.96),rgba(15,23,42,0.98)_18%,rgba(30,41,59,0.96)_100%)] p-4 shadow-[0_30px_72px_-42px_rgba(2,6,23,0.92)] ring-1 md:p-5">
+        <section className="rounded-[2rem] border border-slate-700/85 bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(30,41,59,0.98))] p-4 shadow-[0_30px_72px_-42px_rgba(2,6,23,0.92)] ring-1 ring-white/5 md:p-5">
           <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/85">
@@ -586,6 +587,7 @@ function CuratedDesktopWorkspace({
   visibleWidgetIds: WidgetId[];
   renderWidget: (widgetId: WidgetId) => React.ReactNode;
 }) {
+  const { density } = useDashboardContext();
   const uniqueIds = Array.from(new Set(visibleWidgetIds));
   const pool = new Set(uniqueIds);
 
@@ -686,11 +688,17 @@ function CuratedDesktopWorkspace({
     .filter((item): item is { id: WidgetId; node: React.ReactNode } => Boolean(item.node));
 
   return (
-    <div className="space-y-5">
+    <div className={density === 'compact' ? 'space-y-4' : 'space-y-6'}>
       {(primaryNode || secondaryNode) && (
         <div
           className={
-            primaryNode && secondaryNode ? 'grid gap-5 xl:grid-cols-[1.2fr_0.8fr]' : 'grid gap-5'
+            primaryNode && secondaryNode
+              ? density === 'compact'
+                ? 'grid gap-4 xl:grid-cols-[1.2fr_0.8fr]'
+                : 'grid gap-6 xl:grid-cols-[1.2fr_0.8fr]'
+              : density === 'compact'
+                ? 'grid gap-4'
+                : 'grid gap-6'
           }
         >
           {primaryNode && <div className="min-w-0">{primaryNode}</div>}
@@ -702,10 +710,16 @@ function CuratedDesktopWorkspace({
         <div
           className={
             railNodes.length === 1
-              ? 'grid gap-5'
+              ? density === 'compact'
+                ? 'grid gap-4'
+                : 'grid gap-6'
               : railNodes.length === 2
-                ? 'grid gap-5 xl:grid-cols-2'
-                : 'grid gap-5 xl:grid-cols-3'
+                ? density === 'compact'
+                  ? 'grid gap-4 xl:grid-cols-2'
+                  : 'grid gap-6 xl:grid-cols-2'
+                : density === 'compact'
+                  ? 'grid gap-4 xl:grid-cols-3'
+                  : 'grid gap-6 xl:grid-cols-3'
           }
         >
           {railNodes.map(({ id, node }) => (
@@ -717,7 +731,7 @@ function CuratedDesktopWorkspace({
       )}
 
       {remainingNodes.length > 0 && (
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className={clsx('grid xl:grid-cols-2', density === 'compact' ? 'gap-4' : 'gap-6')}>
           {remainingNodes.map(({ id, node }) => (
             <div key={id} className="min-w-0">
               {node}
@@ -786,14 +800,14 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
             <div className="mt-6 flex flex-wrap items-center gap-3">
               {firstRoom ? (
                 <Link href={`/rooms/${firstRoom.id}`}>
-                  <Button className="rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-100 text-slate-950 shadow-[0_18px_36px_-20px_rgba(251,191,36,0.58)] hover:from-amber-200 hover:via-orange-100 hover:to-amber-50">
+                  <Button className="rounded-xl border border-amber-200/70 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-100 font-semibold !text-slate-950 shadow-[0_18px_36px_-20px_rgba(251,191,36,0.58)] hover:from-amber-200 hover:via-orange-100 hover:to-amber-50 hover:!text-slate-950">
                     Open {firstRoom.name}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
               ) : role === 'ADMIN' ? (
                 <Link href="/rooms/new">
-                  <Button className="rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-100 text-slate-950 shadow-[0_18px_36px_-20px_rgba(251,191,36,0.58)] hover:from-amber-200 hover:via-orange-100 hover:to-amber-50">
+                  <Button className="rounded-xl border border-amber-200/70 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-100 font-semibold !text-slate-950 shadow-[0_18px_36px_-20px_rgba(251,191,36,0.58)] hover:from-amber-200 hover:via-orange-100 hover:to-amber-50 hover:!text-slate-950">
                     Create your first room
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

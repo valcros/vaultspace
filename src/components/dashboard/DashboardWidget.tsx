@@ -32,33 +32,44 @@ export function DashboardWidget({
   empty,
   emptyMessage = 'No items to display',
 }: DashboardWidgetProps) {
-  const { editMode } = useDashboardContext();
+  const { editMode, density } = useDashboardContext();
+  const isCompact = density === 'compact';
 
   return (
     <Card
       className={clsx(
-        'ring-white/6 hover:border-sky-400/18 group flex h-full flex-col overflow-hidden rounded-[1.6rem] border border-slate-700/80 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.14),transparent_18%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.95)_24%,rgba(30,41,59,0.94)_100%)] text-slate-50 shadow-[0_26px_56px_-36px_rgba(2,6,23,0.92)] ring-1 backdrop-blur-sm hover:shadow-[0_30px_64px_-34px_rgba(14,165,233,0.22)]',
+        'group flex h-full flex-col overflow-hidden rounded-[1.6rem] border border-slate-600/85 bg-[linear-gradient(180deg,rgba(15,23,42,0.99),rgba(30,41,59,0.97))] text-slate-50 shadow-[0_22px_44px_-32px_rgba(2,6,23,0.9)] ring-1 ring-white/5 backdrop-blur-sm transition-colors hover:border-sky-300/20',
         className
       )}
     >
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 border-b border-slate-700/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01))] pb-3 pt-4">
+      <CardHeader
+        className={clsx(
+          'bg-slate-900/88 flex shrink-0 flex-row items-center justify-between space-y-0 border-b border-slate-600/80',
+          isCompact ? 'pb-2.5 pt-3' : 'pb-3.5 pt-4'
+        )}
+      >
         <div className="flex items-center gap-3">
           {editMode && (
-            <div className="drag-handle cursor-grab text-slate-500 transition-colors hover:text-slate-300">
+            <div className="drag-handle cursor-grab text-slate-400 transition-colors hover:text-slate-100">
               <GripVertical className="h-4 w-4" />
             </div>
           )}
           {icon && (
-            <span className="border-sky-400/18 bg-sky-500/12 flex h-10 w-10 items-center justify-center rounded-2xl border text-sky-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+            <span
+              className={clsx(
+                'bg-sky-400/12 flex items-center justify-center rounded-2xl border border-sky-300/20 text-sky-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]',
+                isCompact ? 'h-9 w-9' : 'h-10 w-10'
+              )}
+            >
               {icon}
             </span>
           )}
           <div>
-            <h3 className="text-sm font-semibold tracking-tight text-slate-50">{title}</h3>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Insight</p>
+            <h3 className="text-sm font-semibold tracking-tight text-white">{title}</h3>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-300/85">Insight</p>
           </div>
           {badge !== undefined && badge !== 0 && (
-            <span className="bg-sky-500/14 rounded-full border border-sky-400/20 px-2.5 py-1 text-xs font-semibold text-sky-100 shadow-[0_10px_24px_-18px_rgba(56,189,248,0.9)]">
+            <span className="bg-sky-400/16 rounded-full border border-sky-300/25 px-2.5 py-1 text-xs font-semibold text-sky-50">
               {badge}
             </span>
           )}
@@ -66,20 +77,25 @@ export function DashboardWidget({
         {viewAllHref && (
           <Link
             href={viewAllHref}
-            className="hover:border-sky-400/18 flex items-center gap-1 rounded-full border border-slate-700/85 bg-slate-900/60 px-2.5 py-1 text-xs font-medium text-slate-300 transition-all hover:bg-slate-800/85 hover:text-sky-100"
+            className="flex items-center gap-1 rounded-full border border-slate-600/85 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-100 transition-all hover:border-sky-300/20 hover:bg-slate-700 hover:text-white"
           >
             {viewAllLabel}
             <ChevronRight className="h-3 w-3" />
           </Link>
         )}
       </CardHeader>
-      <CardContent className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01)_42%,rgba(15,23,42,0))] pt-4">
+      <CardContent
+        className={clsx(
+          'bg-slate-900/48 min-h-0 flex-1 overflow-auto',
+          isCompact ? 'pt-3' : 'pt-4'
+        )}
+      >
         {loading ? (
           <WidgetSkeleton />
         ) : empty ? (
-          <div className="flex min-h-[5.5rem] flex-col justify-center rounded-2xl border border-slate-700/70 bg-slate-950/45 px-4 py-4 text-left text-sm text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-            <span className="font-medium text-slate-100">All clear</span>
-            <span className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+          <div className="bg-slate-950/72 flex min-h-[5.5rem] flex-col justify-center rounded-2xl border border-slate-600/70 px-4 py-4 text-left text-sm text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <span className="font-medium text-white">All clear</span>
+            <span className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-300/90">
               {emptyMessage}
             </span>
           </div>
@@ -138,16 +154,24 @@ export function WidgetListItem({
   timestamp,
   rightContent,
 }: WidgetListItemProps) {
+  const { density } = useDashboardContext();
+  const isCompact = density === 'compact';
+
   const content = (
-    <div className="flex items-center gap-3 py-2.5">
+    <div className={clsx('flex items-center gap-3', isCompact ? 'py-1.5' : 'py-2.5')}>
       {icon && (
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-700/70 bg-slate-950/70 text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div
+          className={clsx(
+            'bg-slate-950/82 flex shrink-0 items-center justify-center rounded-2xl border border-slate-600/75 text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
+            isCompact ? 'h-9 w-9' : 'h-10 w-10'
+          )}
+        >
           {icon}
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-50">{title}</p>
-        {subtitle && <p className="truncate text-xs text-slate-400">{subtitle}</p>}
+        <p className="truncate text-sm font-medium text-white">{title}</p>
+        {subtitle && <p className="truncate text-xs text-slate-300">{subtitle}</p>}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {badge && (
@@ -157,14 +181,14 @@ export function WidgetListItem({
             {badge}
           </span>
         )}
-        {timestamp && <span className="text-xs text-slate-500">{timestamp}</span>}
+        {timestamp && <span className="text-xs text-slate-300/85">{timestamp}</span>}
         {rightContent}
       </div>
     </div>
   );
 
   const className =
-    'block rounded-2xl border border-transparent bg-slate-950/36 px-3 py-1.5 transition-all hover:-translate-y-0.5 hover:border-sky-400/18 hover:bg-slate-900/88 hover:shadow-[0_18px_30px_-24px_rgba(14,165,233,0.45)]';
+    'block rounded-2xl border border-slate-700/35 bg-slate-950/65 px-3 py-1.5 transition-all hover:border-sky-300/18 hover:bg-slate-900/92';
 
   if (href) {
     return (
