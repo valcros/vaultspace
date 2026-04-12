@@ -197,15 +197,15 @@ export default function ViewerDocumentPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen flex-col bg-neutral-900">
-        <div className="border-b border-neutral-700 bg-neutral-800">
+      <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
+        <div className="border-b border-slate-700 bg-slate-950/85 backdrop-blur-xl">
           <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-4 py-3">
-            <Skeleton className="h-6 w-48 bg-neutral-700" />
-            <Skeleton className="h-8 w-32 bg-neutral-700" />
+            <Skeleton className="h-6 w-48 bg-slate-800" />
+            <Skeleton className="h-8 w-32 bg-slate-800" />
           </div>
         </div>
         <div className="flex flex-1 items-center justify-center">
-          <Skeleton className="h-[80vh] w-full max-w-[600px] bg-neutral-800" />
+          <Skeleton className="h-[80vh] w-full max-w-[600px] bg-slate-900" />
         </div>
       </div>
     );
@@ -216,9 +216,12 @@ export default function ViewerDocumentPage() {
   }
 
   return (
-    <div ref={viewerRef} className="flex min-h-screen flex-col bg-neutral-900">
+    <div
+      ref={viewerRef}
+      className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]"
+    >
       {/* Header */}
-      <div className="sticky top-0 z-20 border-b border-neutral-700 bg-neutral-800">
+      <div className="bg-slate-950/88 sticky top-0 z-20 border-b border-slate-700 backdrop-blur-xl">
         <div className="mx-auto max-w-screen-2xl px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             {/* Left: Back & Title */}
@@ -227,13 +230,13 @@ export default function ViewerDocumentPage() {
                 variant="ghost"
                 size="sm"
                 onClick={handleBack}
-                className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
                 aria-label="Go back"
               >
                 <ArrowLeft className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Back</span>
               </Button>
-              <div className="hidden h-6 w-px bg-neutral-600 sm:block" />
+              <div className="hidden h-6 w-px bg-slate-700 sm:block" />
               <h1 className="max-w-[120px] truncate font-medium text-white sm:max-w-none">
                 {document.name}
               </h1>
@@ -246,11 +249,11 @@ export default function ViewerDocumentPage() {
                 size="sm"
                 onClick={handlePrevPage}
                 disabled={currentPage === 1}
-                className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+                className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="min-w-[80px] text-center text-sm text-neutral-300">
+              <span className="min-w-[80px] text-center text-sm text-slate-300">
                 {currentPage} / {document.pageCount}
               </span>
               <Button
@@ -258,7 +261,7 @@ export default function ViewerDocumentPage() {
                 size="sm"
                 onClick={handleNextPage}
                 disabled={currentPage === document.pageCount}
-                className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+                className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50"
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -273,28 +276,28 @@ export default function ViewerDocumentPage() {
                   size="sm"
                   onClick={handleZoomOut}
                   disabled={zoom <= 50}
-                  className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+                  className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50"
                   aria-label="Zoom out"
                 >
                   <ZoomOut className="h-4 w-4" />
                 </Button>
-                <span className="min-w-[50px] text-center text-sm text-neutral-300">{zoom}%</span>
+                <span className="min-w-[50px] text-center text-sm text-slate-300">{zoom}%</span>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleZoomIn}
                   disabled={zoom >= 200}
-                  className="text-neutral-300 hover:bg-neutral-700 hover:text-white disabled:opacity-50"
+                  className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50"
                   aria-label="Zoom in"
                 >
                   <ZoomIn className="h-4 w-4" />
                 </Button>
-                <div className="mx-2 h-6 w-px bg-neutral-600" />
+                <div className="mx-2 h-6 w-px bg-slate-700" />
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleRotate}
-                  className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                  className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
                   aria-label="Rotate"
                 >
                   <RotateCw className="h-4 w-4" />
@@ -304,18 +307,18 @@ export default function ViewerDocumentPage() {
                 variant="ghost"
                 size="sm"
                 onClick={handleFullscreen}
-                className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
               >
                 {isFullscreen ? <X className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </Button>
               {document.downloadEnabled && (
                 <>
-                  <div className="mx-2 h-6 w-px bg-neutral-600" />
+                  <div className="mx-2 h-6 w-px bg-slate-700" />
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={handleDownload}
-                    className="text-neutral-300 hover:bg-neutral-700 hover:text-white"
+                    className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
                   >
                     <Download className="mr-2 h-4 w-4" />
                     Download
@@ -334,38 +337,40 @@ export default function ViewerDocumentPage() {
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
       >
-        <div
-          className="relative bg-white shadow-2xl"
-          style={{
-            transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
-            transformOrigin: 'top center',
-            transition: 'transform 0.2s ease',
-          }}
-        >
-          {/* Document Preview Image */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`${document.previewUrl}?page=${currentPage}`}
-            alt={`Page ${currentPage} of ${document.name}`}
-            className="w-full max-w-[800px]"
-            draggable={false}
-            onContextMenu={(e) => e.preventDefault()}
-          />
-
-          {/* Watermark Overlay (F023) */}
-          {document.watermarkText && (
-            <WatermarkOverlay
-              template={document.watermarkText}
-              viewerEmail={document.viewerEmail ?? undefined}
-              viewerName={document.viewerName ?? undefined}
+        <div className="rounded-[1.5rem] border border-slate-700 bg-slate-950/55 p-3 shadow-[0_24px_60px_-34px_rgba(2,6,23,0.9)] sm:p-4">
+          <div
+            className="relative overflow-hidden rounded-[1.1rem] bg-white shadow-2xl"
+            style={{
+              transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
+              transformOrigin: 'top center',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            {/* Document Preview Image */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`${document.previewUrl}?page=${currentPage}`}
+              alt={`Page ${currentPage} of ${document.name}`}
+              className="w-full max-w-[800px]"
+              draggable={false}
+              onContextMenu={(e) => e.preventDefault()}
             />
-          )}
+
+            {/* Watermark Overlay (F023) */}
+            {document.watermarkText && (
+              <WatermarkOverlay
+                template={document.watermarkText}
+                viewerEmail={document.viewerEmail ?? undefined}
+                viewerName={document.viewerName ?? undefined}
+              />
+            )}
+          </div>
         </div>
       </div>
 
       {/* Footer */}
-      <div className="border-t border-neutral-700 bg-neutral-800">
-        <div className="mx-auto max-w-screen-2xl px-4 py-2 text-center text-xs text-neutral-500">
+      <div className="bg-slate-950/82 border-t border-slate-700">
+        <div className="mx-auto max-w-screen-2xl px-4 py-2 text-center text-xs text-slate-400">
           Use arrow keys to navigate • Protected by VaultSpace
         </div>
       </div>

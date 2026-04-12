@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 
 interface OrganizationSettings {
   name: string;
@@ -36,6 +37,8 @@ export default function OrganizationSettingsPage() {
   const [isUploadingLogo, setIsUploadingLogo] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const sectionCardClass =
+    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
 
   React.useEffect(() => {
     fetchSettings();
@@ -154,7 +157,17 @@ export default function OrganizationSettingsPage() {
         }
       />
 
-      <div className="max-w-3xl p-6">
+      <AdminPageContent className="max-w-4xl">
+        <AdminToolbar
+          title="Organization brand controls"
+          description="Manage the identity surfaces your users and invited viewers see across the product."
+          actions={
+            <Button onClick={handleSave} loading={isSaving}>
+              <Save className="mr-2 h-4 w-4" />
+              Save Changes
+            </Button>
+          }
+        />
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
@@ -170,7 +183,7 @@ export default function OrganizationSettingsPage() {
           </Alert>
         )}
 
-        <Card className="mb-6">
+        <Card className={sectionCardClass}>
           <CardHeader>
             <CardTitle>Organization Profile</CardTitle>
             <CardDescription>Basic information about your organization</CardDescription>
@@ -180,7 +193,7 @@ export default function OrganizationSettingsPage() {
             <div className="space-y-2">
               <Label>Logo</Label>
               <div className="flex items-center gap-4">
-                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border bg-neutral-100">
+                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/70">
                   {settings.logoUrl ? (
                     <Image
                       src={settings.logoUrl}
@@ -190,7 +203,7 @@ export default function OrganizationSettingsPage() {
                       className="h-full w-full object-contain"
                     />
                   ) : (
-                    <Building2 className="h-8 w-8 text-neutral-400" />
+                    <Building2 className="h-8 w-8 text-slate-400 dark:text-slate-500" />
                   )}
                 </div>
                 <div>
@@ -210,7 +223,7 @@ export default function OrganizationSettingsPage() {
                     <Upload className="mr-2 h-4 w-4" />
                     Upload Logo
                   </Button>
-                  <p className="mt-2 text-xs text-neutral-500">
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                     Recommended: 200x200px, PNG or SVG
                   </p>
                 </div>
@@ -232,14 +245,21 @@ export default function OrganizationSettingsPage() {
               <Label htmlFor="slug">URL Slug</Label>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-neutral-500">vaultspace.org/</span>
-                <Input id="slug" value={settings.slug} disabled className="flex-1 bg-neutral-50" />
+                <Input
+                  id="slug"
+                  value={settings.slug}
+                  disabled
+                  className="flex-1 bg-slate-50 dark:bg-slate-900"
+                />
               </div>
-              <p className="text-xs text-neutral-500">URL slug cannot be changed after creation</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                URL slug cannot be changed after creation
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="mb-6">
+        <Card className={sectionCardClass}>
           <CardHeader>
             <CardTitle>Branding</CardTitle>
             <CardDescription>Customize the appearance of your data rooms</CardDescription>
@@ -262,7 +282,7 @@ export default function OrganizationSettingsPage() {
                   placeholder="#2563eb"
                   className="w-32"
                 />
-                <span className="text-sm text-neutral-500">
+                <span className="text-sm text-slate-500 dark:text-slate-400">
                   Used for buttons, links, and accents
                 </span>
               </div>
@@ -278,19 +298,13 @@ export default function OrganizationSettingsPage() {
                 onChange={(e) => setSettings({ ...settings, faviconUrl: e.target.value })}
                 placeholder="https://example.com/favicon.ico"
               />
-              <p className="text-xs text-neutral-500">Custom favicon for your data room portal</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Custom favicon for your data room portal
+              </p>
             </div>
           </CardContent>
         </Card>
-
-        {/* Save Button */}
-        <div className="flex justify-end">
-          <Button onClick={handleSave} loading={isSaving}>
-            <Save className="mr-2 h-4 w-4" />
-            Save Changes
-          </Button>
-        </div>
-      </div>
+      </AdminPageContent>
     </>
   );
 }

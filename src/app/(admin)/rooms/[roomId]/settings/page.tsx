@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AdminPageContent, AdminSurface, AdminToolbar } from '@/components/layout/admin-page';
 
 interface RoomSettings {
   id: string;
@@ -63,6 +64,9 @@ export default function RoomSettingsPage() {
     brandLogoUrl: '',
     ipAllowlist: '',
   });
+
+  const sectionCardClass =
+    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
 
   const fetchRoom = React.useCallback(async () => {
     try {
@@ -177,7 +181,7 @@ export default function RoomSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
+      <div className="space-y-4">
         <Skeleton className="mb-4 h-8 w-64" />
         <Skeleton className="mb-8 h-4 w-96" />
         <Skeleton className="h-96 w-full" />
@@ -210,7 +214,18 @@ export default function RoomSettingsPage() {
         }
       />
 
-      <div className="max-w-3xl">
+      <AdminPageContent className="max-w-4xl">
+        <AdminToolbar
+          title="Room controls"
+          description="Adjust protection defaults, viewer-facing branding, and maintenance operations for this room."
+          actions={
+            <Button onClick={handleSave} loading={isSaving}>
+              <Save className="mr-2 h-4 w-4" />
+              Save Changes
+            </Button>
+          }
+        />
+
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
@@ -227,7 +242,7 @@ export default function RoomSettingsPage() {
         )}
 
         {/* General Settings */}
-        <Card className="mb-4">
+        <Card className={sectionCardClass}>
           <CardHeader>
             <CardTitle>General Settings</CardTitle>
             <CardDescription>Basic room information and configuration</CardDescription>
@@ -254,7 +269,7 @@ export default function RoomSettingsPage() {
         </Card>
 
         {/* Security Settings */}
-        <Card className="mb-4">
+        <Card className={sectionCardClass}>
           <CardHeader>
             <CardTitle>Security Settings</CardTitle>
             <CardDescription>Control access and document protection</CardDescription>
@@ -277,7 +292,7 @@ export default function RoomSettingsPage() {
             </div>
 
             {formData.watermarkEnabled && (
-              <div className="space-y-2 rounded-md bg-neutral-50 p-4">
+              <div className="space-y-2 rounded-xl bg-slate-50 p-4 dark:bg-slate-900/70">
                 <Label htmlFor="watermarkTemplate">Watermark Text Template</Label>
                 <Input
                   id="watermarkTemplate"
@@ -327,7 +342,7 @@ export default function RoomSettingsPage() {
             </div>
 
             {formData.ndaRequired && (
-              <div className="space-y-2 border-l-2 border-neutral-200 pl-4">
+              <div className="space-y-2 border-l-2 border-slate-200 pl-4 dark:border-slate-700">
                 <Label htmlFor="ndaText">NDA Text</Label>
                 <Textarea
                   id="ndaText"
@@ -394,7 +409,7 @@ export default function RoomSettingsPage() {
         </Card>
 
         {/* Branding */}
-        <Card className="mb-4">
+        <Card className={sectionCardClass}>
           <CardHeader>
             <CardTitle>Branding</CardTitle>
             <CardDescription>
@@ -451,16 +466,8 @@ export default function RoomSettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Save Button */}
-        <div className="mb-8 flex justify-end">
-          <Button onClick={handleSave} loading={isSaving}>
-            <Save className="mr-2 h-4 w-4" />
-            Save Changes
-          </Button>
-        </div>
-
         {/* Maintenance */}
-        <Card className="mb-4">
+        <Card className={sectionCardClass}>
           <CardHeader>
             <CardTitle>Maintenance</CardTitle>
             <CardDescription>Document processing and optimization</CardDescription>
@@ -530,10 +537,12 @@ export default function RoomSettingsPage() {
           </CardContent>
         </Card>
 
-        <Separator className="my-6" />
+        <AdminSurface className="h-px border-none bg-transparent p-0 shadow-none ring-0">
+          <Separator className="my-1" />
+        </AdminSurface>
 
         {/* Danger Zone */}
-        <Card className="border-danger-200">
+        <Card className="bg-white/88 rounded-[1.5rem] border-danger-200 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:bg-slate-950/75 dark:ring-white/5">
           <CardHeader>
             <CardTitle className="text-danger-600">Danger Zone</CardTitle>
             <CardDescription>Irreversible actions. Proceed with caution.</CardDescription>
@@ -571,7 +580,7 @@ export default function RoomSettingsPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </AdminPageContent>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

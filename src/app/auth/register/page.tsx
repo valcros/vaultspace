@@ -130,8 +130,11 @@ function RegisterForm() {
   return (
     <>
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-neutral-900">Create an account</h1>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+          Account Setup
+        </p>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Create an account</h1>
+        <p className="mt-2 text-sm text-slate-500">
           {inviteInfo
             ? `You've been invited to join ${inviteInfo.organizationName}`
             : inviteToken
@@ -143,6 +146,13 @@ function RegisterForm() {
       {inviteLoading && (
         <div className="mb-6 flex justify-center">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
+        </div>
+      )}
+
+      {inviteInfo && (
+        <div className="mb-6 rounded-2xl border border-sky-200/80 bg-sky-50/80 px-4 py-3 text-sm text-sky-900">
+          You&apos;re joining <span className="font-semibold">{inviteInfo.organizationName}</span>{' '}
+          as a <span className="font-semibold lowercase">{inviteInfo.role}</span>.
         </div>
       )}
 
@@ -196,7 +206,7 @@ function RegisterForm() {
             className={inviteInfo ? 'bg-neutral-50 text-neutral-600' : ''}
           />
           {inviteInfo && (
-            <p className="text-xs text-neutral-400">
+            <p className="text-xs text-slate-500">
               Email is set from your invitation and cannot be changed
             </p>
           )}
@@ -214,6 +224,9 @@ function RegisterForm() {
             required
             autoComplete="new-password"
           />
+          <p className="text-xs text-slate-500">
+            Use at least 8 characters. A passphrase is better than a short password.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -276,6 +289,13 @@ function RegisterForm() {
           Sign in
         </Link>
       </div>
+
+      {!inviteInfo && (
+        <div className="mt-6 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500">
+          For the best experience, create accounts through an invitation so your organization, room
+          access, and onboarding context are preconfigured.
+        </div>
+      )}
     </>
   );
 }
@@ -284,8 +304,11 @@ function RegisterFormFallback() {
   return (
     <>
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-neutral-900">Create an account</h1>
-        <p className="mt-1 text-sm text-neutral-500">Get started with VaultSpace</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+          Account Setup
+        </p>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Create an account</h1>
+        <p className="mt-2 text-sm text-slate-500">Get started with VaultSpace</p>
       </div>
       <div className="animate-pulse space-y-4">
         <div className="grid grid-cols-2 gap-4">

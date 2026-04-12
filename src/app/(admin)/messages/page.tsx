@@ -17,9 +17,14 @@ import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  AdminEmptyState,
+  AdminPageContent,
+  AdminSurface,
+  AdminToolbar,
+} from '@/components/layout/admin-page';
 
 // ============================================================================
 // Types
@@ -172,7 +177,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <div>
+    <>
       <PageHeader
         title="Messages"
         description="Send and receive private messages"
@@ -185,290 +190,311 @@ export default function MessagesPage() {
         }
       />
 
-      <div className="mt-6 flex gap-4" style={{ minHeight: '600px' }}>
-        {/* Left: Message List */}
-        <div className="w-full max-w-md shrink-0">
-          {/* View Mode Tabs */}
-          <div className="mb-3 flex gap-1 rounded-lg bg-neutral-100 p-1">
-            <button
-              onClick={() => {
-                setViewMode('inbox');
-                setSelectedMessage(null);
-                setComposing(false);
-              }}
-              className={clsx(
-                'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                viewMode === 'inbox'
-                  ? 'bg-white text-neutral-900 shadow-sm'
-                  : 'text-neutral-600 hover:text-neutral-900'
-              )}
-            >
-              <Inbox className="h-4 w-4" />
-              Inbox
-            </button>
-            <button
-              onClick={() => {
-                setViewMode('sent');
-                setSelectedMessage(null);
-                setComposing(false);
-              }}
-              className={clsx(
-                'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                viewMode === 'sent'
-                  ? 'bg-white text-neutral-900 shadow-sm'
-                  : 'text-neutral-600 hover:text-neutral-900'
-              )}
-            >
-              <Send className="h-4 w-4" />
-              Sent
-            </button>
-          </div>
+      <AdminPageContent>
+        <AdminToolbar
+          title="Mailbox"
+          description="Review conversations, switch between inbox and sent mail, and compose secure messages without leaving the workspace."
+          actions={
+            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              {messages.length} {viewMode}
+            </div>
+          }
+        />
 
-          {/* Message List */}
-          <Card className="divide-y divide-neutral-100 overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
-              </div>
-            ) : messages.length === 0 ? (
-              <div className="py-12 text-center">
-                <Mail className="mx-auto mb-3 h-10 w-10 text-neutral-300" />
-                <p className="text-sm text-neutral-500">
-                  {viewMode === 'inbox' ? 'No messages in your inbox' : 'No sent messages'}
-                </p>
-              </div>
-            ) : (
-              messages.map((msg) => (
-                <button
-                  key={msg.id}
-                  onClick={() => handleSelectMessage(msg)}
-                  className={clsx(
-                    'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors',
-                    selectedMessage?.id === msg.id ? 'bg-primary-50' : 'hover:bg-neutral-50',
-                    !msg.isRead && viewMode === 'inbox' && 'bg-blue-50/50'
-                  )}
-                >
-                  {/* Read indicator */}
-                  <div className="mt-1 shrink-0">
-                    {!msg.isRead && viewMode === 'inbox' ? (
-                      <Circle className="h-2.5 w-2.5 fill-primary-500 text-primary-500" />
-                    ) : (
-                      <CheckCircle2 className="h-2.5 w-2.5 text-neutral-300" />
+        <div
+          className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]"
+          style={{ minHeight: '600px' }}
+        >
+          {/* Left: Message List */}
+          <div className="min-w-0">
+            {/* View Mode Tabs */}
+            <div className="mb-3 flex gap-1 rounded-2xl border border-slate-200/80 bg-slate-50/85 p-1.5 dark:border-slate-800 dark:bg-slate-900/70">
+              <button
+                onClick={() => {
+                  setViewMode('inbox');
+                  setSelectedMessage(null);
+                  setComposing(false);
+                }}
+                className={clsx(
+                  'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  viewMode === 'inbox'
+                    ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-950 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                )}
+              >
+                <Inbox className="h-4 w-4" />
+                Inbox
+              </button>
+              <button
+                onClick={() => {
+                  setViewMode('sent');
+                  setSelectedMessage(null);
+                  setComposing(false);
+                }}
+                className={clsx(
+                  'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  viewMode === 'sent'
+                    ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-950 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                )}
+              >
+                <Send className="h-4 w-4" />
+                Sent
+              </button>
+            </div>
+
+            {/* Message List */}
+            <AdminSurface className="divide-y divide-slate-200/80 overflow-hidden p-0 dark:divide-slate-800">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Mail className="mx-auto mb-3 h-10 w-10 text-slate-300 dark:text-slate-600" />
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {viewMode === 'inbox' ? 'No messages in your inbox' : 'No sent messages'}
+                  </p>
+                </div>
+              ) : (
+                messages.map((msg) => (
+                  <button
+                    key={msg.id}
+                    onClick={() => handleSelectMessage(msg)}
+                    className={clsx(
+                      'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors',
+                      selectedMessage?.id === msg.id
+                        ? 'bg-sky-50 dark:bg-sky-950/20'
+                        : 'hover:bg-slate-50 dark:hover:bg-slate-900/45',
+                      !msg.isRead && viewMode === 'inbox' && 'bg-sky-50/70 dark:bg-sky-950/15'
                     )}
-                  </div>
+                  >
+                    {/* Read indicator */}
+                    <div className="mt-1 shrink-0">
+                      {!msg.isRead && viewMode === 'inbox' ? (
+                        <Circle className="h-2.5 w-2.5 fill-primary-500 text-primary-500" />
+                      ) : (
+                        <CheckCircle2 className="h-2.5 w-2.5 text-slate-300 dark:text-slate-600" />
+                      )}
+                    </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p
+                          className={clsx(
+                            'truncate text-sm',
+                            !msg.isRead && viewMode === 'inbox'
+                              ? 'font-semibold text-slate-950 dark:text-white'
+                              : 'font-medium text-slate-700 dark:text-slate-200'
+                          )}
+                        >
+                          {viewMode === 'inbox'
+                            ? msg.sender?.name || 'Unknown'
+                            : msg.recipient?.name || msg.recipientEmail || 'Unknown'}
+                        </p>
+                        <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">
+                          {formatTime(msg.createdAt)}
+                        </span>
+                      </div>
+
                       <p
                         className={clsx(
                           'truncate text-sm',
                           !msg.isRead && viewMode === 'inbox'
-                            ? 'font-semibold text-neutral-900'
-                            : 'font-medium text-neutral-700'
+                            ? 'font-medium text-slate-800 dark:text-slate-100'
+                            : 'text-slate-600 dark:text-slate-300'
                         )}
                       >
-                        {viewMode === 'inbox'
-                          ? msg.sender?.name || 'Unknown'
-                          : msg.recipient?.name || msg.recipientEmail || 'Unknown'}
+                        {msg.subject}
                       </p>
-                      <span className="shrink-0 text-xs text-neutral-400">
-                        {formatTime(msg.createdAt)}
-                      </span>
-                    </div>
 
-                    <p
-                      className={clsx(
-                        'truncate text-sm',
-                        !msg.isRead && viewMode === 'inbox'
-                          ? 'font-medium text-neutral-800'
-                          : 'text-neutral-600'
+                      {msg.room && (
+                        <div className="mt-1 flex items-center gap-1">
+                          <FolderOpen className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                          <span className="truncate text-xs text-slate-400 dark:text-slate-500">
+                            {msg.room.name}
+                          </span>
+                        </div>
                       )}
-                    >
-                      {msg.subject}
-                    </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </AdminSurface>
+          </div>
 
-                    {msg.room && (
-                      <div className="mt-1 flex items-center gap-1">
-                        <FolderOpen className="h-3 w-3 text-neutral-400" />
-                        <span className="truncate text-xs text-neutral-400">{msg.room.name}</span>
-                      </div>
+          {/* Right: Detail / Compose */}
+          <div className="flex-1">
+            {composing ? (
+              <AdminSurface className="p-6">
+                <div className="mb-4 flex items-center gap-2">
+                  <button
+                    onClick={() => setComposing(false)}
+                    className="rounded-lg p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-100"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
+                  <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+                    New Message
+                  </h2>
+                </div>
+
+                <form onSubmit={handleSend} className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="recipient"
+                      className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200"
+                    >
+                      To
+                    </label>
+                    <Input
+                      id="recipient"
+                      type="email"
+                      placeholder="recipient@example.com"
+                      value={recipientEmail}
+                      onChange={(e) => setRecipientEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="subject"
+                      className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200"
+                    >
+                      Subject
+                    </label>
+                    <Input
+                      id="subject"
+                      type="text"
+                      placeholder="Message subject"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      required
+                      maxLength={500}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="roomContext"
+                      className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200"
+                    >
+                      Room ID (optional context)
+                    </label>
+                    <Input
+                      id="roomContext"
+                      type="text"
+                      placeholder="Link to a room (optional)"
+                      value={roomId}
+                      onChange={(e) => setRoomId(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="body"
+                      className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200"
+                    >
+                      Message
+                    </label>
+                    <Textarea
+                      id="body"
+                      placeholder="Type your message..."
+                      value={body}
+                      onChange={(e) => setBody(e.target.value)}
+                      required
+                      rows={8}
+                      className="resize-none"
+                    />
+                  </div>
+
+                  {sendError && <p className="text-sm text-red-600">{sendError}</p>}
+
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setComposing(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={sending}>
+                      {sending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="mr-2 h-4 w-4" />
+                          Send Message
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              </AdminSurface>
+            ) : selectedMessage ? (
+              <AdminSurface className="p-6">
+                {/* Message Header */}
+                <div className="mb-4 border-b border-slate-200/80 pb-4 dark:border-slate-800">
+                  <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
+                    {selectedMessage.subject}
+                  </h2>
+                  <div className="mt-2 flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
+                    <span>
+                      {viewMode === 'inbox' ? 'From' : 'To'}:{' '}
+                      <span className="font-medium text-slate-700 dark:text-slate-200">
+                        {viewMode === 'inbox'
+                          ? selectedMessage.sender?.name || selectedMessage.sender?.email
+                          : selectedMessage.recipient?.name || selectedMessage.recipientEmail}
+                      </span>
+                    </span>
+                    <span>
+                      {new Date(selectedMessage.createdAt).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+
+                  {/* Context badges */}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedMessage.room && (
+                      <Badge variant="secondary" className="flex items-center gap-1">
+                        <FolderOpen className="h-3 w-3" />
+                        {selectedMessage.room.name}
+                      </Badge>
+                    )}
+                    {selectedMessage.document && (
+                      <Badge variant="secondary" className="flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        {selectedMessage.document.name}
+                      </Badge>
+                    )}
+                    {selectedMessage.isRead && (
+                      <Badge variant="outline" className="text-green-600 dark:text-green-400">
+                        Read
+                      </Badge>
                     )}
                   </div>
-                </button>
-              ))
+                </div>
+
+                {/* Message Body */}
+                <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-200">
+                  {selectedMessage.body}
+                </div>
+              </AdminSurface>
+            ) : (
+              <AdminEmptyState
+                icon={<Mail className="h-6 w-6" />}
+                title="Select a conversation"
+                description="Pick a message from the mailbox to read the thread or start a new secure conversation."
+              />
             )}
-          </Card>
+          </div>
         </div>
-
-        {/* Right: Detail / Compose */}
-        <div className="flex-1">
-          {composing ? (
-            <Card className="p-6">
-              <div className="mb-4 flex items-center gap-2">
-                <button
-                  onClick={() => setComposing(false)}
-                  className="rounded-lg p-1 text-neutral-400 hover:text-neutral-600"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </button>
-                <h2 className="text-lg font-semibold text-neutral-900">New Message</h2>
-              </div>
-
-              <form onSubmit={handleSend} className="space-y-4">
-                <div>
-                  <label
-                    htmlFor="recipient"
-                    className="mb-1 block text-sm font-medium text-neutral-700"
-                  >
-                    To
-                  </label>
-                  <Input
-                    id="recipient"
-                    type="email"
-                    placeholder="recipient@example.com"
-                    value={recipientEmail}
-                    onChange={(e) => setRecipientEmail(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="subject"
-                    className="mb-1 block text-sm font-medium text-neutral-700"
-                  >
-                    Subject
-                  </label>
-                  <Input
-                    id="subject"
-                    type="text"
-                    placeholder="Message subject"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    required
-                    maxLength={500}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="roomContext"
-                    className="mb-1 block text-sm font-medium text-neutral-700"
-                  >
-                    Room ID (optional context)
-                  </label>
-                  <Input
-                    id="roomContext"
-                    type="text"
-                    placeholder="Link to a room (optional)"
-                    value={roomId}
-                    onChange={(e) => setRoomId(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="body" className="mb-1 block text-sm font-medium text-neutral-700">
-                    Message
-                  </label>
-                  <Textarea
-                    id="body"
-                    placeholder="Type your message..."
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    required
-                    rows={8}
-                    className="resize-none"
-                  />
-                </div>
-
-                {sendError && <p className="text-sm text-red-600">{sendError}</p>}
-
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setComposing(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={sending}>
-                    {sending ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Sending...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        Send Message
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          ) : selectedMessage ? (
-            <Card className="p-6">
-              {/* Message Header */}
-              <div className="mb-4 border-b border-neutral-100 pb-4">
-                <h2 className="text-lg font-semibold text-neutral-900">
-                  {selectedMessage.subject}
-                </h2>
-                <div className="mt-2 flex items-center gap-3 text-sm text-neutral-500">
-                  <span>
-                    {viewMode === 'inbox' ? 'From' : 'To'}:{' '}
-                    <span className="font-medium text-neutral-700">
-                      {viewMode === 'inbox'
-                        ? selectedMessage.sender?.name || selectedMessage.sender?.email
-                        : selectedMessage.recipient?.name || selectedMessage.recipientEmail}
-                    </span>
-                  </span>
-                  <span>
-                    {new Date(selectedMessage.createdAt).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-
-                {/* Context badges */}
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedMessage.room && (
-                    <Badge variant="secondary" className="flex items-center gap-1">
-                      <FolderOpen className="h-3 w-3" />
-                      {selectedMessage.room.name}
-                    </Badge>
-                  )}
-                  {selectedMessage.document && (
-                    <Badge variant="secondary" className="flex items-center gap-1">
-                      <FileText className="h-3 w-3" />
-                      {selectedMessage.document.name}
-                    </Badge>
-                  )}
-                  {selectedMessage.isRead && (
-                    <Badge variant="outline" className="text-green-600">
-                      Read
-                    </Badge>
-                  )}
-                </div>
-              </div>
-
-              {/* Message Body */}
-              <div className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-700">
-                {selectedMessage.body}
-              </div>
-            </Card>
-          ) : (
-            <Card className="flex items-center justify-center p-12">
-              <div className="text-center">
-                <Mail className="mx-auto mb-3 h-12 w-12 text-neutral-300" />
-                <p className="text-sm text-neutral-500">
-                  Select a message to read or compose a new one
-                </p>
-              </div>
-            </Card>
-          )}
-        </div>
-      </div>
-    </div>
+      </AdminPageContent>
+    </>
   );
 }

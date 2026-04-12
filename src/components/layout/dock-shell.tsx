@@ -10,6 +10,7 @@
  */
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { DockHeader } from './dock-header';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -277,7 +278,7 @@ export function DockShell({ children, user }: DockShellProps) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-neutral-50">
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         <DockHeader user={user} onSearchClick={() => setCommandOpen(true)} />
@@ -294,9 +295,9 @@ export function DockShell({ children, user }: DockShellProps) {
         ref={dockRef}
         className={clsx(
           'fixed z-50 flex items-center gap-1 p-2',
-          'bg-white/95 dark:bg-neutral-900/95',
+          'bg-white/96 dark:bg-slate-950/96',
           'backdrop-blur-xl',
-          'border border-neutral-200 dark:border-neutral-700',
+          'border border-slate-200/90 dark:border-slate-700',
           'rounded-2xl shadow-2xl',
           'transition-all duration-300 ease-out',
           isVisible && !isCollapsed ? positionClasses[position] : hideTransform[position],
@@ -309,7 +310,7 @@ export function DockShell({ children, user }: DockShellProps) {
           onTouchStart={handleDragStart}
           className={clsx(
             'flex cursor-grab items-center justify-center active:cursor-grabbing',
-            'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300',
+            'text-slate-500 hover:text-slate-700 dark:hover:text-slate-100',
             'transition-colors',
             isHorizontal ? 'px-1' : 'py-1'
           )}
@@ -333,7 +334,7 @@ export function DockShell({ children, user }: DockShellProps) {
         {/* Separator */}
         <div
           className={clsx(
-            'bg-neutral-300 dark:bg-neutral-600',
+            'bg-slate-300 dark:bg-slate-700',
             isHorizontal ? 'mx-1 h-8 w-px' : 'my-1 h-px w-8'
           )}
         />
@@ -356,8 +357,8 @@ export function DockShell({ children, user }: DockShellProps) {
           className={clsx(
             'flex items-center justify-center',
             'h-8 w-8 rounded-lg',
-            'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300',
-            'hover:bg-neutral-100 dark:hover:bg-neutral-800',
+            'text-slate-500 hover:text-slate-700 dark:hover:text-slate-100',
+            'hover:bg-slate-100 dark:hover:bg-slate-800',
             'transition-all duration-200'
           )}
           title="Hide dock"
@@ -376,11 +377,11 @@ export function DockShell({ children, user }: DockShellProps) {
           className={clsx(
             'fixed z-50 flex items-center justify-center',
             'h-10 w-10 rounded-full',
-            'bg-white/95 dark:bg-neutral-900/95',
+            'bg-white/96 dark:bg-slate-950/96',
             'backdrop-blur-xl',
-            'border border-neutral-200 dark:border-neutral-700',
+            'border border-slate-200/90 dark:border-slate-700',
             'shadow-lg hover:shadow-xl',
-            'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100',
+            'text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white',
             'transition-all duration-200',
             position === 'bottom' && 'bottom-4 left-1/2 -translate-x-1/2',
             position === 'top' && 'left-1/2 top-4 -translate-x-1/2',
@@ -454,7 +455,9 @@ function DockIcon({ item, isActive, onClick, isTouch, isHorizontal }: DockIconPr
     <>
       <Icon
         className={clsx(
-          isActive ? 'text-primary-600' : 'text-neutral-700 dark:text-neutral-300',
+          isActive
+            ? 'text-primary-700 dark:text-primary-300'
+            : 'text-slate-800 dark:text-slate-100',
           isTouch ? 'h-6 w-6' : 'h-5 w-5'
         )}
       />
@@ -464,7 +467,9 @@ function DockIcon({ item, isActive, onClick, isTouch, isHorizontal }: DockIconPr
         <span
           className={clsx(
             'text-sm font-medium',
-            isActive ? 'text-primary-600' : 'text-neutral-700 dark:text-neutral-300'
+            isActive
+              ? 'text-primary-700 dark:text-primary-300'
+              : 'text-slate-800 dark:text-slate-100'
           )}
         >
           {item.label}
@@ -488,20 +493,18 @@ function DockIcon({ item, isActive, onClick, isTouch, isHorizontal }: DockIconPr
       {(!isTouch || isHorizontal) && (
         <span
           className={clsx(
-            'absolute whitespace-nowrap rounded-lg bg-neutral-900 px-2 py-1',
+            'absolute whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1',
             'text-xs text-white',
             'opacity-0 group-hover:opacity-100',
             'transition-opacity duration-200',
             'pointer-events-none',
-            'dark:bg-neutral-100 dark:text-neutral-900',
+            'dark:bg-slate-100 dark:text-slate-950',
             isHorizontal ? '-top-10 left-1/2 -translate-x-1/2' : 'left-full ml-2'
           )}
         >
           {item.label}
           {item.id === 'search' && !isTouch && (
-            <kbd className="ml-1 rounded bg-neutral-700 px-1 text-[10px] dark:bg-neutral-300">
-              ⌘K
-            </kbd>
+            <kbd className="ml-1 rounded bg-slate-700 px-1 text-[10px] dark:bg-slate-300">⌘K</kbd>
           )}
         </span>
       )}
@@ -511,8 +514,8 @@ function DockIcon({ item, isActive, onClick, isTouch, isHorizontal }: DockIconPr
   const className = clsx(
     'relative flex items-center justify-center rounded-xl',
     isActive
-      ? 'bg-primary-50 dark:bg-primary-900/30'
-      : 'bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700',
+      ? 'bg-primary-100 dark:bg-primary-900/30'
+      : 'bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800',
     'transition-all duration-200 ease-out',
     'group',
     isTouch ? 'h-14 w-14 active:scale-95' : 'h-12 w-12 hover:scale-110 hover:shadow-lg',
@@ -521,9 +524,9 @@ function DockIcon({ item, isActive, onClick, isTouch, isHorizontal }: DockIconPr
 
   if (href) {
     return (
-      <a href={href} className={className} onClick={onClick}>
+      <Link href={href} className={className} onClick={onClick}>
         {content}
-      </a>
+      </Link>
     );
   }
 

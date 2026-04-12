@@ -77,6 +77,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
+import { AdminEmptyState, AdminSurface, AdminToolbar } from '@/components/layout/admin-page';
 import { QATab } from '@/components/rooms/QATab';
 import { ChecklistTab } from '@/components/rooms/ChecklistTab';
 import { CalendarTab } from '@/components/rooms/CalendarTab';
@@ -1309,7 +1310,7 @@ export default function RoomDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
+      <div className="space-y-4">
         <Skeleton className="mb-4 h-8 w-64" />
         <Skeleton className="mb-8 h-4 w-96" />
         <Skeleton className="h-96 w-full" />
@@ -1384,975 +1385,658 @@ export default function RoomDetailPage() {
         }
       />
 
-      <div>
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <div className="md:hidden">
-            <Select value={activeTab} onValueChange={setActiveTab}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Choose a room section" />
-              </SelectTrigger>
-              <SelectContent>
-                {roomTabs.map((tab) => (
-                  <SelectItem key={tab.value} value={tab.value}>
-                    {tab.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      <div className="space-y-6">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: 'Documents', value: documents.length },
+            { label: 'Folders', value: folders.length },
+            { label: 'Admins', value: admins.length },
+            { label: 'Share Links', value: links.length },
+          ].map((stat) => (
+            <AdminSurface key={stat.label} className="p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+                {stat.label}
+              </p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                {stat.value}
+              </p>
+            </AdminSurface>
+          ))}
+        </div>
 
-          <div className="hidden overflow-x-auto pb-1 md:block">
-            <TabsList className="h-auto w-max min-w-full justify-start">
-              <TabsTrigger value="documents" className="gap-2">
-                <FileText className="h-4 w-4" />
-                Documents
-              </TabsTrigger>
-              <TabsTrigger value="members" className="gap-2">
-                <Users className="h-4 w-4" />
-                Access
-              </TabsTrigger>
-              <TabsTrigger value="links" className="gap-2">
-                <LinkIcon className="h-4 w-4" />
-                Share Links
-              </TabsTrigger>
-              <TabsTrigger value="qa" className="gap-2">
-                <MessageSquare className="h-4 w-4" />
-                Q&amp;A
-              </TabsTrigger>
-              <TabsTrigger value="checklist" className="gap-2">
-                <ClipboardCheck className="h-4 w-4" />
-                Checklist
-              </TabsTrigger>
-              <TabsTrigger value="calendar" className="gap-2">
-                <CalendarDays className="h-4 w-4" />
-                Calendar
-              </TabsTrigger>
-              <TabsTrigger value="activity" className="gap-2">
-                <Activity className="h-4 w-4" />
-                Activity
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          {/* Documents Tab */}
-          <TabsContent value="documents" className="mt-4">
-            {/* Breadcrumb navigation */}
-            {breadcrumbs.length > 1 && (
-              <div className="mb-4 flex items-center gap-1 text-sm">
-                {breadcrumbs.map((crumb, index) => (
-                  <React.Fragment key={crumb.id ?? 'root'}>
-                    {index > 0 && <ChevronRight className="h-4 w-4 text-neutral-400" />}
-                    <button
-                      onClick={() => handleBreadcrumbClick(index)}
-                      className={`rounded px-2 py-1 hover:bg-neutral-100 ${
-                        index === breadcrumbs.length - 1
-                          ? 'font-medium text-neutral-900'
-                          : 'text-neutral-500 hover:text-neutral-900'
-                      }`}
-                    >
-                      {crumb.name}
-                    </button>
-                  </React.Fragment>
-                ))}
-              </div>
-            )}
-
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Button onClick={() => setShowUploadDialog(true)}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Files
-                </Button>
-                <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
-                  <FolderPlus className="mr-2 h-4 w-4" />
-                  New Folder
-                </Button>
-                {/* Category filter */}
-                <Select
-                  value={categoryFilter ?? 'all'}
-                  onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
-                >
-                  <SelectTrigger className="h-9 w-[140px] text-xs">
-                    <Tag className="mr-1.5 h-3.5 w-3.5 text-neutral-400" />
-                    <SelectValue placeholder="Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {CATEGORY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Compact toggle (list view only) */}
-                {viewMode === 'list' && (
-                  <button
-                    onClick={() => {
-                      const next = !compact;
-                      setCompact(next);
-                      localStorage.setItem('vaultspace-compact', String(next));
-                    }}
-                    className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
-                    title={compact ? 'Standard density' : 'Compact density'}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                )}
-                {/* Column picker (list view only) */}
-                {viewMode === 'list' && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
-                        title="Show/hide columns"
-                      >
-                        <Columns3 className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {[
-                        { key: 'size', label: 'Size' },
-                        { key: 'uploaded', label: 'Uploaded' },
-                      ].map((col) => (
-                        <DropdownMenuItem
-                          key={col.key}
-                          onClick={() => {
-                            const next = {
-                              ...visibleColumns,
-                              [col.key]: !visibleColumns[col.key],
-                            };
-                            setVisibleColumns(next);
-                            localStorage.setItem('vaultspace-columns', JSON.stringify(next));
-                          }}
-                        >
-                          <span
-                            className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
-                          />
-                          {col.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                {/* View toggle */}
-                <div className="flex items-center gap-1 rounded-lg border bg-white p-1">
-                  <button
-                    onClick={() => {
-                      setViewMode('list');
-                      localStorage.setItem('vaultspace-doc-view', 'list');
-                    }}
-                    className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
-                    title="List view"
-                  >
-                    <List className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setViewMode('grid');
-                      localStorage.setItem('vaultspace-doc-view', 'grid');
-                    }}
-                    className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-400 hover:text-neutral-600'}`}
-                    title="Grid view"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+        <AdminSurface className="space-y-4 p-4 sm:p-5">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <div className="md:hidden">
+              <Select value={activeTab} onValueChange={setActiveTab}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose a room section" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roomTabs.map((tab) => (
+                    <SelectItem key={tab.value} value={tab.value}>
+                      {tab.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            {folders.length === 0 && documents.length === 0 ? (
-              <Card className="p-8 text-center">
-                <FileText className="mx-auto mb-3 h-10 w-10 text-neutral-400" />
-                <h3 className="mb-1 text-base font-semibold text-neutral-900">No documents yet</h3>
-                <p className="mx-auto mb-4 max-w-sm text-sm text-neutral-500">
-                  Upload your first documents to start sharing them securely.
-                </p>
-                <Button onClick={() => setShowUploadDialog(true)}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Files
-                </Button>
-              </Card>
-            ) : viewMode === 'list' ? (
-              <div className="overflow-hidden rounded-xl border">
-                <table className="w-full">
-                  <thead className="border-b bg-neutral-50">
-                    <tr>
-                      <th className="w-8 px-2 py-2">
-                        <button
-                          onClick={toggleSelectAll}
-                          className="flex items-center text-neutral-400 hover:text-neutral-600"
-                        >
-                          {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
-                            <CheckSquare className="h-4 w-4 text-primary-500" />
-                          ) : (
-                            <Square className="h-4 w-4" />
-                          )}
-                        </button>
-                      </th>
-                      <th
-                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                        onClick={() => handleSort('name')}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          Name
-                          {sortField === 'name' ? (
-                            sortDir === 'asc' ? (
-                              <ChevronUp className="h-3 w-3" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
-                          )}
-                        </span>
-                      </th>
-                      {visibleColumns['size'] && (
-                        <th
-                          className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                          onClick={() => handleSort('size')}
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            Size
-                            {sortField === 'size' ? (
-                              sortDir === 'asc' ? (
-                                <ChevronUp className="h-3 w-3" />
-                              ) : (
-                                <ChevronDown className="h-3 w-3" />
-                              )
-                            ) : null}
-                          </span>
-                        </th>
+            <div className="hidden overflow-x-auto pb-1 md:block">
+              <TabsList className="h-auto w-max min-w-full justify-start rounded-2xl border border-slate-200/80 bg-slate-50/80 p-1.5 dark:border-slate-800 dark:bg-slate-900/70">
+                <TabsTrigger
+                  value="documents"
+                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
+                >
+                  <FileText className="h-4 w-4" />
+                  Documents
+                </TabsTrigger>
+                <TabsTrigger
+                  value="members"
+                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
+                >
+                  <Users className="h-4 w-4" />
+                  Access
+                </TabsTrigger>
+                <TabsTrigger
+                  value="links"
+                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
+                >
+                  <LinkIcon className="h-4 w-4" />
+                  Share Links
+                </TabsTrigger>
+                <TabsTrigger
+                  value="qa"
+                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  Q&amp;A
+                </TabsTrigger>
+                <TabsTrigger
+                  value="checklist"
+                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
+                >
+                  <ClipboardCheck className="h-4 w-4" />
+                  Checklist
+                </TabsTrigger>
+                <TabsTrigger
+                  value="calendar"
+                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  Calendar
+                </TabsTrigger>
+                <TabsTrigger
+                  value="activity"
+                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
+                >
+                  <Activity className="h-4 w-4" />
+                  Activity
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* Documents Tab */}
+            <TabsContent value="documents" className="mt-4">
+              {/* Breadcrumb navigation */}
+              {breadcrumbs.length > 1 && (
+                <div className="mb-4 flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900/55">
+                  {breadcrumbs.map((crumb, index) => (
+                    <React.Fragment key={crumb.id ?? 'root'}>
+                      {index > 0 && (
+                        <ChevronRight className="h-4 w-4 text-slate-400 dark:text-slate-500" />
                       )}
-                      {visibleColumns['uploaded'] && (
-                        <th
-                          className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                          onClick={() => handleSort('createdAt')}
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            Uploaded
-                            {sortField === 'createdAt' ? (
-                              sortDir === 'asc' ? (
-                                <ChevronUp className="h-3 w-3" />
-                              ) : (
-                                <ChevronDown className="h-3 w-3" />
-                              )
-                            ) : null}
-                          </span>
-                        </th>
-                      )}
-                      <th className="w-8"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Render folders first */}
-                    {folders.map((folder) => (
-                      <tr
-                        key={folder.id}
-                        className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
-                        onClick={() => handleFolderClick(folder)}
+                      <button
+                        onClick={() => handleBreadcrumbClick(index)}
+                        className={`rounded px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                          index === breadcrumbs.length - 1
+                            ? 'font-medium text-slate-950 dark:text-white'
+                            : 'text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-100'
+                        }`}
                       >
-                        <td className="w-8 px-2" />
-                        <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                          <div className="flex items-center gap-2">
-                            <Folder
-                              className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`}
-                            />
-                            <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
-                              {folder.name}
-                            </span>
-                          </div>
-                        </td>
-                        {visibleColumns['size'] && (
-                          <td
-                            className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                          >
-                            {folder.documentCount} files, {folder.childCount} folders
-                          </td>
-                        )}
-                        {visibleColumns['uploaded'] && (
-                          <td
-                            className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                          >
-                            {formatDate(folder.createdAt)}
-                          </td>
-                        )}
-                        <td
-                          className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
-                              >
-                                <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Open
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => handleFolderDelete(folder)}
-                                className="text-danger-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))}
-                    {/* Render documents */}
-                    {sortedDocuments.map((doc) => (
-                      <tr
-                        key={doc.id}
-                        className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
-                        onClick={() => handlePreview(doc)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setContextMenu({ x: e.clientX, y: e.clientY, doc });
-                        }}
-                      >
-                        <td
-                          className="w-8 px-2"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleDocSelection(doc.id);
-                          }}
-                        >
-                          {selectedDocs.has(doc.id) ? (
-                            <CheckSquare className="h-4 w-4 text-primary-500" />
-                          ) : (
-                            <Square className="h-4 w-4 text-neutral-300" />
-                          )}
-                        </td>
-                        <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                          <div className="flex items-center gap-2">
-                            <FileTypeIcon
-                              mimeType={doc.mimeType}
-                              className={compact ? 'h-4 w-4' : undefined}
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span
-                                  className={`truncate font-medium ${compact ? 'text-sm' : ''}`}
-                                >
-                                  {doc.name}
-                                </span>
-                                {(doc.confidential || room?.allDocumentsConfidential) && (
-                                  <Lock className="h-3 w-3 shrink-0 text-amber-500" />
-                                )}
-                              </div>
-                              {!compact && (
-                                <div className="mt-0.5 flex flex-wrap gap-1">
-                                  {doc.category && (
-                                    <span
-                                      className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
-                                    >
-                                      {getCategoryLabel(doc.category)}
-                                    </span>
-                                  )}
-                                  {doc.tags?.map((tag) => (
-                                    <Badge
-                                      key={tag}
-                                      variant="outline"
-                                      className="px-1 py-0 text-[10px]"
-                                    >
-                                      {tag}
-                                    </Badge>
-                                  ))}
-                                  {doc.expiresAt && (
-                                    <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
-                                      <Clock className="h-2.5 w-2.5" />
-                                      Expires {new Date(doc.expiresAt).toLocaleDateString()}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        {visibleColumns['size'] && (
-                          <td
-                            className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                          >
-                            {formatFileSize(doc.size)}
-                          </td>
-                        )}
-                        {visibleColumns['uploaded'] && (
-                          <td
-                            className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                          >
-                            {formatDate(doc.createdAt)}
-                          </td>
-                        )}
-                        <td
-                          className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
-                              >
-                                <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handlePreview(doc)}>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Preview
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                                <Download className="mr-2 h-4 w-4" />
-                                Download
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setEditingTagsDoc(doc);
-                                  setTagInput((doc.tags || []).join(', '));
-                                }}
-                              >
-                                <Tag className="mr-2 h-4 w-4" />
-                                Edit Properties
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
-                                <Star
-                                  className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
-                                />
-                                {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
-                                <History className="mr-2 h-4 w-4" />
-                                Version History
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={async () => {
-                                  const next = !doc.confidential;
-                                  await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
-                                    method: 'PATCH',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                    },
-                                    body: JSON.stringify({
-                                      confidential: next,
-                                    }),
-                                  });
-                                  fetchDocuments();
-                                }}
-                              >
-                                <Lock className="mr-2 h-4 w-4" />
-                                {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(doc)}
-                                className="text-danger-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              /* Grid / Thumbnail View */
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {/* Folders */}
-                {folders.map((folder) => (
-                  <div
-                    key={folder.id}
-                    className="group cursor-pointer rounded-xl border bg-white p-3 transition-all hover:border-primary-200 hover:shadow-md"
-                    onClick={() => handleFolderClick(folder)}
-                  >
-                    <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-amber-50">
-                      <Folder className="h-12 w-12 text-amber-500" />
-                    </div>
-                    <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
-                    <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
+                        {crumb.name}
+                      </button>
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
+
+              <AdminToolbar
+                title="Document workspace"
+                description="Upload files, structure the room into folders, and change how the library is displayed without leaving the tab."
+                className="mb-4"
+                actions={
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                    {documents.length} docs
                   </div>
-                ))}
-                {/* Documents */}
-                {documents.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="group relative cursor-pointer rounded-xl border bg-white p-3 transition-all hover:border-primary-200 hover:shadow-md"
-                    onClick={() => handlePreview(doc)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenu({ x: e.clientX, y: e.clientY, doc });
-                    }}
-                  >
-                    <DocumentThumbnail
-                      docId={doc.id}
-                      roomId={roomId}
-                      mimeType={doc.mimeType}
-                      confidential={doc.confidential || room?.allDocumentsConfidential || false}
-                      updatedAt={doc.updatedAt}
-                    />
-                    <div className="mt-2 flex items-center gap-1">
-                      <p className="truncate text-sm font-medium">{doc.name}</p>
-                      {(doc.confidential || room?.allDocumentsConfidential) && (
-                        <Lock className="h-3 w-3 shrink-0 text-amber-500" />
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
-                      {doc.category && (
-                        <span
-                          className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
-                        >
-                          {getCategoryLabel(doc.category)}
-                        </span>
-                      )}
-                      {doc.expiresAt && (
-                        <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
-                          <Clock className="h-2.5 w-2.5" />
-                          {new Date(doc.expiresAt).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                    {/* Action menu */}
-                    <div
-                      className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
-                      onClick={(e) => e.stopPropagation()}
+                }
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button onClick={() => setShowUploadDialog(true)}>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload Files
+                    </Button>
+                    <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
+                      <FolderPlus className="mr-2 h-4 w-4" />
+                      New Folder
+                    </Button>
+                    <Select
+                      value={categoryFilter ?? 'all'}
+                      onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
                     >
+                      <SelectTrigger className="h-10 w-[150px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950">
+                        <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
+                        <SelectValue placeholder="Category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {CATEGORY_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Compact toggle (list view only) */}
+                    {viewMode === 'list' && (
+                      <button
+                        onClick={() => {
+                          const next = !compact;
+                          setCompact(next);
+                          localStorage.setItem('vaultspace-compact', String(next));
+                        }}
+                        className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
+                        title={compact ? 'Standard density' : 'Compact density'}
+                      >
+                        <Minus className="h-4 w-4" />
+                      </button>
+                    )}
+                    {/* Column picker (list view only) */}
+                    {viewMode === 'list' && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="secondary" size="sm" className="h-7 w-7 p-0 shadow-sm">
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </Button>
+                          <button
+                            className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
+                            title="Show/hide columns"
+                          >
+                            <Columns3 className="h-4 w-4" />
+                          </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handlePreview(doc)}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Preview
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                            <Download className="mr-2 h-4 w-4" />
-                            Download
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setEditingTagsDoc(doc);
-                              setTagInput((doc.tags || []).join(', '));
-                            }}
-                          >
-                            <Tag className="mr-2 h-4 w-4" />
-                            Edit Properties
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
-                            <Star
-                              className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
-                            />
-                            {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
-                            <History className="mr-2 h-4 w-4" />
-                            Version History
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={async () => {
-                              const next = !doc.confidential;
-                              await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
-                                method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ confidential: next }),
-                              });
-                              fetchDocuments();
-                            }}
-                          >
-                            <Lock className="mr-2 h-4 w-4" />
-                            {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(doc)}
-                            className="text-danger-600"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
+                          {[
+                            { key: 'size', label: 'Size' },
+                            { key: 'uploaded', label: 'Uploaded' },
+                          ].map((col) => (
+                            <DropdownMenuItem
+                              key={col.key}
+                              onClick={() => {
+                                const next = {
+                                  ...visibleColumns,
+                                  [col.key]: !visibleColumns[col.key],
+                                };
+                                setVisibleColumns(next);
+                                localStorage.setItem('vaultspace-columns', JSON.stringify(next));
+                              }}
+                            >
+                              <span
+                                className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
+                              />
+                              {col.label}
+                            </DropdownMenuItem>
+                          ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
+                    )}
+                    {/* View toggle */}
+                    <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-950">
+                      <button
+                        onClick={() => {
+                          setViewMode('list');
+                          localStorage.setItem('vaultspace-doc-view', 'list');
+                        }}
+                        className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
+                        title="List view"
+                      >
+                        <List className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setViewMode('grid');
+                          localStorage.setItem('vaultspace-doc-view', 'grid');
+                        }}
+                        className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
+                        title="Grid view"
+                      >
+                        <LayoutGrid className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
+                </div>
+              </AdminToolbar>
 
-          {/* Members Tab */}
-          <TabsContent value="members" className="mt-6">
-            {/* Access Requests Section */}
-            {accessRequests.length > 0 && (
-              <Card className="mb-6 border-amber-200 bg-amber-50/50">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <UserPlus className="h-5 w-5 text-amber-600" />
-                    <CardTitle className="text-base">
-                      Pending Access Requests
-                      <Badge variant="warning" className="ml-2">
-                        {accessRequests.length}
-                      </Badge>
-                    </CardTitle>
-                  </div>
-                  <CardDescription>
-                    People requesting access to this room. Approve to create a share link.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {accessRequests.map((req) => (
-                    <div
-                      key={req.id}
-                      className="flex items-center justify-between rounded-lg border bg-white p-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4 text-neutral-400" />
-                          <span className="font-medium text-neutral-900">
-                            {req.requesterName || req.requesterEmail}
+              {folders.length === 0 && documents.length === 0 ? (
+                <AdminEmptyState
+                  icon={<FileText className="h-6 w-6" />}
+                  title="No documents yet"
+                  description="Upload your first files or create folders to start structuring this room for secure review."
+                  action={
+                    <Button onClick={() => setShowUploadDialog(true)}>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload Files
+                    </Button>
+                  }
+                />
+              ) : viewMode === 'list' ? (
+                <AdminSurface className="overflow-hidden p-0">
+                  <table className="w-full">
+                    <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
+                      <tr>
+                        <th className="w-8 px-2 py-2">
+                          <button
+                            onClick={toggleSelectAll}
+                            className="flex items-center text-neutral-400 hover:text-neutral-600"
+                          >
+                            {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
+                              <CheckSquare className="h-4 w-4 text-primary-500" />
+                            ) : (
+                              <Square className="h-4 w-4" />
+                            )}
+                          </button>
+                        </th>
+                        <th
+                          className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                          onClick={() => handleSort('name')}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            Name
+                            {sortField === 'name' ? (
+                              sortDir === 'asc' ? (
+                                <ChevronUp className="h-3 w-3" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3" />
+                              )
+                            ) : (
+                              <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                            )}
                           </span>
-                          {req.requesterName && (
-                            <span className="text-sm text-neutral-500">{req.requesterEmail}</span>
-                          )}
-                        </div>
-                        {req.reason && (
-                          <p className="mt-1 line-clamp-2 text-sm text-neutral-600">{req.reason}</p>
+                        </th>
+                        {visibleColumns['size'] && (
+                          <th
+                            className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                            onClick={() => handleSort('size')}
+                          >
+                            <span className="inline-flex items-center gap-1">
+                              Size
+                              {sortField === 'size' ? (
+                                sortDir === 'asc' ? (
+                                  <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3" />
+                                )
+                              ) : null}
+                            </span>
+                          </th>
                         )}
-                        <p className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
-                          <Clock className="h-3 w-3" />
-                          {new Date(req.createdAt).toLocaleDateString()} at{' '}
-                          {new Date(req.createdAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      </div>
-                      <div className="ml-4 flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-red-200 text-red-600 hover:bg-red-50"
-                          disabled={reviewingRequestId === req.id}
-                          onClick={() => handleReviewAccessRequest(req.id, 'DENIED')}
+                        {visibleColumns['uploaded'] && (
+                          <th
+                            className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                            onClick={() => handleSort('createdAt')}
+                          >
+                            <span className="inline-flex items-center gap-1">
+                              Uploaded
+                              {sortField === 'createdAt' ? (
+                                sortDir === 'asc' ? (
+                                  <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3" />
+                                )
+                              ) : null}
+                            </span>
+                          </th>
+                        )}
+                        <th className="w-8"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Render folders first */}
+                      {folders.map((folder) => (
+                        <tr
+                          key={folder.id}
+                          className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
+                          onClick={() => handleFolderClick(folder)}
                         >
-                          <X className="mr-1 h-3.5 w-3.5" />
-                          Deny
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={reviewingRequestId === req.id}
-                          onClick={() => handleReviewAccessRequest(req.id, 'APPROVED')}
-                        >
-                          <Check className="mr-1 h-3.5 w-3.5" />
-                          Approve
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            <div className="mb-4 flex items-center justify-between">
-              <Button onClick={() => setShowMemberDialog(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Admin
-              </Button>
-            </div>
-
-            {admins.length === 0 ? (
-              <Card className="p-12 text-center">
-                <Users className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
-                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No admins yet</h3>
-                <p className="mx-auto mb-6 max-w-sm text-neutral-500">
-                  Add team members to collaborate on this data room.
-                </p>
-                <Button onClick={() => setShowMemberDialog(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Admin
-                </Button>
-              </Card>
-            ) : (
-              <div className="overflow-hidden rounded-xl border">
-                <table className="w-full">
-                  <thead className="border-b bg-neutral-50">
-                    <tr>
-                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                        Admin
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                        Scope
-                      </th>
-                      <th className="w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {admins.map((admin) => (
-                      <tr key={admin.id} className="border-b last:border-0 hover:bg-neutral-50">
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-3">
-                            <UserAvatar name={`${admin.firstName} ${admin.lastName}`} size="sm" />
-                            <div>
-                              <div className="font-medium">
-                                {admin.firstName} {admin.lastName}
-                              </div>
-                              <div className="text-sm text-neutral-500">{admin.email}</div>
+                          <td className="w-8 px-2" />
+                          <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                            <div className="flex items-center gap-2">
+                              <Folder
+                                className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`}
+                              />
+                              <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
+                                {folder.name}
+                              </span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2">
-                          <Badge variant={admin.scope === 'organization' ? 'default' : 'secondary'}>
-                            {admin.scope === 'organization' ? 'Org Admin' : 'Room Admin'}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-2">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {admin.scope === 'room' && (
+                          </td>
+                          {visibleColumns['size'] && (
+                            <td
+                              className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                            >
+                              {folder.documentCount} files, {folder.childCount} folders
+                            </td>
+                          )}
+                          {visibleColumns['uploaded'] && (
+                            <td
+                              className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                            >
+                              {formatDate(folder.createdAt)}
+                            </td>
+                          )}
+                          <td
+                            className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                                >
+                                  <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Open
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem
-                                  onClick={() => handleRemoveMemberClick(admin)}
+                                  onClick={() => handleFolderDelete(folder)}
                                   className="text-danger-600"
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
-                                  Remove
+                                  Delete
                                 </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Viewers Section */}
-            <Card className="mt-6">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Eye className="h-5 w-5 text-neutral-500" />
-                    <CardTitle className="text-base">Viewers</CardTitle>
-                    {viewers.length > 0 && <Badge variant="secondary">{viewers.length}</Badge>}
-                  </div>
-                  <Button size="sm" onClick={() => setShowInviteViewerDialog(true)}>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Invite Viewers
-                  </Button>
-                </div>
-                <CardDescription>
-                  External viewers who have accessed this room via share links.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isLoadingViewers ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                ) : viewers.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-neutral-500">
-                    No viewers have accessed this room yet.
-                  </p>
-                ) : (
-                  <div className="overflow-hidden rounded-lg border">
-                    <table className="w-full">
-                      <thead className="border-b bg-neutral-50">
-                        <tr>
-                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                            Email
-                          </th>
-                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                            Name
-                          </th>
-                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                            Visits
-                          </th>
-                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                            Last Active
-                          </th>
-                          <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                            Time Spent
-                          </th>
-                          <th className="w-10"></th>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {viewers.map((viewer) => (
-                          <tr
-                            key={viewer.email}
-                            className="border-b last:border-0 hover:bg-neutral-50"
+                      ))}
+                      {/* Render documents */}
+                      {sortedDocuments.map((doc) => (
+                        <tr
+                          key={doc.id}
+                          className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
+                          onClick={() => handlePreview(doc)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            setContextMenu({ x: e.clientX, y: e.clientY, doc });
+                          }}
+                        >
+                          <td
+                            className="w-8 px-2"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleDocSelection(doc.id);
+                            }}
                           >
-                            <td className="px-4 py-2 text-sm font-medium text-neutral-900">
-                              {viewer.email}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-neutral-600">
-                              {viewer.name || '\u2014'}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-neutral-600">{viewer.visits}</td>
-                            <td className="px-4 py-2 text-sm text-neutral-600">
-                              {new Date(viewer.lastActive).toLocaleDateString()}
-                            </td>
-                            <td className="px-4 py-2 text-sm text-neutral-600">
-                              {viewer.totalTimeSpent < 60
-                                ? `${viewer.totalTimeSpent}s`
-                                : viewer.totalTimeSpent < 3600
-                                  ? `${Math.round(viewer.totalTimeSpent / 60)}m`
-                                  : `${Math.round(viewer.totalTimeSpent / 3600)}h`}
-                            </td>
-                            <td className="px-4 py-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 text-danger-600 hover:bg-danger-50 hover:text-danger-700"
-                                disabled={revokingViewerEmail === viewer.email}
-                                onClick={() => handleRevokeViewer(viewer.email)}
-                              >
-                                {revokingViewerEmail === viewer.email ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Invite Viewers Dialog */}
-            <Dialog open={showInviteViewerDialog} onOpenChange={setShowInviteViewerDialog}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Invite Viewers</DialogTitle>
-                  <DialogDescription>
-                    Enter email addresses to invite as viewers (one per line). A view-only share
-                    link will be created for each.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="py-4">
-                  <Label htmlFor="viewer-emails">Email Addresses</Label>
-                  <Textarea
-                    id="viewer-emails"
-                    placeholder={'viewer1@example.com\nviewer2@example.com'}
-                    value={inviteViewerEmails}
-                    onChange={(e) => setInviteViewerEmails(e.target.value)}
-                    className="mt-1.5"
-                    rows={6}
-                  />
-                </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowInviteViewerDialog(false);
-                      setInviteViewerEmails('');
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleInviteViewers}
-                    disabled={isInvitingViewers || !inviteViewerEmails.trim()}
-                  >
-                    {isInvitingViewers ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Inviting...
-                      </>
-                    ) : (
-                      'Invite'
-                    )}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </TabsContent>
-
-          {/* Links Tab */}
-          <TabsContent value="links" className="mt-6">
-            <div className="mb-4 flex items-center justify-between">
-              <Button onClick={() => setShowLinkDialog(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Link
-              </Button>
-            </div>
-
-            {links.length === 0 ? (
-              <Card className="p-12 text-center">
-                <LinkIcon className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
-                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No share links yet</h3>
-                <p className="mx-auto mb-6 max-w-sm text-neutral-500">
-                  Create share links to give external users access to this room.
-                </p>
-                <Button onClick={() => setShowLinkDialog(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Link
-                </Button>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {links.map((link) => (
-                  <Card key={link.id}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle className="text-base">{link.name || 'Unnamed Link'}</CardTitle>
-                          <CardDescription className="mt-1 flex items-center gap-2">
-                            <Badge
-                              variant={link.permission === 'DOWNLOAD' ? 'default' : 'secondary'}
-                            >
-                              {link.permission === 'DOWNLOAD' ? 'View & Download' : 'View Only'}
-                            </Badge>
-                            {link.requiresPassword && <Badge variant="warning">Password</Badge>}
-                            {link.requiresEmailVerification && (
-                              <Badge variant="secondary">Email Required</Badge>
+                            {selectedDocs.has(doc.id) ? (
+                              <CheckSquare className="h-4 w-4 text-primary-500" />
+                            ) : (
+                              <Square className="h-4 w-4 text-neutral-300" />
                             )}
-                            {!link.isActive && <Badge variant="danger">Disabled</Badge>}
-                          </CardDescription>
-                        </div>
+                          </td>
+                          <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                            <div className="flex items-center gap-2">
+                              <FileTypeIcon
+                                mimeType={doc.mimeType}
+                                className={compact ? 'h-4 w-4' : undefined}
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`truncate font-medium ${compact ? 'text-sm' : ''}`}
+                                  >
+                                    {doc.name}
+                                  </span>
+                                  {(doc.confidential || room?.allDocumentsConfidential) && (
+                                    <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                                  )}
+                                </div>
+                                {!compact && (
+                                  <div className="mt-0.5 flex flex-wrap gap-1">
+                                    {doc.category && (
+                                      <span
+                                        className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
+                                      >
+                                        {getCategoryLabel(doc.category)}
+                                      </span>
+                                    )}
+                                    {doc.tags?.map((tag) => (
+                                      <Badge
+                                        key={tag}
+                                        variant="outline"
+                                        className="px-1 py-0 text-[10px]"
+                                      >
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {doc.expiresAt && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
+                                        <Clock className="h-2.5 w-2.5" />
+                                        Expires {new Date(doc.expiresAt).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          {visibleColumns['size'] && (
+                            <td
+                              className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                            >
+                              {formatFileSize(doc.size)}
+                            </td>
+                          )}
+                          {visibleColumns['uploaded'] && (
+                            <td
+                              className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                            >
+                              {formatDate(doc.createdAt)}
+                            </td>
+                          )}
+                          <td
+                            className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                                >
+                                  <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handlePreview(doc)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Preview
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDownload(doc)}>
+                                  <Download className="mr-2 h-4 w-4" />
+                                  Download
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setEditingTagsDoc(doc);
+                                    setTagInput((doc.tags || []).join(', '));
+                                  }}
+                                >
+                                  <Tag className="mr-2 h-4 w-4" />
+                                  Edit Properties
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
+                                  <Star
+                                    className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
+                                  />
+                                  {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
+                                  <History className="mr-2 h-4 w-4" />
+                                  Version History
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={async () => {
+                                    const next = !doc.confidential;
+                                    await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+                                      method: 'PATCH',
+                                      headers: {
+                                        'Content-Type': 'application/json',
+                                      },
+                                      body: JSON.stringify({
+                                        confidential: next,
+                                      }),
+                                    });
+                                    fetchDocuments();
+                                  }}
+                                >
+                                  <Lock className="mr-2 h-4 w-4" />
+                                  {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => handleDelete(doc)}
+                                  className="text-danger-600"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </AdminSurface>
+              ) : (
+                /* Grid / Thumbnail View */
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {/* Folders */}
+                  {folders.map((folder) => (
+                    <div
+                      key={folder.id}
+                      className="group cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+                      onClick={() => handleFolderClick(folder)}
+                    >
+                      <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-amber-50">
+                        <Folder className="h-12 w-12 text-amber-500" />
+                      </div>
+                      <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
+                      <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
+                    </div>
+                  ))}
+                  {/* Documents */}
+                  {documents.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="group relative cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+                      onClick={() => handlePreview(doc)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({ x: e.clientX, y: e.clientY, doc });
+                      }}
+                    >
+                      <DocumentThumbnail
+                        docId={doc.id}
+                        roomId={roomId}
+                        mimeType={doc.mimeType}
+                        confidential={doc.confidential || room?.allDocumentsConfidential || false}
+                        updatedAt={doc.updatedAt}
+                      />
+                      <div className="mt-2 flex items-center gap-1">
+                        <p className="truncate text-sm font-medium">{doc.name}</p>
+                        {(doc.confidential || room?.allDocumentsConfidential) && (
+                          <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
+                        {doc.category && (
+                          <span
+                            className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
+                          >
+                            {getCategoryLabel(doc.category)}
+                          </span>
+                        )}
+                        {doc.expiresAt && (
+                          <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
+                            <Clock className="h-2.5 w-2.5" />
+                            {new Date(doc.expiresAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                      {/* Action menu */}
+                      <div
+                        className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
+                            <Button variant="secondary" size="sm" className="h-7 w-7 p-0 shadow-sm">
+                              <MoreHorizontal className="h-3.5 w-3.5" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleCopyLink(link)}>
-                              <Copy className="mr-2 h-4 w-4" />
-                              Copy Link
+                            <DropdownMenuItem onClick={() => handlePreview(doc)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Preview
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDownload(doc)}>
+                              <Download className="mr-2 h-4 w-4" />
+                              Download
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingTagsDoc(doc);
+                                setTagInput((doc.tags || []).join(', '));
+                              }}
+                            >
+                              <Tag className="mr-2 h-4 w-4" />
+                              Edit Properties
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
+                              <Star
+                                className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
+                              />
+                              {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
+                              <History className="mr-2 h-4 w-4" />
+                              Version History
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                const next = !doc.confidential;
+                                await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ confidential: next }),
+                                });
+                                fetchDocuments();
+                              }}
+                            >
+                              <Lock className="mr-2 h-4 w-4" />
+                              {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              onClick={() => handleDeleteLinkClick(link)}
+                              onClick={() => handleDelete(doc)}
                               className="text-danger-600"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
@@ -2361,84 +2045,473 @@ export default function RoomDetailPage() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center gap-6 text-sm text-neutral-500">
-                        <div>
-                          <span className="font-medium text-neutral-900">
-                            {link._count?.visits || 0}
-                          </span>{' '}
-                          visits
-                        </div>
-                        <div>Created {formatDate(link.createdAt)}</div>
-                        {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Q&A Tab */}
-          <TabsContent value="qa" className="mt-4">
-            <QATab roomId={roomId} />
-          </TabsContent>
-
-          {/* Checklist Tab */}
-          <TabsContent value="checklist" className="mt-4">
-            <ChecklistTab roomId={roomId} />
-          </TabsContent>
-
-          {/* Calendar Tab */}
-          <TabsContent value="calendar" className="mt-4">
-            <CalendarTab roomId={roomId} />
-          </TabsContent>
-
-          {/* Activity Tab */}
-          <TabsContent value="activity" className="mt-4">
-            {activity.length === 0 ? (
-              <Card className="p-8 text-center">
-                <Activity className="mx-auto mb-3 h-10 w-10 text-neutral-400" />
-                <h3 className="mb-1 text-base font-semibold text-neutral-900">No activity yet</h3>
-                <p className="mx-auto max-w-sm text-sm text-neutral-500">
-                  Activity will appear here as users interact with this room.
-                </p>
-              </Card>
-            ) : (
-              <div className="space-y-1">
-                {activity.map((event) => {
-                  const style = getEventStyle(event.type);
-                  const EventIcon = style.icon;
-                  return (
-                    <div
-                      key={event.id}
-                      className="flex items-start gap-3 border-b py-2 last:border-0"
-                    >
-                      <div
-                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${style.bg}`}
-                      >
-                        <EventIcon className={`h-3.5 w-3.5 ${style.text}`} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-neutral-900">
-                          {event.description || event.type.replace(/_/g, ' ').toLowerCase()}
-                        </p>
-                        <p className="mt-0.5 text-xs text-neutral-500">
-                          {event.actor
-                            ? `${event.actor.firstName} ${event.actor.lastName}`
-                            : 'System'}
-                          {' • '}
-                          {new Date(event.createdAt).toLocaleString()}
-                        </p>
-                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Members Tab */}
+            <TabsContent value="members" className="mt-6">
+              {/* Access Requests Section */}
+              {accessRequests.length > 0 && (
+                <Card className="mb-6 border-amber-200 bg-amber-50/50">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <UserPlus className="h-5 w-5 text-amber-600" />
+                      <CardTitle className="text-base">
+                        Pending Access Requests
+                        <Badge variant="warning" className="ml-2">
+                          {accessRequests.length}
+                        </Badge>
+                      </CardTitle>
+                    </div>
+                    <CardDescription>
+                      People requesting access to this room. Approve to create a share link.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {accessRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        className="flex items-center justify-between rounded-lg border bg-white p-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <Mail className="h-4 w-4 text-neutral-400" />
+                            <span className="font-medium text-neutral-900">
+                              {req.requesterName || req.requesterEmail}
+                            </span>
+                            {req.requesterName && (
+                              <span className="text-sm text-neutral-500">{req.requesterEmail}</span>
+                            )}
+                          </div>
+                          {req.reason && (
+                            <p className="mt-1 line-clamp-2 text-sm text-neutral-600">
+                              {req.reason}
+                            </p>
+                          )}
+                          <p className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
+                            <Clock className="h-3 w-3" />
+                            {new Date(req.createdAt).toLocaleDateString()} at{' '}
+                            {new Date(req.createdAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                        <div className="ml-4 flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-red-200 text-red-600 hover:bg-red-50"
+                            disabled={reviewingRequestId === req.id}
+                            onClick={() => handleReviewAccessRequest(req.id, 'DENIED')}
+                          >
+                            <X className="mr-1 h-3.5 w-3.5" />
+                            Deny
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={reviewingRequestId === req.id}
+                            onClick={() => handleReviewAccessRequest(req.id, 'APPROVED')}
+                          >
+                            <Check className="mr-1 h-3.5 w-3.5" />
+                            Approve
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              <AdminToolbar
+                title="Room access"
+                description="Manage room admins, approve inbound requests, and invite external viewers with controlled access."
+                className="mb-4"
+                actions={
+                  <Button onClick={() => setShowMemberDialog(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Admin
+                  </Button>
+                }
+              />
+
+              {admins.length === 0 ? (
+                <AdminEmptyState
+                  icon={<Users className="h-6 w-6" />}
+                  title="No admins yet"
+                  description="Add room-specific admins when you need collaborators to manage content, access, and links without giving org-wide privileges."
+                  action={
+                    <Button onClick={() => setShowMemberDialog(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Admin
+                    </Button>
+                  }
+                />
+              ) : (
+                <AdminSurface className="overflow-hidden p-0">
+                  <table className="w-full">
+                    <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
+                      <tr>
+                        <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                          Admin
+                        </th>
+                        <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                          Scope
+                        </th>
+                        <th className="w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {admins.map((admin) => (
+                        <tr key={admin.id} className="border-b last:border-0 hover:bg-neutral-50">
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-3">
+                              <UserAvatar name={`${admin.firstName} ${admin.lastName}`} size="sm" />
+                              <div>
+                                <div className="font-medium">
+                                  {admin.firstName} {admin.lastName}
+                                </div>
+                                <div className="text-sm text-neutral-500">{admin.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2">
+                            <Badge
+                              variant={admin.scope === 'organization' ? 'default' : 'secondary'}
+                            >
+                              {admin.scope === 'organization' ? 'Org Admin' : 'Room Admin'}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-2">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {admin.scope === 'room' && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleRemoveMemberClick(admin)}
+                                    className="text-danger-600"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Remove
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </AdminSurface>
+              )}
+
+              {/* Viewers Section */}
+              <Card className="bg-white/88 mt-6 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Eye className="h-5 w-5 text-neutral-500" />
+                      <CardTitle className="text-base">Viewers</CardTitle>
+                      {viewers.length > 0 && <Badge variant="secondary">{viewers.length}</Badge>}
+                    </div>
+                    <Button size="sm" onClick={() => setShowInviteViewerDialog(true)}>
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Invite Viewers
+                    </Button>
+                  </div>
+                  <CardDescription>
+                    External viewers who have accessed this room via share links.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingViewers ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : viewers.length === 0 ? (
+                    <p className="py-4 text-center text-sm text-neutral-500">
+                      No viewers have accessed this room yet.
+                    </p>
+                  ) : (
+                    <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800">
+                      <table className="w-full">
+                        <thead className="border-b bg-neutral-50">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                              Email
+                            </th>
+                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                              Name
+                            </th>
+                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                              Visits
+                            </th>
+                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                              Last Active
+                            </th>
+                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                              Time Spent
+                            </th>
+                            <th className="w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewers.map((viewer) => (
+                            <tr
+                              key={viewer.email}
+                              className="border-b last:border-0 hover:bg-neutral-50"
+                            >
+                              <td className="px-4 py-2 text-sm font-medium text-neutral-900">
+                                {viewer.email}
+                              </td>
+                              <td className="px-4 py-2 text-sm text-neutral-600">
+                                {viewer.name || '\u2014'}
+                              </td>
+                              <td className="px-4 py-2 text-sm text-neutral-600">
+                                {viewer.visits}
+                              </td>
+                              <td className="px-4 py-2 text-sm text-neutral-600">
+                                {new Date(viewer.lastActive).toLocaleDateString()}
+                              </td>
+                              <td className="px-4 py-2 text-sm text-neutral-600">
+                                {viewer.totalTimeSpent < 60
+                                  ? `${viewer.totalTimeSpent}s`
+                                  : viewer.totalTimeSpent < 3600
+                                    ? `${Math.round(viewer.totalTimeSpent / 60)}m`
+                                    : `${Math.round(viewer.totalTimeSpent / 3600)}h`}
+                              </td>
+                              <td className="px-4 py-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 text-danger-600 hover:bg-danger-50 hover:text-danger-700"
+                                  disabled={revokingViewerEmail === viewer.email}
+                                  onClick={() => handleRevokeViewer(viewer.email)}
+                                >
+                                  {revokingViewerEmail === viewer.email ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Invite Viewers Dialog */}
+              <Dialog open={showInviteViewerDialog} onOpenChange={setShowInviteViewerDialog}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Invite Viewers</DialogTitle>
+                    <DialogDescription>
+                      Enter email addresses to invite as viewers (one per line). A view-only share
+                      link will be created for each.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="py-4">
+                    <Label htmlFor="viewer-emails">Email Addresses</Label>
+                    <Textarea
+                      id="viewer-emails"
+                      placeholder={'viewer1@example.com\nviewer2@example.com'}
+                      value={inviteViewerEmails}
+                      onChange={(e) => setInviteViewerEmails(e.target.value)}
+                      className="mt-1.5"
+                      rows={6}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowInviteViewerDialog(false);
+                        setInviteViewerEmails('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleInviteViewers}
+                      disabled={isInvitingViewers || !inviteViewerEmails.trim()}
+                    >
+                      {isInvitingViewers ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Inviting...
+                        </>
+                      ) : (
+                        'Invite'
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </TabsContent>
+
+            {/* Links Tab */}
+            <TabsContent value="links" className="mt-6">
+              <AdminToolbar
+                title="Share links"
+                description="Create controlled viewer links for this room and manage permissions, expiry, and reuse from one place."
+                className="mb-4"
+                actions={
+                  <Button onClick={() => setShowLinkDialog(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Link
+                  </Button>
+                }
+              />
+
+              {links.length === 0 ? (
+                <AdminEmptyState
+                  icon={<LinkIcon className="h-6 w-6" />}
+                  title="No share links yet"
+                  description="Create share links to give external reviewers secure access to this room with the right view and download permissions."
+                  action={
+                    <Button onClick={() => setShowLinkDialog(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Link
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="space-y-4">
+                  {links.map((link) => (
+                    <Card
+                      key={link.id}
+                      className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
+                    >
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <CardTitle className="text-base">
+                              {link.name || 'Unnamed Link'}
+                            </CardTitle>
+                            <CardDescription className="mt-1 flex items-center gap-2">
+                              <Badge
+                                variant={link.permission === 'DOWNLOAD' ? 'default' : 'secondary'}
+                              >
+                                {link.permission === 'DOWNLOAD' ? 'View & Download' : 'View Only'}
+                              </Badge>
+                              {link.requiresPassword && <Badge variant="warning">Password</Badge>}
+                              {link.requiresEmailVerification && (
+                                <Badge variant="secondary">Email Required</Badge>
+                              )}
+                              {!link.isActive && <Badge variant="danger">Disabled</Badge>}
+                            </CardDescription>
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleCopyLink(link)}>
+                                <Copy className="mr-2 h-4 w-4" />
+                                Copy Link
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteLinkClick(link)}
+                                className="text-danger-600"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-center gap-6 text-sm text-neutral-500">
+                          <div>
+                            <span className="font-medium text-neutral-900">
+                              {link._count?.visits || 0}
+                            </span>{' '}
+                            visits
+                          </div>
+                          <div>Created {formatDate(link.createdAt)}</div>
+                          {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Q&A Tab */}
+            <TabsContent value="qa" className="mt-4">
+              <QATab roomId={roomId} />
+            </TabsContent>
+
+            {/* Checklist Tab */}
+            <TabsContent value="checklist" className="mt-4">
+              <ChecklistTab roomId={roomId} />
+            </TabsContent>
+
+            {/* Calendar Tab */}
+            <TabsContent value="calendar" className="mt-4">
+              <CalendarTab roomId={roomId} />
+            </TabsContent>
+
+            {/* Activity Tab */}
+            <TabsContent value="activity" className="mt-4">
+              {activity.length === 0 ? (
+                <AdminEmptyState
+                  icon={<Activity className="h-6 w-6" />}
+                  title="No activity yet"
+                  description="Activity will appear here as admins, viewers, and links interact with this room."
+                />
+              ) : (
+                <AdminSurface className="space-y-1">
+                  {activity.map((event) => {
+                    const style = getEventStyle(event.type);
+                    const EventIcon = style.icon;
+                    return (
+                      <div
+                        key={event.id}
+                        className="flex items-start gap-3 border-b border-slate-200/80 py-2 last:border-0 dark:border-slate-800"
+                      >
+                        <div
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${style.bg}`}
+                        >
+                          <EventIcon className={`h-3.5 w-3.5 ${style.text}`} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-neutral-900">
+                            {event.description || event.type.replace(/_/g, ' ').toLowerCase()}
+                          </p>
+                          <p className="mt-0.5 text-xs text-neutral-500">
+                            {event.actor
+                              ? `${event.actor.firstName} ${event.actor.lastName}`
+                              : 'System'}
+                            {' • '}
+                            {new Date(event.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </AdminSurface>
+              )}
+            </TabsContent>
+          </Tabs>
+        </AdminSurface>
       </div>
 
       {/* Bulk Actions Bar */}

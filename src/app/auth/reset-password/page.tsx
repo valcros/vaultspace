@@ -78,8 +78,13 @@ function ResetPasswordForm() {
               />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-neutral-900">Invalid Reset Link</h1>
-          <p className="mb-6 text-sm text-neutral-500">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-danger-600">
+            Invalid Token
+          </p>
+          <h1 className="mb-2 mt-3 text-2xl font-bold tracking-tight text-slate-950">
+            Invalid Reset Link
+          </h1>
+          <p className="mb-6 text-sm text-slate-500">
             This password reset link is invalid or has expired.
           </p>
           <Link href="/auth/forgot-password">
@@ -115,8 +120,13 @@ function ResetPasswordForm() {
               />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-neutral-900">Password Reset</h1>
-          <p className="mb-6 text-sm text-neutral-500">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+            Password Updated
+          </p>
+          <h1 className="mb-2 mt-3 text-2xl font-bold tracking-tight text-slate-950">
+            Password Reset
+          </h1>
+          <p className="mb-6 text-sm text-slate-500">
             Your password has been successfully reset. Redirecting you to sign in...
           </p>
           <Link href="/auth/login">
@@ -130,8 +140,11 @@ function ResetPasswordForm() {
   return (
     <>
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-neutral-900">Set new password</h1>
-        <p className="mt-1 text-sm text-neutral-500">Enter your new password below</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+          Set Credentials
+        </p>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Set new password</h1>
+        <p className="mt-2 text-sm text-slate-500">Enter your new password below</p>
       </div>
 
       {error && (
@@ -179,6 +192,11 @@ function ResetPasswordForm() {
           Back to sign in
         </Link>
       </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-xs leading-5 text-slate-500">
+        Choose a password you do not reuse on other services. Longer passphrases are easier to
+        remember and harder to guess.
+      </div>
     </>
   );
 }
@@ -187,8 +205,11 @@ function ResetPasswordFallback() {
   return (
     <>
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-neutral-900">Set new password</h1>
-        <p className="mt-1 text-sm text-neutral-500">Enter your new password below</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+          Set Credentials
+        </p>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Set new password</h1>
+        <p className="mt-2 text-sm text-slate-500">Enter your new password below</p>
       </div>
       <div className="animate-pulse space-y-4">
         <div className="h-10 rounded bg-neutral-200" />

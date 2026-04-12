@@ -5,7 +5,6 @@ import { Search, MoreHorizontal, Mail, Shield, Eye, Trash2, UserPlus } from 'luc
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { UserAvatar } from '@/components/ui/avatar';
 import {
@@ -33,6 +32,12 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  AdminEmptyState,
+  AdminPageContent,
+  AdminSurface,
+  AdminToolbar,
+} from '@/components/layout/admin-page';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface User {
@@ -147,23 +152,35 @@ export default function UsersPage() {
         }
       />
 
-      <div className="p-6">
-        {/* Search */}
-        <div className="relative mb-6 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-          <Input
-            placeholder="Search users..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
+      <AdminPageContent>
+        <AdminToolbar
+          title="Team directory"
+          description="Search members, review roles, and invite collaborators without leaving the page."
+          actions={
+            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              {filteredUsers.length} visible
+            </div>
+          }
+        >
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search users by name or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+            />
+          </div>
+        </AdminToolbar>
 
         {/* Users Table */}
         {isLoading ? (
-          <div className="space-y-4">
+          <AdminSurface className="space-y-4">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-4 rounded-lg border p-4">
+              <div
+                key={i}
+                className="flex items-center gap-4 rounded-xl border border-slate-200/80 p-4 dark:border-slate-800"
+              >
                 <Skeleton className="h-10 w-10 rounded-full" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-48" />
@@ -171,154 +188,173 @@ export default function UsersPage() {
                 </div>
               </div>
             ))}
-          </div>
+          </AdminSurface>
         ) : users.length === 0 ? (
-          <Card className="p-12 text-center">
-            <UserPlus className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
-            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No users yet</h3>
-            <p className="mx-auto mb-6 max-w-sm text-neutral-500">
-              Invite team members to collaborate in your data rooms.
-            </p>
-            <Button onClick={() => setShowInviteDialog(true)}>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Invite your first user
-            </Button>
-          </Card>
+          <AdminEmptyState
+            icon={<UserPlus className="h-6 w-6" />}
+            title="No users yet"
+            description="Invite team members to collaborate in your data rooms and keep access tightly controlled from one place."
+            action={
+              <Button onClick={() => setShowInviteDialog(true)}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Invite your first user
+              </Button>
+            }
+          />
         ) : (
-          <div className="overflow-hidden rounded-lg border">
-            <table className="w-full">
-              <thead className="border-b bg-neutral-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">User</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">Role</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
-                    Last Active
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-neutral-500">
-                    Joined
-                  </th>
-                  <th className="w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((user) => (
-                  <tr key={user.id} className="border-b last:border-0 hover:bg-neutral-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <UserAvatar name={`${user.firstName} ${user.lastName}`} size="sm" />
-                        <div>
-                          <div className="flex items-center gap-2 font-medium">
-                            {user.firstName} {user.lastName}
-                            {!user.isActive && (
-                              <Badge variant="secondary" className="text-xs">
-                                Inactive
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-sm text-neutral-500">{user.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'}>
-                        {user.role === 'ADMIN' ? (
-                          <Shield className="mr-1 h-3 w-3" />
-                        ) : (
-                          <Eye className="mr-1 h-3 w-3" />
-                        )}
-                        {user.role.toLowerCase()}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-neutral-500">
-                      {formatDate(user.lastLoginAt)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-neutral-500">
-                      {formatDate(user.createdAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                            aria-label="Actions"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              window.location.href = `mailto:${user.email}`;
-                            }}
-                          >
-                            <Mail className="mr-2 h-4 w-4" />
-                            Send Email
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              const newRole = user.role === 'ADMIN' ? 'VIEWER' : 'ADMIN';
-                              setConfirmAction({
-                                title: 'Change Role',
-                                description: `Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`,
-                                onConfirm: async () => {
-                                  try {
-                                    const res = await fetch(`/api/users/${user.id}`, {
-                                      method: 'PATCH',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ role: newRole }),
-                                      credentials: 'include',
-                                    });
-                                    if (res.ok) {
-                                      fetchUsers();
-                                    }
-                                  } catch (err) {
-                                    console.error('Failed to change role:', err);
-                                  }
-                                },
-                              });
-                            }}
-                          >
-                            <Shield className="mr-2 h-4 w-4" />
-                            Change to {user.role === 'ADMIN' ? 'Viewer' : 'Admin'}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-danger-600"
-                            onClick={() => {
-                              setConfirmAction({
-                                title: 'Remove User',
-                                description: `Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`,
-                                onConfirm: async () => {
-                                  try {
-                                    const res = await fetch(`/api/users/${user.id}`, {
-                                      method: 'DELETE',
-                                      credentials: 'include',
-                                    });
-                                    if (res.ok) {
-                                      fetchUsers();
-                                    }
-                                  } catch (err) {
-                                    console.error('Failed to remove user:', err);
-                                  }
-                                },
-                              });
-                            }}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Remove
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
+          <AdminSurface className="overflow-hidden p-0">
+            <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-800">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+                Organization Access
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">
+                Members and roles
+              </h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
+                  <tr>
+                    <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
+                      User
+                    </th>
+                    <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Role
+                    </th>
+                    <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Last Active
+                    </th>
+                    <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Joined
+                    </th>
+                    <th className="w-10"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((user) => (
+                    <tr
+                      key={user.id}
+                      className="border-b border-slate-200/70 transition-colors last:border-0 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-900/40"
+                    >
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <UserAvatar name={`${user.firstName} ${user.lastName}`} size="sm" />
+                          <div>
+                            <div className="flex items-center gap-2 font-medium text-slate-950 dark:text-white">
+                              {user.firstName} {user.lastName}
+                              {!user.isActive && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Inactive
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-sm text-slate-500 dark:text-slate-400">
+                              {user.email}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'}>
+                          {user.role === 'ADMIN' ? (
+                            <Shield className="mr-1 h-3 w-3" />
+                          ) : (
+                            <Eye className="mr-1 h-3 w-3" />
+                          )}
+                          {user.role.toLowerCase()}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
+                        {formatDate(user.lastLoginAt)}
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
+                        {formatDate(user.createdAt)}
+                      </td>
+                      <td className="px-5 py-4">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              aria-label="Actions"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                window.location.href = `mailto:${user.email}`;
+                              }}
+                            >
+                              <Mail className="mr-2 h-4 w-4" />
+                              Send Email
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                const newRole = user.role === 'ADMIN' ? 'VIEWER' : 'ADMIN';
+                                setConfirmAction({
+                                  title: 'Change Role',
+                                  description: `Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`,
+                                  onConfirm: async () => {
+                                    try {
+                                      const res = await fetch(`/api/users/${user.id}`, {
+                                        method: 'PATCH',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ role: newRole }),
+                                        credentials: 'include',
+                                      });
+                                      if (res.ok) {
+                                        fetchUsers();
+                                      }
+                                    } catch (err) {
+                                      console.error('Failed to change role:', err);
+                                    }
+                                  },
+                                });
+                              }}
+                            >
+                              <Shield className="mr-2 h-4 w-4" />
+                              Change to {user.role === 'ADMIN' ? 'Viewer' : 'Admin'}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-danger-600"
+                              onClick={() => {
+                                setConfirmAction({
+                                  title: 'Remove User',
+                                  description: `Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`,
+                                  onConfirm: async () => {
+                                    try {
+                                      const res = await fetch(`/api/users/${user.id}`, {
+                                        method: 'DELETE',
+                                        credentials: 'include',
+                                      });
+                                      if (res.ok) {
+                                        fetchUsers();
+                                      }
+                                    } catch (err) {
+                                      console.error('Failed to remove user:', err);
+                                    }
+                                  },
+                                });
+                              }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remove
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </AdminSurface>
         )}
-      </div>
+      </AdminPageContent>
 
       {/* Invite User Dialog */}
       <Dialog

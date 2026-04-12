@@ -38,13 +38,13 @@ export function DashboardWidget({
   return (
     <Card
       className={clsx(
-        'group flex h-full flex-col overflow-hidden rounded-[1.6rem] border border-slate-600/85 bg-[linear-gradient(180deg,rgba(15,23,42,0.99),rgba(30,41,59,0.97))] text-slate-50 shadow-[0_22px_44px_-32px_rgba(2,6,23,0.9)] ring-1 ring-white/5 backdrop-blur-sm transition-colors hover:border-sky-300/20',
+        'ring-white/6 group flex h-full flex-col overflow-hidden rounded-[1.6rem] border border-slate-500/90 bg-slate-900 text-slate-50 shadow-[0_22px_44px_-32px_rgba(2,6,23,0.9)] ring-1 transition-colors hover:border-sky-300/20',
         className
       )}
     >
       <CardHeader
         className={clsx(
-          'bg-slate-900/88 flex shrink-0 flex-row items-center justify-between space-y-0 border-b border-slate-600/80',
+          'flex shrink-0 flex-row items-center justify-between space-y-0 border-b border-slate-500/90 bg-slate-900',
           isCompact ? 'pb-2.5 pt-3' : 'pb-3.5 pt-4'
         )}
       >
@@ -66,7 +66,7 @@ export function DashboardWidget({
           )}
           <div>
             <h3 className="text-sm font-semibold tracking-tight text-white">{title}</h3>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-300/85">Insight</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-200">Insight</p>
           </div>
           {badge !== undefined && badge !== 0 && (
             <span className="bg-sky-400/16 rounded-full border border-sky-300/25 px-2.5 py-1 text-xs font-semibold text-sky-50">
@@ -85,17 +85,14 @@ export function DashboardWidget({
         )}
       </CardHeader>
       <CardContent
-        className={clsx(
-          'bg-slate-900/48 min-h-0 flex-1 overflow-auto',
-          isCompact ? 'pt-3' : 'pt-4'
-        )}
+        className={clsx('min-h-0 flex-1 overflow-auto bg-slate-900', isCompact ? 'pt-3' : 'pt-4')}
       >
         {loading ? (
           <WidgetSkeleton />
         ) : empty ? (
-          <div className="bg-slate-950/72 flex min-h-[5.5rem] flex-col justify-center rounded-2xl border border-slate-600/70 px-4 py-4 text-left text-sm text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <div className="flex min-h-[5.5rem] flex-col justify-center rounded-2xl border border-slate-500/80 bg-slate-950 px-4 py-4 text-left text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             <span className="font-medium text-white">All clear</span>
-            <span className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-300/90">
+            <span className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-200">
               {emptyMessage}
             </span>
           </div>
@@ -171,7 +168,7 @@ export function WidgetListItem({
       )}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-white">{title}</p>
-        {subtitle && <p className="truncate text-xs text-slate-300">{subtitle}</p>}
+        {subtitle && <p className="truncate text-xs text-slate-200">{subtitle}</p>}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {badge && (
@@ -181,14 +178,14 @@ export function WidgetListItem({
             {badge}
           </span>
         )}
-        {timestamp && <span className="text-xs text-slate-300/85">{timestamp}</span>}
+        {timestamp && <span className="text-xs text-slate-200">{timestamp}</span>}
         {rightContent}
       </div>
     </div>
   );
 
   const className =
-    'block rounded-2xl border border-slate-700/35 bg-slate-950/65 px-3 py-1.5 transition-all hover:border-sky-300/18 hover:bg-slate-900/92';
+    'block rounded-2xl border border-slate-600/55 bg-slate-950 px-3 py-1.5 transition-all hover:border-sky-300/18 hover:bg-slate-900';
 
   if (href) {
     return (

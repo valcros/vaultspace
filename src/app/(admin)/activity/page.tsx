@@ -5,7 +5,6 @@ import { Search, Filter, Download, Activity } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -16,6 +15,12 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  AdminEmptyState,
+  AdminPageContent,
+  AdminSurface,
+  AdminToolbar,
+} from '@/components/layout/admin-page';
 import { getEventStyle, groupEventsByDate } from '@/lib/activityUtils';
 
 interface ActivityEvent {
@@ -159,39 +164,51 @@ export default function ActivityPage() {
         }
       />
 
-      <div className="p-6">
-        {/* Filters */}
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row">
-          <div className="relative max-w-md flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-            <Input
-              placeholder="Search by user or target..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+      <AdminPageContent>
+        <AdminToolbar
+          title="Event stream"
+          description="Search who did what, narrow by event family, and export the audit trail when you need to share it."
+          actions={
+            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              {filteredEvents.length} events
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <div className="relative max-w-md flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="Search by user or target..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+              />
+            </div>
+            <Select value={eventType} onValueChange={setEventType}>
+              <SelectTrigger className="h-11 w-[220px] rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950">
+                <Filter className="mr-2 h-4 w-4" />
+                <SelectValue placeholder="Filter by type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Events</SelectItem>
+                <SelectItem value="document">Documents</SelectItem>
+                <SelectItem value="room">Rooms</SelectItem>
+                <SelectItem value="member">Members</SelectItem>
+                <SelectItem value="link">Share Links</SelectItem>
+                <SelectItem value="auth">Authentication</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={eventType} onValueChange={setEventType}>
-            <SelectTrigger className="w-[200px]">
-              <Filter className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Filter by type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Events</SelectItem>
-              <SelectItem value="document">Documents</SelectItem>
-              <SelectItem value="room">Rooms</SelectItem>
-              <SelectItem value="member">Members</SelectItem>
-              <SelectItem value="link">Share Links</SelectItem>
-              <SelectItem value="auth">Authentication</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        </AdminToolbar>
 
         {/* Activity List */}
         {isLoading ? (
-          <div className="space-y-4">
+          <AdminSurface className="space-y-4">
             {[...Array(10)].map((_, i) => (
-              <div key={i} className="flex items-start gap-4 rounded-lg border p-4">
+              <div
+                key={i}
+                className="flex items-start gap-4 rounded-xl border border-slate-200/80 p-4 dark:border-slate-800"
+              >
                 <Skeleton className="h-10 w-10 rounded-full" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-3/4" />
@@ -199,20 +216,20 @@ export default function ActivityPage() {
                 </div>
               </div>
             ))}
-          </div>
+          </AdminSurface>
         ) : events.length === 0 ? (
-          <Card className="p-12 text-center">
-            <Activity className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
-            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No activity yet</h3>
-            <p className="mx-auto max-w-sm text-neutral-500">
-              Activity will appear here as users interact with your data rooms.
-            </p>
-          </Card>
+          <AdminEmptyState
+            icon={<Activity className="h-6 w-6" />}
+            title="No activity yet"
+            description="Audit events will appear here as users access rooms, review documents, and change settings across the organization."
+          />
         ) : (
-          <div className="space-y-4">
+          <AdminSurface className="space-y-4">
             {groupEventsByDate(filteredEvents).map((group) => (
               <div key={group.label}>
-                <p className="mb-2 text-xs font-medium text-neutral-400">{group.label}</p>
+                <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                  {group.label}
+                </p>
                 <div className="space-y-2">
                   {group.events.map((event) => {
                     const style = getEventStyle(event.eventType);
@@ -223,7 +240,7 @@ export default function ActivityPage() {
                     return (
                       <div
                         key={event.id}
-                        className="flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-neutral-50"
+                        className="flex items-start gap-3 rounded-xl border border-slate-200/80 p-3 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900/50"
                       >
                         <div
                           className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${style.bg}`}
@@ -273,7 +290,7 @@ export default function ActivityPage() {
                 </div>
               </div>
             ))}
-          </div>
+          </AdminSurface>
         )}
 
         {/* Load More */}
@@ -282,7 +299,7 @@ export default function ActivityPage() {
             <Button variant="outline">Load More</Button>
           </div>
         )}
-      </div>
+      </AdminPageContent>
     </>
   );
 }
