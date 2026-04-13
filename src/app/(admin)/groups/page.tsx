@@ -240,7 +240,7 @@ export default function GroupsPage() {
           title="Group directory"
           description="Organize members into reusable groups and manage membership from one place."
           actions={
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+            <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
               {filteredGroups.length} groups
             </div>
           }
@@ -293,7 +293,7 @@ export default function GroupsPage() {
                 <CardHeader className="px-0 pb-2 pt-0">
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+                      <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
                         Group
                       </p>
                       <h3 className="mt-2 text-base font-semibold text-slate-950 dark:text-white">

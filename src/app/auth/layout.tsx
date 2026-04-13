@@ -7,16 +7,16 @@ export const metadata: Metadata = {
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#eef4ff_0%,#f8fafc_40%,#f8fafc_100%)] px-4 py-10 dark:bg-[linear-gradient(180deg,#020617_0%,#0b1220_46%,#111827_100%)]">
+    <div className="min-h-screen bg-slate-50 px-4 py-10 dark:bg-neutral-950">
       <div className="mx-auto grid min-h-[calc(100vh-5rem)] w-full max-w-6xl items-center gap-10 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="hidden rounded-[2rem] border border-slate-200/80 bg-[linear-gradient(140deg,rgba(15,23,42,0.99),rgba(30,41,59,0.98)_58%,rgba(37,99,235,0.84))] p-10 text-white shadow-[0_28px_60px_-36px_rgba(15,23,42,0.55)] ring-1 ring-white/10 lg:block">
+        <div className="hidden rounded-2xl bg-slate-900 p-10 text-white shadow-md lg:block">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-xl font-bold text-white shadow-[0_18px_36px_-24px_rgba(37,99,235,0.7)]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-xl font-bold text-white shadow-md">
               V
             </div>
             <span className="text-2xl font-bold tracking-tight">VaultSpace</span>
           </div>
-          <p className="mt-10 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-100">
+          <p className="mt-10 text-xs font-medium uppercase tracking-wide text-sky-200">
             Secure Virtual Data Rooms
           </p>
           <h1 className="mt-4 max-w-lg text-4xl font-semibold tracking-tight">
@@ -62,7 +62,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
 
-          <div className="bg-white/96 dark:bg-slate-950/94 rounded-[1.75rem] border border-slate-200/90 p-8 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.24)] ring-1 ring-white/70 backdrop-blur-sm dark:border-slate-700 dark:ring-white/5 sm:p-10">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-8 shadow-lg dark:border-neutral-700 dark:bg-neutral-900 sm:p-10">
             {children}
           </div>
 

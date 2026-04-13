@@ -36,8 +36,8 @@ export function ViewerShell({
   const accent = session?.brandColor || '#2563eb';
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] text-slate-950 dark:bg-[linear-gradient(180deg,#020617_0%,#0b1220_40%,#111827_100%)] dark:text-white">
-      <div className="bg-white/96 sticky top-0 z-20 border-b border-slate-200/90 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/95">
+    <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-neutral-950 dark:text-white">
+      <div className="sticky top-0 z-20 border-b border-slate-200/90 bg-white dark:border-slate-700 dark:bg-neutral-900">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex min-w-0 items-center gap-4">
             {session?.organizationLogo ? (
@@ -49,14 +49,14 @@ export function ViewerShell({
               />
             ) : (
               <div
-                className="flex h-11 w-11 items-center justify-center rounded-2xl font-bold text-white shadow-[0_16px_32px_-22px_rgba(37,99,235,0.7)]"
+                className="flex h-11 w-11 items-center justify-center rounded-2xl font-bold text-white shadow-md"
                 style={{ backgroundColor: accent }}
               >
                 {session?.organizationName?.charAt(0) || 'V'}
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+              <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
                 Secure Access
               </p>
               <h1 className="truncate text-lg font-semibold tracking-tight text-slate-950 dark:text-white">
@@ -108,7 +108,7 @@ export function ViewerShell({
         {children}
       </main>
 
-      <footer className="bg-white/92 dark:bg-slate-950/92 border-t border-slate-200/90 dark:border-slate-700">
+      <footer className="border-t border-slate-200/90 bg-white dark:border-slate-700 dark:bg-neutral-900">
         <div className="mx-auto max-w-6xl px-4 py-4 text-center text-sm text-slate-600 dark:text-slate-300 sm:px-6 lg:px-8">
           Secure document sharing powered by VaultSpace
         </div>

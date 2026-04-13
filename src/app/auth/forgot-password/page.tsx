@@ -58,7 +58,7 @@ export default function ForgotPasswordPage() {
               />
             </svg>
           </div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+          <p className="text-xs font-medium text-primary-600">
             Recovery Email Sent
           </p>
           <h1 className="mb-2 mt-3 text-2xl font-bold tracking-tight text-slate-950">
@@ -88,7 +88,7 @@ export default function ForgotPasswordPage() {
   return (
     <>
       <div className="mb-6 text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+        <p className="text-xs font-medium text-primary-600">
           Password Recovery
         </p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">

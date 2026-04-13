@@ -33,16 +33,16 @@ export function AnnouncementsWidget({ announcements, loading }: AnnouncementsWid
           <div
             key={announcement.id}
             className={clsx(
-              'rounded-2xl border border-l-4 border-slate-700/75 border-l-sky-400 bg-slate-950/50 p-3',
-              index > 0 && 'bg-slate-950/38 border-l-slate-500'
+              'rounded-xl border border-l-4 border-neutral-200 border-l-sky-500 bg-neutral-50 p-3 dark:border-neutral-700 dark:border-l-sky-400 dark:bg-neutral-800',
+              index > 0 && 'border-l-neutral-300 dark:border-l-neutral-500'
             )}
           >
-            <p className="text-sm text-slate-200">
+            <p className="text-sm text-neutral-700 dark:text-neutral-200">
               {announcement.content.length > 150
                 ? `${announcement.content.slice(0, 150)}...`
                 : announcement.content}
             </p>
-            <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+            <div className="mt-2 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
               <span>
                 {announcement.authorName} - {announcement.roomName}
               </span>
@@ -64,18 +64,18 @@ export function FeaturedAnnouncement({ announcement }: { announcement: Announcem
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[1.75rem] border border-slate-700/80 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.18),transparent_24%),linear-gradient(120deg,rgba(15,23,42,0.98),rgba(30,41,59,0.95)_58%,rgba(37,99,235,0.75))] p-4 text-white shadow-[0_24px_48px_-32px_rgba(2,6,23,0.92)]">
-      <div className="absolute right-0 top-0 h-full w-32 opacity-10">
-        <Megaphone className="h-full w-full text-sky-100" />
+    <div className="relative overflow-hidden rounded-xl bg-slate-900 p-4 text-white shadow-sm">
+      <div className="absolute right-0 top-0 h-full w-32 opacity-5">
+        <Megaphone className="h-full w-full text-white" />
       </div>
       <div className="relative">
         <div className="mb-2 flex items-center gap-2">
-          <Megaphone className="h-4 w-4 text-sky-200" />
-          <span className="text-xs font-semibold uppercase tracking-wide text-sky-200">
+          <Megaphone className="h-4 w-4 text-slate-300" />
+          <span className="text-xs font-medium text-slate-300">
             Announcement
           </span>
         </div>
-        <p className="text-sm text-slate-100">{announcement.content}</p>
+        <p className="text-sm text-white">{announcement.content}</p>
         <div className="mt-3 flex items-center justify-between text-xs text-slate-300">
           <span>
             From {announcement.authorName} in {announcement.roomName}

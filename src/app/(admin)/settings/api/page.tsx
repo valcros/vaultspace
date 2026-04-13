@@ -159,7 +159,7 @@ export default function ApiDocsPage() {
           description="Reference the active REST surfaces, authentication model, and endpoint groups used by internal and external integrations."
         />
         {/* API Base URL */}
-        <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+        <Card className="rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
           <CardContent className="p-6">
             <h3 className="text-sm font-medium text-neutral-500">API Base URL</h3>
             <div className="mt-2 flex items-center gap-2">
@@ -182,7 +182,7 @@ export default function ApiDocsPage() {
         </Card>
 
         {/* OpenAPI Spec Link */}
-        <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+        <Card className="rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
           <CardContent className="p-6">
             <h3 className="text-sm font-medium text-neutral-500">OpenAPI Specification</h3>
             <p className="mt-1 text-sm text-neutral-600">
@@ -211,7 +211,7 @@ export default function ApiDocsPage() {
         </Card>
 
         {/* Authentication Info */}
-        <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+        <Card className="rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
           <CardContent className="p-6">
             <h3 className="font-medium text-neutral-900">Authentication</h3>
             <p className="mt-2 text-sm text-neutral-600">
@@ -247,7 +247,7 @@ export default function ApiDocsPage() {
             {endpointGroups.map((group) => (
               <Card
                 key={group.name}
-                className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
+                className="rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
               >
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">

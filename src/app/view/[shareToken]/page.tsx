@@ -106,8 +106,8 @@ export default function ViewerAccessPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] p-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
-        <Card className="w-full max-w-md rounded-[1.75rem] border-slate-200/80 bg-white/90 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/80 dark:ring-white/5">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 dark:bg-neutral-950">
+        <Card className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-md dark:border-neutral-700 dark:bg-neutral-900">
           <CardContent className="p-8">
             <Skeleton className="mx-auto mb-4 h-12 w-12 rounded-full" />
             <Skeleton className="mx-auto mb-2 h-6 w-48" />
@@ -120,8 +120,8 @@ export default function ViewerAccessPage() {
 
   if (error && !linkInfo) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] p-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
-        <Card className="w-full max-w-md rounded-[1.75rem] border-slate-200/80 bg-white/90 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/80 dark:ring-white/5">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 dark:bg-neutral-950">
+        <Card className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-md dark:border-neutral-700 dark:bg-neutral-900">
           <CardContent className="p-8 text-center">
             <div className="dark:bg-danger-950/30 mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-danger-100">
               <Shield className="h-6 w-6 text-danger-600" />
@@ -136,8 +136,8 @@ export default function ViewerAccessPage() {
 
   if (accessGranted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] p-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
-        <Card className="w-full max-w-md rounded-[1.75rem] border-slate-200/80 bg-white/90 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/80 dark:ring-white/5">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 dark:bg-neutral-950">
+        <Card className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-md dark:border-neutral-700 dark:bg-neutral-900">
           <CardContent className="p-8 text-center">
             <div className="dark:bg-success-950/30 mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success-100">
               <CheckCircle className="h-6 w-6 text-success-600" />
@@ -155,8 +155,8 @@ export default function ViewerAccessPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] p-4 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
-      <Card className="w-full max-w-md rounded-[1.75rem] border-slate-200/80 bg-white/90 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/80 dark:ring-white/5">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 dark:bg-neutral-950">
+      <Card className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-md dark:border-neutral-700 dark:bg-neutral-900">
         <CardHeader className="text-center">
           {/* Organization Logo or Default */}
           <div className="mb-4 flex justify-center">

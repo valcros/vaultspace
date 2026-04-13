@@ -100,7 +100,7 @@ export default function WebhooksSettingsPage() {
   const [deleteWebhookId, setDeleteWebhookId] = React.useState<string | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const sectionCardClass =
-    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
+    'rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900';
 
   React.useEffect(() => {
     fetchWebhooks();
@@ -320,7 +320,7 @@ export default function WebhooksSettingsPage() {
           title="Webhook endpoints"
           description="Send room and document events to downstream systems without leaving the admin app."
           actions={
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+            <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
               {webhooks.length} endpoints
             </div>
           }

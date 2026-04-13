@@ -1394,7 +1394,7 @@ export default function RoomDetailPage() {
             { label: 'Share Links', value: links.length },
           ].map((stat) => (
             <AdminSurface key={stat.label} className="p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+              <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
                 {stat.label}
               </p>
               <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
@@ -1505,7 +1505,7 @@ export default function RoomDetailPage() {
                 description="Upload files, structure the room into folders, and change how the library is displayed without leaving the tab."
                 className="mb-4"
                 actions={
-                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                  <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
                     {documents.length} docs
                   </div>
                 }

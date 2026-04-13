@@ -8,11 +8,7 @@
   }
 
   body {
-    @apply bg-neutral-50 text-neutral-900;
-    background-image:
-      radial-gradient(circle at top, rgba(37, 99, 235, 0.12), transparent 28%),
-      linear-gradient(180deg, #f8fafc 0%, #eef4ff 52%, #f8fafc 100%);
-    background-attachment: fixed;
+    @apply bg-slate-50 text-neutral-900;
   }
 
   .dark * {
@@ -21,9 +17,5 @@
 
   .dark body {
     @apply bg-neutral-950 text-neutral-50;
-    background-image:
-      radial-gradient(circle at top, rgba(96, 165, 250, 0.12), transparent 24%),
-      linear-gradient(180deg, #09090b 0%, #0f172a 45%, #09090b 100%);
-    background-attachment: fixed;
   }
 }
