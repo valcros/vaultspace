@@ -197,7 +197,7 @@ export default function ViewerDocumentPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
+      <div className="flex min-h-screen flex-col bg-neutral-900">
         <div className="border-b border-slate-700 bg-slate-950/85 backdrop-blur-xl">
           <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-4 py-3">
             <Skeleton className="h-6 w-48 bg-slate-800" />
@@ -218,7 +218,7 @@ export default function ViewerDocumentPage() {
   return (
     <div
       ref={viewerRef}
-      className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]"
+      className="flex min-h-screen flex-col bg-neutral-900"
     >
       {/* Header */}
       <div className="bg-slate-950/88 sticky top-0 z-20 border-b border-slate-700 backdrop-blur-xl">
@@ -337,7 +337,7 @@ export default function ViewerDocumentPage() {
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
       >
-        <div className="rounded-[1.5rem] border border-slate-700 bg-slate-950/55 p-3 shadow-[0_24px_60px_-34px_rgba(2,6,23,0.9)] sm:p-4">
+        <div className="rounded-xl border border-neutral-200 bg-neutral-100 p-3 shadow-md dark:border-neutral-700 dark:bg-neutral-800 sm:p-4">
           <div
             className="relative overflow-hidden rounded-[1.1rem] bg-white shadow-2xl"
             style={{

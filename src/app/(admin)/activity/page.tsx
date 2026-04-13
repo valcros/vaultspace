@@ -169,7 +169,7 @@ export default function ActivityPage() {
           title="Event stream"
           description="Search who did what, narrow by event family, and export the audit trail when you need to share it."
           actions={
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+            <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
               {filteredEvents.length} events
             </div>
           }
@@ -227,7 +227,7 @@ export default function ActivityPage() {
           <AdminSurface className="space-y-4">
             {groupEventsByDate(filteredEvents).map((group) => (
               <div key={group.label}>
-                <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                <p className="mb-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">
                   {group.label}
                 </p>
                 <div className="space-y-2">

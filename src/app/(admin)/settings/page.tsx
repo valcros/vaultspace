@@ -106,7 +106,7 @@ export default function SettingsPage() {
             return (
               <Card
                 key={section.id}
-                className="bg-white/88 cursor-pointer rounded-[1.5rem] border-slate-200/80 transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] dark:border-slate-800 dark:bg-slate-950/75 dark:hover:border-sky-800"
+                className="cursor-pointer rounded-xl border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md hover:border-primary-200 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-primary-800"
                 onClick={() => router.push(section.href)}
               >
                 <CardContent className="p-6">

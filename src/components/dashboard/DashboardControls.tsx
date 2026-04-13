@@ -26,22 +26,22 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
   return (
     <div
       className={clsx(
-        'bg-slate-950/76 mb-0 flex items-center justify-end gap-2 rounded-2xl border border-slate-700/80 px-3 py-2.5 shadow-[0_18px_36px_-28px_rgba(2,6,23,0.9)] backdrop-blur-sm',
+        'mb-0 flex items-center justify-end gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900',
         className
       )}
     >
       {/* Save indicator */}
-      {isSaving && <span className="mr-2 text-xs text-slate-400">Saving...</span>}
+      {isSaving && <span className="mr-2 text-xs text-neutral-500 dark:text-neutral-400">Saving...</span>}
 
       {/* Density toggle - always visible at md+ */}
-      <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900/85 p-1">
+      <div className="flex items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1 dark:border-neutral-700 dark:bg-neutral-800">
         <button
           onClick={() => setDensity('compact')}
           className={clsx(
             'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
             density === 'compact'
-              ? 'bg-slate-800 text-white shadow-sm'
-              : 'text-slate-400 hover:text-slate-100'
+              ? 'bg-neutral-100 text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+              : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200'
           )}
           aria-label="Compact density"
         >
@@ -53,8 +53,8 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
           className={clsx(
             'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
             density === 'cozy'
-              ? 'bg-slate-800 text-white shadow-sm'
-              : 'text-slate-400 hover:text-slate-100'
+              ? 'bg-neutral-100 text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+              : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200'
           )}
           aria-label="Cozy density"
         >
@@ -66,7 +66,7 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
       {/* Edit mode toggle - only visible at lg breakpoint */}
       {canEdit && (
         <>
-          <div className="mx-1 h-4 w-px bg-slate-700" />
+          <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
 
           <Button
             variant="ghost"
@@ -75,8 +75,8 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
             className={clsx(
               'gap-1.5 rounded-xl border px-3 transition-colors',
               editMode
-                ? 'bg-sky-400/14 border-sky-400/25 text-sky-50 hover:bg-sky-400/20'
-                : 'border-slate-700 bg-slate-900/65 text-slate-100 hover:border-slate-500 hover:bg-slate-800'
+                ? 'bg-primary-50 border-primary-200 text-primary-700 hover:bg-primary-100 dark:bg-primary-900/30 dark:border-primary-800 dark:text-primary-300'
+                : 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
             )}
           >
             <LayoutGrid className="h-3.5 w-3.5" />
@@ -89,7 +89,7 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
               variant="ghost"
               size="sm"
               onClick={onReset}
-              className="gap-1.5 rounded-xl text-slate-300 hover:bg-slate-900/75 hover:text-white"
+              className="gap-1.5 rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Reset

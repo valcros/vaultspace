@@ -274,7 +274,7 @@ export default function DashboardPage() {
             <Link href="/rooms/new">
               <Button
                 size="sm"
-                className="bg-white/12 hover:bg-white/18 rounded-xl border border-white/20 text-white backdrop-blur-sm"
+                className="rounded-xl border border-white/20 bg-white/15 text-white hover:bg-white/25"
               >
                 <Plus className="mr-1 h-4 w-4" />
                 New Room
@@ -503,16 +503,16 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
           <FeaturedAnnouncement announcement={data.announcements[0] ?? null} />
         )}
 
-        <section className="rounded-[2rem] border border-slate-700/85 bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(30,41,59,0.98))] p-4 shadow-[0_30px_72px_-42px_rgba(2,6,23,0.92)] ring-1 ring-white/5 md:p-5">
+        <section className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 md:p-5">
           <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200/85">
+              <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
                 Active Workspace
               </p>
-              <h3 className="mt-2 text-xl font-semibold tracking-tight text-white">
+              <h3 className="mt-2 text-xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
                 Workloads, rooms, and movement in one view.
               </h3>
-              <p className="mt-1 text-sm text-slate-400">
+              <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
                 The cards below are intentionally structured to surface what needs attention and
                 where to go next.
               </p>
@@ -520,7 +520,6 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
             <DashboardControls
               onReset={resetLayout}
               isSaving={isSaving}
-              className="shadow-[0_18px_40px_-30px_rgba(2,6,23,0.95)]"
             />
           </div>
 
@@ -744,10 +743,10 @@ function CuratedDesktopWorkspace({
         secondaryNode === null &&
         railNodes.length === 0 &&
         remainingNodes.length === 0 && (
-          <Card className="rounded-[1.75rem] border border-slate-700/80 bg-slate-950/55 text-slate-100 shadow-[0_24px_48px_-32px_rgba(2,6,23,0.92)]">
+          <Card className="rounded-xl border border-neutral-200 bg-neutral-50 shadow-sm dark:border-neutral-700 dark:bg-neutral-800">
             <CardContent className="p-8">
-              <p className="text-sm font-medium text-slate-100">Workspace is quiet</p>
-              <p className="mt-2 max-w-2xl text-sm text-slate-400">
+              <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">Workspace is quiet</p>
+              <p className="mt-2 max-w-2xl text-sm text-neutral-500 dark:text-neutral-400">
                 There are no active tasks, messages, recent updates, or activity to surface right
                 now. Use the command center above to jump into rooms or create new work.
               </p>
@@ -776,13 +775,12 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.45fr_1fr]">
       <Card
-        className="overflow-hidden border-primary-200/60 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.22),transparent_26%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.92)_40%,rgba(37,99,235,0.86))] text-white shadow-[0_30px_70px_-34px_rgba(15,23,42,0.8)]"
+        className="overflow-hidden bg-slate-900 text-white shadow-md"
         elevation="high"
       >
         <CardContent className="relative p-6 md:p-8">
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.18),transparent_56%)]" />
           <div className="relative max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary-50/90">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
               <Sparkles className="h-3.5 w-3.5" />
               Command Center
             </div>
@@ -791,7 +789,7 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
                 ? `Jump straight into ${firstRoom.name}.`
                 : 'Build your first secure room.'}
             </h2>
-            <p className="text-primary-50/78 mt-3 max-w-xl text-sm leading-6 md:text-base">
+            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300 md:text-base">
               {firstRoom
                 ? 'Use the dashboard as your launch point: open active rooms, triage the newest questions, and keep investor traffic moving without hunting through the navigation.'
                 : 'Start from a room, not a blank grid. Create a room, upload your first documents, and invite reviewers from a single flow.'}
@@ -800,14 +798,14 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
             <div className="mt-6 flex flex-wrap items-center gap-3">
               {firstRoom ? (
                 <Link href={`/rooms/${firstRoom.id}`}>
-                  <Button className="rounded-xl border border-amber-200/70 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-100 font-semibold !text-slate-950 shadow-[0_18px_36px_-20px_rgba(251,191,36,0.58)] hover:from-amber-200 hover:via-orange-100 hover:to-amber-50 hover:!text-slate-950">
+                  <Button className="rounded-xl bg-primary-500 font-semibold text-white shadow-sm hover:bg-primary-600">
                     Open {firstRoom.name}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
               ) : role === 'ADMIN' ? (
                 <Link href="/rooms/new">
-                  <Button className="rounded-xl border border-amber-200/70 bg-gradient-to-r from-amber-300 via-orange-200 to-amber-100 font-semibold !text-slate-950 shadow-[0_18px_36px_-20px_rgba(251,191,36,0.58)] hover:from-amber-200 hover:via-orange-100 hover:to-amber-50 hover:!text-slate-950">
+                  <Button className="rounded-xl bg-primary-500 font-semibold text-white shadow-sm hover:bg-primary-600">
                     Create your first room
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
@@ -817,7 +815,7 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
               <Link href="/rooms">
                 <Button
                   variant="outline"
-                  className="hover:bg-white/14 rounded-xl border-white/20 bg-white/10 text-white hover:text-white"
+                  className="rounded-xl border-white/20 bg-white/10 text-white hover:bg-white/15 hover:text-white"
                 >
                   Browse all rooms
                 </Button>
@@ -826,38 +824,18 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
 
             <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {[
-                {
-                  label: 'Rooms',
-                  value: rooms.length,
-                  icon: FolderOpen,
-                  tone: 'from-white/16 to-white/8',
-                },
-                {
-                  label: 'Documents',
-                  value: totalDocuments,
-                  icon: FileText,
-                  tone: 'from-emerald-400/24 to-white/8',
-                },
-                {
-                  label: 'Pending',
-                  value: pendingActions,
-                  icon: MessageSquare,
-                  tone: 'from-amber-400/24 to-white/8',
-                },
-                {
-                  label: 'Views (7d)',
-                  value: totalViews,
-                  icon: Eye,
-                  tone: 'from-sky-400/24 to-white/8',
-                },
+                { label: 'Rooms', value: rooms.length, icon: FolderOpen },
+                { label: 'Documents', value: totalDocuments, icon: FileText },
+                { label: 'Pending', value: pendingActions, icon: MessageSquare },
+                { label: 'Views (7d)', value: totalViews, icon: Eye },
               ].map((stat) => (
                 <div
                   key={stat.label}
-                  className={`border-white/12 rounded-2xl border bg-gradient-to-br ${stat.tone} px-4 py-3 backdrop-blur-sm`}
+                  className="rounded-xl border border-white/15 bg-white/10 px-4 py-3"
                 >
-                  <div className="flex items-center gap-2 text-primary-100/80">
+                  <div className="flex items-center gap-2 text-slate-300">
                     <stat.icon className="h-4 w-4" />
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.2em]">
+                    <span className="text-xs font-medium">
                       {stat.label}
                     </span>
                   </div>
@@ -872,20 +850,20 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
       </Card>
 
       <Card
-        className="overflow-hidden border-primary-200/40 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.22),transparent_18%),linear-gradient(145deg,rgba(15,23,42,0.98),rgba(30,41,59,0.94)_42%,rgba(37,99,235,0.86))] text-white shadow-[0_30px_70px_-34px_rgba(15,23,42,0.7)] ring-1 ring-white/10 backdrop-blur-sm"
+        className="overflow-hidden bg-slate-900 text-white shadow-md"
         elevation="high"
       >
         <CardHeader className="pb-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary-100/90">
+              <p className="text-xs font-medium text-slate-300">
                 Room Runway
               </p>
               <h3 className="mt-2 text-xl font-semibold tracking-tight text-white">
                 Your fastest path into live work.
               </h3>
             </div>
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-primary-50 shadow-inner shadow-white/10">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white">
               <Compass className="h-5 w-5" />
             </span>
           </div>
@@ -896,27 +874,27 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
               <Link
                 key={room.id}
                 href={`/rooms/${room.id}`}
-                className="border-white/12 from-white/16 to-white/6 hover:border-white/18 hover:bg-white/14 group block rounded-[1.25rem] border bg-gradient-to-br via-white/10 p-4 shadow-[0_18px_38px_-26px_rgba(2,6,23,0.45)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_44px_-24px_rgba(37,99,235,0.32)]"
+                className="group block rounded-xl border border-white/15 bg-white/10 p-4 transition-colors hover:bg-white/15"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary-100/65">
+                    <p className="text-xs font-medium text-slate-300">
                       {index === 0 ? 'Start Here' : 'Next Room'}
                     </p>
                     <p className="mt-2 text-base font-semibold text-white">{room.name}</p>
-                    <p className="text-primary-100/78 mt-1 text-sm">
+                    <p className="mt-1 text-sm text-slate-300">
                       {room.documentCount} documents, {room.viewerCount} viewers,{' '}
                       {room.questionCount} open questions.
                     </p>
                   </div>
-                  <span className="text-primary-100/60 transition-transform group-hover:translate-x-1 group-hover:text-white">
+                  <span className="text-slate-400 transition-transform group-hover:translate-x-1 group-hover:text-white">
                     <ArrowRight className="h-4 w-4" />
                   </span>
                 </div>
               </Link>
             ))
           ) : (
-            <div className="border-white/18 bg-white/8 rounded-[1.25rem] border border-dashed p-5 text-sm text-primary-100/70">
+            <div className="rounded-xl border border-dashed border-white/20 bg-white/5 p-5 text-sm text-slate-300">
               {role === 'ADMIN'
                 ? 'No rooms yet. Create one from the command center and the dashboard will start guiding users into active deal spaces.'
                 : 'No rooms have been shared with you yet.'}
@@ -924,14 +902,14 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
           )}
 
           <div className="grid grid-cols-2 gap-3 pt-1 text-sm">
-            <div className="border-white/12 rounded-2xl border bg-white/10 px-4 py-3 shadow-sm backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-100/60">
+            <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3">
+              <p className="text-xs font-medium text-slate-300">
                 Unread Messages
               </p>
               <p className="mt-2 text-xl font-semibold text-white">{unreadMessages}</p>
             </div>
-            <div className="border-white/12 rounded-2xl border bg-white/10 px-4 py-3 shadow-sm backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-100/60">
+            <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3">
+              <p className="text-xs font-medium text-slate-300">
                 Questions
               </p>
               <p className="mt-2 text-xl font-semibold text-white">{totalQuestions}</p>

@@ -130,7 +130,7 @@ export default function ViewerDocumentsPage() {
 
   if (isLoading && !session) {
     return (
-      <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] px-4 py-8 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
+      <div className="min-h-screen bg-slate-50 px-4 py-8 dark:bg-neutral-950">
         <div className="mx-auto max-w-6xl space-y-6">
           <Skeleton className="h-20 w-full rounded-[1.75rem]" />
           <Skeleton className="h-24 w-full rounded-[1.5rem]" />
@@ -152,7 +152,7 @@ export default function ViewerDocumentsPage() {
       onExit={handleLogout}
     >
       {/* Breadcrumb & Search */}
-      <div className="bg-white/88 mb-6 rounded-[1.5rem] border border-slate-200/80 p-4 shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+      <div className="mb-6 rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           {/* Breadcrumb */}
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -205,7 +205,7 @@ export default function ViewerDocumentsPage() {
           ))}
         </div>
       ) : filteredFolders.length === 0 && filteredDocuments.length === 0 ? (
-        <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 p-12 text-center shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+        <Card className="rounded-xl border border-neutral-200 bg-white p-12 text-center shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
           <FileText className="mx-auto mb-4 h-12 w-12 text-slate-400 dark:text-slate-500" />
           <h3 className="mb-2 text-lg font-semibold text-slate-950 dark:text-white">
             {searchQuery ? 'No results found' : 'No documents'}
@@ -219,14 +219,14 @@ export default function ViewerDocumentsPage() {
           {/* Folders */}
           {filteredFolders.length > 0 && (
             <div>
-              <h2 className="mb-3 text-sm font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Folders
               </h2>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {filteredFolders.map((folder) => (
                   <Card
                     key={folder.id}
-                    className="bg-white/88 cursor-pointer rounded-[1.25rem] border-slate-200/80 transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-sm dark:border-slate-800 dark:bg-slate-950/75 dark:hover:border-sky-800"
+                    className="cursor-pointer rounded-xl border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md hover:border-primary-200 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-primary-800"
                     onClick={() => navigateToFolder(folder.name)}
                   >
                     <CardContent className="p-4">
@@ -254,7 +254,7 @@ export default function ViewerDocumentsPage() {
           {/* Documents */}
           {filteredDocuments.length > 0 && (
             <div>
-              <h2 className="mb-3 text-sm font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                 Documents
               </h2>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -263,7 +263,7 @@ export default function ViewerDocumentsPage() {
                   return (
                     <Card
                       key={doc.id}
-                      className="bg-white/88 rounded-[1.25rem] border-slate-200/80 transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-sm dark:border-slate-800 dark:bg-slate-950/75 dark:hover:border-sky-800"
+                      className="rounded-xl border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md hover:border-primary-200 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-primary-800"
                     >
                       <CardContent className="p-4">
                         <div className="flex items-start gap-3">

@@ -55,7 +55,7 @@ export default function NotificationTemplatesPage() {
   const [editBodyHtml, setEditBodyHtml] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
   const sectionCardClass =
-    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
+    'rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900';
 
   const fetchTemplates = React.useCallback(async () => {
     try {
