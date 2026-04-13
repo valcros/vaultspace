@@ -137,7 +137,7 @@ export default function RoomsPage() {
         description="Launch active deals, review secure content, and move directly into the rooms that need attention."
         actions={
           <Button
-            className="bg-white/12 hover:bg-white/18 rounded-xl border border-white/20 text-white backdrop-blur-sm"
+            className="rounded-xl border border-white/20 bg-white/15 text-white hover:bg-white/25"
             onClick={() => setShowCreateDialog(true)}
           >
             <Plus className="mr-2 h-4 w-4" />
@@ -151,41 +151,21 @@ export default function RoomsPage() {
         {stats && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              {
-                label: 'Rooms',
-                value: stats.totalRooms,
-                icon: FolderOpen,
-                color: 'from-primary-50 to-white text-primary-700',
-              },
-              {
-                label: 'Documents',
-                value: stats.totalDocuments,
-                icon: FolderOpen,
-                color: 'from-emerald-50 to-white text-emerald-700',
-              },
-              {
-                label: 'Members',
-                value: stats.totalMembers,
-                icon: Users,
-                color: 'from-violet-50 to-white text-violet-700',
-              },
-              {
-                label: 'Views (7d)',
-                value: stats.viewsThisWeek,
-                icon: FolderOpen,
-                color: 'from-amber-50 to-white text-amber-700',
-              },
+              { label: 'Rooms', value: stats.totalRooms, icon: FolderOpen, iconBg: 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300' },
+              { label: 'Documents', value: stats.totalDocuments, icon: FolderOpen, iconBg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+              { label: 'Members', value: stats.totalMembers, icon: Users, iconBg: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' },
+              { label: 'Views (7d)', value: stats.viewsThisWeek, icon: FolderOpen, iconBg: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
             ].map((stat) => (
               <div
                 key={stat.label}
-                className={`flex items-center gap-3 rounded-2xl border border-white/80 bg-gradient-to-br ${stat.color} px-4 py-3 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.35)] ring-1 ring-white/40 backdrop-blur-sm`}
+                className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
               >
-                <div className="rounded-2xl border border-white/70 bg-white/85 p-2.5 shadow-sm">
+                <div className={`rounded-lg p-2.5 ${stat.iconBg}`}>
                   <stat.icon className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-neutral-950">{stat.value}</p>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+                  <p className="text-lg font-semibold text-neutral-950 dark:text-neutral-50">{stat.value}</p>
+                  <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
                     {stat.label}
                   </p>
                 </div>
@@ -198,13 +178,13 @@ export default function RoomsPage() {
         {!isLoading && <WelcomeBanner roomCount={rooms.length} />}
 
         {/* Search */}
-        <div className="bg-white/78 rounded-2xl border border-white/80 p-4 shadow-[0_20px_42px_-34px_rgba(15,23,42,0.38)] ring-1 ring-white/45 backdrop-blur-sm">
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary-500">
+              <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
                 Room Portfolio
               </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-neutral-950">
+              <h2 className="mt-2 text-xl font-semibold tracking-tight text-neutral-950 dark:text-neutral-50">
                 Start from the room that matters most.
               </h2>
               <p className="mt-1 text-sm text-neutral-500">
@@ -257,7 +237,7 @@ export default function RoomsPage() {
             {/* Active Rooms */}
             {activeRooms.length > 0 && (
               <div className="mb-8">
-                <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                <h2 className="mb-4 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Active Rooms ({activeRooms.length})
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -271,7 +251,7 @@ export default function RoomsPage() {
             {/* Archived Rooms */}
             {archivedRooms.length > 0 && (
               <div>
-                <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                <h2 className="mb-4 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                   Archived Rooms ({archivedRooms.length})
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -372,23 +352,23 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
     <>
       <Link href={`/rooms/${room.id}`}>
         <Card
-          className={`group relative cursor-pointer overflow-hidden border border-white/80 bg-gradient-to-br from-white via-white to-primary-50/60 transition-all hover:-translate-y-1 hover:border-primary-100 hover:shadow-[0_22px_46px_-26px_rgba(37,99,235,0.28)] ${isDeleting ? 'opacity-50' : ''}`}
+          className={`group relative cursor-pointer overflow-hidden border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 ${isDeleting ? 'opacity-50' : ''}`}
         >
           <div
-            className={`absolute inset-x-0 top-0 h-1.5 ${
+            className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${
               room.status === 'ACTIVE'
-                ? 'bg-gradient-to-r from-primary-500 via-sky-500 to-cyan-400'
-                : 'bg-gradient-to-r from-neutral-300 via-neutral-200 to-neutral-300'
+                ? 'bg-primary-500'
+                : 'bg-neutral-200 dark:bg-neutral-600'
             }`}
           />
           <CardHeader className="pb-2">
             <div className="flex items-start justify-between">
               <div className="min-w-0 flex-1">
                 <div className="mb-3 flex items-center gap-2">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-100 text-primary-700 shadow-inner shadow-white/80">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
                     <FolderOpen className="h-4 w-4" />
                   </span>
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+                  <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
                     {room.status === 'ACTIVE' ? 'Live room' : 'Archived room'}
                   </span>
                 </div>
@@ -431,31 +411,31 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-2 text-sm text-neutral-500">
-              <div className="rounded-2xl bg-white/90 px-3 py-2 shadow-sm">
-                <div className="flex items-center gap-1 text-neutral-400">
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <div className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-800">
+                <div className="flex items-center gap-1 text-neutral-500 dark:text-neutral-400">
                   <FolderOpen className="h-3.5 w-3.5" />
                   Files
                 </div>
-                <span className="mt-1 block text-sm font-semibold text-neutral-900">
+                <span className="mt-1 block text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                   {room.documentCount}
                 </span>
               </div>
-              <div className="rounded-2xl bg-white/90 px-3 py-2 shadow-sm">
-                <div className="flex items-center gap-1 text-neutral-400">
+              <div className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-800">
+                <div className="flex items-center gap-1 text-neutral-500 dark:text-neutral-400">
                   <Users className="h-3.5 w-3.5" />
                   Members
                 </div>
-                <span className="mt-1 block text-sm font-semibold text-neutral-900">
+                <span className="mt-1 block text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                   {room.memberCount}
                 </span>
               </div>
-              <div className="rounded-2xl bg-white/90 px-3 py-2 shadow-sm">
-                <div className="flex items-center gap-1 text-neutral-400">
+              <div className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-800">
+                <div className="flex items-center gap-1 text-neutral-500 dark:text-neutral-400">
                   <LinkIcon className="h-3.5 w-3.5" />
                   Links
                 </div>
-                <span className="mt-1 block text-sm font-semibold text-neutral-900">
+                <span className="mt-1 block text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                   {room.linkCount}
                 </span>
               </div>

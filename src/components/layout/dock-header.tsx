@@ -45,7 +45,7 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
   };
 
   return (
-    <header className="bg-white/96 dark:bg-slate-950/96 sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200/90 px-4 backdrop-blur-xl dark:border-slate-700 lg:px-6">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200/90 bg-white/95 px-4 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/95 lg:px-6">
       {/* Logo */}
       <Link href="/rooms" className="flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">

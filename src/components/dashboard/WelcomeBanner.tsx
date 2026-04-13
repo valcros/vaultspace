@@ -27,7 +27,7 @@ export function WelcomeBanner({ roomCount, dismissed = false, onDismiss }: Welco
   };
 
   return (
-    <div className="relative mb-4 overflow-hidden rounded-[1.75rem] border border-slate-700/80 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_26%),linear-gradient(145deg,rgba(15,23,42,0.96),rgba(30,41,59,0.94)_58%,rgba(37,99,235,0.72))] p-5 text-white shadow-[0_24px_48px_-32px_rgba(2,6,23,0.92)]">
+    <div className="relative mb-4 overflow-hidden rounded-xl bg-primary-700 p-5 text-white shadow-sm">
       <button
         onClick={handleDismiss}
         className="absolute right-3 top-3 rounded-md p-1 text-slate-300 hover:bg-white/10 hover:text-white"
@@ -60,14 +60,14 @@ export function WelcomeBanner({ roomCount, dismissed = false, onDismiss }: Welco
         ].map((step) => (
           <div
             key={step.title}
-            className="flex items-start gap-3 rounded-2xl border border-slate-700/70 bg-slate-950/40 p-3"
+            className="flex items-start gap-3 rounded-lg border border-white/20 bg-white/15 p-3"
           >
             <div className={`shrink-0 rounded-xl p-2 ${step.color}`}>
               <step.icon className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-100">{step.title}</p>
-              <p className="text-xs text-slate-400">{step.desc}</p>
+              <p className="text-sm font-medium text-white">{step.title}</p>
+              <p className="text-xs text-primary-100">{step.desc}</p>
             </div>
           </div>
         ))}

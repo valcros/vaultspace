@@ -157,7 +157,7 @@ export default function UsersPage() {
           title="Team directory"
           description="Search members, review roles, and invite collaborators without leaving the page."
           actions={
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+            <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
               {filteredUsers.length} visible
             </div>
           }
@@ -204,7 +204,7 @@ export default function UsersPage() {
         ) : (
           <AdminSurface className="overflow-hidden p-0">
             <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-800">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+              <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
                 Organization Access
               </p>
               <h2 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">

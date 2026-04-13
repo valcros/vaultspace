@@ -130,7 +130,7 @@ function RegisterForm() {
   return (
     <>
       <div className="mb-6 text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+        <p className="text-xs font-medium text-primary-600">
           Account Setup
         </p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Create an account</h1>
@@ -304,7 +304,7 @@ function RegisterFormFallback() {
   return (
     <>
       <div className="mb-6 text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600">
+        <p className="text-xs font-medium text-primary-600">
           Account Setup
         </p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Create an account</h1>

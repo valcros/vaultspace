@@ -51,20 +51,20 @@ export function EngagementWidget({ data, loading }: EngagementWidgetProps) {
         {/* Top documents */}
         {data.topDocuments.length > 0 && (
           <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+            <p className="mb-2 text-xs font-medium text-neutral-600 dark:text-neutral-400">
               Top Documents
             </p>
             <ul className="space-y-1">
               {data.topDocuments.slice(0, 3).map((doc, index) => (
                 <li
                   key={doc.id}
-                  className="flex items-center justify-between rounded-2xl border border-slate-700/70 bg-slate-950/45 px-3 py-2 text-sm"
+                  className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 text-sm dark:bg-neutral-800"
                 >
                   <span className="flex items-center gap-2 truncate">
-                    <span className="shrink-0 text-slate-500">{index + 1}.</span>
-                    <span className="truncate text-slate-100">{doc.name}</span>
+                    <span className="shrink-0 text-neutral-400 dark:text-neutral-500">{index + 1}.</span>
+                    <span className="truncate text-neutral-900 dark:text-neutral-100">{doc.name}</span>
                   </span>
-                  <span className="shrink-0 text-xs text-slate-400">{doc.views} views</span>
+                  <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{doc.views} views</span>
                 </li>
               ))}
             </ul>
@@ -77,10 +77,10 @@ export function EngagementWidget({ data, loading }: EngagementWidgetProps) {
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
-    <div className="rounded-2xl border border-slate-700/70 bg-slate-950/45 px-3 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="flex items-center justify-center gap-1 text-slate-400">{icon}</div>
-      <p className="mt-1 text-lg font-semibold text-slate-50">{value.toLocaleString()}</p>
-      <p className="text-xs text-slate-400">{label}</p>
+    <div className="rounded-xl bg-neutral-50 px-3 py-3 text-center dark:bg-neutral-800">
+      <div className="flex items-center justify-center gap-1 text-neutral-500 dark:text-neutral-400">{icon}</div>
+      <p className="mt-1 text-lg font-semibold text-neutral-900 dark:text-neutral-100">{value.toLocaleString()}</p>
+      <p className="text-xs text-neutral-600 dark:text-neutral-400">{label}</p>
     </div>
   );
 }
@@ -89,8 +89,8 @@ function MiniActivityChart({ data }: { data: { date: string; views: number }[] }
   const maxViews = Math.max(...data.map((d) => d.views), 1);
 
   return (
-    <div className="rounded-2xl border border-slate-700/70 bg-slate-950/45 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+    <div className="rounded-xl bg-neutral-50 px-3 py-3 dark:bg-neutral-800">
+      <div className="mb-3 text-xs font-medium text-neutral-600 dark:text-neutral-400">
         Activity Trend
       </div>
       <div className="flex h-16 items-end gap-1">
@@ -107,12 +107,12 @@ function MiniActivityChart({ data }: { data: { date: string; views: number }[] }
               <div
                 className={clsx(
                   'w-full rounded-t transition-all',
-                  isToday ? 'bg-sky-400' : 'bg-slate-700',
-                  'group-hover:bg-sky-300'
+                  isToday ? 'bg-sky-500' : 'bg-neutral-200 dark:bg-neutral-600',
+                  'group-hover:bg-sky-400'
                 )}
                 style={{ height: `${Math.max(height, 4)}%` }}
               />
-              <div className="absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-slate-950 px-2 py-1 text-xs text-white group-hover:block">
+              <div className="absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-neutral-900 px-2 py-1 text-xs text-white group-hover:block">
                 {day.views}
               </div>
             </div>
@@ -130,7 +130,7 @@ export function EngagementOverviewCard({ data }: EngagementWidgetProps) {
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-gradient-to-br from-primary-50 to-white p-5 dark:border-neutral-700 dark:from-primary-900/20 dark:to-neutral-800">
+    <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
           Engagement Overview

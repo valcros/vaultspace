@@ -229,7 +229,7 @@ export default function SettingsActivityPage() {
           title="Organization event stream"
           description="Review organization-wide operational and security activity, then export the filtered stream when needed."
           actions={
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+            <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
               {pagination?.total ?? events.length} events
             </div>
           }

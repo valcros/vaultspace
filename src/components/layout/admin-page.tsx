@@ -21,7 +21,7 @@ export function AdminSurface({ children, className }: AdminSurfaceProps) {
   return (
     <section
       className={clsx(
-        'bg-white/96 dark:bg-slate-950/92 rounded-[1.5rem] border border-slate-200/90 p-4 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.28)] ring-1 ring-white/70 backdrop-blur-sm dark:border-slate-700 dark:ring-white/5 sm:p-5',
+        'rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900 sm:p-5',
         className
       )}
     >

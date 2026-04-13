@@ -28,7 +28,7 @@ export default function SecuritySettingsPage() {
   const [disableCode, setDisableCode] = React.useState('');
   const [copiedField, setCopiedField] = React.useState<string | null>(null);
   const sectionCardClass =
-    'rounded-[1.5rem] border-slate-200/80 bg-white/88 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5';
+    'rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900';
 
   // Fetch 2FA status on mount
   React.useEffect(() => {

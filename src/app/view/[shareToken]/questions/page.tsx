@@ -191,7 +191,7 @@ export default function ViewerQuestionsPage() {
 
   if (isLoading && !session) {
     return (
-      <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#eef3ff_46%,#f8fafc_100%)] px-4 py-8 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_40%,#111827_100%)]">
+      <div className="min-h-screen bg-slate-50 px-4 py-8 dark:bg-neutral-950">
         <div className="mx-auto max-w-6xl space-y-6">
           <Skeleton className="h-20 w-full rounded-[1.75rem]" />
           <div className="space-y-4">
@@ -212,7 +212,7 @@ export default function ViewerQuestionsPage() {
       onExit={handleLogout}
     >
       {/* Top bar with back link and ask button */}
-      <div className="bg-white/88 mb-6 rounded-[1.5rem] border border-slate-200/80 p-4 shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+      <div className="mb-6 rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
         <div className="flex items-center justify-between gap-3">
           <button
             onClick={() => router.push(`/view/${shareToken}/documents`)}
@@ -234,7 +234,7 @@ export default function ViewerQuestionsPage() {
           Your Questions
         </h2>
         {ownQuestions.length === 0 ? (
-          <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 p-8 text-center shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+          <Card className="rounded-xl border border-neutral-200 bg-white p-8 text-center shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <MessageCircle className="mx-auto mb-3 h-10 w-10 text-slate-400 dark:text-slate-500" />
             <p className="text-slate-500 dark:text-slate-400">
               You haven&apos;t asked any questions yet.
@@ -247,7 +247,7 @@ export default function ViewerQuestionsPage() {
               return (
                 <Card
                   key={q.id}
-                  className="bg-white/88 overflow-hidden rounded-[1.25rem] border-slate-200/80 shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
+                  className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
                 >
                   <button
                     className="flex w-full items-center gap-3 p-4 text-left hover:bg-slate-50 dark:hover:bg-slate-900/45"
@@ -319,7 +319,7 @@ export default function ViewerQuestionsPage() {
           Public Q&amp;A
         </h2>
         {publicQuestions.length === 0 ? (
-          <Card className="bg-white/88 rounded-[1.5rem] border-slate-200/80 p-8 text-center shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+          <Card className="rounded-xl border border-neutral-200 bg-white p-8 text-center shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
             <MessageCircle className="mx-auto mb-3 h-10 w-10 text-slate-400 dark:text-slate-500" />
             <p className="text-slate-500 dark:text-slate-400">
               No public questions and answers yet.
@@ -332,7 +332,7 @@ export default function ViewerQuestionsPage() {
               return (
                 <Card
                   key={q.id}
-                  className="bg-white/88 overflow-hidden rounded-[1.25rem] border-slate-200/80 shadow-[0_20px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
+                  className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
                 >
                   <button
                     className="flex w-full items-center gap-3 p-4 text-left hover:bg-slate-50 dark:hover:bg-slate-900/45"
