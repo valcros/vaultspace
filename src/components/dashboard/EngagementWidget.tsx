@@ -61,10 +61,16 @@ export function EngagementWidget({ data, loading }: EngagementWidgetProps) {
                   className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 text-sm dark:bg-neutral-800"
                 >
                   <span className="flex items-center gap-2 truncate">
-                    <span className="shrink-0 text-neutral-400 dark:text-neutral-500">{index + 1}.</span>
-                    <span className="truncate text-neutral-900 dark:text-neutral-100">{doc.name}</span>
+                    <span className="shrink-0 text-neutral-400 dark:text-neutral-500">
+                      {index + 1}.
+                    </span>
+                    <span className="truncate text-neutral-900 dark:text-neutral-100">
+                      {doc.name}
+                    </span>
                   </span>
-                  <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{doc.views} views</span>
+                  <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">
+                    {doc.views} views
+                  </span>
                 </li>
               ))}
             </ul>
@@ -78,8 +84,12 @@ export function EngagementWidget({ data, loading }: EngagementWidgetProps) {
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
     <div className="rounded-xl bg-neutral-50 px-3 py-3 text-center dark:bg-neutral-800">
-      <div className="flex items-center justify-center gap-1 text-neutral-500 dark:text-neutral-400">{icon}</div>
-      <p className="mt-1 text-lg font-semibold text-neutral-900 dark:text-neutral-100">{value.toLocaleString()}</p>
+      <div className="flex items-center justify-center gap-1 text-neutral-500 dark:text-neutral-400">
+        {icon}
+      </div>
+      <p className="mt-1 text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+        {value.toLocaleString()}
+      </p>
       <p className="text-xs text-neutral-600 dark:text-neutral-400">{label}</p>
     </div>
   );

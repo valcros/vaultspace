@@ -517,10 +517,7 @@ function DashboardContent({ data, initialLayout }: DashboardContentProps) {
                 where to go next.
               </p>
             </div>
-            <DashboardControls
-              onReset={resetLayout}
-              isSaving={isSaving}
-            />
+            <DashboardControls onReset={resetLayout} isSaving={isSaving} />
           </div>
 
           {/* Dashboard grid or mobile stack */}
@@ -745,7 +742,9 @@ function CuratedDesktopWorkspace({
         remainingNodes.length === 0 && (
           <Card className="rounded-xl border border-neutral-200 bg-neutral-50 shadow-sm dark:border-neutral-700 dark:bg-neutral-800">
             <CardContent className="p-8">
-              <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">Workspace is quiet</p>
+              <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                Workspace is quiet
+              </p>
               <p className="mt-2 max-w-2xl text-sm text-neutral-500 dark:text-neutral-400">
                 There are no active tasks, messages, recent updates, or activity to surface right
                 now. Use the command center above to jump into rooms or create new work.
@@ -774,10 +773,7 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.45fr_1fr]">
-      <Card
-        className="overflow-hidden bg-slate-900 text-white shadow-md"
-        elevation="high"
-      >
+      <Card className="overflow-hidden bg-slate-900 text-white shadow-md" elevation="high">
         <CardContent className="relative p-6 md:p-8">
           <div className="relative max-w-2xl">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
@@ -835,9 +831,7 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
                 >
                   <div className="flex items-center gap-2 text-slate-300">
                     <stat.icon className="h-4 w-4" />
-                    <span className="text-xs font-medium">
-                      {stat.label}
-                    </span>
+                    <span className="text-xs font-medium">{stat.label}</span>
                   </div>
                   <p className="mt-2 text-2xl font-semibold text-white">
                     {stat.value.toLocaleString()}
@@ -849,16 +843,11 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
         </CardContent>
       </Card>
 
-      <Card
-        className="overflow-hidden bg-slate-900 text-white shadow-md"
-        elevation="high"
-      >
+      <Card className="overflow-hidden bg-slate-900 text-white shadow-md" elevation="high">
         <CardHeader className="pb-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-medium text-slate-300">
-                Room Runway
-              </p>
+              <p className="text-xs font-medium text-slate-300">Room Runway</p>
               <h3 className="mt-2 text-xl font-semibold tracking-tight text-white">
                 Your fastest path into live work.
               </h3>
@@ -903,15 +892,11 @@ function DashboardHero({ data, role }: { data: DashboardV2Data; role: 'ADMIN' | 
 
           <div className="grid grid-cols-2 gap-3 pt-1 text-sm">
             <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3">
-              <p className="text-xs font-medium text-slate-300">
-                Unread Messages
-              </p>
+              <p className="text-xs font-medium text-slate-300">Unread Messages</p>
               <p className="mt-2 text-xl font-semibold text-white">{unreadMessages}</p>
             </div>
             <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3">
-              <p className="text-xs font-medium text-slate-300">
-                Questions
-              </p>
+              <p className="text-xs font-medium text-slate-300">Questions</p>
               <p className="mt-2 text-xl font-semibold text-white">{totalQuestions}</p>
             </div>
           </div>
