@@ -151,10 +151,32 @@ export default function RoomsPage() {
         {stats && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { label: 'Rooms', value: stats.totalRooms, icon: FolderOpen, iconBg: 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300' },
-              { label: 'Documents', value: stats.totalDocuments, icon: FolderOpen, iconBg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-              { label: 'Members', value: stats.totalMembers, icon: Users, iconBg: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' },
-              { label: 'Views (7d)', value: stats.viewsThisWeek, icon: FolderOpen, iconBg: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+              {
+                label: 'Rooms',
+                value: stats.totalRooms,
+                icon: FolderOpen,
+                iconBg:
+                  'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+              },
+              {
+                label: 'Documents',
+                value: stats.totalDocuments,
+                icon: FolderOpen,
+                iconBg:
+                  'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+              },
+              {
+                label: 'Members',
+                value: stats.totalMembers,
+                icon: Users,
+                iconBg: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
+              },
+              {
+                label: 'Views (7d)',
+                value: stats.viewsThisWeek,
+                icon: FolderOpen,
+                iconBg: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+              },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -164,7 +186,9 @@ export default function RoomsPage() {
                   <stat.icon className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-neutral-950 dark:text-neutral-50">{stat.value}</p>
+                  <p className="text-lg font-semibold text-neutral-950 dark:text-neutral-50">
+                    {stat.value}
+                  </p>
                   <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
                     {stat.label}
                   </p>
@@ -356,9 +380,7 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
         >
           <div
             className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${
-              room.status === 'ACTIVE'
-                ? 'bg-primary-500'
-                : 'bg-neutral-200 dark:bg-neutral-600'
+              room.status === 'ACTIVE' ? 'bg-primary-500' : 'bg-neutral-200 dark:bg-neutral-600'
             }`}
           />
           <CardHeader className="pb-2">

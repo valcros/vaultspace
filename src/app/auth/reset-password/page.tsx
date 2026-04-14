@@ -78,9 +78,7 @@ function ResetPasswordForm() {
               />
             </svg>
           </div>
-          <p className="text-xs font-medium text-danger-600">
-            Invalid Token
-          </p>
+          <p className="text-xs font-medium text-danger-600">Invalid Token</p>
           <h1 className="mb-2 mt-3 text-2xl font-bold tracking-tight text-slate-950">
             Invalid Reset Link
           </h1>
@@ -120,9 +118,7 @@ function ResetPasswordForm() {
               />
             </svg>
           </div>
-          <p className="text-xs font-medium text-primary-600">
-            Password Updated
-          </p>
+          <p className="text-xs font-medium text-primary-600">Password Updated</p>
           <h1 className="mb-2 mt-3 text-2xl font-bold tracking-tight text-slate-950">
             Password Reset
           </h1>
@@ -140,9 +136,7 @@ function ResetPasswordForm() {
   return (
     <>
       <div className="mb-6 text-center">
-        <p className="text-xs font-medium text-primary-600">
-          Set Credentials
-        </p>
+        <p className="text-xs font-medium text-primary-600">Set Credentials</p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Set new password</h1>
         <p className="mt-2 text-sm text-slate-500">Enter your new password below</p>
       </div>
@@ -205,9 +199,7 @@ function ResetPasswordFallback() {
   return (
     <>
       <div className="mb-6 text-center">
-        <p className="text-xs font-medium text-primary-600">
-          Set Credentials
-        </p>
+        <p className="text-xs font-medium text-primary-600">Set Credentials</p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Set new password</h1>
         <p className="mt-2 text-sm text-slate-500">Enter your new password below</p>
       </div>

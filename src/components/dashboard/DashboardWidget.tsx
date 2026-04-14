@@ -65,7 +65,9 @@ export function DashboardWidget({
             </span>
           )}
           <div>
-            <h3 className="text-sm font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">{title}</h3>
+            <h3 className="text-sm font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+              {title}
+            </h3>
           </div>
           {badge !== undefined && badge !== 0 && (
             <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-800 dark:bg-sky-900 dark:text-sky-300">
@@ -83,9 +85,7 @@ export function DashboardWidget({
           </Link>
         )}
       </CardHeader>
-      <CardContent
-        className={clsx('min-h-0 flex-1 overflow-auto', isCompact ? 'pt-3' : 'pt-4')}
-      >
+      <CardContent className={clsx('min-h-0 flex-1 overflow-auto', isCompact ? 'pt-3' : 'pt-4')}>
         {loading ? (
           <WidgetSkeleton />
         ) : empty ? (
@@ -166,8 +166,12 @@ export function WidgetListItem({
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{title}</p>
-        {subtitle && <p className="truncate text-xs text-neutral-600 dark:text-neutral-400">{subtitle}</p>}
+        <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+          {title}
+        </p>
+        {subtitle && (
+          <p className="truncate text-xs text-neutral-600 dark:text-neutral-400">{subtitle}</p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {badge && (
@@ -177,7 +181,9 @@ export function WidgetListItem({
             {badge}
           </span>
         )}
-        {timestamp && <span className="text-xs text-neutral-500 dark:text-neutral-400">{timestamp}</span>}
+        {timestamp && (
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">{timestamp}</span>
+        )}
         {rightContent}
       </div>
     </div>

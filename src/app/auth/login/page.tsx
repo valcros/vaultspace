@@ -88,9 +88,7 @@ export default function LoginPage() {
     return (
       <>
         <div className="mb-6 text-center">
-          <p className="text-xs font-medium text-primary-600">
-            Security Check
-          </p>
+          <p className="text-xs font-medium text-primary-600">Security Check</p>
           <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">
             Two-Factor Authentication
           </h1>
@@ -148,9 +146,7 @@ export default function LoginPage() {
   return (
     <>
       <div className="mb-6 text-center">
-        <p className="text-xs font-medium text-primary-600">
-          Secure Sign In
-        </p>
+        <p className="text-xs font-medium text-primary-600">Secure Sign In</p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Welcome back</h1>
         <p className="mt-2 text-sm text-slate-500">
           Sign in to your account to continue into your rooms and workflows.

@@ -71,9 +71,7 @@ export function FeaturedAnnouncement({ announcement }: { announcement: Announcem
       <div className="relative">
         <div className="mb-2 flex items-center gap-2">
           <Megaphone className="h-4 w-4 text-slate-300" />
-          <span className="text-xs font-medium text-slate-300">
-            Announcement
-          </span>
+          <span className="text-xs font-medium text-slate-300">Announcement</span>
         </div>
         <p className="text-sm text-white">{announcement.content}</p>
         <div className="mt-3 flex items-center justify-between text-xs text-slate-300">
