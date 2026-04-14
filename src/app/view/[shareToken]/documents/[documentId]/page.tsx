@@ -216,10 +216,7 @@ export default function ViewerDocumentPage() {
   }
 
   return (
-    <div
-      ref={viewerRef}
-      className="flex min-h-screen flex-col bg-neutral-900"
-    >
+    <div ref={viewerRef} className="flex min-h-screen flex-col bg-neutral-900">
       {/* Header */}
       <div className="bg-slate-950/88 sticky top-0 z-20 border-b border-slate-700 backdrop-blur-xl">
         <div className="mx-auto max-w-screen-2xl px-4 py-3">

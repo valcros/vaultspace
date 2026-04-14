@@ -130,9 +130,7 @@ function RegisterForm() {
   return (
     <>
       <div className="mb-6 text-center">
-        <p className="text-xs font-medium text-primary-600">
-          Account Setup
-        </p>
+        <p className="text-xs font-medium text-primary-600">Account Setup</p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Create an account</h1>
         <p className="mt-2 text-sm text-slate-500">
           {inviteInfo
@@ -304,9 +302,7 @@ function RegisterFormFallback() {
   return (
     <>
       <div className="mb-6 text-center">
-        <p className="text-xs font-medium text-primary-600">
-          Account Setup
-        </p>
+        <p className="text-xs font-medium text-primary-600">Account Setup</p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">Create an account</h1>
         <p className="mt-2 text-sm text-slate-500">Get started with VaultSpace</p>
       </div>

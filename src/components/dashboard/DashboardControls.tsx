@@ -31,7 +31,9 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
       )}
     >
       {/* Save indicator */}
-      {isSaving && <span className="mr-2 text-xs text-neutral-500 dark:text-neutral-400">Saving...</span>}
+      {isSaving && (
+        <span className="mr-2 text-xs text-neutral-500 dark:text-neutral-400">Saving...</span>
+      )}
 
       {/* Density toggle - always visible at md+ */}
       <div className="flex items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1 dark:border-neutral-700 dark:bg-neutral-800">
@@ -75,7 +77,7 @@ export function DashboardControls({ onReset, isSaving, className }: DashboardCon
             className={clsx(
               'gap-1.5 rounded-xl border px-3 transition-colors',
               editMode
-                ? 'bg-primary-50 border-primary-200 text-primary-700 hover:bg-primary-100 dark:bg-primary-900/30 dark:border-primary-800 dark:text-primary-300'
+                ? 'border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-300'
                 : 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
             )}
           >
