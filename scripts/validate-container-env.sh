@@ -33,6 +33,12 @@ SHARED_REQUIRED=(
   SCAN_ENGINE
 )
 
+# Web only: needs an admin connection for migrations and RLS DDL because the
+# runtime DATABASE_URL points at a low-privilege NOBYPASSRLS app role.
+WEB_ONLY_REQUIRED=(
+  DATABASE_URL_ADMIN
+)
+
 WORKER_ONLY_REQUIRED=(
   WORKER_TYPE
 )
@@ -41,6 +47,7 @@ WORKER_ONLY_REQUIRED=(
 SECRET_BACKED=(
   SESSION_SECRET
   DATABASE_URL
+  DATABASE_URL_ADMIN
   REDIS_URL
   AZURE_STORAGE_ACCOUNT_KEY
   ACS_CONNECTION_STRING
@@ -96,7 +103,7 @@ check_app() {
   done
 }
 
-check_app "${WEB_APP}" "${SHARED_REQUIRED[@]}"
+check_app "${WEB_APP}" "${SHARED_REQUIRED[@]}" "${WEB_ONLY_REQUIRED[@]}"
 check_app "${WORKER_APP}" "${SHARED_REQUIRED[@]}" "${WORKER_ONLY_REQUIRED[@]}"
 
 # Probes: the worker has no HTTP ingress, so the only signal that distinguishes
