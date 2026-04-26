@@ -125,8 +125,21 @@ Sprint 5 (not started):
 - Tagged release (v0.1.0 → v1.0.0-beta), CHANGELOG, license header audit
 - Full QA pass per `QA_TEST_PLAN.md`, cross-browser
 
-## Custom Domain Status (F001)
+## Custom Domain Status (F001) — Complete for MVP
 
-- `resolveOrganizationFromHeaders()` exists in middleware
-- Public branding endpoint works
-- Full org-aware routing scope TBD (stakeholder decision)
+- DNS: wildcard CNAME `*.vaultspace.org` → Container App FQDN (Azure DNS zone in `rg-vaultspace-staging`)
+- TLS: wildcard cert `*.vaultspace.org` bound to Container App ingress
+- Middleware: `src/middleware.ts` extracts the subdomain, sets `x-org-slug` header, and rewrites `/` to `/org/{slug}`
+- Resolver: `src/lib/middleware/auth.ts:resolveOrganizationFromHeaders` looks the org up by slug or `customDomain`
+- Public branding API: `/api/public/branding` returns the resolved org's branding for the requesting host
+- Schema: `Organization.customDomain String? @unique` supports BYO domain when paired with operational onboarding
+
+Live verification 2026-04-26: `https://series-a-funding.vaultspace.org/` returns `307 → /auth/login?org=series-a-funding` with `x-middleware-rewrite: /org/series-a-funding`. Branding API at `https://series-a-funding.vaultspace.org/api/public/branding` returns the seed org's branding payload.
+
+V1 expansion (BYO custom domain like `dataroom.client.com`) needs a per-tenant onboarding flow that adds the domain to the Container App ingress and provisions a managed cert. Not in MVP scope.
+
+## DMARC for vaultspace.org — Effective
+
+DMARC TXT record `_dmarc.vaultspace.org` resolves publicly as `v=DMARC1; p=quarantine; pct=100`. Combined with verified SPF and DKIM, downstream mail receivers (Gmail, Outlook, etc.) will apply the quarantine policy on alignment failures. The Azure Communication Services dashboard shows `DMARC: NotStarted` because ACS does not actively verify DMARC (only Domain, SPF, DKIM, DKIM2 appear in `verificationRecords`); the field is informational only.
+
+Optional follow-up: add `rua=mailto:dmarc-reports@vaultspace.org` to the policy once an inbox is provisioned to receive aggregate reports.
