@@ -14,12 +14,12 @@ Initial scan covers public/unauthenticated pages only. Authenticated pages (dash
 
 ## Latest Scan Results (2026-04-26)
 
-| Page            | Path                    | Violations                         | Result                       |
-| --------------- | ----------------------- | ---------------------------------- | ---------------------------- |
-| Login           | `/auth/login`           | 0                                  | `PASS`                       |
-| Register        | `/auth/register`        | 0                                  | `PASS`                       |
-| Forgot Password | `/auth/forgot-password` | 0                                  | `PASS`                       |
-| Landing         | `/`                     | 1 (color-contrast) — fixed in code | `FAIL → PASS pending deploy` |
+| Page            | Path                    | Violations                           | Result |
+| --------------- | ----------------------- | ------------------------------------ | ------ |
+| Login           | `/auth/login`           | 0                                    | `PASS` |
+| Register        | `/auth/register`        | 0                                    | `PASS` |
+| Forgot Password | `/auth/forgot-password` | 0                                    | `PASS` |
+| Landing         | `/`                     | 0 (was 1; fix deployed in `7701808`) | `PASS` |
 
 ### Landing page violation detail (now fixed in code)
 
@@ -49,4 +49,5 @@ Initial scan covers public/unauthenticated pages only. Authenticated pages (dash
 
 | Date       | Change                                                                                                                                                                                                                           | Triggering commit |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| 2026-04-26 | Initial scan via `@axe-core/playwright`. 3/4 public pages pass clean. One violation found (`text-neutral-400` on `bg-neutral-50` in landing footer) and fixed in the same commit. Test added to repo so future regressions fail. | (this commit)     |
+| 2026-04-26 | Initial scan via `@axe-core/playwright`. 3/4 public pages pass clean. One violation found (`text-neutral-400` on `bg-neutral-50` in landing footer) and fixed in the same commit. Test added to repo so future regressions fail. | `7701808`         |
+| 2026-04-26 | Fix shipped in revision `ca-vaultspace-web--0000159`. Re-scan against live deploy: 4/4 public pages pass clean.                                                                                                                  | `b0f3375`         |
