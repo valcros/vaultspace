@@ -230,6 +230,16 @@ ALTER TABLE extracted_texts FORCE ROW LEVEL SECURITY;
 ALTER TABLE invitations FORCE ROW LEVEL SECURITY;
 
 -- ============================================================================
+-- STEP 3b: Revoke UPDATE/DELETE on immutable audit tables
+-- ============================================================================
+
+-- Audit events must be append-only at the database layer. Even if the
+-- application is compromised, it cannot tamper with the audit trail.
+-- This makes SEC-013 (no update) and SEC-014 (no delete) structural at
+-- the database layer, complementing the EventBus design.
+REVOKE UPDATE, DELETE ON events FROM vaultspace_app;
+
+-- ============================================================================
 -- STEP 4: Application role privileges
 -- ============================================================================
 
