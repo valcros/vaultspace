@@ -104,6 +104,20 @@ async function main() {
     }
   }
 
+  console.log('\n=== Step 4b: Revoke UPDATE/DELETE on immutable audit tables ===');
+  // The audit trail must be append-only at the database layer. Revoking
+  // UPDATE and DELETE on the events table from the application role makes
+  // SEC-013 (no update) and SEC-014 (no delete) structural — even a
+  // compromised application cannot tamper with the audit trail.
+  for (const table of ['events']) {
+    try {
+      await prisma.$executeRawUnsafe(`REVOKE UPDATE, DELETE ON ${table} FROM ${APP_ROLE};`);
+      console.log(`  REVOKED UPDATE, DELETE: ${table} from ${APP_ROLE}`);
+    } catch (err) {
+      console.log(`  SKIPPED: REVOKE UPDATE/DELETE on ${table} (${(err as Error).message})`);
+    }
+  }
+
   console.log('\n=== Step 5: Verify ===');
   const verify = await prisma.$queryRawUnsafe<
     Array<{
