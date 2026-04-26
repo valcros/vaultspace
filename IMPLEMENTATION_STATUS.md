@@ -1,8 +1,8 @@
 # VaultSpace Implementation Status
 
-> **Current Milestone:** Sprint 1 — UI Wiring Complete
-> **Last Updated:** 2026-04-09
-> **MVP Status:** In progress — see MASTER_PLAN.md for full sprint plan
+> **Current Milestone:** Sprint 4 — Security hardening + accessibility largely complete
+> **Last Updated:** 2026-04-26
+> **MVP Status:** In progress — see MASTER_PLAN.md for the original sprint plan and BACKLOG.md for current outstanding work
 
 ## Current State
 
@@ -88,22 +88,42 @@ The application is **deployed and operational** on Azure Container Apps with all
 
 | Check               | Status                                                                                          |
 | ------------------- | ----------------------------------------------------------------------------------------------- |
-| Unit tests          | 479 passing (Vitest)                                                                            |
+| Unit tests          | 515 passing (Vitest)                                                                            |
 | Type check          | Passing (tsc --noEmit)                                                                          |
 | ESLint              | Passing (no errors)                                                                             |
 | Prettier            | Passing (all files formatted)                                                                   |
 | CI (GitHub Actions) | Workflow covers lint, test, type-check, build, security, deployment-mode, and Docker validation |
-| Integration tests   | Scaffolded (requires Docker)                                                                    |
-| E2E tests           | Scaffolded (requires Playwright)                                                                |
+| Integration tests   | Scaffolded (requires Docker for local; staging DB integration tests in `tests/integration/`)    |
+| E2E tests           | 22 Playwright cases (`tests/e2e/`) plus accessibility scan (`tests/e2e/a11y.test.ts`)           |
+
+### Security & Operational State (2026-04-26)
+
+| Area                              | Status                                                                                                                                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Live URL                          | https://ca-vaultspace-web.victoriousglacier-374689f2.eastus.azurecontainerapps.io                                                                                                        |
+| Health endpoint                   | `degraded: []` — DB, Redis, Storage all healthy; ACS email + scan capabilities reported correctly                                                                                        |
+| RLS                               | Enforced. Application connects as `vaultspace_app` (NOSUPERUSER, NOBYPASSRLS); migrations and DDL run as `vaultspaceadmin` via separate `DATABASE_URL_ADMIN`. Audit: `npm run rls:audit` |
+| Audit table immutability          | UPDATE and DELETE on `events` revoked from app role. Verified live: `permission denied for table events`                                                                                 |
+| Worker queues                     | Single `general` worker drains all three BullMQ queues (high/normal/low); HTTP health endpoint on :3000 with Liveness/Readiness/Startup TCP probes attached                              |
+| Container App env validation      | Pre-deploy script `scripts/validate-container-env.sh` blocks deploys with missing or plaintext-secret env vars                                                                           |
+| SEC-001…016 (PERMISSION_MODEL.md) | 9 VERIFIED, 5 STRUCTURAL, 2 PARTIAL (SEC-010 + SEC-012 need E2E status-code assertions). Full table: `docs/SEC_AUDIT.md`                                                                 |
+| WCAG 2.1 AA (public pages)        | 4/4 public pages pass after the `text-neutral-400` → `text-neutral-600` landing-footer fix. Authenticated-page scans pending login fixture. Full table: `docs/A11Y_AUDIT.md`             |
 
 ## What Remains for MVP
 
-See **MASTER_PLAN.md** for the full sprint plan. Summary:
+Sprint 4 closeout (in progress):
 
-1. **Sprint 2:** Integration tests, E2E tests, security tests (SEC-001–016)
-2. **Sprint 3:** CI/CD pipeline with auto-deploy to staging
-3. **Sprint 4:** Security hardening, performance, UX polish, accessibility
-4. **Sprint 5:** Seed data, documentation, release prep
+- Wire integration + a11y tests into CI (currently run on demand)
+- Add login fixture for accessibility scans of authenticated surfaces
+- Playwright E2E for SEC-010 (expired link → 410) and SEC-012 (password-protected link → 401 prompt)
+- DMARC verification for `vaultspace.org` sender domain (NotStarted; needs DNS access)
+- Stakeholder decision on F001 custom-domain scope (branding-only vs full org-aware routing)
+
+Sprint 5 (not started):
+
+- Demo experience + README polish + screenshots
+- Tagged release (v0.1.0 → v1.0.0-beta), CHANGELOG, license header audit
+- Full QA pass per `QA_TEST_PLAN.md`, cross-browser
 
 ## Custom Domain Status (F001)
 
