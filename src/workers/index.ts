@@ -137,10 +137,14 @@ interface WorkerConfig {
   concurrency: number;
 }
 
+// The `general` worker drains every queue (HIGH, NORMAL, LOW). This lets a single
+// worker Container App handle previews, scans, notifications, exports, and cleanup
+// without operating multiple worker apps. Specialized worker types remain available
+// for future scale-out where dedicated capacity is justified.
 const WORKER_CONFIGS: Record<WorkerType, WorkerConfig> = {
   general: {
-    queues: [QUEUE_NAMES.NORMAL],
-    concurrency: 4,
+    queues: [QUEUE_NAMES.HIGH, QUEUE_NAMES.NORMAL, QUEUE_NAMES.LOW],
+    concurrency: 6,
   },
   preview: {
     queues: [QUEUE_NAMES.HIGH],
