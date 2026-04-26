@@ -65,6 +65,15 @@ function hasClamAV(): boolean {
 }
 
 /**
+ * Check if the scan engine is intentionally bypassed.
+ * SCAN_ENGINE=passthrough is a deliberate operational choice (e.g. staging without ClamAV)
+ * and is treated as a configured scanning capability, not a missing dependency.
+ */
+function isScanPassthrough(): boolean {
+  return process.env['SCAN_ENGINE']?.toLowerCase() === 'passthrough';
+}
+
+/**
  * Check if Gotenberg is configured.
  */
 function hasGotenberg(): boolean {
@@ -79,13 +88,31 @@ function hasSmtp(): boolean {
 }
 
 /**
+ * Check if Azure Communication Services email is configured.
+ * Matches the resolution logic in src/providers/index.ts.
+ */
+function hasAcsEmail(): boolean {
+  return (
+    process.env['EMAIL_PROVIDER']?.toLowerCase() === 'acs' && !!process.env['ACS_CONNECTION_STRING']
+  );
+}
+
+/**
+ * Check whether any email transport is configured (SMTP or ACS).
+ */
+function hasEmail(): boolean {
+  return hasSmtp() || hasAcsEmail();
+}
+
+/**
  * Resolve capabilities based on current infrastructure configuration.
  */
 export function resolveCapabilities(): DeploymentCapabilities {
   const redis = hasRedis();
   const clamav = hasClamAV();
+  const scanPassthrough = isScanPassthrough();
   const gotenberg = hasGotenberg();
-  const smtp = hasSmtp();
+  const email = hasEmail();
 
   // Redis is required for job queue in both modes
   const hasJobQueue = redis;
@@ -100,16 +127,16 @@ export function resolveCapabilities(): DeploymentCapabilities {
     canGenerateAsyncPreviews: hasJobQueue && gotenberg,
     // Sync previews work for images via Sharp, even without Gotenberg
     canGenerateSyncPreviews: true,
-    // Virus scanning requires both ClamAV and job queue
-    canRunVirusScanning: hasJobQueue && clamav,
+    // Virus scanning requires job queue plus either ClamAV or an explicit passthrough opt-in
+    canRunVirusScanning: hasJobQueue && (clamav || scanPassthrough),
     // Thumbnails can be generated synchronously via Sharp
     canGenerateThumbnails: true,
 
     // Notifications
-    // Async email requires job queue
-    canSendAsyncEmail: hasJobQueue && smtp,
-    // Sync email just needs SMTP
-    canSendSyncEmail: smtp,
+    // Async email requires job queue + an email transport (SMTP or ACS)
+    canSendAsyncEmail: hasJobQueue && email,
+    // Sync email just needs an email transport
+    canSendSyncEmail: email,
 
     // Batch operations - all require job queue
     canRunScheduledReports: hasJobQueue,
@@ -169,8 +196,9 @@ export function getCapabilityUnavailableReason(
 ): string | null {
   const redis = hasRedis();
   const clamav = hasClamAV();
+  const scanPassthrough = isScanPassthrough();
   const gotenberg = hasGotenberg();
-  const smtp = hasSmtp();
+  const email = hasEmail();
 
   switch (capability) {
     case 'canQueueJobs':
@@ -190,8 +218,8 @@ export function getCapabilityUnavailableReason(
       if (!redis) {
         return 'Redis is not configured (REDIS_URL)';
       }
-      if (!clamav) {
-        return 'ClamAV is not configured (CLAMAV_HOST)';
+      if (!clamav && !scanPassthrough) {
+        return 'No scan engine configured (set CLAMAV_HOST or SCAN_ENGINE=passthrough)';
       }
       return null;
 
@@ -199,13 +227,15 @@ export function getCapabilityUnavailableReason(
       if (!redis) {
         return 'Redis is not configured (REDIS_URL)';
       }
-      if (!smtp) {
-        return 'SMTP is not configured (SMTP_HOST)';
+      if (!email) {
+        return 'No email transport configured (set SMTP_HOST or EMAIL_PROVIDER=acs with ACS_CONNECTION_STRING)';
       }
       return null;
 
     case 'canSendSyncEmail':
-      return smtp ? null : 'SMTP is not configured (SMTP_HOST)';
+      return email
+        ? null
+        : 'No email transport configured (set SMTP_HOST or EMAIL_PROVIDER=acs with ACS_CONNECTION_STRING)';
 
     case 'canRunScheduledReports':
     case 'canRunBulkExport':

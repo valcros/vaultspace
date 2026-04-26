@@ -53,9 +53,10 @@ describe('deployment-capabilities', () => {
       expect(caps.canRunBulkExport).toBe(false);
     });
 
-    it('returns virus scanning as false without ClamAV', async () => {
+    it('returns virus scanning as false without ClamAV or passthrough', async () => {
       process.env['REDIS_URL'] = 'redis://localhost:6379';
       delete process.env['CLAMAV_HOST'];
+      delete process.env['SCAN_ENGINE'];
 
       const { resolveCapabilities } = await import('./deployment-capabilities');
       const caps = resolveCapabilities();
@@ -82,6 +83,69 @@ describe('deployment-capabilities', () => {
 
       expect(caps.canSendSyncEmail).toBe(true);
       expect(caps.canSendAsyncEmail).toBe(false); // No Redis
+    });
+
+    it('returns sync email as true when ACS configured (no SMTP)', async () => {
+      delete process.env['REDIS_URL'];
+      delete process.env['SMTP_HOST'];
+      delete process.env['SMTP_URL'];
+      process.env['EMAIL_PROVIDER'] = 'acs';
+      process.env['ACS_CONNECTION_STRING'] =
+        'endpoint=https://example.communication.azure.com/;accesskey=fake';
+
+      const { resolveCapabilities } = await import('./deployment-capabilities');
+      const caps = resolveCapabilities();
+
+      expect(caps.canSendSyncEmail).toBe(true);
+      expect(caps.canSendAsyncEmail).toBe(false);
+    });
+
+    it('returns async email as true when ACS configured with Redis', async () => {
+      process.env['REDIS_URL'] = 'redis://localhost:6379';
+      delete process.env['SMTP_HOST'];
+      delete process.env['SMTP_URL'];
+      process.env['EMAIL_PROVIDER'] = 'acs';
+      process.env['ACS_CONNECTION_STRING'] =
+        'endpoint=https://example.communication.azure.com/;accesskey=fake';
+
+      const { resolveCapabilities } = await import('./deployment-capabilities');
+      const caps = resolveCapabilities();
+
+      expect(caps.canSendAsyncEmail).toBe(true);
+    });
+
+    it('does not treat EMAIL_PROVIDER=acs without connection string as configured', async () => {
+      delete process.env['SMTP_HOST'];
+      delete process.env['SMTP_URL'];
+      process.env['EMAIL_PROVIDER'] = 'acs';
+      delete process.env['ACS_CONNECTION_STRING'];
+
+      const { resolveCapabilities } = await import('./deployment-capabilities');
+      const caps = resolveCapabilities();
+
+      expect(caps.canSendSyncEmail).toBe(false);
+    });
+
+    it('treats SCAN_ENGINE=passthrough as a configured scanning capability', async () => {
+      process.env['REDIS_URL'] = 'redis://localhost:6379';
+      delete process.env['CLAMAV_HOST'];
+      process.env['SCAN_ENGINE'] = 'passthrough';
+
+      const { resolveCapabilities } = await import('./deployment-capabilities');
+      const caps = resolveCapabilities();
+
+      expect(caps.canRunVirusScanning).toBe(true);
+    });
+
+    it('still requires Redis for canRunVirusScanning even with passthrough', async () => {
+      delete process.env['REDIS_URL'];
+      delete process.env['CLAMAV_HOST'];
+      process.env['SCAN_ENGINE'] = 'passthrough';
+
+      const { resolveCapabilities } = await import('./deployment-capabilities');
+      const caps = resolveCapabilities();
+
+      expect(caps.canRunVirusScanning).toBe(false);
     });
 
     it('returns thumbnails capability based on Redis + preview provider', async () => {
