@@ -92,6 +92,11 @@ jobs:
             --container-name ca-vaultspace-worker \
             --image $ACR_SERVER/vaultspace-worker:${{ github.sha }}
 
+      - name: Validate Container App env shape
+        run: |
+          chmod +x scripts/validate-container-env.sh
+          scripts/validate-container-env.sh "$RESOURCE_GROUP" ca-vaultspace-web ca-vaultspace-worker
+
       - name: Health check with deployment mode validation
         run: |
           # Configuration
