@@ -119,7 +119,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <div className="border-t py-6">
-        <div className="mx-auto max-w-5xl px-6 text-center text-sm text-neutral-400">
+        <div className="mx-auto max-w-5xl px-6 text-center text-sm text-neutral-600">
           VaultSpace &mdash; Open-source secure virtual data room platform. AGPLv3 licensed.
         </div>
       </div>
