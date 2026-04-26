@@ -43,6 +43,8 @@ if (warnings.length > 0) {
   warnings.forEach((warn) => console.warn(`  - ${warn}`));
 }
 
+import { createServer } from 'node:http';
+
 import { Worker, type ConnectionOptions, type Job } from 'bullmq';
 
 import {
@@ -192,9 +194,36 @@ async function main() {
 
   console.log(`[VaultSpace Worker] ${workerType} worker initialized`);
 
+  // Health endpoint for Container Apps probes. Listening on this port is the
+  // signal that workers passed startup validation and connected to BullMQ —
+  // a probe failure here makes Container Apps mark the revision unhealthy
+  // instead of masking crash-loops behind restart cycles.
+  const healthPort = parseInt(process.env['WORKER_HEALTH_PORT'] ?? '3000', 10);
+  const healthServer = createServer((req, res) => {
+    if (req.url === '/health' || req.url === '/healthz') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          status: 'healthy',
+          workerType,
+          queues: config.queues,
+          mode,
+        })
+      );
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  healthServer.listen(healthPort, () => {
+    console.log(`[VaultSpace Worker] Health endpoint listening on :${healthPort}/health`);
+  });
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     console.log(`[VaultSpace Worker] Received ${signal}, shutting down...`);
+
+    healthServer.close();
 
     for (const worker of workers) {
       await worker.close();
