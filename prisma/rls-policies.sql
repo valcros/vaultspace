@@ -41,7 +41,8 @@ ALTER TABLE search_indexes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE extracted_texts ENABLE ROW LEVEL SECURITY;
 
 -- Configuration
-ALTER TABLE watermark_configs ENABLE ROW LEVEL SECURITY;
+-- watermark_configs is V1-deferred (no Prisma model, no migration). When the
+-- table is added, restore: ALTER TABLE watermark_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
@@ -188,13 +189,11 @@ CREATE POLICY text_org_isolation ON extracted_texts
     "organizationId" = current_setting('app.current_org_id', true)
   );
 
--- Watermark Configs policy
-DROP POLICY IF EXISTS watermark_org_isolation ON watermark_configs;
-CREATE POLICY watermark_org_isolation ON watermark_configs
-  FOR ALL
-  USING (
-    "organizationId" = current_setting('app.current_org_id', true)
-  );
+-- Watermark Configs policy — V1-deferred. Restore when watermark_configs lands:
+--   DROP POLICY IF EXISTS watermark_org_isolation ON watermark_configs;
+--   CREATE POLICY watermark_org_isolation ON watermark_configs
+--     FOR ALL
+--     USING ("organizationId" = current_setting('app.current_org_id', true));
 
 -- Invitations policy
 DROP POLICY IF EXISTS invitation_org_isolation ON invitations;
@@ -205,22 +204,56 @@ CREATE POLICY invitation_org_isolation ON invitations
   );
 
 -- ============================================================================
--- STEP 3: Grant necessary permissions to the application database user
+-- STEP 3: FORCE ROW LEVEL SECURITY on every org-scoped table
 -- ============================================================================
 
--- The app user should have SELECT, INSERT, UPDATE, DELETE on all tables
--- but RLS will restrict access to only their organization's data
+-- Without FORCE, table owners (and roles with BYPASSRLS) bypass policies entirely.
+-- Setting FORCE makes RLS apply even when the connection role owns the table,
+-- which protects against the staging defect discovered 2026-04-26 where the
+-- application connected as the table owner and silently bypassed every policy.
 
--- Uncomment and modify with your actual app user name:
--- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO vaultspace_app;
--- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO vaultspace_app;
+ALTER TABLE organizations FORCE ROW LEVEL SECURITY;
+ALTER TABLE users FORCE ROW LEVEL SECURITY;
+ALTER TABLE user_organizations FORCE ROW LEVEL SECURITY;
+ALTER TABLE rooms FORCE ROW LEVEL SECURITY;
+ALTER TABLE folders FORCE ROW LEVEL SECURITY;
+ALTER TABLE documents FORCE ROW LEVEL SECURITY;
+ALTER TABLE document_versions FORCE ROW LEVEL SECURITY;
+ALTER TABLE file_blobs FORCE ROW LEVEL SECURITY;
+ALTER TABLE preview_assets FORCE ROW LEVEL SECURITY;
+ALTER TABLE permissions FORCE ROW LEVEL SECURITY;
+ALTER TABLE links FORCE ROW LEVEL SECURITY;
+ALTER TABLE view_sessions FORCE ROW LEVEL SECURITY;
+ALTER TABLE events FORCE ROW LEVEL SECURITY;
+ALTER TABLE search_indexes FORCE ROW LEVEL SECURITY;
+ALTER TABLE extracted_texts FORCE ROW LEVEL SECURITY;
+ALTER TABLE invitations FORCE ROW LEVEL SECURITY;
 
 -- ============================================================================
--- VERIFICATION QUERIES
+-- STEP 4: Application role privileges
 -- ============================================================================
 
--- Check which tables have RLS enabled:
--- SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';
+-- The application MUST connect as a role that is NOT the table owner and does
+-- NOT have BYPASSRLS. The role and grants below are the contract for that role.
+-- Provisioning steps (separate, requires elevated DB access) live in
+-- scripts/rls-fix.ts.
+
+--   CREATE ROLE vaultspace_app WITH LOGIN PASSWORD '<rotate via Key Vault>'
+--     NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+--   GRANT USAGE ON SCHEMA public TO vaultspace_app;
+--   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO vaultspace_app;
+--   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO vaultspace_app;
+--   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO vaultspace_app;
+--   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO vaultspace_app;
+
+-- ============================================================================
+-- VERIFICATION QUERIES (or run `npm run rls:audit`)
+-- ============================================================================
+
+-- Check which tables have RLS enabled and forced:
+-- SELECT tablename, rowsecurity, c.relforcerowsecurity AS forced
+-- FROM pg_tables t JOIN pg_class c ON c.relname = t.tablename
+-- WHERE schemaname = 'public';
 
 -- Check policies:
 -- SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public';
