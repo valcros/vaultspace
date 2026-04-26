@@ -94,3 +94,9 @@ Implemented via two-tier architecture (see DOCUMENT_PREVIEW_PLAN.md):
   - `src/providers/preview/helpers/GhostscriptConverter.ts`
   - `src/providers/preview/helpers/PdfRasterizer.ts`
 - **ESLint warnings**: Fix React hook dependency warnings and console statements (see lint output)
+
+## Security / Operations
+
+- **Container App env var audit (in progress):** Ensure every sensitive env var on every Container App is bound via `secretRef` to a Key Vault secret rather than a literal `value`. On 2026-04-26 a stray plaintext `ACS_CONNECTION_STRING` on `ca-vaultspace-web` exposed the ACS access key in `az containerapp show` output, requiring an emergency key rotation. Worker was correctly configured. Add a periodic guardrail (script or pre-deploy CI check) that fails when any `properties.template.containers[].env[].value` matches a known secret pattern. See `.private/azure-staging.md` for rotation log.
+- **Health check email/scan capability gap:** `/api/health?deep=true` reports `canSendAsyncEmail: false` and `canRunVirusScanning: false` even though ACS is configured and the worker container exists. Investigate whether the worker is consuming jobs and whether ClamAV sidecar is actually deployed.
+- **Investigate duplicate ACS resources:** Both `acs-vaultspace-email` (with verified `vaultspace.org` sender domain) and `acs-vaultspace-staging` (connection-string target) exist. Confirm one is authoritative and delete or repurpose the other.
