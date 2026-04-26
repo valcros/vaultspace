@@ -99,6 +99,24 @@ check_app() {
 check_app "${WEB_APP}" "${SHARED_REQUIRED[@]}"
 check_app "${WORKER_APP}" "${SHARED_REQUIRED[@]}" "${WORKER_ONLY_REQUIRED[@]}"
 
+# Probes: the worker has no HTTP ingress, so the only signal that distinguishes
+# a healthy worker from a crash-looping one is the TCP socket on port 3000.
+# Require at least one probe on that port.
+echo ""
+echo "=== Validating ${WORKER_APP} probes ==="
+worker_probes=$(az containerapp show \
+  --name "${WORKER_APP}" \
+  --resource-group "${RG}" \
+  --query "properties.template.containers[?name=='${WORKER_APP}'].probes | [0]" \
+  -o json)
+probe_count=$(echo "${worker_probes}" | jq -r 'if . == null then 0 else map(select(.tcpSocket.port == 3000)) | length end')
+if [ "${probe_count}" -lt 1 ]; then
+  echo "  ERROR: ${WORKER_APP} has no TCP probe on port 3000 (worker health endpoint)"
+  errors=$((errors + 1))
+else
+  echo "  OK: ${probe_count} probe(s) targeting port 3000"
+fi
+
 echo ""
 if [ "${errors}" -gt 0 ]; then
   echo "Validation failed: ${errors} error(s) found"
