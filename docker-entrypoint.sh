@@ -3,22 +3,29 @@ set -e
 
 # VaultSpace Docker Entrypoint
 # Runs database migrations and RLS policies before starting the application
+#
+# Connection model:
+#   DATABASE_URL        -- application runtime (low-privilege, NOBYPASSRLS app role)
+#   DATABASE_URL_ADMIN  -- migrations and RLS DDL (table owner / DDL-capable role)
+#
+# DATABASE_URL_ADMIN is required when DATABASE_URL points at a non-owner role
+# (the recommended production posture). When DATABASE_URL_ADMIN is unset the
+# entrypoint falls back to DATABASE_URL for backward compatibility — useful for
+# local dev where a single role does both.
 
 echo "[entrypoint] VaultSpace starting..."
 
+ADMIN_DB_URL="${DATABASE_URL_ADMIN:-$DATABASE_URL}"
+
 # Run database migrations in production
 if [ "$NODE_ENV" = "production" ]; then
-  echo "[entrypoint] Running database migrations..."
+  echo "[entrypoint] Running database migrations as admin role..."
 
-  # Use db push to synchronize the schema with the database
-  # This is safe for staging environments and handles cases where migrations were
-  # incorrectly marked as applied without the schema actually being created
   if [ "$PRISMA_FORCE_SCHEMA_SYNC" = "true" ]; then
     echo "[entrypoint] Force-syncing schema (PRISMA_FORCE_SCHEMA_SYNC=true)..."
-    node ./node_modules/prisma/build/index.js db push --accept-data-loss
+    DATABASE_URL="$ADMIN_DB_URL" node ./node_modules/prisma/build/index.js db push --accept-data-loss
   else
-    # Standard migration deployment
-    node ./node_modules/prisma/build/index.js migrate deploy
+    DATABASE_URL="$ADMIN_DB_URL" node ./node_modules/prisma/build/index.js migrate deploy
   fi
 
   # Apply RLS policies in production (REQUIRED for multi-tenant security)
@@ -26,7 +33,10 @@ if [ "$NODE_ENV" = "production" ]; then
     if [ -f "prisma/rls-policies.sql" ]; then
       echo "[entrypoint] Applying RLS policies (required for production)..."
       if command -v psql >/dev/null 2>&1; then
-        if ! psql "$DATABASE_URL" -f prisma/rls-policies.sql; then
+        # ON_ERROR_STOP=1 makes psql exit non-zero on the first error, so a
+        # missing table or syntax issue in the SQL fails the deploy instead of
+        # silently leaving the database half-configured.
+        if ! psql "$ADMIN_DB_URL" -v ON_ERROR_STOP=1 -f prisma/rls-policies.sql; then
           echo "[entrypoint] FATAL: Failed to apply RLS policies"
           echo "[entrypoint] RLS is REQUIRED for production multi-tenant security."
           echo "[entrypoint] Set ENABLE_RLS=false to skip (NOT recommended for production)."
