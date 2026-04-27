@@ -185,8 +185,11 @@ export default function ActivityPage() {
               />
             </div>
             <Select value={eventType} onValueChange={setEventType}>
-              <SelectTrigger className="h-11 w-[220px] rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950">
-                <Filter className="mr-2 h-4 w-4" />
+              <SelectTrigger
+                aria-label="Filter activity by event type"
+                className="h-11 w-[220px] rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
+              >
+                <Filter className="mr-2 h-4 w-4" aria-hidden="true" />
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
               <SelectContent>
@@ -266,7 +269,7 @@ export default function ActivityPage() {
                               </>
                             )}
                           </p>
-                          <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
+                          <div className="mt-1 flex items-center gap-3 text-xs text-neutral-600 dark:text-neutral-400">
                             <span>{formatDate(event.createdAt)}</span>
                             {event.room && (
                               <>
