@@ -40,7 +40,13 @@ export function AppShell({ children, user }: AppShellProps) {
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header user={user} onMenuClick={() => setMobileMenuOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <main
+          tabIndex={0}
+          aria-label="Main content"
+          className="flex-1 overflow-y-auto p-4 focus:outline-none lg:p-6"
+        >
+          {children}
+        </main>
       </div>
     </div>
   );
