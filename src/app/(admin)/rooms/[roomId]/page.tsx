@@ -1386,23 +1386,36 @@ export default function RoomDetailPage() {
       />
 
       <div className="space-y-6">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            { label: 'Documents', value: documents.length },
-            { label: 'Folders', value: folders.length },
-            { label: 'Admins', value: admins.length },
-            { label: 'Share Links', value: links.length },
-          ].map((stat) => (
-            <AdminSurface key={stat.label} className="p-4">
-              <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
-                {stat.label}
-              </p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
-                {stat.value}
-              </p>
-            </AdminSurface>
-          ))}
-        </div>
+        {/*
+          Compact stat row. The earlier 4-card grid claimed ~120px of vertical
+          real estate above the fold for four 3-digit-max counts; this version
+          puts the same data in a single horizontal row of icon + label + count
+          chips, sized for up to 999 with comfortable padding. Wraps to a 2x2
+          grid on the smallest viewports rather than stacking 4 deep.
+        */}
+        <AdminSurface className="px-3 py-2 sm:px-4">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-8">
+            {[
+              { label: 'Documents', value: documents.length, icon: FileText },
+              { label: 'Folders', value: folders.length, icon: Folder },
+              { label: 'Admins', value: admins.length, icon: Users },
+              { label: 'Share Links', value: links.length, icon: LinkIcon },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="flex items-center gap-2">
+                <Icon
+                  aria-hidden="true"
+                  className="h-4 w-4 text-primary-600 dark:text-primary-400"
+                />
+                <dt className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                  {label}
+                </dt>
+                <dd className="text-sm font-semibold tabular-nums text-slate-950 dark:text-white">
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </AdminSurface>
 
         <AdminSurface className="space-y-4 p-4 sm:p-5">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
