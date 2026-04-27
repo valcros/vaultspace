@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 
-import { db } from '@/lib/db';
+import { bootstrapDb } from '@/lib/db';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { DockShell } from '@/components/layout/dock-shell';
 
@@ -13,7 +13,11 @@ async function getSession() {
     return null;
   }
 
-  const session = await db.session.findFirst({
+  // Uses bootstrapDb (admin connection, BYPASSRLS) for the session lookup +
+  // user JOIN. The regular `db` client's pool can carry stale
+  // app.current_org_id from prior requests, which makes the bootstrap RLS
+  // policies on users evaluate false and the JOIN return nothing.
+  const session = await bootstrapDb.session.findFirst({
     where: {
       token: sessionToken,
       expiresAt: { gt: new Date() },
@@ -36,8 +40,8 @@ async function getSession() {
     return null;
   }
 
-  // Fetch organization separately since Session doesn't have a direct relation
-  const organization = await db.organization.findUnique({
+  // Same rationale for the org lookup — pre-context bootstrap.
+  const organization = await bootstrapDb.organization.findUnique({
     where: { id: session.organizationId },
     select: {
       id: true,
