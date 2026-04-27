@@ -9,24 +9,28 @@ const mockCacheGet = vi.fn();
 const mockSessionUpdate = vi.fn();
 const mockUserOrganizationFindUnique = vi.fn();
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const sessionClient = {
     session: {
       findMany: (...args: unknown[]) => mockSessionFindMany(...args),
       findUnique: (...args: unknown[]) => mockSessionFindUnique(...args),
       update: (...args: unknown[]) => mockSessionUpdate(...args),
       updateMany: (...args: unknown[]) => mockSessionUpdateMany(...args),
     },
-  },
-  withOrgContext: vi.fn(async (_orgId, callback) => {
-    const tx = {
-      userOrganization: {
-        findUnique: (...args: unknown[]) => mockUserOrganizationFindUnique(...args),
-      },
-    };
-    return callback(tx as Parameters<typeof callback>[0]);
-  }),
-}));
+  };
+  return {
+    db: sessionClient,
+    bootstrapDb: sessionClient,
+    withOrgContext: vi.fn(async (_orgId, callback) => {
+      const tx = {
+        userOrganization: {
+          findUnique: (...args: unknown[]) => mockUserOrganizationFindUnique(...args),
+        },
+      };
+      return callback(tx as Parameters<typeof callback>[0]);
+    }),
+  };
+});
 
 vi.mock('@/providers', () => ({
   getProviders: () => ({
