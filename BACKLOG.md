@@ -75,7 +75,7 @@ Implemented via two-tier architecture (see DOCUMENT_PREVIEW_PLAN.md):
 ## Medium Priority
 
 - ~~Replace remaining `window.confirm()` calls with proper confirmation dialogs~~ ✅ Done (webhooks, share links, remove member)
-- ~~Accessibility audit (WCAG 2.1 AA)~~ ✅ Initial pass complete 2026-04-26 — public pages scanned via `@axe-core/playwright` (`tests/e2e/a11y.test.ts`), full results in `docs/A11Y_AUDIT.md`. Authenticated surfaces still need a login fixture to scan; manual screen-reader pass still required before MVP launch.
+- ~~Accessibility audit (WCAG 2.1 AA)~~ ✅ Updated 2026-04-27 — full automated pass against staging revision 0167 covers 4 public + 8 authenticated pages, all 13 tests green. Login fixture lives at `tests/e2e/auth.setup.ts`. Per-resource pages (room detail, document viewer, public viewer link landing) and the manual screen-reader pass remain on the punch list before MVP launch. Full audit trail in `docs/A11Y_AUDIT.md`.
 - Production deployment workflow (tag-based)
 
 ## Low Priority
