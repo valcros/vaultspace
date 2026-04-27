@@ -9,7 +9,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { generateTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
-import { db, withOrgContext } from '@/lib/db';
+import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
@@ -25,8 +25,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, password, rememberMe } = loginSchema.parse(body);
 
-    // Find user with their organizations
-    const user = await db.user.findUnique({
+    // Find user with their organizations. Uses bootstrapDb because we don't
+    // know the user's org yet, so RLS can't be scoped — the admin connection
+    // bypasses RLS for this single read. All subsequent writes happen inside
+    // withOrgContext on the regular `db` client below.
+    const user = await bootstrapDb.user.findUnique({
       where: { email: email.toLowerCase() },
       include: {
         organizations: {

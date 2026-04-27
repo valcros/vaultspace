@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 
-import { db } from '@/lib/db';
+import { bootstrapDb as db } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { z } from 'zod';
 import { hasCapability } from '@/lib/deployment-capabilities';

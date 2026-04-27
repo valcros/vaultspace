@@ -31,8 +31,13 @@ export default defineConfig({
 
   projects: [
     {
+      name: 'auth-setup',
+      testMatch: /auth\.setup\.ts/,
+    },
+    {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['auth-setup'],
     },
     // Add more browsers for CI
     ...(process.env['CI']
@@ -40,6 +45,7 @@ export default defineConfig({
           {
             name: 'firefox',
             use: { ...devices['Desktop Firefox'] },
+            dependencies: ['auth-setup'],
           },
         ]
       : []),

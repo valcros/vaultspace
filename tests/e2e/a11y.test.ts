@@ -13,6 +13,8 @@
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect } from '@playwright/test';
 
+const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
+
 const PUBLIC_PAGES: Array<{ name: string; path: string }> = [
   { name: 'Landing', path: '/' },
   { name: 'Login', path: '/auth/login' },
@@ -20,25 +22,55 @@ const PUBLIC_PAGES: Array<{ name: string; path: string }> = [
   { name: 'Forgot Password', path: '/auth/forgot-password' },
 ];
 
-test.describe('WCAG 2.1 AA smoke tests', () => {
+const AUTHENTICATED_PAGES: Array<{ name: string; path: string }> = [
+  { name: 'Dashboard', path: '/dashboard' },
+  { name: 'Rooms List', path: '/rooms' },
+  { name: 'Users', path: '/users' },
+  { name: 'Groups', path: '/groups' },
+  { name: 'Activity', path: '/activity' },
+  { name: 'Settings', path: '/settings' },
+  { name: 'Settings Organization', path: '/settings/organization' },
+  { name: 'Settings Notifications', path: '/settings/notifications' },
+];
+
+function summarize(violations: Array<{ impact?: string | null; id: string; nodes: unknown[]; help: string }>) {
+  return violations
+    .map(
+      (v) =>
+        `  - ${v.impact}: ${v.id} (${v.nodes.length} node${v.nodes.length === 1 ? '' : 's'}) — ${v.help}`
+    )
+    .join('\n');
+}
+
+test.describe('WCAG 2.1 AA smoke tests — public pages', () => {
   for (const page of PUBLIC_PAGES) {
     test(`${page.name} page has no critical accessibility violations`, async ({ page: pwPage }) => {
       await pwPage.goto(page.path);
       await pwPage.waitForLoadState('networkidle');
 
-      const results = await new AxeBuilder({ page: pwPage })
-        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-        .analyze();
+      const results = await new AxeBuilder({ page: pwPage }).withTags(TAGS).analyze();
 
-      // Print a compact summary so the test report shows what we scanned.
-      const violationSummary = results.violations
-        .map(
-          (v) =>
-            `  - ${v.impact}: ${v.id} (${v.nodes.length} node${v.nodes.length === 1 ? '' : 's'}) — ${v.help}`
-        )
-        .join('\n');
       if (results.violations.length > 0) {
-        console.log(`Violations on ${page.name}:\n${violationSummary}`);
+        console.log(`Violations on ${page.name}:\n${summarize(results.violations)}`);
+      }
+
+      expect(results.violations).toEqual([]);
+    });
+  }
+});
+
+test.describe('WCAG 2.1 AA smoke tests — authenticated pages', () => {
+  test.use({ storageState: 'tests/e2e/.auth/admin.json' });
+
+  for (const page of AUTHENTICATED_PAGES) {
+    test(`${page.name} page has no critical accessibility violations`, async ({ page: pwPage }) => {
+      await pwPage.goto(page.path);
+      await pwPage.waitForLoadState('networkidle');
+
+      const results = await new AxeBuilder({ page: pwPage }).withTags(TAGS).analyze();
+
+      if (results.violations.length > 0) {
+        console.log(`Violations on ${page.name}:\n${summarize(results.violations)}`);
       }
 
       expect(results.violations).toEqual([]);

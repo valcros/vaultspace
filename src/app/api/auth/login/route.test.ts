@@ -12,14 +12,19 @@ vi.mock('bcryptjs', () => ({
 
 vi.mock('@/lib/db', () => ({
   db: {
+    user: { update: vi.fn() },
+    session: { create: vi.fn() },
+  },
+  bootstrapDb: {
     user: {
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
-      update: vi.fn(),
-    },
-    session: {
-      create: vi.fn(),
     },
   },
+  withOrgContext: async (_orgId: string, fn: (tx: unknown) => Promise<unknown>) =>
+    fn({
+      session: { create: vi.fn() },
+      user: { update: vi.fn() },
+    }),
 }));
 
 vi.mock('@/lib/middleware', () => ({

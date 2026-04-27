@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
-import { db } from '@/lib/db';
+import { bootstrapDb as db } from '@/lib/db';
 import { setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
