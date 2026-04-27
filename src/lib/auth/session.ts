@@ -8,7 +8,7 @@
 import type { Prisma, Session } from '@prisma/client';
 
 import { SESSION_CONFIG } from '../constants';
-import { db, withOrgContext } from '../db';
+import { bootstrapDb, db, withOrgContext } from '../db';
 import { AuthenticationError } from '../errors';
 import { getProviders } from '@/providers';
 
@@ -83,8 +83,15 @@ export async function createSession(
  * Returns session data if valid, throws otherwise
  */
 export async function validateSession(token: string): Promise<SessionData> {
-  // Fetch from database
-  const session = await db.session.findUnique({
+  // Fetch from database. Uses bootstrapDb because:
+  //   1. The session token is the only thing we have at this point — we don't
+  //      yet know the user's org, so we can't establish RLS context.
+  //   2. The `include: { user: true }` JOIN reads from the RLS-protected users
+  //      table, which on the regular pool can fail when a previous request
+  //      left non-NULL `app.current_org_id` on the connection.
+  // Sessions table itself has no RLS; the admin connection bypasses RLS for
+  // the user JOIN and any session.update calls in this function.
+  const session = await bootstrapDb.session.findUnique({
     where: { token },
     include: {
       user: true,
@@ -99,7 +106,7 @@ export async function validateSession(token: string): Promise<SessionData> {
   const now = new Date();
   if (session.expiresAt < now) {
     // Session expired - deactivate and throw
-    await db.session.update({
+    await bootstrapDb.session.update({
       where: { id: session.id },
       data: { isActive: false },
     });
@@ -111,7 +118,7 @@ export async function validateSession(token: string): Promise<SessionData> {
     session.createdAt.getTime() + SESSION_CONFIG.ABSOLUTE_MAX_DAYS * 24 * 60 * 60 * 1000
   );
   if (now > absoluteMax) {
-    await db.session.update({
+    await bootstrapDb.session.update({
       where: { id: session.id },
       data: { isActive: false },
     });
@@ -120,7 +127,7 @@ export async function validateSession(token: string): Promise<SessionData> {
 
   // Check if user is still active
   if (!session.user.isActive) {
-    await db.session.update({
+    await bootstrapDb.session.update({
       where: { id: session.id },
       data: { isActive: false },
     });
@@ -214,7 +221,9 @@ async function refreshSessionActivity(sessionId: string): Promise<void> {
   const now = new Date();
   const newExpiresAt = new Date(now.getTime() + SESSION_CONFIG.IDLE_TIMEOUT_HOURS * 60 * 60 * 1000);
 
-  await db.session.update({
+  // Sessions table has no RLS, but using bootstrapDb for consistency with the
+  // rest of session lifecycle and to avoid any pool-state surprises.
+  await bootstrapDb.session.update({
     where: { id: sessionId },
     data: {
       lastActiveAt: now,
