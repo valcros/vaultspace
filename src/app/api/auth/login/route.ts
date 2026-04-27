@@ -9,7 +9,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { generateTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
 import { setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
@@ -79,22 +79,24 @@ export async function POST(request: NextRequest) {
       : SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000;
     const expiresAt = new Date(Date.now() + sessionDuration);
 
-    // Create session
-    await db.session.create({
-      data: {
-        userId: user.id,
-        organizationId: userOrg.organization.id,
-        token: sessionToken,
-        expiresAt,
-        ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-        userAgent: request.headers.get('user-agent') ?? null,
-      },
-    });
+    // Create the session and stamp the lastLoginAt atomically inside an org
+    // context so RLS policies on the users table can verify membership.
+    await withOrgContext(userOrg.organization.id, async (tx) => {
+      await tx.session.create({
+        data: {
+          userId: user.id,
+          organizationId: userOrg.organization.id,
+          token: sessionToken,
+          expiresAt,
+          ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+          userAgent: request.headers.get('user-agent') ?? null,
+        },
+      });
 
-    // Update last login
-    await db.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      await tx.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
     });
 
     // Set session cookie

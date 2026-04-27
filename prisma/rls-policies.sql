@@ -73,6 +73,17 @@ CREATE POLICY org_bootstrap_lookup ON organizations
     AND "isActive" = true
   );
 
+-- Users bootstrap: allow email-based lookup before org context is established.
+-- The login flow looks up `users` by email + verifies password BEFORE it knows
+-- which organization to scope to. Without this, RLS blocks the lookup entirely
+-- and login returns 401 for every account. Restricted to SELECT and only when
+-- no org context is set; once a session is created the per-org policy takes
+-- over for subsequent requests.
+DROP POLICY IF EXISTS user_bootstrap_lookup ON users;
+CREATE POLICY user_bootstrap_lookup ON users
+  FOR SELECT
+  USING (current_setting('app.current_org_id', true) IS NULL);
+
 -- Users policy: See users in same org
 DROP POLICY IF EXISTS user_org_isolation ON users;
 CREATE POLICY user_org_isolation ON users
@@ -84,6 +95,15 @@ CREATE POLICY user_org_isolation ON users
       AND uo."organizationId" = current_setting('app.current_org_id', true)
     )
   );
+
+-- User-Organizations bootstrap: allow lookup of a user's org memberships
+-- before org context is set. The login flow needs this to pick the user's
+-- default organization after password verification but before session
+-- creation. Restricted to SELECT and only when no org context is set.
+DROP POLICY IF EXISTS user_org_bootstrap_lookup ON user_organizations;
+CREATE POLICY user_org_bootstrap_lookup ON user_organizations
+  FOR SELECT
+  USING (current_setting('app.current_org_id', true) IS NULL);
 
 -- User-Organizations policy
 DROP POLICY IF EXISTS user_org_mapping_isolation ON user_organizations;
