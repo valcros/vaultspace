@@ -24,8 +24,8 @@ vi.mock('@/lib/auth', () => ({
     mockDeactivateAllUserSessionsInTx(...args),
 }));
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const client = {
     passwordResetToken: {
       findFirst: (...args: unknown[]) => mockFindFirst(...args),
       update: (...args: unknown[]) => mockTokenUpdate(...args),
@@ -36,8 +36,9 @@ vi.mock('@/lib/db', () => ({
       update: (...args: unknown[]) => mockUserUpdate(...args),
     },
     $transaction: (...args: Parameters<typeof mockTransaction>) => mockTransaction(...args),
-  },
-}));
+  };
+  return { db: client, bootstrapDb: client };
+});
 
 import { POST } from './route';
 

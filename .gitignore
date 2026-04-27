@@ -76,3 +76,4 @@ Sample Upload Files/
 
 # Private configuration (gist)
 .private/
+tests/e2e/.auth/

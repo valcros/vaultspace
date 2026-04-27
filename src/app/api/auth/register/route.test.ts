@@ -24,14 +24,15 @@ const mockInvitationFindUnique = vi.fn();
 const mockTransaction = vi.fn();
 const mockSessionCreate = vi.fn();
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const client = {
     user: { findUnique: (...args: unknown[]) => mockFindUnique(...args) },
     invitation: { findUnique: (...args: unknown[]) => mockInvitationFindUnique(...args) },
     $transaction: (...args: unknown[]) => mockTransaction(...args),
     session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
-  },
-}));
+  };
+  return { db: client, bootstrapDb: client };
+});
 
 import { POST } from './route';
 
