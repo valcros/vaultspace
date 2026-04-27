@@ -78,6 +78,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
 import { AdminEmptyState, AdminSurface, AdminToolbar } from '@/components/layout/admin-page';
+import { useDockActions, type DockContextAction } from '@/components/layout/dock-context';
 import { QATab } from '@/components/rooms/QATab';
 import { ChecklistTab } from '@/components/rooms/ChecklistTab';
 import { CalendarTab } from '@/components/rooms/CalendarTab';
@@ -319,6 +320,57 @@ export default function RoomDetailPage() {
   // Member add states
   const [newMemberEmail, setNewMemberEmail] = React.useState('');
   const [isAddingMember, setIsAddingMember] = React.useState(false);
+
+  // Surface room-scoped actions in the floating dock so the user always has
+  // a way to reach the most common create-flows for the active tab without
+  // hunting for an in-page button. Declared up here so the hook ordering
+  // is stable even when the room is still loading (early-return below).
+  const dockActions = React.useMemo<DockContextAction[]>(() => {
+    if (activeTab === 'documents') {
+      return [
+        {
+          id: 'room-upload',
+          label: 'Upload',
+          icon: Upload,
+          onClick: () => setShowUploadDialog(true),
+        },
+        {
+          id: 'room-new-folder',
+          label: 'New Folder',
+          icon: FolderPlus,
+          onClick: () => setShowFolderDialog(true),
+        },
+      ];
+    }
+    if (activeTab === 'members') {
+      return [
+        {
+          id: 'room-add-admin',
+          label: 'Add Admin',
+          icon: UserPlus,
+          onClick: () => setShowMemberDialog(true),
+        },
+        {
+          id: 'room-invite-viewer',
+          label: 'Invite Viewer',
+          icon: Mail,
+          onClick: () => setShowInviteViewerDialog(true),
+        },
+      ];
+    }
+    if (activeTab === 'links') {
+      return [
+        {
+          id: 'room-create-link',
+          label: 'Create Link',
+          icon: LinkIcon,
+          onClick: () => setShowLinkDialog(true),
+        },
+      ];
+    }
+    return [];
+  }, [activeTab]);
+  useDockActions(dockActions);
 
   const fetchRoom = React.useCallback(async () => {
     try {
@@ -1421,7 +1473,7 @@ export default function RoomDetailPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <div className="md:hidden">
               <Select value={activeTab} onValueChange={setActiveTab}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Choose a room section">
                   <SelectValue placeholder="Choose a room section" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1434,57 +1486,33 @@ export default function RoomDetailPage() {
               </Select>
             </div>
 
-            <div className="hidden overflow-x-auto pb-1 md:block">
-              <TabsList className="h-auto w-max min-w-full justify-start rounded-2xl border border-slate-200/80 bg-slate-50/80 p-1.5 dark:border-slate-800 dark:bg-slate-900/70">
-                <TabsTrigger
-                  value="documents"
-                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
-                >
-                  <FileText className="h-4 w-4" />
-                  Documents
-                </TabsTrigger>
-                <TabsTrigger
-                  value="members"
-                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
-                >
-                  <Users className="h-4 w-4" />
-                  Access
-                </TabsTrigger>
-                <TabsTrigger
-                  value="links"
-                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
-                >
-                  <LinkIcon className="h-4 w-4" />
-                  Share Links
-                </TabsTrigger>
-                <TabsTrigger
-                  value="qa"
-                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                  Q&amp;A
-                </TabsTrigger>
-                <TabsTrigger
-                  value="checklist"
-                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
-                >
-                  <ClipboardCheck className="h-4 w-4" />
-                  Checklist
-                </TabsTrigger>
-                <TabsTrigger
-                  value="calendar"
-                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
-                >
-                  <CalendarDays className="h-4 w-4" />
-                  Calendar
-                </TabsTrigger>
-                <TabsTrigger
-                  value="activity"
-                  className="gap-2 rounded-xl px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-slate-950"
-                >
-                  <Activity className="h-4 w-4" />
-                  Activity
-                </TabsTrigger>
+            {/*
+              Slim contextual ribbon: borderless horizontal tabs with an
+              active-underline indicator. Replaces the prior padded pill bar
+              that sat in a rounded-2xl container — this version reclaims
+              roughly 40px of vertical space and keeps tab discovery on the
+              page (the floating dock surfaces room *actions*, not navigation).
+            */}
+            <div className="hidden overflow-x-auto md:block">
+              <TabsList className="h-auto w-max min-w-full justify-start gap-1 rounded-none border-b border-slate-200 bg-transparent p-0 text-slate-500 dark:border-slate-800 dark:bg-transparent dark:text-slate-400">
+                {[
+                  { value: 'documents', icon: FileText, label: 'Documents' },
+                  { value: 'members', icon: Users, label: 'Access' },
+                  { value: 'links', icon: LinkIcon, label: 'Share Links' },
+                  { value: 'qa', icon: MessageSquare, label: 'Q&A' },
+                  { value: 'checklist', icon: ClipboardCheck, label: 'Checklist' },
+                  { value: 'calendar', icon: CalendarDays, label: 'Calendar' },
+                  { value: 'activity', icon: Activity, label: 'Activity' },
+                ].map(({ value, icon: Icon, label }) => (
+                  <TabsTrigger
+                    key={value}
+                    value={value}
+                    className="-mb-px gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-600 shadow-none data-[state=active]:border-primary-600 data-[state=active]:bg-transparent data-[state=active]:text-slate-950 data-[state=active]:shadow-none dark:text-slate-400 dark:data-[state=active]:text-white"
+                  >
+                    <Icon aria-hidden="true" className="h-4 w-4" />
+                    {label}
+                  </TabsTrigger>
+                ))}
               </TabsList>
             </div>
 
