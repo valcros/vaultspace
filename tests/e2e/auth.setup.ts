@@ -18,17 +18,6 @@ const ADMIN_PASSWORD = process.env['PLAYWRIGHT_ADMIN_PASSWORD'] || 'Demo123!';
 const ADMIN_STORAGE_STATE = 'tests/e2e/.auth/admin.json';
 
 setup('authenticate as admin', async ({ page }) => {
-  page.on('response', (resp) => {
-    if (resp.url().includes('/api/auth/login')) {
-      console.log(`[auth-setup] login response: ${resp.status()} ${resp.url()}`);
-    }
-  });
-  page.on('request', (req) => {
-    if (req.url().includes('/api/auth/login')) {
-      console.log(`[auth-setup] login request: ${req.method()} ${req.url()} body=${req.postData()?.slice(0, 80)}`);
-    }
-  });
-
   await page.goto('/auth/login');
   await page.fill('input[type="email"]', ADMIN_EMAIL);
   await page.fill('input[type="password"]', ADMIN_PASSWORD);

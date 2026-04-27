@@ -33,7 +33,9 @@ const AUTHENTICATED_PAGES: Array<{ name: string; path: string }> = [
   { name: 'Settings Notifications', path: '/settings/notifications' },
 ];
 
-function summarize(violations: Array<{ impact?: string | null; id: string; nodes: unknown[]; help: string }>) {
+function summarize(
+  violations: Array<{ impact?: string | null; id: string; nodes: unknown[]; help: string }>
+) {
   return violations
     .map(
       (v) =>
