@@ -284,7 +284,18 @@ export function DockShell({ children, user }: DockShellProps) {
         <DockHeader user={user} onSearchClick={() => setCommandOpen(true)} />
         <main
           ref={mainRef}
-          className={clsx('flex-1 overflow-y-auto p-4 lg:p-6', contentPadding[position])}
+          // tabIndex=0 satisfies WCAG 2.1.1/2.1.3: the scrollable region must
+          // be reachable via keyboard so users can use arrow keys to scroll
+          // when the content has no focusable children of its own (e.g. on the
+          // Activity and Settings pages). focus:outline-none keeps the visual
+          // unchanged for non-keyboard users; the focus-visible ring elsewhere
+          // continues to highlight intentional focus targets.
+          tabIndex={0}
+          aria-label="Main content"
+          className={clsx(
+            'flex-1 overflow-y-auto p-4 focus:outline-none lg:p-6',
+            contentPadding[position]
+          )}
         >
           {children}
         </main>
