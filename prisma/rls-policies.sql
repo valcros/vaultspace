@@ -73,6 +73,15 @@ CREATE POLICY org_bootstrap_lookup ON organizations
     AND "isActive" = true
   );
 
+-- Organizations bootstrap INSERT: allow new org creation during signup
+-- (/api/auth/register without an invite token) and during /api/setup.
+-- The new org's id is what becomes the very first app.current_org_id, so
+-- there is no context to scope against at the moment of creation.
+DROP POLICY IF EXISTS org_bootstrap_insert ON organizations;
+CREATE POLICY org_bootstrap_insert ON organizations
+  FOR INSERT
+  WITH CHECK (current_setting('app.current_org_id', true) IS NULL);
+
 -- Users bootstrap: allow email-based lookup before org context is established.
 -- The login flow looks up `users` by email + verifies password BEFORE it knows
 -- which organization to scope to. Without this, RLS blocks the lookup entirely
@@ -83,6 +92,13 @@ DROP POLICY IF EXISTS user_bootstrap_lookup ON users;
 CREATE POLICY user_bootstrap_lookup ON users
   FOR SELECT
   USING (current_setting('app.current_org_id', true) IS NULL);
+
+-- Users bootstrap INSERT: allow new account creation during /api/auth/register
+-- (no org context yet because the org is being created in the same transaction).
+DROP POLICY IF EXISTS user_bootstrap_insert ON users;
+CREATE POLICY user_bootstrap_insert ON users
+  FOR INSERT
+  WITH CHECK (current_setting('app.current_org_id', true) IS NULL);
 
 -- Users policy: See users in same org
 DROP POLICY IF EXISTS user_org_isolation ON users;
@@ -104,6 +120,15 @@ DROP POLICY IF EXISTS user_org_bootstrap_lookup ON user_organizations;
 CREATE POLICY user_org_bootstrap_lookup ON user_organizations
   FOR SELECT
   USING (current_setting('app.current_org_id', true) IS NULL);
+
+-- User-Organizations bootstrap INSERT: allow linking the new user to the
+-- new (or invited) organization during /api/auth/register. The first
+-- inserted UserOrganization row establishes the membership the per-org
+-- policy will later check.
+DROP POLICY IF EXISTS user_org_bootstrap_insert ON user_organizations;
+CREATE POLICY user_org_bootstrap_insert ON user_organizations
+  FOR INSERT
+  WITH CHECK (current_setting('app.current_org_id', true) IS NULL);
 
 -- User-Organizations policy
 DROP POLICY IF EXISTS user_org_mapping_isolation ON user_organizations;
@@ -214,6 +239,16 @@ CREATE POLICY text_org_isolation ON extracted_texts
 --   CREATE POLICY watermark_org_isolation ON watermark_configs
 --     FOR ALL
 --     USING ("organizationId" = current_setting('app.current_org_id', true));
+
+-- Invitations bootstrap: allow lookup by token before org context is set.
+-- The /api/auth/register flow validates the invitation token before any
+-- session exists, so it needs to find the row by `invitationToken`. Lookup
+-- by an unguessable secret is the same risk model as the existing
+-- session-token lookup pattern.
+DROP POLICY IF EXISTS invitation_bootstrap_lookup ON invitations;
+CREATE POLICY invitation_bootstrap_lookup ON invitations
+  FOR SELECT
+  USING (current_setting('app.current_org_id', true) IS NULL);
 
 -- Invitations policy
 DROP POLICY IF EXISTS invitation_org_isolation ON invitations;

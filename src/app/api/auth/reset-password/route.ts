@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
 import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { bootstrapDb as db } from '@/lib/db';
 import { z } from 'zod';
 
 const resetPasswordSchema = z.object({

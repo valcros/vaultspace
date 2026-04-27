@@ -28,6 +28,38 @@ if (process.env['NODE_ENV'] !== 'production') {
   globalThis.prisma = db;
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var prismaBootstrap: PrismaClient | undefined;
+}
+
+/**
+ * Bootstrap Prisma client — connects via DATABASE_URL_ADMIN when set.
+ *
+ * Use this ONLY for the small set of pre-session operations that legitimately
+ * need to read or write across organizations: login user lookup, registration
+ * (creating the very first user/org/UserOrganization triple), and password
+ * reset token lookup. Every other code path must use the regular `db` client
+ * with `withOrgContext(orgId, …)` so RLS enforces tenant isolation.
+ *
+ * Falls back to DATABASE_URL when DATABASE_URL_ADMIN is unset (e.g. local
+ * dev where a single role does everything).
+ */
+export const bootstrapDb =
+  globalThis.prismaBootstrap ??
+  new PrismaClient({
+    log: process.env['NODE_ENV'] === 'development' ? ['error', 'warn'] : ['error'],
+    datasources: {
+      db: {
+        url: process.env['DATABASE_URL_ADMIN'] || process.env['DATABASE_URL'] || '',
+      },
+    },
+  });
+
+if (process.env['NODE_ENV'] !== 'production') {
+  globalThis.prismaBootstrap = bootstrapDb;
+}
+
 /**
  * Execute a database operation with organization RLS context.
  *
