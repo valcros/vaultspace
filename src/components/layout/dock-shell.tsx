@@ -391,7 +391,17 @@ export function DockShell({ children, user }: DockShellProps) {
           'border border-slate-200/90 dark:border-slate-700',
           'rounded-2xl shadow-2xl',
           'transition-all duration-300 ease-out',
-          isVisible && !isCollapsed && showFullDock
+          // Visibility logic differs between modes:
+          //   - Standard mode: scroll-auto-hide and the user's collapse
+          //     toggle determine visibility (current dock-on-page-by-default
+          //     model needs a way to get out of the way).
+          //   - Compact mode: the dock only appears when the user
+          //     explicitly summoned it via the puck or ⌘.. Auto-hiding it
+          //     on scroll would orphan the user — the puck is gone (it only
+          //     renders when !showFullDock) and the legacy restore chevron
+          //     is suppressed in compact mode. Keep it visible until the
+          //     user explicitly collapses it back to the puck.
+          (compact ? showFullDock : isVisible && !isCollapsed)
             ? positionClasses[position]
             : hideTransform[position],
           isDragging && 'shadow-3xl scale-105 cursor-grabbing'
