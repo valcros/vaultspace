@@ -6,7 +6,6 @@ import {
   FileText,
   Users,
   Link as LinkIcon,
-  Activity,
   Settings,
   Upload,
   Plus,
@@ -78,7 +77,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
 import { AdminEmptyState, AdminSurface, AdminToolbar } from '@/components/layout/admin-page';
-import { useDockActions, type DockContextAction } from '@/components/layout/dock-context';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetBody,
+} from '@/components/ui/sheet';
 import { QATab } from '@/components/rooms/QATab';
 import { ChecklistTab } from '@/components/rooms/ChecklistTab';
 import { CalendarTab } from '@/components/rooms/CalendarTab';
@@ -89,7 +95,6 @@ import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
-import { getEventStyle } from '@/lib/activityUtils';
 
 interface Room {
   id: string;
@@ -195,15 +200,6 @@ interface DocumentVersionInfo {
   uploadedByUser: { firstName: string; lastName: string; email: string } | null;
 }
 
-interface ActivityEvent {
-  id: string;
-  type: string;
-  description: string | null;
-  actor: { firstName: string; lastName: string } | null;
-  metadata: Record<string, unknown>;
-  createdAt: string;
-}
-
 export default function RoomDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -218,9 +214,13 @@ export default function RoomDetailPage() {
   ]);
   const [admins, setAdmins] = React.useState<Admin[]>([]);
   const [links, setLinks] = React.useState<ShareLink[]>([]);
-  const [activity, setActivity] = React.useState<ActivityEvent[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState('documents');
+  // Drawer-internal pane state. Documents are the page body now, not a tab,
+  // so this only chooses which secondary surface (Access / Share Links /
+  // Q&A / Checklist / Calendar) is visible inside the Manage Room drawer.
+  const [managePane, setManagePane] = React.useState<
+    'members' | 'links' | 'qa' | 'checklist' | 'calendar'
+  >('members');
   const [viewMode, setViewMode] = React.useState<'list' | 'grid'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('vaultspace-doc-view') as 'list' | 'grid') || 'list';
@@ -321,56 +321,9 @@ export default function RoomDetailPage() {
   const [newMemberEmail, setNewMemberEmail] = React.useState('');
   const [isAddingMember, setIsAddingMember] = React.useState(false);
 
-  // Surface room-scoped actions in the floating dock so the user always has
-  // a way to reach the most common create-flows for the active tab without
-  // hunting for an in-page button. Declared up here so the hook ordering
-  // is stable even when the room is still loading (early-return below).
-  const dockActions = React.useMemo<DockContextAction[]>(() => {
-    if (activeTab === 'documents') {
-      return [
-        {
-          id: 'room-upload',
-          label: 'Upload',
-          icon: Upload,
-          onClick: () => setShowUploadDialog(true),
-        },
-        {
-          id: 'room-new-folder',
-          label: 'New Folder',
-          icon: FolderPlus,
-          onClick: () => setShowFolderDialog(true),
-        },
-      ];
-    }
-    if (activeTab === 'members') {
-      return [
-        {
-          id: 'room-add-admin',
-          label: 'Add Admin',
-          icon: UserPlus,
-          onClick: () => setShowMemberDialog(true),
-        },
-        {
-          id: 'room-invite-viewer',
-          label: 'Invite Viewer',
-          icon: Mail,
-          onClick: () => setShowInviteViewerDialog(true),
-        },
-      ];
-    }
-    if (activeTab === 'links') {
-      return [
-        {
-          id: 'room-create-link',
-          label: 'Create Link',
-          icon: LinkIcon,
-          onClick: () => setShowLinkDialog(true),
-        },
-      ];
-    }
-    return [];
-  }, [activeTab]);
-  useDockActions(dockActions);
+  // Manage drawer (Access / Share Links / Q&A / Checklist / Calendar) open
+  // state. Closed by default so the room canvas leads with documents.
+  const [manageOpen, setManageOpen] = React.useState(false);
 
   const fetchRoom = React.useCallback(async () => {
     try {
@@ -697,18 +650,6 @@ export default function RoomDetailPage() {
     }
   }, [roomId]);
 
-  const fetchActivity = React.useCallback(async () => {
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/audit`);
-      if (response.ok) {
-        const data = await response.json();
-        setActivity(data.events || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch activity:', error);
-    }
-  }, [roomId]);
-
   const fetchBookmarks = React.useCallback(async () => {
     try {
       const response = await fetch('/api/bookmarks');
@@ -772,47 +713,39 @@ export default function RoomDetailPage() {
     fetchRoom();
   }, [fetchRoom]);
 
+  // Documents are the always-on page body — fetch them as soon as the room
+  // loads, regardless of whether the manage drawer is open.
   React.useEffect(() => {
     if (room) {
-      switch (activeTab) {
-        case 'documents':
-          fetchDocuments();
-          fetchFolders();
-          fetchBookmarks();
-          break;
-        case 'members':
-          fetchAdmins();
-          fetchAccessRequests();
-          fetchViewers();
-          break;
-        case 'links':
-          fetchLinks();
-          break;
-        case 'activity':
-          fetchActivity();
-          break;
-      }
+      fetchDocuments();
+      fetchFolders();
+      fetchBookmarks();
     }
-  }, [
-    activeTab,
-    room,
-    fetchDocuments,
-    fetchFolders,
-    fetchBookmarks,
-    fetchAdmins,
-    fetchAccessRequests,
-    fetchViewers,
-    fetchLinks,
-    fetchActivity,
-  ]);
+  }, [room, fetchDocuments, fetchFolders, fetchBookmarks]);
 
-  // Refetch when navigating folders
+  // Refetch documents when navigating folders.
   React.useEffect(() => {
-    if (room && activeTab === 'documents') {
+    if (room) {
       fetchDocuments();
       fetchFolders();
     }
-  }, [currentFolderId, room, activeTab, fetchDocuments, fetchFolders]);
+  }, [currentFolderId, room, fetchDocuments, fetchFolders]);
+
+  // Lazy-load the manage drawer's pane data only when it opens or the user
+  // switches panes. Q&A / Checklist / Calendar sub-components own their own
+  // data fetching; the page only fetches the panes whose state lives here.
+  React.useEffect(() => {
+    if (!manageOpen || !room) {
+      return;
+    }
+    if (managePane === 'members') {
+      fetchAdmins();
+      fetchAccessRequests();
+      fetchViewers();
+    } else if (managePane === 'links') {
+      fetchLinks();
+    }
+  }, [manageOpen, managePane, room, fetchAdmins, fetchAccessRequests, fetchViewers, fetchLinks]);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) {
@@ -1374,16 +1307,6 @@ export default function RoomDetailPage() {
     return null;
   }
 
-  const roomTabs = [
-    { value: 'documents', label: 'Documents' },
-    { value: 'members', label: 'Access' },
-    { value: 'links', label: 'Share Links' },
-    { value: 'qa', label: 'Q&A' },
-    { value: 'checklist', label: 'Checklist' },
-    { value: 'calendar', label: 'Calendar' },
-    { value: 'activity', label: 'Activity' },
-  ] as const;
-
   return (
     <>
       <PageHeader
@@ -1393,6 +1316,15 @@ export default function RoomDetailPage() {
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
             {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
+            <Button
+              variant="ghost"
+              className="text-white hover:bg-white/20 hover:text-white"
+              aria-label="Manage room"
+              onClick={() => setManageOpen(true)}
+            >
+              <Settings className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Manage</span>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -1405,6 +1337,10 @@ export default function RoomDetailPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/settings`)}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/analytics`)}>
                   <BarChart3 className="mr-2 h-4 w-4" />
                   Analytics
@@ -1424,613 +1360,401 @@ export default function RoomDetailPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button
-              variant="ghost"
-              className="text-white hover:bg-white/20 hover:text-white"
-              aria-label="Room settings"
-              onClick={() => router.push(`/rooms/${roomId}/settings`)}
-            >
-              <Settings className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Settings</span>
-            </Button>
           </div>
         }
       />
 
-      <div className="space-y-6">
-        {/*
-          Compact stat row. The earlier 4-card grid claimed ~120px of vertical
-          real estate above the fold for four 3-digit-max counts; this version
-          puts the same data in a single horizontal row of icon + label + count
-          chips, sized for up to 999 with comfortable padding. Wraps to a 2x2
-          grid on the smallest viewports rather than stacking 4 deep.
-        */}
-        <AdminSurface className="px-3 py-2 sm:px-4">
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-8">
-            {[
-              { label: 'Documents', value: documents.length, icon: FileText },
-              { label: 'Folders', value: folders.length, icon: Folder },
-              { label: 'Admins', value: admins.length, icon: Users },
-              { label: 'Share Links', value: links.length, icon: LinkIcon },
-            ].map(({ label, value, icon: Icon }) => (
-              <div key={label} className="flex items-center gap-2">
-                <Icon
-                  aria-hidden="true"
-                  className="h-4 w-4 text-primary-600 dark:text-primary-400"
-                />
-                <dt className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                  {label}
-                </dt>
-                <dd className="text-sm font-semibold tabular-nums text-slate-950 dark:text-white">
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </AdminSurface>
-
-        <AdminSurface className="space-y-4 p-4 sm:p-5">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <div className="md:hidden">
-              <Select value={activeTab} onValueChange={setActiveTab}>
-                <SelectTrigger className="w-full" aria-label="Choose a room section">
-                  <SelectValue placeholder="Choose a room section" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roomTabs.map((tab) => (
-                    <SelectItem key={tab.value} value={tab.value}>
-                      {tab.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/*
-              Slim contextual ribbon: borderless horizontal tabs with an
-              active-underline indicator. Replaces the prior padded pill bar
-              that sat in a rounded-2xl container — this version reclaims
-              roughly 40px of vertical space and keeps tab discovery on the
-              page (the floating dock surfaces room *actions*, not navigation).
-            */}
-            <div className="hidden overflow-x-auto md:block">
-              <TabsList className="h-auto w-max min-w-full justify-start gap-1 rounded-none border-b border-slate-200 bg-transparent p-0 text-slate-500 dark:border-slate-800 dark:bg-transparent dark:text-slate-400">
-                {[
-                  { value: 'documents', icon: FileText, label: 'Documents' },
-                  { value: 'members', icon: Users, label: 'Access' },
-                  { value: 'links', icon: LinkIcon, label: 'Share Links' },
-                  { value: 'qa', icon: MessageSquare, label: 'Q&A' },
-                  { value: 'checklist', icon: ClipboardCheck, label: 'Checklist' },
-                  { value: 'calendar', icon: CalendarDays, label: 'Calendar' },
-                  { value: 'activity', icon: Activity, label: 'Activity' },
-                ].map(({ value, icon: Icon, label }) => (
-                  <TabsTrigger
-                    key={value}
-                    value={value}
-                    className="-mb-px gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 py-2 text-sm font-medium text-slate-600 shadow-none data-[state=active]:border-primary-600 data-[state=active]:bg-transparent data-[state=active]:text-slate-950 data-[state=active]:shadow-none dark:text-slate-400 dark:data-[state=active]:text-white"
+      {/*
+        Documents are the primary surface of a room — they render as the page
+        body, not as one of seven tabs. Secondary surfaces (Access, Share
+        Links, Q&A, Checklist, Calendar) live in the Manage Room drawer at
+        the bottom of this file; heavier admin surfaces (Settings, Audit,
+        Analytics, Trash) remain dedicated routes reachable from the
+        PageHeader More menu.
+      */}
+      <div className="space-y-4">
+        <div>
+          {/* Breadcrumb navigation */}
+          {breadcrumbs.length > 1 && (
+            <div className="mb-4 flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900/55">
+              {breadcrumbs.map((crumb, index) => (
+                <React.Fragment key={crumb.id ?? 'root'}>
+                  {index > 0 && (
+                    <ChevronRight className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                  )}
+                  <button
+                    onClick={() => handleBreadcrumbClick(index)}
+                    className={`rounded px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                      index === breadcrumbs.length - 1
+                        ? 'font-medium text-slate-950 dark:text-white'
+                        : 'text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-100'
+                    }`}
                   >
-                    <Icon aria-hidden="true" className="h-4 w-4" />
-                    {label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+                    {crumb.name}
+                  </button>
+                </React.Fragment>
+              ))}
             </div>
+          )}
 
-            {/* Documents Tab */}
-            <TabsContent value="documents" className="mt-4">
-              {/* Breadcrumb navigation */}
-              {breadcrumbs.length > 1 && (
-                <div className="mb-4 flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900/55">
-                  {breadcrumbs.map((crumb, index) => (
-                    <React.Fragment key={crumb.id ?? 'root'}>
-                      {index > 0 && (
-                        <ChevronRight className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                      )}
+          <AdminToolbar
+            title="Document workspace"
+            description="Upload files, structure the room into folders, and change how the library is displayed without leaving the tab."
+            className="mb-4"
+            actions={
+              <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                {documents.length} docs
+              </div>
+            }
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => setShowUploadDialog(true)}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Files
+                </Button>
+                <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
+                  <FolderPlus className="mr-2 h-4 w-4" />
+                  New Folder
+                </Button>
+                <Select
+                  value={categoryFilter ?? 'all'}
+                  onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
+                >
+                  <SelectTrigger className="h-10 w-[150px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950">
+                    <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {CATEGORY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Compact toggle (list view only) */}
+                {viewMode === 'list' && (
+                  <button
+                    onClick={() => {
+                      const next = !compact;
+                      setCompact(next);
+                      localStorage.setItem('vaultspace-compact', String(next));
+                    }}
+                    className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
+                    title={compact ? 'Standard density' : 'Compact density'}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                )}
+                {/* Column picker (list view only) */}
+                {viewMode === 'list' && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
                       <button
-                        onClick={() => handleBreadcrumbClick(index)}
-                        className={`rounded px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 ${
-                          index === breadcrumbs.length - 1
-                            ? 'font-medium text-slate-950 dark:text-white'
-                            : 'text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-100'
-                        }`}
+                        className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
+                        title="Show/hide columns"
                       >
-                        {crumb.name}
+                        <Columns3 className="h-4 w-4" />
                       </button>
-                    </React.Fragment>
-                  ))}
-                </div>
-              )}
-
-              <AdminToolbar
-                title="Document workspace"
-                description="Upload files, structure the room into folders, and change how the library is displayed without leaving the tab."
-                className="mb-4"
-                actions={
-                  <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                    {documents.length} docs
-                  </div>
-                }
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button onClick={() => setShowUploadDialog(true)}>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload Files
-                    </Button>
-                    <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
-                      <FolderPlus className="mr-2 h-4 w-4" />
-                      New Folder
-                    </Button>
-                    <Select
-                      value={categoryFilter ?? 'all'}
-                      onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
-                    >
-                      <SelectTrigger className="h-10 w-[150px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950">
-                        <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
-                        <SelectValue placeholder="Category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Categories</SelectItem>
-                        {CATEGORY_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* Compact toggle (list view only) */}
-                    {viewMode === 'list' && (
-                      <button
-                        onClick={() => {
-                          const next = !compact;
-                          setCompact(next);
-                          localStorage.setItem('vaultspace-compact', String(next));
-                        }}
-                        className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
-                        title={compact ? 'Standard density' : 'Compact density'}
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                    )}
-                    {/* Column picker (list view only) */}
-                    {viewMode === 'list' && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
-                            title="Show/hide columns"
-                          >
-                            <Columns3 className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {[
-                            { key: 'size', label: 'Size' },
-                            { key: 'uploaded', label: 'Uploaded' },
-                          ].map((col) => (
-                            <DropdownMenuItem
-                              key={col.key}
-                              onClick={() => {
-                                const next = {
-                                  ...visibleColumns,
-                                  [col.key]: !visibleColumns[col.key],
-                                };
-                                setVisibleColumns(next);
-                                localStorage.setItem('vaultspace-columns', JSON.stringify(next));
-                              }}
-                            >
-                              <span
-                                className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
-                              />
-                              {col.label}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                    {/* View toggle */}
-                    <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-950">
-                      <button
-                        onClick={() => {
-                          setViewMode('list');
-                          localStorage.setItem('vaultspace-doc-view', 'list');
-                        }}
-                        className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
-                        title="List view"
-                      >
-                        <List className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setViewMode('grid');
-                          localStorage.setItem('vaultspace-doc-view', 'grid');
-                        }}
-                        className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
-                        title="Grid view"
-                      >
-                        <LayoutGrid className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </AdminToolbar>
-
-              {folders.length === 0 && documents.length === 0 ? (
-                <AdminEmptyState
-                  icon={<FileText className="h-6 w-6" />}
-                  title="No documents yet"
-                  description="Upload your first files or create folders to start structuring this room for secure review."
-                  action={
-                    <Button onClick={() => setShowUploadDialog(true)}>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload Files
-                    </Button>
-                  }
-                />
-              ) : viewMode === 'list' ? (
-                <AdminSurface className="overflow-hidden p-0">
-                  <table className="w-full">
-                    <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
-                      <tr>
-                        <th className="w-8 px-2 py-2">
-                          <button
-                            onClick={toggleSelectAll}
-                            className="flex items-center text-neutral-400 hover:text-neutral-600"
-                          >
-                            {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
-                              <CheckSquare className="h-4 w-4 text-primary-500" />
-                            ) : (
-                              <Square className="h-4 w-4" />
-                            )}
-                          </button>
-                        </th>
-                        <th
-                          className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                          onClick={() => handleSort('name')}
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            Name
-                            {sortField === 'name' ? (
-                              sortDir === 'asc' ? (
-                                <ChevronUp className="h-3 w-3" />
-                              ) : (
-                                <ChevronDown className="h-3 w-3" />
-                              )
-                            ) : (
-                              <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
-                            )}
-                          </span>
-                        </th>
-                        {visibleColumns['size'] && (
-                          <th
-                            className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                            onClick={() => handleSort('size')}
-                          >
-                            <span className="inline-flex items-center gap-1">
-                              Size
-                              {sortField === 'size' ? (
-                                sortDir === 'asc' ? (
-                                  <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3" />
-                                )
-                              ) : null}
-                            </span>
-                          </th>
-                        )}
-                        {visibleColumns['uploaded'] && (
-                          <th
-                            className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                            onClick={() => handleSort('createdAt')}
-                          >
-                            <span className="inline-flex items-center gap-1">
-                              Uploaded
-                              {sortField === 'createdAt' ? (
-                                sortDir === 'asc' ? (
-                                  <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3" />
-                                )
-                              ) : null}
-                            </span>
-                          </th>
-                        )}
-                        <th className="w-8"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Render folders first */}
-                      {folders.map((folder) => (
-                        <tr
-                          key={folder.id}
-                          className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
-                          onClick={() => handleFolderClick(folder)}
-                        >
-                          <td className="w-8 px-2" />
-                          <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                            <div className="flex items-center gap-2">
-                              <Folder
-                                className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`}
-                              />
-                              <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
-                                {folder.name}
-                              </span>
-                            </div>
-                          </td>
-                          {visibleColumns['size'] && (
-                            <td
-                              className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                            >
-                              {folder.documentCount} files, {folder.childCount} folders
-                            </td>
-                          )}
-                          {visibleColumns['uploaded'] && (
-                            <td
-                              className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                            >
-                              {formatDate(folder.createdAt)}
-                            </td>
-                          )}
-                          <td
-                            className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
-                                >
-                                  <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  Open
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() => handleFolderDelete(folder)}
-                                  className="text-danger-600"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
-                        </tr>
-                      ))}
-                      {/* Render documents */}
-                      {sortedDocuments.map((doc) => (
-                        <tr
-                          key={doc.id}
-                          className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
-                          onClick={() => handlePreview(doc)}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setContextMenu({ x: e.clientX, y: e.clientY, doc });
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {[
+                        { key: 'size', label: 'Size' },
+                        { key: 'uploaded', label: 'Uploaded' },
+                      ].map((col) => (
+                        <DropdownMenuItem
+                          key={col.key}
+                          onClick={() => {
+                            const next = {
+                              ...visibleColumns,
+                              [col.key]: !visibleColumns[col.key],
+                            };
+                            setVisibleColumns(next);
+                            localStorage.setItem('vaultspace-columns', JSON.stringify(next));
                           }}
                         >
-                          <td
-                            className="w-8 px-2"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleDocSelection(doc.id);
-                            }}
-                          >
-                            {selectedDocs.has(doc.id) ? (
-                              <CheckSquare className="h-4 w-4 text-primary-500" />
-                            ) : (
-                              <Square className="h-4 w-4 text-neutral-300" />
-                            )}
-                          </td>
-                          <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                            <div className="flex items-center gap-2">
-                              <FileTypeIcon
-                                mimeType={doc.mimeType}
-                                className={compact ? 'h-4 w-4' : undefined}
-                              />
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span
-                                    className={`truncate font-medium ${compact ? 'text-sm' : ''}`}
-                                  >
-                                    {doc.name}
-                                  </span>
-                                  {(doc.confidential || room?.allDocumentsConfidential) && (
-                                    <Lock className="h-3 w-3 shrink-0 text-amber-500" />
-                                  )}
-                                </div>
-                                {!compact && (
-                                  <div className="mt-0.5 flex flex-wrap gap-1">
-                                    {doc.category && (
-                                      <span
-                                        className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
-                                      >
-                                        {getCategoryLabel(doc.category)}
-                                      </span>
-                                    )}
-                                    {doc.tags?.map((tag) => (
-                                      <Badge
-                                        key={tag}
-                                        variant="outline"
-                                        className="px-1 py-0 text-[10px]"
-                                      >
-                                        {tag}
-                                      </Badge>
-                                    ))}
-                                    {doc.expiresAt && (
-                                      <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
-                                        <Clock className="h-2.5 w-2.5" />
-                                        Expires {new Date(doc.expiresAt).toLocaleDateString()}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          {visibleColumns['size'] && (
-                            <td
-                              className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                            >
-                              {formatFileSize(doc.size)}
-                            </td>
-                          )}
-                          {visibleColumns['uploaded'] && (
-                            <td
-                              className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                            >
-                              {formatDate(doc.createdAt)}
-                            </td>
-                          )}
-                          <td
-                            className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
-                                >
-                                  <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handlePreview(doc)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  Preview
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                                  <Download className="mr-2 h-4 w-4" />
-                                  Download
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setEditingTagsDoc(doc);
-                                    setTagInput((doc.tags || []).join(', '));
-                                  }}
-                                >
-                                  <Tag className="mr-2 h-4 w-4" />
-                                  Edit Properties
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
-                                  <Star
-                                    className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
-                                  />
-                                  {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
-                                  <History className="mr-2 h-4 w-4" />
-                                  Version History
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={async () => {
-                                    const next = !doc.confidential;
-                                    await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
-                                      method: 'PATCH',
-                                      headers: {
-                                        'Content-Type': 'application/json',
-                                      },
-                                      body: JSON.stringify({
-                                        confidential: next,
-                                      }),
-                                    });
-                                    fetchDocuments();
-                                  }}
-                                >
-                                  <Lock className="mr-2 h-4 w-4" />
-                                  {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() => handleDelete(doc)}
-                                  className="text-danger-600"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
-                        </tr>
+                          <span
+                            className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
+                          />
+                          {col.label}
+                        </DropdownMenuItem>
                       ))}
-                    </tbody>
-                  </table>
-                </AdminSurface>
-              ) : (
-                /* Grid / Thumbnail View */
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                  {/* Folders */}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {/* View toggle */}
+                <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-950">
+                  <button
+                    onClick={() => {
+                      setViewMode('list');
+                      localStorage.setItem('vaultspace-doc-view', 'list');
+                    }}
+                    className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
+                    title="List view"
+                  >
+                    <List className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setViewMode('grid');
+                      localStorage.setItem('vaultspace-doc-view', 'grid');
+                    }}
+                    className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
+                    title="Grid view"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </AdminToolbar>
+
+          {folders.length === 0 && documents.length === 0 ? (
+            <AdminEmptyState
+              icon={<FileText className="h-6 w-6" />}
+              title="No documents yet"
+              description="Upload your first files or create folders to start structuring this room for secure review."
+              action={
+                <Button onClick={() => setShowUploadDialog(true)}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Files
+                </Button>
+              }
+            />
+          ) : viewMode === 'list' ? (
+            <AdminSurface className="overflow-hidden p-0">
+              <table className="w-full">
+                <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
+                  <tr>
+                    <th className="w-8 px-2 py-2">
+                      <button
+                        onClick={toggleSelectAll}
+                        className="flex items-center text-neutral-400 hover:text-neutral-600"
+                      >
+                        {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
+                          <CheckSquare className="h-4 w-4 text-primary-500" />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                      </button>
+                    </th>
+                    <th
+                      className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                      onClick={() => handleSort('name')}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Name
+                        {sortField === 'name' ? (
+                          sortDir === 'asc' ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                        )}
+                      </span>
+                    </th>
+                    {visibleColumns['size'] && (
+                      <th
+                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                        onClick={() => handleSort('size')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Size
+                          {sortField === 'size' ? (
+                            sortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )
+                          ) : null}
+                        </span>
+                      </th>
+                    )}
+                    {visibleColumns['uploaded'] && (
+                      <th
+                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                        onClick={() => handleSort('createdAt')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Uploaded
+                          {sortField === 'createdAt' ? (
+                            sortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )
+                          ) : null}
+                        </span>
+                      </th>
+                    )}
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Render folders first */}
                   {folders.map((folder) => (
-                    <div
+                    <tr
                       key={folder.id}
-                      className="group cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+                      className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
                       onClick={() => handleFolderClick(folder)}
                     >
-                      <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-amber-50">
-                        <Folder className="h-12 w-12 text-amber-500" />
-                      </div>
-                      <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
-                      <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
-                    </div>
+                      <td className="w-8 px-2" />
+                      <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                        <div className="flex items-center gap-2">
+                          <Folder
+                            className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`}
+                          />
+                          <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
+                            {folder.name}
+                          </span>
+                        </div>
+                      </td>
+                      {visibleColumns['size'] && (
+                        <td
+                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                        >
+                          {folder.documentCount} files, {folder.childCount} folders
+                        </td>
+                      )}
+                      {visibleColumns['uploaded'] && (
+                        <td
+                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                        >
+                          {formatDate(folder.createdAt)}
+                        </td>
+                      )}
+                      <td
+                        className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                            >
+                              <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Open
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleFolderDelete(folder)}
+                              className="text-danger-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
                   ))}
-                  {/* Documents */}
-                  {documents.map((doc) => (
-                    <div
+                  {/* Render documents */}
+                  {sortedDocuments.map((doc) => (
+                    <tr
                       key={doc.id}
-                      className="group relative cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+                      className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
                       onClick={() => handlePreview(doc)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setContextMenu({ x: e.clientX, y: e.clientY, doc });
                       }}
                     >
-                      <DocumentThumbnail
-                        docId={doc.id}
-                        roomId={roomId}
-                        mimeType={doc.mimeType}
-                        confidential={doc.confidential || room?.allDocumentsConfidential || false}
-                        updatedAt={doc.updatedAt}
-                      />
-                      <div className="mt-2 flex items-center gap-1">
-                        <p className="truncate text-sm font-medium">{doc.name}</p>
-                        {(doc.confidential || room?.allDocumentsConfidential) && (
-                          <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                      <td
+                        className="w-8 px-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDocSelection(doc.id);
+                        }}
+                      >
+                        {selectedDocs.has(doc.id) ? (
+                          <CheckSquare className="h-4 w-4 text-primary-500" />
+                        ) : (
+                          <Square className="h-4 w-4 text-neutral-300" />
                         )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1">
-                        <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
-                        {doc.category && (
-                          <span
-                            className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
-                          >
-                            {getCategoryLabel(doc.category)}
-                          </span>
-                        )}
-                        {doc.expiresAt && (
-                          <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
-                            <Clock className="h-2.5 w-2.5" />
-                            {new Date(doc.expiresAt).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                      {/* Action menu */}
-                      <div
-                        className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+                      </td>
+                      <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                        <div className="flex items-center gap-2">
+                          <FileTypeIcon
+                            mimeType={doc.mimeType}
+                            className={compact ? 'h-4 w-4' : undefined}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`truncate font-medium ${compact ? 'text-sm' : ''}`}>
+                                {doc.name}
+                              </span>
+                              {(doc.confidential || room?.allDocumentsConfidential) && (
+                                <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                              )}
+                            </div>
+                            {!compact && (
+                              <div className="mt-0.5 flex flex-wrap gap-1">
+                                {doc.category && (
+                                  <span
+                                    className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
+                                  >
+                                    {getCategoryLabel(doc.category)}
+                                  </span>
+                                )}
+                                {doc.tags?.map((tag) => (
+                                  <Badge
+                                    key={tag}
+                                    variant="outline"
+                                    className="px-1 py-0 text-[10px]"
+                                  >
+                                    {tag}
+                                  </Badge>
+                                ))}
+                                {doc.expiresAt && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
+                                    <Clock className="h-2.5 w-2.5" />
+                                    Expires {new Date(doc.expiresAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      {visibleColumns['size'] && (
+                        <td
+                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                        >
+                          {formatFileSize(doc.size)}
+                        </td>
+                      )}
+                      {visibleColumns['uploaded'] && (
+                        <td
+                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                        >
+                          {formatDate(doc.createdAt)}
+                        </td>
+                      )}
+                      <td
+                        className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="secondary" size="sm" className="h-7 w-7 p-0 shadow-sm">
-                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                            >
+                              <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -2066,8 +1790,12 @@ export default function RoomDetailPage() {
                                 const next = !doc.confidential;
                                 await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
                                   method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ confidential: next }),
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                  },
+                                  body: JSON.stringify({
+                                    confidential: next,
+                                  }),
                                 });
                                 fetchDocuments();
                               }}
@@ -2085,475 +1813,664 @@ export default function RoomDetailPage() {
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
-                      </div>
-                    </div>
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              )}
-            </TabsContent>
-
-            {/* Members Tab */}
-            <TabsContent value="members" className="mt-6">
-              {/* Access Requests Section */}
-              {accessRequests.length > 0 && (
-                <Card className="mb-6 border-amber-200 bg-amber-50/50">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2">
-                      <UserPlus className="h-5 w-5 text-amber-600" />
-                      <CardTitle className="text-base">
-                        Pending Access Requests
-                        <Badge variant="warning" className="ml-2">
-                          {accessRequests.length}
-                        </Badge>
-                      </CardTitle>
-                    </div>
-                    <CardDescription>
-                      People requesting access to this room. Approve to create a share link.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {accessRequests.map((req) => (
-                      <div
-                        key={req.id}
-                        className="flex items-center justify-between rounded-lg border bg-white p-3"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <Mail className="h-4 w-4 text-neutral-400" />
-                            <span className="font-medium text-neutral-900">
-                              {req.requesterName || req.requesterEmail}
-                            </span>
-                            {req.requesterName && (
-                              <span className="text-sm text-neutral-500">{req.requesterEmail}</span>
-                            )}
-                          </div>
-                          {req.reason && (
-                            <p className="mt-1 line-clamp-2 text-sm text-neutral-600">
-                              {req.reason}
-                            </p>
-                          )}
-                          <p className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
-                            <Clock className="h-3 w-3" />
-                            {new Date(req.createdAt).toLocaleDateString()} at{' '}
-                            {new Date(req.createdAt).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </p>
-                        </div>
-                        <div className="ml-4 flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-red-200 text-red-600 hover:bg-red-50"
-                            disabled={reviewingRequestId === req.id}
-                            onClick={() => handleReviewAccessRequest(req.id, 'DENIED')}
-                          >
-                            <X className="mr-1 h-3.5 w-3.5" />
-                            Deny
-                          </Button>
-                          <Button
-                            size="sm"
-                            disabled={reviewingRequestId === req.id}
-                            onClick={() => handleReviewAccessRequest(req.id, 'APPROVED')}
-                          >
-                            <Check className="mr-1 h-3.5 w-3.5" />
-                            Approve
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
-
-              <AdminToolbar
-                title="Room access"
-                description="Manage room admins, approve inbound requests, and invite external viewers with controlled access."
-                className="mb-4"
-                actions={
-                  <Button onClick={() => setShowMemberDialog(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Admin
-                  </Button>
-                }
-              />
-
-              {admins.length === 0 ? (
-                <AdminEmptyState
-                  icon={<Users className="h-6 w-6" />}
-                  title="No admins yet"
-                  description="Add room-specific admins when you need collaborators to manage content, access, and links without giving org-wide privileges."
-                  action={
-                    <Button onClick={() => setShowMemberDialog(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Admin
-                    </Button>
-                  }
-                />
-              ) : (
-                <AdminSurface className="overflow-hidden p-0">
-                  <table className="w-full">
-                    <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
-                      <tr>
-                        <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                          Admin
-                        </th>
-                        <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                          Scope
-                        </th>
-                        <th className="w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {admins.map((admin) => (
-                        <tr key={admin.id} className="border-b last:border-0 hover:bg-neutral-50">
-                          <td className="px-4 py-2">
-                            <div className="flex items-center gap-3">
-                              <UserAvatar name={`${admin.firstName} ${admin.lastName}`} size="sm" />
-                              <div>
-                                <div className="font-medium">
-                                  {admin.firstName} {admin.lastName}
-                                </div>
-                                <div className="text-sm text-neutral-500">{admin.email}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2">
-                            <Badge
-                              variant={admin.scope === 'organization' ? 'default' : 'secondary'}
-                            >
-                              {admin.scope === 'organization' ? 'Org Admin' : 'Room Admin'}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-2">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {admin.scope === 'room' && (
-                                  <DropdownMenuItem
-                                    onClick={() => handleRemoveMemberClick(admin)}
-                                    className="text-danger-600"
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Remove
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </AdminSurface>
-              )}
-
-              {/* Viewers Section */}
-              <Card className="bg-white/88 mt-6 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Eye className="h-5 w-5 text-neutral-500" />
-                      <CardTitle className="text-base">Viewers</CardTitle>
-                      {viewers.length > 0 && <Badge variant="secondary">{viewers.length}</Badge>}
-                    </div>
-                    <Button size="sm" onClick={() => setShowInviteViewerDialog(true)}>
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Invite Viewers
-                    </Button>
+                </tbody>
+              </table>
+            </AdminSurface>
+          ) : (
+            /* Grid / Thumbnail View */
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {/* Folders */}
+              {folders.map((folder) => (
+                <div
+                  key={folder.id}
+                  className="group cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+                  onClick={() => handleFolderClick(folder)}
+                >
+                  <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-amber-50">
+                    <Folder className="h-12 w-12 text-amber-500" />
                   </div>
-                  <CardDescription>
-                    External viewers who have accessed this room via share links.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {isLoadingViewers ? (
-                    <div className="space-y-2">
-                      <Skeleton className="h-10 w-full" />
-                      <Skeleton className="h-10 w-full" />
-                    </div>
-                  ) : viewers.length === 0 ? (
-                    <p className="py-4 text-center text-sm text-neutral-500">
-                      No viewers have accessed this room yet.
-                    </p>
+                  <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
+                  <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
+                </div>
+              ))}
+              {/* Documents */}
+              {documents.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="group relative cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+                  onClick={() => handlePreview(doc)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ x: e.clientX, y: e.clientY, doc });
+                  }}
+                >
+                  <DocumentThumbnail
+                    docId={doc.id}
+                    roomId={roomId}
+                    mimeType={doc.mimeType}
+                    confidential={doc.confidential || room?.allDocumentsConfidential || false}
+                    updatedAt={doc.updatedAt}
+                  />
+                  <div className="mt-2 flex items-center gap-1">
+                    <p className="truncate text-sm font-medium">{doc.name}</p>
+                    {(doc.confidential || room?.allDocumentsConfidential) && (
+                      <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
+                    {doc.category && (
+                      <span
+                        className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
+                      >
+                        {getCategoryLabel(doc.category)}
+                      </span>
+                    )}
+                    {doc.expiresAt && (
+                      <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
+                        <Clock className="h-2.5 w-2.5" />
+                        {new Date(doc.expiresAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  {/* Action menu */}
+                  <div
+                    className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="secondary" size="sm" className="h-7 w-7 p-0 shadow-sm">
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handlePreview(doc)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Preview
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDownload(doc)}>
+                          <Download className="mr-2 h-4 w-4" />
+                          Download
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setEditingTagsDoc(doc);
+                            setTagInput((doc.tags || []).join(', '));
+                          }}
+                        >
+                          <Tag className="mr-2 h-4 w-4" />
+                          Edit Properties
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
+                          <Star
+                            className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
+                          />
+                          {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
+                          <History className="mr-2 h-4 w-4" />
+                          Version History
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={async () => {
+                            const next = !doc.confidential;
+                            await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ confidential: next }),
+                            });
+                            fetchDocuments();
+                          }}
+                        >
+                          <Lock className="mr-2 h-4 w-4" />
+                          {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(doc)}
+                          className="text-danger-600"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Manage Room drawer. Holds the secondary room surfaces (Access,
+          Share Links, Q&A, Checklist, Calendar) so the page canvas can stay
+          documents-first. Heavier admin surfaces (Settings, Audit,
+          Analytics, Trash) remain dedicated routes accessible from the
+          PageHeader More menu, not crammed into the drawer. */}
+      <Sheet open={manageOpen} onOpenChange={setManageOpen}>
+        <SheetContent className="p-0">
+          <SheetHeader className="pr-12">
+            <SheetTitle>Manage room</SheetTitle>
+            <SheetDescription>
+              Control who has access, generate share links, and run room workflows without leaving
+              the document workspace.
+            </SheetDescription>
+          </SheetHeader>
+          <SheetBody>
+            <Tabs
+              value={managePane}
+              onValueChange={(v) => setManagePane(v as typeof managePane)}
+              className="flex h-full"
+            >
+              {/* Vertical pane nav. Stays narrow so the active pane gets the
+                  bulk of the drawer width, mirroring how Figma / Linear
+                  inspector panels split list-of-sections from current
+                  section. */}
+              <TabsList
+                aria-label="Room management sections"
+                className="flex h-full w-44 shrink-0 flex-col items-stretch justify-start gap-1 rounded-none border-r border-slate-200 bg-slate-50/60 p-2 dark:border-slate-800 dark:bg-slate-900/40"
+              >
+                {[
+                  { value: 'members', icon: Users, label: 'Access' },
+                  { value: 'links', icon: LinkIcon, label: 'Share Links' },
+                  { value: 'qa', icon: MessageSquare, label: 'Q&A' },
+                  { value: 'checklist', icon: ClipboardCheck, label: 'Checklist' },
+                  { value: 'calendar', icon: CalendarDays, label: 'Calendar' },
+                ].map(({ value, icon: Icon, label }) => (
+                  <TabsTrigger
+                    key={value}
+                    value={value}
+                    className="justify-start gap-2 rounded-md bg-transparent px-3 py-2 text-sm font-medium text-slate-600 shadow-none data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm dark:text-slate-400 dark:data-[state=active]:bg-slate-950 dark:data-[state=active]:text-white"
+                  >
+                    <Icon aria-hidden="true" className="h-4 w-4" />
+                    {label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              <div className="min-w-0 flex-1 overflow-y-auto p-5">
+                {/* Members pane */}
+                <TabsContent value="members" className="mt-0">
+                  {/* Access Requests Section */}
+                  {accessRequests.length > 0 && (
+                    <Card className="mb-6 border-amber-200 bg-amber-50/50">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center gap-2">
+                          <UserPlus className="h-5 w-5 text-amber-600" />
+                          <CardTitle className="text-base">
+                            Pending Access Requests
+                            <Badge variant="warning" className="ml-2">
+                              {accessRequests.length}
+                            </Badge>
+                          </CardTitle>
+                        </div>
+                        <CardDescription>
+                          People requesting access to this room. Approve to create a share link.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {accessRequests.map((req) => (
+                          <div
+                            key={req.id}
+                            className="flex items-center justify-between rounded-lg border bg-white p-3"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <Mail className="h-4 w-4 text-neutral-400" />
+                                <span className="font-medium text-neutral-900">
+                                  {req.requesterName || req.requesterEmail}
+                                </span>
+                                {req.requesterName && (
+                                  <span className="text-sm text-neutral-500">
+                                    {req.requesterEmail}
+                                  </span>
+                                )}
+                              </div>
+                              {req.reason && (
+                                <p className="mt-1 line-clamp-2 text-sm text-neutral-600">
+                                  {req.reason}
+                                </p>
+                              )}
+                              <p className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
+                                <Clock className="h-3 w-3" />
+                                {new Date(req.createdAt).toLocaleDateString()} at{' '}
+                                {new Date(req.createdAt).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                            </div>
+                            <div className="ml-4 flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-red-200 text-red-600 hover:bg-red-50"
+                                disabled={reviewingRequestId === req.id}
+                                onClick={() => handleReviewAccessRequest(req.id, 'DENIED')}
+                              >
+                                <X className="mr-1 h-3.5 w-3.5" />
+                                Deny
+                              </Button>
+                              <Button
+                                size="sm"
+                                disabled={reviewingRequestId === req.id}
+                                onClick={() => handleReviewAccessRequest(req.id, 'APPROVED')}
+                              >
+                                <Check className="mr-1 h-3.5 w-3.5" />
+                                Approve
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <AdminToolbar
+                    title="Room access"
+                    description="Manage room admins, approve inbound requests, and invite external viewers with controlled access."
+                    className="mb-4"
+                    actions={
+                      <Button onClick={() => setShowMemberDialog(true)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Admin
+                      </Button>
+                    }
+                  />
+
+                  {admins.length === 0 ? (
+                    <AdminEmptyState
+                      icon={<Users className="h-6 w-6" />}
+                      title="No admins yet"
+                      description="Add room-specific admins when you need collaborators to manage content, access, and links without giving org-wide privileges."
+                      action={
+                        <Button onClick={() => setShowMemberDialog(true)}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add Admin
+                        </Button>
+                      }
+                    />
                   ) : (
-                    <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800">
+                    <AdminSurface className="overflow-hidden p-0">
                       <table className="w-full">
-                        <thead className="border-b bg-neutral-50">
+                        <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
                           <tr>
                             <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                              Email
+                              Admin
                             </th>
                             <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                              Name
-                            </th>
-                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                              Visits
-                            </th>
-                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                              Last Active
-                            </th>
-                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                              Time Spent
+                              Scope
                             </th>
                             <th className="w-10"></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {viewers.map((viewer) => (
+                          {admins.map((admin) => (
                             <tr
-                              key={viewer.email}
+                              key={admin.id}
                               className="border-b last:border-0 hover:bg-neutral-50"
                             >
-                              <td className="px-4 py-2 text-sm font-medium text-neutral-900">
-                                {viewer.email}
-                              </td>
-                              <td className="px-4 py-2 text-sm text-neutral-600">
-                                {viewer.name || '\u2014'}
-                              </td>
-                              <td className="px-4 py-2 text-sm text-neutral-600">
-                                {viewer.visits}
-                              </td>
-                              <td className="px-4 py-2 text-sm text-neutral-600">
-                                {new Date(viewer.lastActive).toLocaleDateString()}
-                              </td>
-                              <td className="px-4 py-2 text-sm text-neutral-600">
-                                {viewer.totalTimeSpent < 60
-                                  ? `${viewer.totalTimeSpent}s`
-                                  : viewer.totalTimeSpent < 3600
-                                    ? `${Math.round(viewer.totalTimeSpent / 60)}m`
-                                    : `${Math.round(viewer.totalTimeSpent / 3600)}h`}
+                              <td className="px-4 py-2">
+                                <div className="flex items-center gap-3">
+                                  <UserAvatar
+                                    name={`${admin.firstName} ${admin.lastName}`}
+                                    size="sm"
+                                  />
+                                  <div>
+                                    <div className="font-medium">
+                                      {admin.firstName} {admin.lastName}
+                                    </div>
+                                    <div className="text-sm text-neutral-500">{admin.email}</div>
+                                  </div>
+                                </div>
                               </td>
                               <td className="px-4 py-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 text-danger-600 hover:bg-danger-50 hover:text-danger-700"
-                                  disabled={revokingViewerEmail === viewer.email}
-                                  onClick={() => handleRevokeViewer(viewer.email)}
+                                <Badge
+                                  variant={admin.scope === 'organization' ? 'default' : 'secondary'}
                                 >
-                                  {revokingViewerEmail === viewer.email ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                  )}
-                                </Button>
+                                  {admin.scope === 'organization' ? 'Org Admin' : 'Room Admin'}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-2">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    {admin.scope === 'room' && (
+                                      <DropdownMenuItem
+                                        onClick={() => handleRemoveMemberClick(admin)}
+                                        className="text-danger-600"
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Remove
+                                      </DropdownMenuItem>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                    </AdminSurface>
+                  )}
+
+                  {/* Viewers Section */}
+                  <Card className="bg-white/88 mt-6 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Eye className="h-5 w-5 text-neutral-500" />
+                          <CardTitle className="text-base">Viewers</CardTitle>
+                          {viewers.length > 0 && (
+                            <Badge variant="secondary">{viewers.length}</Badge>
+                          )}
+                        </div>
+                        <Button size="sm" onClick={() => setShowInviteViewerDialog(true)}>
+                          <UserPlus className="mr-2 h-4 w-4" />
+                          Invite Viewers
+                        </Button>
+                      </div>
+                      <CardDescription>
+                        External viewers who have accessed this room via share links.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {isLoadingViewers ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-10 w-full" />
+                          <Skeleton className="h-10 w-full" />
+                        </div>
+                      ) : viewers.length === 0 ? (
+                        <p className="py-4 text-center text-sm text-neutral-500">
+                          No viewers have accessed this room yet.
+                        </p>
+                      ) : (
+                        <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800">
+                          <table className="w-full">
+                            <thead className="border-b bg-neutral-50">
+                              <tr>
+                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                                  Email
+                                </th>
+                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                                  Name
+                                </th>
+                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                                  Visits
+                                </th>
+                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                                  Last Active
+                                </th>
+                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
+                                  Time Spent
+                                </th>
+                                <th className="w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {viewers.map((viewer) => (
+                                <tr
+                                  key={viewer.email}
+                                  className="border-b last:border-0 hover:bg-neutral-50"
+                                >
+                                  <td className="px-4 py-2 text-sm font-medium text-neutral-900">
+                                    {viewer.email}
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-neutral-600">
+                                    {viewer.name || '\u2014'}
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-neutral-600">
+                                    {viewer.visits}
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-neutral-600">
+                                    {new Date(viewer.lastActive).toLocaleDateString()}
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-neutral-600">
+                                    {viewer.totalTimeSpent < 60
+                                      ? `${viewer.totalTimeSpent}s`
+                                      : viewer.totalTimeSpent < 3600
+                                        ? `${Math.round(viewer.totalTimeSpent / 60)}m`
+                                        : `${Math.round(viewer.totalTimeSpent / 3600)}h`}
+                                  </td>
+                                  <td className="px-4 py-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 text-danger-600 hover:bg-danger-50 hover:text-danger-700"
+                                      disabled={revokingViewerEmail === viewer.email}
+                                      onClick={() => handleRevokeViewer(viewer.email)}
+                                    >
+                                      {revokingViewerEmail === viewer.email ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Invite Viewers Dialog */}
+                  <Dialog open={showInviteViewerDialog} onOpenChange={setShowInviteViewerDialog}>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Invite Viewers</DialogTitle>
+                        <DialogDescription>
+                          Enter email addresses to invite as viewers (one per line). A view-only
+                          share link will be created for each.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="py-4">
+                        <Label htmlFor="viewer-emails">Email Addresses</Label>
+                        <Textarea
+                          id="viewer-emails"
+                          placeholder={'viewer1@example.com\nviewer2@example.com'}
+                          value={inviteViewerEmails}
+                          onChange={(e) => setInviteViewerEmails(e.target.value)}
+                          className="mt-1.5"
+                          rows={6}
+                        />
+                      </div>
+                      <DialogFooter>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowInviteViewerDialog(false);
+                            setInviteViewerEmails('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={handleInviteViewers}
+                          disabled={isInvitingViewers || !inviteViewerEmails.trim()}
+                        >
+                          {isInvitingViewers ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Inviting...
+                            </>
+                          ) : (
+                            'Invite'
+                          )}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </TabsContent>
+
+                {/* Links Tab */}
+                <TabsContent value="links" className="mt-6">
+                  <AdminToolbar
+                    title="Share links"
+                    description="Create controlled viewer links for this room and manage permissions, expiry, and reuse from one place."
+                    className="mb-4"
+                    actions={
+                      <Button onClick={() => setShowLinkDialog(true)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Create Link
+                      </Button>
+                    }
+                  />
+
+                  {links.length === 0 ? (
+                    <AdminEmptyState
+                      icon={<LinkIcon className="h-6 w-6" />}
+                      title="No share links yet"
+                      description="Create share links to give external reviewers secure access to this room with the right view and download permissions."
+                      action={
+                        <Button onClick={() => setShowLinkDialog(true)}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Create Link
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <div className="space-y-4">
+                      {links.map((link) => (
+                        <Card
+                          key={link.id}
+                          className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
+                        >
+                          <CardHeader className="pb-2">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <CardTitle className="text-base">
+                                  {link.name || 'Unnamed Link'}
+                                </CardTitle>
+                                <CardDescription className="mt-1 flex items-center gap-2">
+                                  <Badge
+                                    variant={
+                                      link.permission === 'DOWNLOAD' ? 'default' : 'secondary'
+                                    }
+                                  >
+                                    {link.permission === 'DOWNLOAD'
+                                      ? 'View & Download'
+                                      : 'View Only'}
+                                  </Badge>
+                                  {link.requiresPassword && (
+                                    <Badge variant="warning">Password</Badge>
+                                  )}
+                                  {link.requiresEmailVerification && (
+                                    <Badge variant="secondary">Email Required</Badge>
+                                  )}
+                                  {!link.isActive && <Badge variant="danger">Disabled</Badge>}
+                                </CardDescription>
+                              </div>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleCopyLink(link)}>
+                                    <Copy className="mr-2 h-4 w-4" />
+                                    Copy Link
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => handleDeleteLinkClick(link)}
+                                    className="text-danger-600"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex items-center gap-6 text-sm text-neutral-500">
+                              <div>
+                                <span className="font-medium text-neutral-900">
+                                  {link._count?.visits || 0}
+                                </span>{' '}
+                                visits
+                              </div>
+                              <div>Created {formatDate(link.createdAt)}</div>
+                              {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </TabsContent>
 
-              {/* Invite Viewers Dialog */}
-              <Dialog open={showInviteViewerDialog} onOpenChange={setShowInviteViewerDialog}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Invite Viewers</DialogTitle>
-                    <DialogDescription>
-                      Enter email addresses to invite as viewers (one per line). A view-only share
-                      link will be created for each.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="py-4">
-                    <Label htmlFor="viewer-emails">Email Addresses</Label>
-                    <Textarea
-                      id="viewer-emails"
-                      placeholder={'viewer1@example.com\nviewer2@example.com'}
-                      value={inviteViewerEmails}
-                      onChange={(e) => setInviteViewerEmails(e.target.value)}
-                      className="mt-1.5"
-                      rows={6}
-                    />
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setShowInviteViewerDialog(false);
-                        setInviteViewerEmails('');
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleInviteViewers}
-                      disabled={isInvitingViewers || !inviteViewerEmails.trim()}
-                    >
-                      {isInvitingViewers ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Inviting...
-                        </>
-                      ) : (
-                        'Invite'
-                      )}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </TabsContent>
+                {/* Q&A Tab */}
+                <TabsContent value="qa" className="mt-4">
+                  <QATab roomId={roomId} />
+                </TabsContent>
 
-            {/* Links Tab */}
-            <TabsContent value="links" className="mt-6">
-              <AdminToolbar
-                title="Share links"
-                description="Create controlled viewer links for this room and manage permissions, expiry, and reuse from one place."
-                className="mb-4"
-                actions={
-                  <Button onClick={() => setShowLinkDialog(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Link
-                  </Button>
-                }
-              />
+                {/* Checklist Tab */}
+                <TabsContent value="checklist" className="mt-4">
+                  <ChecklistTab roomId={roomId} />
+                </TabsContent>
 
-              {links.length === 0 ? (
-                <AdminEmptyState
-                  icon={<LinkIcon className="h-6 w-6" />}
-                  title="No share links yet"
-                  description="Create share links to give external reviewers secure access to this room with the right view and download permissions."
-                  action={
-                    <Button onClick={() => setShowLinkDialog(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Create Link
-                    </Button>
-                  }
-                />
-              ) : (
-                <div className="space-y-4">
-                  {links.map((link) => (
-                    <Card
-                      key={link.id}
-                      className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
-                    >
-                      <CardHeader className="pb-2">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <CardTitle className="text-base">
-                              {link.name || 'Unnamed Link'}
-                            </CardTitle>
-                            <CardDescription className="mt-1 flex items-center gap-2">
-                              <Badge
-                                variant={link.permission === 'DOWNLOAD' ? 'default' : 'secondary'}
-                              >
-                                {link.permission === 'DOWNLOAD' ? 'View & Download' : 'View Only'}
-                              </Badge>
-                              {link.requiresPassword && <Badge variant="warning">Password</Badge>}
-                              {link.requiresEmailVerification && (
-                                <Badge variant="secondary">Email Required</Badge>
-                              )}
-                              {!link.isActive && <Badge variant="danger">Disabled</Badge>}
-                            </CardDescription>
-                          </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleCopyLink(link)}>
-                                <Copy className="mr-2 h-4 w-4" />
-                                Copy Link
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => handleDeleteLinkClick(link)}
-                                className="text-danger-600"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex items-center gap-6 text-sm text-neutral-500">
-                          <div>
-                            <span className="font-medium text-neutral-900">
-                              {link._count?.visits || 0}
-                            </span>{' '}
-                            visits
-                          </div>
-                          <div>Created {formatDate(link.createdAt)}</div>
-                          {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-
-            {/* Q&A Tab */}
-            <TabsContent value="qa" className="mt-4">
-              <QATab roomId={roomId} />
-            </TabsContent>
-
-            {/* Checklist Tab */}
-            <TabsContent value="checklist" className="mt-4">
-              <ChecklistTab roomId={roomId} />
-            </TabsContent>
-
-            {/* Calendar Tab */}
-            <TabsContent value="calendar" className="mt-4">
-              <CalendarTab roomId={roomId} />
-            </TabsContent>
-
-            {/* Activity Tab */}
-            <TabsContent value="activity" className="mt-4">
-              {activity.length === 0 ? (
-                <AdminEmptyState
-                  icon={<Activity className="h-6 w-6" />}
-                  title="No activity yet"
-                  description="Activity will appear here as admins, viewers, and links interact with this room."
-                />
-              ) : (
-                <AdminSurface className="space-y-1">
-                  {activity.map((event) => {
-                    const style = getEventStyle(event.type);
-                    const EventIcon = style.icon;
-                    return (
-                      <div
-                        key={event.id}
-                        className="flex items-start gap-3 border-b border-slate-200/80 py-2 last:border-0 dark:border-slate-800"
-                      >
-                        <div
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${style.bg}`}
-                        >
-                          <EventIcon className={`h-3.5 w-3.5 ${style.text}`} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-neutral-900">
-                            {event.description || event.type.replace(/_/g, ' ').toLowerCase()}
-                          </p>
-                          <p className="mt-0.5 text-xs text-neutral-500">
-                            {event.actor
-                              ? `${event.actor.firstName} ${event.actor.lastName}`
-                              : 'System'}
-                            {' • '}
-                            {new Date(event.createdAt).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </AdminSurface>
-              )}
-            </TabsContent>
-          </Tabs>
-        </AdminSurface>
-      </div>
+                {/* Calendar Tab */}
+                <TabsContent value="calendar" className="mt-0">
+                  <CalendarTab roomId={roomId} />
+                </TabsContent>
+              </div>
+            </Tabs>
+          </SheetBody>
+          {/* Footer: pointers to the dedicated full-page admin surfaces.
+              These are too heavy to live in the drawer (per the IA: settings,
+              audit, analytics, trash get their own routes), but the drawer
+              is the natural launching point. */}
+          <div className="border-t border-slate-200 px-5 py-3 text-sm dark:border-slate-800">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Open as full page
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/rooms/${roomId}/settings`)}
+              >
+                <Settings className="mr-1.5 h-4 w-4" aria-hidden="true" /> Settings
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/rooms/${roomId}/audit`)}
+              >
+                <History className="mr-1.5 h-4 w-4" aria-hidden="true" /> Audit
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/rooms/${roomId}/analytics`)}
+              >
+                <BarChart3 className="mr-1.5 h-4 w-4" aria-hidden="true" /> Analytics
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/rooms/${roomId}/trash`)}
+              >
+                <Trash2 className="mr-1.5 h-4 w-4" aria-hidden="true" /> Trash
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Bulk Actions Bar */}
       {selectedDocs.size > 0 && (

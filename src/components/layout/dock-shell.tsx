@@ -233,6 +233,54 @@ function useCommandMenu() {
   return { open, setOpen };
 }
 
+/**
+ * Inside immersive content modes (room detail, document viewer) the dock is
+ * the wrong default — it competes with the data the user came to see. We
+ * collapse it to a small puck plus keyboard summon (cmd/ctrl + period).
+ *
+ * Pathname-based: routes with their own dock-suppress need are matched here.
+ * Everything else gets the full dock.
+ */
+function useDockCompactMode(pathname: string) {
+  // /rooms/[roomId] but NOT the list /rooms or sub-routes like
+  // /rooms/[roomId]/settings (those are full admin pages where the dock
+  // remains useful for context).
+  const isRoomCanvas = /^\/rooms\/[^/]+$/.test(pathname);
+  const compact = isRoomCanvas;
+
+  const [expandedFromPuck, setExpandedFromPuck] = React.useState(false);
+
+  // Reset whenever the route changes so leaving the room restores the
+  // standard dock behavior even if the user had expanded it via the puck.
+  React.useEffect(() => {
+    setExpandedFromPuck(false);
+  }, [pathname]);
+
+  // Keyboard summon: cmd/ctrl + period toggles the expanded state in
+  // compact mode. Period chosen because it doesn't conflict with browser
+  // shortcuts on Mac/Windows and matches the "show controls" convention.
+  React.useEffect(() => {
+    if (!compact) {
+      return;
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+        e.preventDefault();
+        setExpandedFromPuck((prev) => !prev);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [compact]);
+
+  return {
+    compact,
+    showFullDock: !compact || expandedFromPuck,
+    expandFromPuck: () => setExpandedFromPuck(true),
+    collapseFromPuck: () => setExpandedFromPuck(false),
+  };
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -247,6 +295,7 @@ export function DockShell({ children, user }: DockShellProps) {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const contextActions = useDockContextActions();
+  const { compact, showFullDock, expandFromPuck, collapseFromPuck } = useDockCompactMode(pathname);
 
   const isHorizontal = position === 'top' || position === 'bottom';
 
@@ -303,6 +352,31 @@ export function DockShell({ children, user }: DockShellProps) {
         </main>
       </div>
 
+      {/* Compact-mode puck — visible only inside immersive routes (e.g. room
+          canvas) where the dock would otherwise compete with the content.
+          Click to expand the full dock, or summon via cmd/ctrl + period. */}
+      {compact && !showFullDock && (
+        <button
+          type="button"
+          onClick={expandFromPuck}
+          aria-label="Open navigation menu (⌘.)"
+          title="Open navigation menu (⌘.)"
+          className={clsx(
+            'fixed z-50 flex h-12 w-12 items-center justify-center',
+            'rounded-full border border-slate-200/90 bg-white/96 shadow-lg',
+            'text-slate-700 hover:scale-105 hover:text-primary-700 hover:shadow-xl',
+            'backdrop-blur-xl transition-all duration-200',
+            'dark:border-slate-700 dark:bg-slate-950/96 dark:text-slate-300 dark:hover:text-primary-300',
+            position === 'bottom' && 'bottom-4 left-1/2 -translate-x-1/2',
+            position === 'top' && 'left-1/2 top-4 -translate-x-1/2',
+            position === 'left' && 'left-4 top-1/2 -translate-y-1/2',
+            position === 'right' && 'right-4 top-1/2 -translate-y-1/2'
+          )}
+        >
+          <LayoutDashboard className="h-5 w-5" aria-hidden="true" />
+        </button>
+      )}
+
       {/* Floating Dock */}
       <div
         ref={dockRef}
@@ -313,7 +387,9 @@ export function DockShell({ children, user }: DockShellProps) {
           'border border-slate-200/90 dark:border-slate-700',
           'rounded-2xl shadow-2xl',
           'transition-all duration-300 ease-out',
-          isVisible && !isCollapsed ? positionClasses[position] : hideTransform[position],
+          isVisible && !isCollapsed && showFullDock
+            ? positionClasses[position]
+            : hideTransform[position],
           isDragging && 'shadow-3xl scale-105 cursor-grabbing'
         )}
       >
@@ -388,9 +464,16 @@ export function DockShell({ children, user }: DockShellProps) {
           />
         ))}
 
-        {/* Collapse Button */}
+        {/* Collapse Button — in compact mode this returns the dock to the
+            puck; in normal mode it hides it altogether. */}
         <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
+          onClick={() => {
+            if (compact) {
+              collapseFromPuck();
+            } else {
+              setIsCollapsed(!isCollapsed);
+            }
+          }}
           className={clsx(
             'flex items-center justify-center',
             'h-8 w-8 rounded-lg',
@@ -398,9 +481,10 @@ export function DockShell({ children, user }: DockShellProps) {
             'hover:bg-slate-100 dark:hover:bg-slate-800',
             'transition-all duration-200'
           )}
-          title="Hide dock"
+          title={compact ? 'Collapse to puck (⌘.)' : 'Hide dock'}
+          aria-label={compact ? 'Collapse navigation to puck' : 'Hide navigation dock'}
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 
