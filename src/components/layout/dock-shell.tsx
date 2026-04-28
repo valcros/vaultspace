@@ -345,7 +345,11 @@ export function DockShell({ children, user }: DockShellProps) {
           aria-label="Main content"
           className={clsx(
             'flex-1 overflow-y-auto p-4 focus:outline-none lg:p-6',
-            contentPadding[position]
+            // Reserve space for the full dock only when it can actually be
+            // rendered. In compact mode the dock is replaced by a small puck
+            // that floats above content, so the gutter would be a phantom
+            // reservation that wastes screen space on the room canvas.
+            !compact && contentPadding[position]
           )}
         >
           {children}
@@ -363,10 +367,10 @@ export function DockShell({ children, user }: DockShellProps) {
           title="Open navigation menu (⌘.)"
           className={clsx(
             'fixed z-50 flex h-12 w-12 items-center justify-center',
-            'rounded-full border border-slate-200/90 bg-white/96 shadow-lg',
+            'bg-white/96 rounded-full border border-slate-200/90 shadow-lg',
             'text-slate-700 hover:scale-105 hover:text-primary-700 hover:shadow-xl',
             'backdrop-blur-xl transition-all duration-200',
-            'dark:border-slate-700 dark:bg-slate-950/96 dark:text-slate-300 dark:hover:text-primary-300',
+            'dark:bg-slate-950/96 dark:border-slate-700 dark:text-slate-300 dark:hover:text-primary-300',
             position === 'bottom' && 'bottom-4 left-1/2 -translate-x-1/2',
             position === 'top' && 'left-1/2 top-4 -translate-x-1/2',
             position === 'left' && 'left-4 top-1/2 -translate-y-1/2',
@@ -488,8 +492,10 @@ export function DockShell({ children, user }: DockShellProps) {
         </button>
       </div>
 
-      {/* Show Dock Button (when hidden) */}
-      {(!isVisible || isCollapsed) && (
+      {/* Show Dock Button (when hidden by scroll/collapse) — suppressed in
+          compact mode because the puck above already handles re-summon and
+          two stacked controls compete on the immersive room canvas. */}
+      {!compact && (!isVisible || isCollapsed) && (
         <button
           onClick={() => {
             forceShow();
