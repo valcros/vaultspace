@@ -1399,7 +1399,7 @@ export default function RoomDetailPage() {
 
           <AdminToolbar
             title="Document workspace"
-            description="Upload files, structure the room into folders, and change how the library is displayed without leaving the tab."
+            description="Upload, organize, and browse the room's library."
             className="mb-4"
             actions={
               <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
@@ -1421,8 +1421,11 @@ export default function RoomDetailPage() {
                   value={categoryFilter ?? 'all'}
                   onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
                 >
-                  <SelectTrigger className="h-10 w-[150px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950">
-                    <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
+                  <SelectTrigger
+                    aria-label="Filter by category"
+                    className="h-10 w-[150px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
                     <SelectValue placeholder="Category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1432,6 +1435,37 @@ export default function RoomDetailPage() {
                         {opt.label}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+                {/* Global sort — works in both grid and list view so the
+                    user has one mental model regardless of layout. The list
+                    view's sortable column headers stay as a power-user
+                    convenience but bind to the same sortField/sortDir. */}
+                <Select
+                  value={`${sortField}:${sortDir}`}
+                  onValueChange={(v) => {
+                    const [field, dir] = v.split(':') as [
+                      'name' | 'size' | 'createdAt',
+                      'asc' | 'desc',
+                    ];
+                    setSortField(field);
+                    setSortDir(dir);
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label="Sort documents"
+                    className="h-10 w-[170px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                    <SelectValue placeholder="Sort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name:asc">Name (A → Z)</SelectItem>
+                    <SelectItem value="name:desc">Name (Z → A)</SelectItem>
+                    <SelectItem value="createdAt:desc">Newest first</SelectItem>
+                    <SelectItem value="createdAt:asc">Oldest first</SelectItem>
+                    <SelectItem value="size:desc">Largest first</SelectItem>
+                    <SelectItem value="size:asc">Smallest first</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1836,8 +1870,10 @@ export default function RoomDetailPage() {
                   <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
                 </div>
               ))}
-              {/* Documents */}
-              {documents.map((doc) => (
+              {/* Documents — render the same sorted view the list mode uses
+                  so the grid and list stay coherent regardless of how the
+                  user sorted via the toolbar. */}
+              {sortedDocuments.map((doc) => (
                 <div
                   key={doc.id}
                   className="group relative cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
