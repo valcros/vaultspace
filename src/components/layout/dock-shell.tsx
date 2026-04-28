@@ -13,7 +13,6 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { DockHeader } from './dock-header';
-import { useDockContextActions, type DockContextAction } from './dock-context';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { clsx } from 'clsx';
 import {
@@ -294,7 +293,6 @@ export function DockShell({ children, user }: DockShellProps) {
   const { position, isDragging, handleDragStart } = useDragToPosition('bottom', true, dockRef);
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
   const [isCollapsed, setIsCollapsed] = React.useState(false);
-  const contextActions = useDockContextActions();
   const { compact, showFullDock, expandFromPuck, collapseFromPuck } = useDockCompactMode(pathname);
 
   const isHorizontal = position === 'top' || position === 'bottom';
@@ -433,29 +431,6 @@ export function DockShell({ children, user }: DockShellProps) {
             isHorizontal={isHorizontal}
           />
         ))}
-
-        {/* Per-page context actions, e.g. "Upload" / "New Folder" inside a
-            room. Pages publish these via useDockActions(...). The separator
-            only renders when the page actually has actions to surface. */}
-        {contextActions.length > 0 && (
-          <>
-            <div
-              aria-hidden="true"
-              className={clsx(
-                'bg-slate-300 dark:bg-slate-700',
-                isHorizontal ? 'mx-1 h-8 w-px' : 'my-1 h-px w-8'
-              )}
-            />
-            {contextActions.map((action) => (
-              <DockContextActionButton
-                key={action.id}
-                action={action}
-                isTouch={isTouch}
-                isHorizontal={isHorizontal}
-              />
-            ))}
-          </>
-        )}
 
         {/* Separator */}
         <div
@@ -670,84 +645,6 @@ function DockIcon({ item, isActive, onClick, isTouch, isHorizontal }: DockIconPr
   return (
     <button className={className} onClick={onClick}>
       {content}
-    </button>
-  );
-}
-
-// ============================================================================
-// Context Action Button — pages publish these via useDockActions(...)
-// ============================================================================
-
-interface DockContextActionButtonProps {
-  action: DockContextAction;
-  isTouch: boolean;
-  isHorizontal: boolean;
-}
-
-function DockContextActionButton({ action, isTouch, isHorizontal }: DockContextActionButtonProps) {
-  const Icon = action.icon;
-  const className = clsx(
-    'relative flex items-center justify-center rounded-xl',
-    // Tint the background so the user can tell context actions apart from
-    // the global nav (which uses neutral slate). Active feel comes from the
-    // saturated icon, not from a "this is the current page" highlight.
-    'bg-primary-50 hover:bg-primary-100 dark:bg-primary-900/30 dark:hover:bg-primary-900/50',
-    'transition-all duration-200 ease-out',
-    'group',
-    isTouch ? 'h-14 w-14 active:scale-95' : 'h-12 w-12 hover:scale-110 hover:shadow-lg',
-    isTouch && !isHorizontal && 'w-auto gap-2 px-3',
-    action.disabled && 'cursor-not-allowed opacity-50 hover:scale-100 hover:shadow-none'
-  );
-
-  return (
-    <button
-      type="button"
-      onClick={action.disabled ? undefined : action.onClick}
-      disabled={action.disabled}
-      aria-label={action.label}
-      className={className}
-    >
-      <Icon
-        aria-hidden="true"
-        className={clsx('text-primary-700 dark:text-primary-300', isTouch ? 'h-6 w-6' : 'h-5 w-5')}
-      />
-
-      {/* Inline label for touch mode (vertical dock) */}
-      {isTouch && !isHorizontal && (
-        <span className="text-sm font-medium text-primary-700 dark:text-primary-300">
-          {action.label}
-        </span>
-      )}
-
-      {/* Badge */}
-      {typeof action.badge === 'number' && action.badge > 0 && (
-        <span
-          className={clsx(
-            'absolute flex items-center justify-center',
-            'rounded-full bg-danger-500 text-xs font-bold text-white',
-            isTouch ? '-right-1 -top-1 h-6 w-6' : '-right-1 -top-1 h-5 w-5'
-          )}
-        >
-          {action.badge}
-        </span>
-      )}
-
-      {/* Tooltip */}
-      {(!isTouch || isHorizontal) && (
-        <span
-          className={clsx(
-            'absolute whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1',
-            'text-xs text-white',
-            'opacity-0 group-hover:opacity-100',
-            'transition-opacity duration-200',
-            'pointer-events-none',
-            'dark:bg-slate-100 dark:text-slate-950',
-            isHorizontal ? '-top-10 left-1/2 -translate-x-1/2' : 'left-full ml-2'
-          )}
-        >
-          {action.label}
-        </span>
-      )}
     </button>
   );
 }
