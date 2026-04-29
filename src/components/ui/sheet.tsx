@@ -55,10 +55,8 @@ const SheetContent = React.forwardRef<
         side === 'left' && 'left-0 border-r',
         // Slide animation — keeps the visual cue that this is layered, not a page
         'transition-transform duration-200 ease-out',
-        side === 'right' &&
-          'data-[state=closed]:translate-x-full data-[state=open]:translate-x-0',
-        side === 'left' &&
-          'data-[state=closed]:-translate-x-full data-[state=open]:translate-x-0',
+        side === 'right' && 'data-[state=closed]:translate-x-full data-[state=open]:translate-x-0',
+        side === 'left' && 'data-[state=closed]:-translate-x-full data-[state=open]:translate-x-0',
         className
       )}
       {...props}
@@ -82,10 +80,7 @@ SheetContent.displayName = 'SheetContent';
 
 const SheetHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={clsx(
-      'border-b border-slate-200 px-6 py-4 dark:border-slate-800',
-      className
-    )}
+    className={clsx('border-b border-slate-200 px-6 py-4 dark:border-slate-800', className)}
     {...props}
   />
 );
