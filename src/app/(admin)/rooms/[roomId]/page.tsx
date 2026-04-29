@@ -1397,155 +1397,150 @@ export default function RoomDetailPage() {
             </div>
           )}
 
-          <AdminToolbar
-            title="Document workspace"
-            description="Upload, organize, and browse the room's library."
-            className="mb-4"
-            actions={
-              <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                {documents.length} docs
-              </div>
-            }
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={() => setShowUploadDialog(true)}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Files
-                </Button>
-                <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
-                  <FolderPlus className="mr-2 h-4 w-4" />
-                  New Folder
-                </Button>
-                <Select
-                  value={categoryFilter ?? 'all'}
-                  onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
+          {/*
+            Document toolbar — bare action row, no descriptive title or
+            "0 docs" pill. The page header already names the room and the
+            document grid below communicates count. Anything else here
+            wastes vertical space the user came for documents to occupy.
+          */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={() => setShowUploadDialog(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Files
+              </Button>
+              <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
+                <FolderPlus className="mr-2 h-4 w-4" />
+                New Folder
+              </Button>
+              <Select
+                value={categoryFilter ?? 'all'}
+                onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
+              >
+                <SelectTrigger
+                  aria-label="Filter by category"
+                  className="h-10 w-[150px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950"
                 >
-                  <SelectTrigger
-                    aria-label="Filter by category"
-                    className="h-10 w-[150px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950"
-                  >
-                    <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                    <SelectValue placeholder="Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {CATEGORY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {/* Global sort — works in both grid and list view so the
+                  <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {CATEGORY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* Global sort — works in both grid and list view so the
                     user has one mental model regardless of layout. The list
                     view's sortable column headers stay as a power-user
                     convenience but bind to the same sortField/sortDir. */}
-                <Select
-                  value={`${sortField}:${sortDir}`}
-                  onValueChange={(v) => {
-                    const [field, dir] = v.split(':') as [
-                      'name' | 'size' | 'createdAt',
-                      'asc' | 'desc',
-                    ];
-                    setSortField(field);
-                    setSortDir(dir);
-                  }}
+              <Select
+                value={`${sortField}:${sortDir}`}
+                onValueChange={(v) => {
+                  const [field, dir] = v.split(':') as [
+                    'name' | 'size' | 'createdAt',
+                    'asc' | 'desc',
+                  ];
+                  setSortField(field);
+                  setSortDir(dir);
+                }}
+              >
+                <SelectTrigger
+                  aria-label="Sort documents"
+                  className="h-10 w-[170px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950"
                 >
-                  <SelectTrigger
-                    aria-label="Sort documents"
-                    className="h-10 w-[170px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950"
-                  >
-                    <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                    <SelectValue placeholder="Sort" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="name:asc">Name (A → Z)</SelectItem>
-                    <SelectItem value="name:desc">Name (Z → A)</SelectItem>
-                    <SelectItem value="createdAt:desc">Newest first</SelectItem>
-                    <SelectItem value="createdAt:asc">Oldest first</SelectItem>
-                    <SelectItem value="size:desc">Largest first</SelectItem>
-                    <SelectItem value="size:asc">Smallest first</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Compact toggle (list view only) */}
-                {viewMode === 'list' && (
-                  <button
-                    onClick={() => {
-                      const next = !compact;
-                      setCompact(next);
-                      localStorage.setItem('vaultspace-compact', String(next));
-                    }}
-                    className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
-                    title={compact ? 'Standard density' : 'Compact density'}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                )}
-                {/* Column picker (list view only) */}
-                {viewMode === 'list' && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
-                        title="Show/hide columns"
+                  <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                  <SelectValue placeholder="Sort" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name:asc">Name (A → Z)</SelectItem>
+                  <SelectItem value="name:desc">Name (Z → A)</SelectItem>
+                  <SelectItem value="createdAt:desc">Newest first</SelectItem>
+                  <SelectItem value="createdAt:asc">Oldest first</SelectItem>
+                  <SelectItem value="size:desc">Largest first</SelectItem>
+                  <SelectItem value="size:asc">Smallest first</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Compact toggle (list view only) */}
+              {viewMode === 'list' && (
+                <button
+                  onClick={() => {
+                    const next = !compact;
+                    setCompact(next);
+                    localStorage.setItem('vaultspace-compact', String(next));
+                  }}
+                  className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
+                  title={compact ? 'Standard density' : 'Compact density'}
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+              )}
+              {/* Column picker (list view only) */}
+              {viewMode === 'list' && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
+                      title="Show/hide columns"
+                    >
+                      <Columns3 className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {[
+                      { key: 'size', label: 'Size' },
+                      { key: 'uploaded', label: 'Uploaded' },
+                    ].map((col) => (
+                      <DropdownMenuItem
+                        key={col.key}
+                        onClick={() => {
+                          const next = {
+                            ...visibleColumns,
+                            [col.key]: !visibleColumns[col.key],
+                          };
+                          setVisibleColumns(next);
+                          localStorage.setItem('vaultspace-columns', JSON.stringify(next));
+                        }}
                       >
-                        <Columns3 className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {[
-                        { key: 'size', label: 'Size' },
-                        { key: 'uploaded', label: 'Uploaded' },
-                      ].map((col) => (
-                        <DropdownMenuItem
-                          key={col.key}
-                          onClick={() => {
-                            const next = {
-                              ...visibleColumns,
-                              [col.key]: !visibleColumns[col.key],
-                            };
-                            setVisibleColumns(next);
-                            localStorage.setItem('vaultspace-columns', JSON.stringify(next));
-                          }}
-                        >
-                          <span
-                            className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
-                          />
-                          {col.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                {/* View toggle */}
-                <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-950">
-                  <button
-                    onClick={() => {
-                      setViewMode('list');
-                      localStorage.setItem('vaultspace-doc-view', 'list');
-                    }}
-                    className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
-                    title="List view"
-                  >
-                    <List className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setViewMode('grid');
-                      localStorage.setItem('vaultspace-doc-view', 'grid');
-                    }}
-                    className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
-                    title="Grid view"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                  </button>
-                </div>
+                        <span
+                          className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
+                        />
+                        {col.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {/* View toggle */}
+              <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-950">
+                <button
+                  onClick={() => {
+                    setViewMode('list');
+                    localStorage.setItem('vaultspace-doc-view', 'list');
+                  }}
+                  className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
+                  title="List view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setViewMode('grid');
+                    localStorage.setItem('vaultspace-doc-view', 'grid');
+                  }}
+                  className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
               </div>
             </div>
-          </AdminToolbar>
+          </div>
 
           {folders.length === 0 && documents.length === 0 ? (
             <AdminEmptyState
