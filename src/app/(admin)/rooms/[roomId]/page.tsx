@@ -1324,7 +1324,7 @@ export default function RoomDetailPage() {
         The plane is intentionally soft (gradient fades to white toward the
         document grid) so it provides identity without becoming a hero band.
       */}
-      <div className="mb-5 rounded-2xl border border-primary-100/80 bg-gradient-to-b from-primary-50/70 via-white to-white p-4 shadow-sm dark:border-primary-900/30 dark:from-primary-950/30 dark:via-slate-950 dark:to-slate-950 lg:p-5">
+      <div className="mb-5 rounded-2xl border border-primary-200 bg-gradient-to-b from-primary-100 via-primary-50 to-white p-4 shadow-sm dark:border-primary-800/60 dark:from-primary-950/60 dark:via-primary-950/20 dark:to-slate-950 lg:p-5">
         <PageHeader
           variant="work"
           className="mb-3"
@@ -1414,7 +1414,7 @@ export default function RoomDetailPage() {
             (Category, Sort) follows a thin separator and uses subtler
             chrome; right-side utilities (density / columns / view-mode)
             are visually quieter still. */}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-950">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-md ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:ring-slate-800">
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={() => setShowUploadDialog(true)}>
               <Upload className="mr-2 h-4 w-4" />
