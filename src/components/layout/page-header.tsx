@@ -8,6 +8,18 @@ interface PageHeaderProps {
   breadcrumbs?: BreadcrumbItem[];
   actions?: React.ReactNode;
   className?: string;
+  /**
+   * Visual treatment.
+   *
+   * - `work` (default) — quiet inline header with no dark band. Right for
+   *   the task-heavy admin pages (rooms index, dashboard, users, groups,
+   *   settings, room canvas) where the header should hand the page over to
+   *   the content as quickly as possible.
+   * - `hero` — dark slate band with rounded bottom and large title. Reserve
+   *   for overview / landing surfaces where the page header carries product
+   *   identity rather than orienting work.
+   */
+  variant?: 'hero' | 'work';
 }
 
 export function PageHeader({
@@ -16,7 +28,31 @@ export function PageHeader({
   breadcrumbs,
   actions,
   className,
+  variant = 'work',
 }: PageHeaderProps) {
+  if (variant === 'work') {
+    return (
+      <div className={clsx('mb-4', className)}>
+        {breadcrumbs && breadcrumbs.length > 0 && (
+          <Breadcrumbs items={breadcrumbs} className="mb-2" />
+        )}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-3xl">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
+              {title}
+            </h1>
+            {description && (
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+                {description}
+              </p>
+            )}
+          </div>
+          {actions && <div className="flex items-center gap-2">{actions}</div>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={clsx(

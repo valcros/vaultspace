@@ -263,6 +263,7 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
+        variant="work"
         title={`${greeting}, ${data.user.name?.split(' ')[0] || 'there'}`}
         description={
           data.user.lastLoginAt
@@ -272,10 +273,7 @@ export default function DashboardPage() {
         actions={
           isAdmin ? (
             <Link href="/rooms/new">
-              <Button
-                size="sm"
-                className="rounded-xl border border-white/20 bg-white/15 text-white hover:bg-white/25"
-              >
+              <Button size="sm">
                 <Plus className="mr-1 h-4 w-4" />
                 New Room
               </Button>

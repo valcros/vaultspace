@@ -203,11 +203,7 @@ export default function RoomSettingsPage() {
           { label: 'Settings' },
         ]}
         actions={
-          <Button
-            variant="ghost"
-            className="text-white hover:bg-white/20 hover:text-white"
-            onClick={() => router.push(`/rooms/${roomId}`)}
-          >
+          <Button variant="outline" size="sm" onClick={() => router.push(`/rooms/${roomId}`)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Room
           </Button>
