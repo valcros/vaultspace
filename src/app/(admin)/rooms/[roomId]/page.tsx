@@ -1409,57 +1409,65 @@ export default function RoomDetailPage() {
                 <FolderPlus className="mr-2 h-4 w-4" />
                 New Folder
               </Button>
-              <Select
-                value={categoryFilter ?? 'all'}
-                onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
-              >
-                <SelectTrigger
-                  aria-label="Filter by category"
-                  className="h-10 w-[150px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950"
+              {/* SelectTrigger ships with `w-full` baked in, so the trigger
+                    fills its parent. Wrap each select in a fixed-width
+                    flex-none div so the row doesn't expand them and they sit
+                    inline with Upload / New Folder. */}
+              <div className="w-[170px] flex-none">
+                <Select
+                  value={categoryFilter ?? 'all'}
+                  onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
                 >
-                  <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {CATEGORY_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    aria-label="Filter by category"
+                    className="h-10 rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {CATEGORY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {/* Global sort — works in both grid and list view so the
                     user has one mental model regardless of layout. The list
                     view's sortable column headers stay as a power-user
                     convenience but bind to the same sortField/sortDir. */}
-              <Select
-                value={`${sortField}:${sortDir}`}
-                onValueChange={(v) => {
-                  const [field, dir] = v.split(':') as [
-                    'name' | 'size' | 'createdAt',
-                    'asc' | 'desc',
-                  ];
-                  setSortField(field);
-                  setSortDir(dir);
-                }}
-              >
-                <SelectTrigger
-                  aria-label="Sort documents"
-                  className="h-10 w-[170px] rounded-xl border-slate-200 bg-white text-xs shadow-sm dark:border-slate-700 dark:bg-slate-950"
+              <div className="w-[180px] flex-none">
+                <Select
+                  value={`${sortField}:${sortDir}`}
+                  onValueChange={(v) => {
+                    const [field, dir] = v.split(':') as [
+                      'name' | 'size' | 'createdAt',
+                      'asc' | 'desc',
+                    ];
+                    setSortField(field);
+                    setSortDir(dir);
+                  }}
                 >
-                  <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                  <SelectValue placeholder="Sort" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="name:asc">Name (A → Z)</SelectItem>
-                  <SelectItem value="name:desc">Name (Z → A)</SelectItem>
-                  <SelectItem value="createdAt:desc">Newest first</SelectItem>
-                  <SelectItem value="createdAt:asc">Oldest first</SelectItem>
-                  <SelectItem value="size:desc">Largest first</SelectItem>
-                  <SelectItem value="size:asc">Smallest first</SelectItem>
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    aria-label="Sort documents"
+                    className="h-10 rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                    <SelectValue placeholder="Sort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name:asc">Name (A → Z)</SelectItem>
+                    <SelectItem value="name:desc">Name (Z → A)</SelectItem>
+                    <SelectItem value="createdAt:desc">Newest first</SelectItem>
+                    <SelectItem value="createdAt:asc">Oldest first</SelectItem>
+                    <SelectItem value="size:desc">Largest first</SelectItem>
+                    <SelectItem value="size:asc">Smallest first</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               {/* Compact toggle (list view only) */}
