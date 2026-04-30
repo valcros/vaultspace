@@ -1309,617 +1309,518 @@ export default function RoomDetailPage() {
 
   return (
     <>
-      <PageHeader
-        title={room.name}
-        description={room.description || 'No description'}
-        breadcrumbs={[{ label: 'Rooms', href: '/rooms' }, { label: room.name }]}
-        actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Manage room"
-              onClick={() => setManageOpen(true)}
-            >
-              <Settings className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Manage</span>
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" aria-label="More room actions">
-                  <MoreHorizontal className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">More</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/settings`)}>
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/analytics`)}>
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  Analytics
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/audit`)}>
-                  <History className="mr-2 h-4 w-4" />
-                  Audit Trail
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/trash`)}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Trash
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleDuplicateRoom}>
-                  <Copy className="mr-2 h-4 w-4" />
-                  Duplicate Room
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        }
-      />
-
       {/*
-        Documents are the primary surface of a room — they render as the page
-        body, not as one of seven tabs. Secondary surfaces (Access, Share
-        Links, Q&A, Checklist, Calendar) live in the Manage Room drawer at
-        the bottom of this file; heavier admin surfaces (Settings, Audit,
-        Analytics, Trash) remain dedicated routes reachable from the
-        PageHeader More menu.
-      */}
-      <div className="space-y-4">
-        <div>
-          {/* Breadcrumb navigation */}
-          {breadcrumbs.length > 1 && (
-            <div className="mb-4 flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900/55">
-              {breadcrumbs.map((crumb, index) => (
-                <React.Fragment key={crumb.id ?? 'root'}>
-                  {index > 0 && (
-                    <ChevronRight className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                  )}
-                  <button
-                    onClick={() => handleBreadcrumbClick(index)}
-                    className={`rounded px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 ${
-                      index === breadcrumbs.length - 1
-                        ? 'font-medium text-slate-950 dark:text-white'
-                        : 'text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-100'
-                    }`}
-                  >
-                    {crumb.name}
-                  </button>
-                </React.Fragment>
-              ))}
-            </div>
-          )}
+        Room identity plane.
 
-          {/*
-            Document toolbar — bare action row, no descriptive title or
-            "0 docs" pill. The page header already names the room and the
-            document grid below communicates count. Anything else here
-            wastes vertical space the user came for documents to occupy.
-          */}
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={() => setShowUploadDialog(true)}>
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Files
+        Wraps the page header, the folder breadcrumb, and the document toolbar
+        in a single tinted surface so the user sees one composed "orientation
+        and command" zone rather than three pale-on-pale rows. The accent
+        system across the whole room is intentionally constrained to one
+        family (primary blue) — the surface tint here, the active states on
+        the view toggle and breadcrumb endpoint, and the active section in
+        the Manage drawer all share the same primary palette so the page
+        reads as a single product rather than a stack of widgets.
+
+        The plane is intentionally soft (gradient fades to white toward the
+        document grid) so it provides identity without becoming a hero band.
+      */}
+      <div className="mb-5 rounded-2xl border border-primary-100/80 bg-gradient-to-b from-primary-50/70 via-white to-white p-4 shadow-sm dark:border-primary-900/30 dark:from-primary-950/30 dark:via-slate-950 dark:to-slate-950 lg:p-5">
+        <PageHeader
+          variant="work"
+          className="mb-3"
+          title={room.name}
+          description={room.description || 'No description'}
+          breadcrumbs={[{ label: 'Rooms', href: '/rooms' }, { label: room.name }]}
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Manage room"
+                onClick={() => setManageOpen(true)}
+              >
+                <Settings className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Manage</span>
               </Button>
-              <Button variant="outline" onClick={() => setShowFolderDialog(true)}>
-                <FolderPlus className="mr-2 h-4 w-4" />
-                New Folder
-              </Button>
-              {/* SelectTrigger ships with `w-full` baked in, so the trigger
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" aria-label="More room actions">
+                    <MoreHorizontal className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">More</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/settings`)}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/analytics`)}>
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Analytics
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/audit`)}>
+                    <History className="mr-2 h-4 w-4" />
+                    Audit Trail
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/trash`)}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Trash
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleDuplicateRoom}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Duplicate Room
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          }
+        />
+
+        {/* Folder breadcrumb. The current folder uses a primary chip so the
+            user sees "where am I" at a glance without relying on gray-tone
+            differences. Earlier links stay neutral. */}
+        {breadcrumbs.length > 1 && (
+          <nav aria-label="Folder path" className="mb-3 flex flex-wrap items-center gap-1 text-sm">
+            {breadcrumbs.map((crumb, index) => (
+              <React.Fragment key={crumb.id ?? 'root'}>
+                {index > 0 && (
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="h-4 w-4 text-slate-400 dark:text-slate-500"
+                  />
+                )}
+                <button
+                  onClick={() => handleBreadcrumbClick(index)}
+                  aria-current={index === breadcrumbs.length - 1 ? 'page' : undefined}
+                  className={
+                    index === breadcrumbs.length - 1
+                      ? 'rounded-md bg-primary-50 px-2.5 py-1 font-medium text-primary-800 ring-1 ring-inset ring-primary-200 dark:bg-primary-900/30 dark:text-primary-100 dark:ring-primary-800'
+                      : 'rounded-md px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100'
+                  }
+                >
+                  {crumb.name}
+                </button>
+              </React.Fragment>
+            ))}
+          </nav>
+        )}
+
+        {/* Composed toolbar. The whole row sits in a single white card
+            inset from the tinted plane so it reads as a deliberate command
+            surface, not a row of detached widgets. Primary cluster (Upload,
+            New Folder) keeps full button weight; secondary cluster
+            (Category, Sort) follows a thin separator and uses subtler
+            chrome; right-side utilities (density / columns / view-mode)
+            are visually quieter still. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-950">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => setShowUploadDialog(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              Upload Files
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowFolderDialog(true)}>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              New Folder
+            </Button>
+            {/* Visual separator between primary actions and secondary
+                browsing utilities. Keeps the row readable as two clusters. */}
+            <div aria-hidden="true" className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700" />
+            {/* SelectTrigger ships with `w-full` baked in, so the trigger
                     fills its parent. Wrap each select in a fixed-width
                     flex-none div so the row doesn't expand them and they sit
                     inline with Upload / New Folder. */}
-              <div className="w-[170px] flex-none">
-                <Select
-                  value={categoryFilter ?? 'all'}
-                  onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
+            <div className="w-[170px] flex-none">
+              <Select
+                value={categoryFilter ?? 'all'}
+                onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
+              >
+                <SelectTrigger
+                  aria-label="Filter by category"
+                  className="h-10 rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
                 >
-                  <SelectTrigger
-                    aria-label="Filter by category"
-                    className="h-10 rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
-                  >
-                    <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                    <SelectValue placeholder="Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {CATEGORY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {/* Global sort — works in both grid and list view so the
+                  <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {CATEGORY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Global sort — works in both grid and list view so the
                     user has one mental model regardless of layout. The list
                     view's sortable column headers stay as a power-user
                     convenience but bind to the same sortField/sortDir. */}
-              <div className="w-[180px] flex-none">
-                <Select
-                  value={`${sortField}:${sortDir}`}
-                  onValueChange={(v) => {
-                    const [field, dir] = v.split(':') as [
-                      'name' | 'size' | 'createdAt',
-                      'asc' | 'desc',
-                    ];
-                    setSortField(field);
-                    setSortDir(dir);
-                  }}
+            <div className="w-[180px] flex-none">
+              <Select
+                value={`${sortField}:${sortDir}`}
+                onValueChange={(v) => {
+                  const [field, dir] = v.split(':') as [
+                    'name' | 'size' | 'createdAt',
+                    'asc' | 'desc',
+                  ];
+                  setSortField(field);
+                  setSortDir(dir);
+                }}
+              >
+                <SelectTrigger
+                  aria-label="Sort documents"
+                  className="h-10 rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
                 >
-                  <SelectTrigger
-                    aria-label="Sort documents"
-                    className="h-10 rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
-                  >
-                    <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                    <SelectValue placeholder="Sort" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="name:asc">Name (A → Z)</SelectItem>
-                    <SelectItem value="name:desc">Name (Z → A)</SelectItem>
-                    <SelectItem value="createdAt:desc">Newest first</SelectItem>
-                    <SelectItem value="createdAt:asc">Oldest first</SelectItem>
-                    <SelectItem value="size:desc">Largest first</SelectItem>
-                    <SelectItem value="size:asc">Smallest first</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* Compact toggle (list view only) */}
-              {viewMode === 'list' && (
-                <button
-                  onClick={() => {
-                    const next = !compact;
-                    setCompact(next);
-                    localStorage.setItem('vaultspace-compact', String(next));
-                  }}
-                  className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
-                  title={compact ? 'Standard density' : 'Compact density'}
-                >
-                  <Minus className="h-4 w-4" />
-                </button>
-              )}
-              {/* Column picker (list view only) */}
-              {viewMode === 'list' && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
-                      title="Show/hide columns"
-                    >
-                      <Columns3 className="h-4 w-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {[
-                      { key: 'size', label: 'Size' },
-                      { key: 'uploaded', label: 'Uploaded' },
-                    ].map((col) => (
-                      <DropdownMenuItem
-                        key={col.key}
-                        onClick={() => {
-                          const next = {
-                            ...visibleColumns,
-                            [col.key]: !visibleColumns[col.key],
-                          };
-                          setVisibleColumns(next);
-                          localStorage.setItem('vaultspace-columns', JSON.stringify(next));
-                        }}
-                      >
-                        <span
-                          className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
-                        />
-                        {col.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-              {/* View toggle */}
-              <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-950">
-                <button
-                  onClick={() => {
-                    setViewMode('list');
-                    localStorage.setItem('vaultspace-doc-view', 'list');
-                  }}
-                  className={`rounded-md p-1.5 transition-colors ${viewMode === 'list' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
-                  title="List view"
-                >
-                  <List className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setViewMode('grid');
-                    localStorage.setItem('vaultspace-doc-view', 'grid');
-                  }}
-                  className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-100'}`}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-              </div>
+                  <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                  <SelectValue placeholder="Sort" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name:asc">Name (A → Z)</SelectItem>
+                  <SelectItem value="name:desc">Name (Z → A)</SelectItem>
+                  <SelectItem value="createdAt:desc">Newest first</SelectItem>
+                  <SelectItem value="createdAt:asc">Oldest first</SelectItem>
+                  <SelectItem value="size:desc">Largest first</SelectItem>
+                  <SelectItem value="size:asc">Smallest first</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
-
-          {folders.length === 0 && documents.length === 0 ? (
-            <AdminEmptyState
-              icon={<FileText className="h-6 w-6" />}
-              title="No documents yet"
-              description="Upload your first files or create folders to start structuring this room for secure review."
-              action={
-                <Button onClick={() => setShowUploadDialog(true)}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Files
-                </Button>
-              }
-            />
-          ) : viewMode === 'list' ? (
-            <AdminSurface className="overflow-hidden p-0">
-              <table className="w-full">
-                <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
-                  <tr>
-                    <th className="w-8 px-2 py-2">
-                      <button
-                        onClick={toggleSelectAll}
-                        className="flex items-center text-neutral-400 hover:text-neutral-600"
-                      >
-                        {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
-                          <CheckSquare className="h-4 w-4 text-primary-500" />
-                        ) : (
-                          <Square className="h-4 w-4" />
-                        )}
-                      </button>
-                    </th>
-                    <th
-                      className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                      onClick={() => handleSort('name')}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        Name
-                        {sortField === 'name' ? (
-                          sortDir === 'asc' ? (
-                            <ChevronUp className="h-3 w-3" />
-                          ) : (
-                            <ChevronDown className="h-3 w-3" />
-                          )
-                        ) : (
-                          <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
-                        )}
-                      </span>
-                    </th>
-                    {visibleColumns['size'] && (
-                      <th
-                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                        onClick={() => handleSort('size')}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          Size
-                          {sortField === 'size' ? (
-                            sortDir === 'asc' ? (
-                              <ChevronUp className="h-3 w-3" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3" />
-                            )
-                          ) : null}
-                        </span>
-                      </th>
-                    )}
-                    {visibleColumns['uploaded'] && (
-                      <th
-                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                        onClick={() => handleSort('createdAt')}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          Uploaded
-                          {sortField === 'createdAt' ? (
-                            sortDir === 'asc' ? (
-                              <ChevronUp className="h-3 w-3" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3" />
-                            )
-                          ) : null}
-                        </span>
-                      </th>
-                    )}
-                    <th className="w-8"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Render folders first */}
-                  {folders.map((folder) => (
-                    <tr
-                      key={folder.id}
-                      className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
-                      onClick={() => handleFolderClick(folder)}
-                    >
-                      <td className="w-8 px-2" />
-                      <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                        <div className="flex items-center gap-2">
-                          <Folder
-                            className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`}
-                          />
-                          <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
-                            {folder.name}
-                          </span>
-                        </div>
-                      </td>
-                      {visibleColumns['size'] && (
-                        <td
-                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                        >
-                          {folder.documentCount} files, {folder.childCount} folders
-                        </td>
-                      )}
-                      {visibleColumns['uploaded'] && (
-                        <td
-                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                        >
-                          {formatDate(folder.createdAt)}
-                        </td>
-                      )}
-                      <td
-                        className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
-                            >
-                              <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Open
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleFolderDelete(folder)}
-                              className="text-danger-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </tr>
-                  ))}
-                  {/* Render documents */}
-                  {sortedDocuments.map((doc) => (
-                    <tr
-                      key={doc.id}
-                      className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
-                      onClick={() => handlePreview(doc)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setContextMenu({ x: e.clientX, y: e.clientY, doc });
+          <div className="flex items-center gap-2">
+            {/* Compact toggle (list view only) */}
+            {viewMode === 'list' && (
+              <button
+                onClick={() => {
+                  const next = !compact;
+                  setCompact(next);
+                  localStorage.setItem('vaultspace-compact', String(next));
+                }}
+                className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
+                title={compact ? 'Standard density' : 'Compact density'}
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+            )}
+            {/* Column picker (list view only) */}
+            {viewMode === 'list' && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
+                    title="Show/hide columns"
+                  >
+                    <Columns3 className="h-4 w-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {[
+                    { key: 'size', label: 'Size' },
+                    { key: 'uploaded', label: 'Uploaded' },
+                  ].map((col) => (
+                    <DropdownMenuItem
+                      key={col.key}
+                      onClick={() => {
+                        const next = {
+                          ...visibleColumns,
+                          [col.key]: !visibleColumns[col.key],
+                        };
+                        setVisibleColumns(next);
+                        localStorage.setItem('vaultspace-columns', JSON.stringify(next));
                       }}
                     >
-                      <td
-                        className="w-8 px-2"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleDocSelection(doc.id);
-                        }}
-                      >
-                        {selectedDocs.has(doc.id) ? (
-                          <CheckSquare className="h-4 w-4 text-primary-500" />
-                        ) : (
-                          <Square className="h-4 w-4 text-neutral-300" />
-                        )}
-                      </td>
-                      <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                        <div className="flex items-center gap-2">
-                          <FileTypeIcon
-                            mimeType={doc.mimeType}
-                            className={compact ? 'h-4 w-4' : undefined}
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`truncate font-medium ${compact ? 'text-sm' : ''}`}>
-                                {doc.name}
-                              </span>
-                              {(doc.confidential || room?.allDocumentsConfidential) && (
-                                <Lock className="h-3 w-3 shrink-0 text-amber-500" />
-                              )}
-                            </div>
-                            {!compact && (
-                              <div className="mt-0.5 flex flex-wrap gap-1">
-                                {doc.category && (
-                                  <span
-                                    className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
-                                  >
-                                    {getCategoryLabel(doc.category)}
-                                  </span>
-                                )}
-                                {doc.tags?.map((tag) => (
-                                  <Badge
-                                    key={tag}
-                                    variant="outline"
-                                    className="px-1 py-0 text-[10px]"
-                                  >
-                                    {tag}
-                                  </Badge>
-                                ))}
-                                {doc.expiresAt && (
-                                  <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
-                                    <Clock className="h-2.5 w-2.5" />
-                                    Expires {new Date(doc.expiresAt).toLocaleDateString()}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      {visibleColumns['size'] && (
-                        <td
-                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                        >
-                          {formatFileSize(doc.size)}
-                        </td>
-                      )}
-                      {visibleColumns['uploaded'] && (
-                        <td
-                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                        >
-                          {formatDate(doc.createdAt)}
-                        </td>
-                      )}
-                      <td
-                        className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
-                            >
-                              <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handlePreview(doc)}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Preview
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                              <Download className="mr-2 h-4 w-4" />
-                              Download
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setEditingTagsDoc(doc);
-                                setTagInput((doc.tags || []).join(', '));
-                              }}
-                            >
-                              <Tag className="mr-2 h-4 w-4" />
-                              Edit Properties
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
-                              <Star
-                                className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
-                              />
-                              {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
-                              <History className="mr-2 h-4 w-4" />
-                              Version History
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={async () => {
-                                const next = !doc.confidential;
-                                await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
-                                  method: 'PATCH',
-                                  headers: {
-                                    'Content-Type': 'application/json',
-                                  },
-                                  body: JSON.stringify({
-                                    confidential: next,
-                                  }),
-                                });
-                                fetchDocuments();
-                              }}
-                            >
-                              <Lock className="mr-2 h-4 w-4" />
-                              {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(doc)}
-                              className="text-danger-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </tr>
+                      <span
+                        className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
+                      />
+                      {col.label}
+                    </DropdownMenuItem>
                   ))}
-                </tbody>
-              </table>
-            </AdminSurface>
-          ) : (
-            /* Grid / Thumbnail View */
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {/* Folders */}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {/* View toggle. Active mode uses a primary tint + ring so the
+                  user can read the current view at a glance without parsing
+                  gray-on-gray shade differences. */}
+            <div
+              role="group"
+              aria-label="Document view mode"
+              className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800"
+            >
+              <button
+                onClick={() => {
+                  setViewMode('list');
+                  localStorage.setItem('vaultspace-doc-view', 'list');
+                }}
+                className={`rounded-md p-1.5 transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-white text-primary-700 shadow-sm ring-1 ring-primary-200 dark:bg-slate-950 dark:text-primary-200 dark:ring-primary-800'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                }`}
+                aria-pressed={viewMode === 'list'}
+                aria-label="List view"
+                title="List view"
+              >
+                <List className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                onClick={() => {
+                  setViewMode('grid');
+                  localStorage.setItem('vaultspace-doc-view', 'grid');
+                }}
+                className={`rounded-md p-1.5 transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-white text-primary-700 shadow-sm ring-1 ring-primary-200 dark:bg-slate-950 dark:text-primary-200 dark:ring-primary-800'
+                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                }`}
+                aria-pressed={viewMode === 'grid'}
+                aria-label="Grid view"
+                title="Grid view"
+              >
+                <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+        {/* end toolbar surface */}
+      </div>
+      {/* end Room identity plane */}
+
+      {folders.length === 0 && documents.length === 0 ? (
+        <AdminEmptyState
+          icon={<FileText className="h-6 w-6" />}
+          title="No documents yet"
+          description="Upload your first files or create folders to start structuring this room for secure review."
+          action={
+            <Button onClick={() => setShowUploadDialog(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              Upload Files
+            </Button>
+          }
+        />
+      ) : viewMode === 'list' ? (
+        <AdminSurface className="overflow-hidden p-0">
+          <table className="w-full">
+            <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
+              <tr>
+                <th className="w-8 px-2 py-2">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="flex items-center text-neutral-400 hover:text-neutral-600"
+                  >
+                    {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
+                      <CheckSquare className="h-4 w-4 text-primary-500" />
+                    ) : (
+                      <Square className="h-4 w-4" />
+                    )}
+                  </button>
+                </th>
+                <th
+                  className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                  onClick={() => handleSort('name')}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    Name
+                    {sortField === 'name' ? (
+                      sortDir === 'asc' ? (
+                        <ChevronUp className="h-3 w-3" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                    )}
+                  </span>
+                </th>
+                {visibleColumns['size'] && (
+                  <th
+                    className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                    onClick={() => handleSort('size')}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Size
+                      {sortField === 'size' ? (
+                        sortDir === 'asc' ? (
+                          <ChevronUp className="h-3 w-3" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3" />
+                        )
+                      ) : null}
+                    </span>
+                  </th>
+                )}
+                {visibleColumns['uploaded'] && (
+                  <th
+                    className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                    onClick={() => handleSort('createdAt')}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Uploaded
+                      {sortField === 'createdAt' ? (
+                        sortDir === 'asc' ? (
+                          <ChevronUp className="h-3 w-3" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3" />
+                        )
+                      ) : null}
+                    </span>
+                  </th>
+                )}
+                <th className="w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Render folders first */}
               {folders.map((folder) => (
-                <div
+                <tr
                   key={folder.id}
-                  className="group cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+                  className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
                   onClick={() => handleFolderClick(folder)}
                 >
-                  <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-amber-50">
-                    <Folder className="h-12 w-12 text-amber-500" />
-                  </div>
-                  <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
-                  <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
-                </div>
+                  <td className="w-8 px-2" />
+                  <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                    <div className="flex items-center gap-2">
+                      <Folder className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`} />
+                      <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
+                        {folder.name}
+                      </span>
+                    </div>
+                  </td>
+                  {visibleColumns['size'] && (
+                    <td
+                      className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                    >
+                      {folder.documentCount} files, {folder.childCount} folders
+                    </td>
+                  )}
+                  {visibleColumns['uploaded'] && (
+                    <td
+                      className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                    >
+                      {formatDate(folder.createdAt)}
+                    </td>
+                  )}
+                  <td
+                    className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                        >
+                          <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Open
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => handleFolderDelete(folder)}
+                          className="text-danger-600"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
               ))}
-              {/* Documents — render the same sorted view the list mode uses
-                  so the grid and list stay coherent regardless of how the
-                  user sorted via the toolbar. */}
+              {/* Render documents */}
               {sortedDocuments.map((doc) => (
-                <div
+                <tr
                   key={doc.id}
-                  className="group relative cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+                  className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
                   onClick={() => handlePreview(doc)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setContextMenu({ x: e.clientX, y: e.clientY, doc });
                   }}
                 >
-                  <DocumentThumbnail
-                    docId={doc.id}
-                    roomId={roomId}
-                    mimeType={doc.mimeType}
-                    confidential={doc.confidential || room?.allDocumentsConfidential || false}
-                    updatedAt={doc.updatedAt}
-                  />
-                  <div className="mt-2 flex items-center gap-1">
-                    <p className="truncate text-sm font-medium">{doc.name}</p>
-                    {(doc.confidential || room?.allDocumentsConfidential) && (
-                      <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                  <td
+                    className="w-8 px-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleDocSelection(doc.id);
+                    }}
+                  >
+                    {selectedDocs.has(doc.id) ? (
+                      <CheckSquare className="h-4 w-4 text-primary-500" />
+                    ) : (
+                      <Square className="h-4 w-4 text-neutral-300" />
                     )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
-                    {doc.category && (
-                      <span
-                        className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
-                      >
-                        {getCategoryLabel(doc.category)}
-                      </span>
-                    )}
-                    {doc.expiresAt && (
-                      <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
-                        <Clock className="h-2.5 w-2.5" />
-                        {new Date(doc.expiresAt).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                  {/* Action menu */}
-                  <div
-                    className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+                  </td>
+                  <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                    <div className="flex items-center gap-2">
+                      <FileTypeIcon
+                        mimeType={doc.mimeType}
+                        className={compact ? 'h-4 w-4' : undefined}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`truncate font-medium ${compact ? 'text-sm' : ''}`}>
+                            {doc.name}
+                          </span>
+                          {(doc.confidential || room?.allDocumentsConfidential) && (
+                            <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                          )}
+                        </div>
+                        {!compact && (
+                          <div className="mt-0.5 flex flex-wrap gap-1">
+                            {doc.category && (
+                              <span
+                                className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
+                              >
+                                {getCategoryLabel(doc.category)}
+                              </span>
+                            )}
+                            {doc.tags?.map((tag) => (
+                              <Badge key={tag} variant="outline" className="px-1 py-0 text-[10px]">
+                                {tag}
+                              </Badge>
+                            ))}
+                            {doc.expiresAt && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
+                                <Clock className="h-2.5 w-2.5" />
+                                Expires {new Date(doc.expiresAt).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  {visibleColumns['size'] && (
+                    <td
+                      className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                    >
+                      {formatFileSize(doc.size)}
+                    </td>
+                  )}
+                  {visibleColumns['uploaded'] && (
+                    <td
+                      className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                    >
+                      {formatDate(doc.createdAt)}
+                    </td>
+                  )}
+                  <td
+                    className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="secondary" size="sm" className="h-7 w-7 p-0 shadow-sm">
-                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                        >
+                          <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -1955,8 +1856,12 @@ export default function RoomDetailPage() {
                             const next = !doc.confidential;
                             await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
                               method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ confidential: next }),
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
+                              body: JSON.stringify({
+                                confidential: next,
+                              }),
                             });
                             fetchDocuments();
                           }}
@@ -1974,13 +1879,136 @@ export default function RoomDetailPage() {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-                </div>
+                  </td>
+                </tr>
               ))}
+            </tbody>
+          </table>
+        </AdminSurface>
+      ) : (
+        /* Grid / Thumbnail View */
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {/* Folders */}
+          {folders.map((folder) => (
+            <div
+              key={folder.id}
+              className="group cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+              onClick={() => handleFolderClick(folder)}
+            >
+              <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-amber-50">
+                <Folder className="h-12 w-12 text-amber-500" />
+              </div>
+              <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
+              <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
             </div>
-          )}
+          ))}
+          {/* Documents — render the same sorted view the list mode uses
+                  so the grid and list stay coherent regardless of how the
+                  user sorted via the toolbar. */}
+          {sortedDocuments.map((doc) => (
+            <div
+              key={doc.id}
+              className="group relative cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-primary-700"
+              onClick={() => handlePreview(doc)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu({ x: e.clientX, y: e.clientY, doc });
+              }}
+            >
+              <DocumentThumbnail
+                docId={doc.id}
+                roomId={roomId}
+                mimeType={doc.mimeType}
+                confidential={doc.confidential || room?.allDocumentsConfidential || false}
+                updatedAt={doc.updatedAt}
+              />
+              <div className="mt-2 flex items-center gap-1">
+                <p className="truncate text-sm font-medium">{doc.name}</p>
+                {(doc.confidential || room?.allDocumentsConfidential) && (
+                  <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
+                {doc.category && (
+                  <span
+                    className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
+                  >
+                    {getCategoryLabel(doc.category)}
+                  </span>
+                )}
+                {doc.expiresAt && (
+                  <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
+                    <Clock className="h-2.5 w-2.5" />
+                    {new Date(doc.expiresAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+              {/* Action menu */}
+              <div
+                className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="secondary" size="sm" className="h-7 w-7 p-0 shadow-sm">
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handlePreview(doc)}>
+                      <Eye className="mr-2 h-4 w-4" />
+                      Preview
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDownload(doc)}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Download
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setEditingTagsDoc(doc);
+                        setTagInput((doc.tags || []).join(', '));
+                      }}
+                    >
+                      <Tag className="mr-2 h-4 w-4" />
+                      Edit Properties
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
+                      <Star
+                        className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
+                      />
+                      {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
+                      <History className="mr-2 h-4 w-4" />
+                      Version History
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        const next = !doc.confidential;
+                        await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ confidential: next }),
+                        });
+                        fetchDocuments();
+                      }}
+                    >
+                      <Lock className="mr-2 h-4 w-4" />
+                      {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleDelete(doc)} className="text-danger-600">
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
 
       {/* Manage Room drawer. Holds the secondary room surfaces (Access,
           Share Links, Q&A, Checklist, Calendar) so the page canvas can stay
@@ -2002,13 +2030,15 @@ export default function RoomDetailPage() {
               onValueChange={(v) => setManagePane(v as typeof managePane)}
               className="flex h-full"
             >
-              {/* Vertical pane nav. Stays narrow so the active pane gets the
-                  bulk of the drawer width, mirroring how Figma / Linear
-                  inspector panels split list-of-sections from current
-                  section. */}
+              {/* Vertical pane nav. Reads as a distinct rail layer (slightly
+                  darker tint than the content pane on the right) so the
+                  drawer feels like a tool panel, not a flat modal. The
+                  active section uses the same primary accent that anchors
+                  the room canvas — keeping the entire room on a single
+                  controlled accent system. */}
               <TabsList
                 aria-label="Room management sections"
-                className="flex h-full w-44 shrink-0 flex-col items-stretch justify-start gap-1 rounded-none border-r border-slate-200 bg-slate-50/60 p-2 dark:border-slate-800 dark:bg-slate-900/40"
+                className="flex h-full w-48 shrink-0 flex-col items-stretch justify-start gap-1 rounded-none border-r border-slate-200 bg-slate-100/80 p-2 dark:border-slate-800 dark:bg-slate-900/60"
               >
                 {[
                   { value: 'members', icon: Users, label: 'Access' },
@@ -2020,7 +2050,7 @@ export default function RoomDetailPage() {
                   <TabsTrigger
                     key={value}
                     value={value}
-                    className="justify-start gap-2 rounded-md bg-transparent px-3 py-2 text-sm font-medium text-slate-600 shadow-none data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm dark:text-slate-400 dark:data-[state=active]:bg-slate-950 dark:data-[state=active]:text-white"
+                    className="justify-start gap-2 rounded-md bg-transparent px-3 py-2 text-sm font-medium text-slate-600 shadow-none transition-colors hover:bg-white/70 hover:text-slate-900 data-[state=active]:bg-primary-50 data-[state=active]:text-primary-800 data-[state=active]:shadow-none data-[state=active]:ring-1 data-[state=active]:ring-inset data-[state=active]:ring-primary-200 dark:text-slate-400 dark:hover:bg-slate-800/70 dark:hover:text-slate-100 dark:data-[state=active]:bg-primary-900/30 dark:data-[state=active]:text-primary-100 dark:data-[state=active]:ring-primary-800"
                   >
                     <Icon aria-hidden="true" className="h-4 w-4" />
                     {label}
@@ -2028,7 +2058,7 @@ export default function RoomDetailPage() {
                 ))}
               </TabsList>
 
-              <div className="min-w-0 flex-1 overflow-y-auto p-5">
+              <div className="min-w-0 flex-1 overflow-y-auto bg-white p-5 dark:bg-slate-950">
                 {/* Members pane */}
                 <TabsContent value="members" className="mt-0">
                   {/* Access Requests Section */}
