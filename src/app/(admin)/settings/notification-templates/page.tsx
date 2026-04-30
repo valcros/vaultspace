@@ -167,11 +167,7 @@ export default function NotificationTemplatesPage() {
           { label: 'Notification Templates' },
         ]}
         actions={
-          <Button
-            variant="ghost"
-            className="text-white hover:bg-white/20 hover:text-white"
-            onClick={() => router.push('/settings')}
-          >
+          <Button variant="outline" size="sm" onClick={() => router.push('/settings')}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Settings
           </Button>

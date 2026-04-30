@@ -38,7 +38,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { EmptyRooms } from '@/components/illustrations/EmptyState';
 
 interface Room {
@@ -61,19 +60,9 @@ export default function RoomsPage() {
   const [showCreateDialog, setShowCreateDialog] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [newRoom, setNewRoom] = React.useState({ name: '', description: '' });
-  const [stats, setStats] = React.useState<{
-    totalRooms: number;
-    totalDocuments: number;
-    totalMembers: number;
-    viewsThisWeek: number;
-  } | null>(null);
 
   React.useEffect(() => {
     fetchRooms();
-    fetch('/api/organization/stats')
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setStats)
-      .catch(() => {});
   }, []);
 
   const fetchRooms = async () => {
@@ -133,99 +122,35 @@ export default function RoomsPage() {
   return (
     <>
       <PageHeader
+        variant="work"
         title="Data Rooms"
-        description="Launch active deals, review secure content, and move directly into the rooms that need attention."
         actions={
-          <Button
-            className="rounded-xl border border-white/20 bg-white/15 text-white hover:bg-white/25"
-            onClick={() => setShowCreateDialog(true)}
-          >
+          <Button onClick={() => setShowCreateDialog(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Create Room
           </Button>
         }
       />
 
-      <div className="space-y-6">
-        {/* Stats Bar */}
-        {stats && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              {
-                label: 'Rooms',
-                value: stats.totalRooms,
-                icon: FolderOpen,
-                iconBg:
-                  'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-              },
-              {
-                label: 'Documents',
-                value: stats.totalDocuments,
-                icon: FolderOpen,
-                iconBg:
-                  'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-              },
-              {
-                label: 'Members',
-                value: stats.totalMembers,
-                icon: Users,
-                iconBg: 'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
-              },
-              {
-                label: 'Views (7d)',
-                value: stats.viewsThisWeek,
-                icon: FolderOpen,
-                iconBg: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-              },
-            ].map((stat) => (
-              <div
-                key={stat.label}
-                className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
-              >
-                <div className={`rounded-lg p-2.5 ${stat.iconBg}`}>
-                  <stat.icon className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-lg font-semibold text-neutral-950 dark:text-neutral-50">
-                    {stat.value}
-                  </p>
-                  <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                    {stat.label}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Welcome Banner */}
-        {!isLoading && <WelcomeBanner roomCount={rooms.length} />}
-
-        {/* Search */}
-        <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
-                Room Portfolio
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-neutral-950 dark:text-neutral-50">
-                Start from the room that matters most.
-              </h2>
-              <p className="mt-1 text-sm text-neutral-500">
-                Search, filter mentally, and jump directly into a live room instead of browsing cold
-                lists.
-              </p>
-            </div>
-            <div className="relative w-full max-w-md">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-              <Input
-                placeholder="Search rooms, deals, or project spaces..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-11 rounded-xl border-white/70 bg-white pl-10 shadow-sm"
-              />
-            </div>
-          </div>
+      <div className="space-y-4">
+        {/*
+          Search-first row. The earlier "Room Portfolio" explainer card
+          plus stats strip plus welcome banner pushed the actual room grid
+          below the fold; per advisor direction the cards should start
+          higher. Everything that isn't "find the room" is gone.
+        */}
+        <div className="relative">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400"
+          />
+          <Input
+            placeholder="Search rooms..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="Search rooms"
+            className="h-10 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+          />
         </div>
 
         {/* Room Grid */}
