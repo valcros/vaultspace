@@ -76,7 +76,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
-import { AdminEmptyState, AdminSurface, AdminToolbar } from '@/components/layout/admin-page';
+import { AdminEmptyState, AdminSurface } from '@/components/layout/admin-page';
 import {
   Sheet,
   SheetContent,
@@ -1317,8 +1317,8 @@ export default function RoomDetailPage() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
             <Button
-              variant="ghost"
-              className="text-white hover:bg-white/20 hover:text-white"
+              variant="outline"
+              size="sm"
               aria-label="Manage room"
               onClick={() => setManageOpen(true)}
             >
@@ -1327,11 +1327,7 @@ export default function RoomDetailPage() {
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="text-white hover:bg-white/20 hover:text-white"
-                  aria-label="More room actions"
-                >
+                <Button variant="ghost" size="sm" aria-label="More room actions">
                   <MoreHorizontal className="h-4 w-4 sm:mr-2" />
                   <span className="hidden sm:inline">More</span>
                 </Button>
@@ -2102,17 +2098,18 @@ export default function RoomDetailPage() {
                     </Card>
                   )}
 
-                  <AdminToolbar
-                    title="Room access"
-                    description="Manage room admins, approve inbound requests, and invite external viewers with controlled access."
-                    className="mb-4"
-                    actions={
-                      <Button onClick={() => setShowMemberDialog(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Admin
-                      </Button>
-                    }
-                  />
+                  {/* Slim section header — drawer width is precious; the
+                      drawer title already names this surface, so we don't
+                      need a second descriptive paragraph here. */}
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Admins
+                    </h3>
+                    <Button size="sm" onClick={() => setShowMemberDialog(true)}>
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Add Admin
+                    </Button>
+                  </div>
 
                   {admins.length === 0 ? (
                     <AdminEmptyState
@@ -2346,18 +2343,16 @@ export default function RoomDetailPage() {
                 </TabsContent>
 
                 {/* Links Tab */}
-                <TabsContent value="links" className="mt-6">
-                  <AdminToolbar
-                    title="Share links"
-                    description="Create controlled viewer links for this room and manage permissions, expiry, and reuse from one place."
-                    className="mb-4"
-                    actions={
-                      <Button onClick={() => setShowLinkDialog(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Create Link
-                      </Button>
-                    }
-                  />
+                <TabsContent value="links" className="mt-0">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Share links
+                    </h3>
+                    <Button size="sm" onClick={() => setShowLinkDialog(true)}>
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Create Link
+                    </Button>
+                  </div>
 
                   {links.length === 0 ? (
                     <AdminEmptyState

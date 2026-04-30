@@ -183,7 +183,7 @@ export default function MessagesPage() {
         description="Send and receive private messages"
         breadcrumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Messages' }]}
         actions={
-          <Button onClick={startCompose} className="bg-white/20 text-white hover:bg-white/30">
+          <Button onClick={startCompose}>
             <Send className="mr-2 h-4 w-4" />
             Compose
           </Button>
