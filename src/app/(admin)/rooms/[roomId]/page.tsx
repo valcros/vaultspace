@@ -516,11 +516,13 @@ export default function RoomDetailPage() {
     }
   }, [roomId]);
 
+  // Fetch the whole-room folder tree on every room load. The list-mode rail
+  // needs it directly, but grid mode also needs it to evaluate the one-time
+  // discoverability hint -- otherwise the hint can never trigger on a true
+  // first visit because the hint condition reads from folderTree.
   React.useEffect(() => {
-    if (viewMode === 'list') {
-      fetchFolderTree();
-    }
-  }, [viewMode, fetchFolderTree]);
+    fetchFolderTree();
+  }, [fetchFolderTree]);
 
   const folderById = React.useMemo(() => {
     const map = new Map<string, RoomFolderTreeNode>();
@@ -925,7 +927,8 @@ export default function RoomDetailPage() {
       if (response.ok) {
         setShowFolderDialog(false);
         setNewFolderName('');
-        fetchFolders(); // Refresh folders for immediate visibility
+        fetchFolders(); // Refresh current folder listing
+        fetchFolderTree(); // Keep the split-pane rail in sync
       } else {
         const error = await response.json();
         console.error('Failed to create folder:', error);
@@ -941,7 +944,7 @@ export default function RoomDetailPage() {
     } finally {
       setIsCreatingFolder(false);
     }
-  }, [roomId, newFolderName, currentFolderId, fetchFolders]);
+  }, [roomId, newFolderName, currentFolderId, fetchFolders, fetchFolderTree]);
 
   // Navigate into a folder
   const handleFolderClick = React.useCallback((folder: FolderItem) => {
@@ -1201,6 +1204,7 @@ export default function RoomDetailPage() {
         setShowFolderDeleteDialog(false);
         setSelectedFolder(null);
         fetchFolders();
+        fetchFolderTree();
         fetchDocuments(); // Documents may have been deleted too
       } else {
         const error = await response.json();
@@ -1216,7 +1220,7 @@ export default function RoomDetailPage() {
     } finally {
       setIsDeletingFolder(false);
     }
-  }, [roomId, selectedFolder, fetchFolders, fetchDocuments]);
+  }, [roomId, selectedFolder, fetchFolders, fetchDocuments, fetchFolderTree]);
 
   // Handle share link creation
   const handleCreateLink = React.useCallback(async () => {
