@@ -90,11 +90,37 @@ export function RoomFolderTree({
     selectedFolderId ?? 'root'
   );
 
+  // Track the row element for each visible node so we can call .focus() on
+  // the newly focused row after ArrowDown/Up. Without this the browser focus
+  // stays on the previously focused DOM element and Enter/Space act on the
+  // wrong node, and screen-reader focus never tracks the highlight.
+  const rowRefs = React.useRef<Map<'root' | string, HTMLDivElement | null>>(new Map());
+  const setRowRef = React.useCallback(
+    (id: 'root' | string) => (el: HTMLDivElement | null) => {
+      rowRefs.current.set(id, el);
+    },
+    []
+  );
+  // Only move actual DOM focus when the keyboard caused the focus change,
+  // not when an upstream selection update flips focusedId.
+  const shouldFocusDomRef = React.useRef(false);
+
   React.useEffect(() => {
     if (selectedFolderId) {
       setFocusedId(selectedFolderId);
     }
   }, [selectedFolderId]);
+
+  React.useEffect(() => {
+    if (!shouldFocusDomRef.current || !focusedId) {
+      return;
+    }
+    shouldFocusDomRef.current = false;
+    const el = rowRefs.current.get(focusedId);
+    if (el && document.activeElement !== el) {
+      el.focus();
+    }
+  }, [focusedId]);
 
   const visibleIds = React.useMemo<Array<'root' | string>>(
     () => ['root', ...visible.map((v) => v.node.id)],
@@ -102,6 +128,7 @@ export function RoomFolderTree({
   );
 
   const moveFocus = (delta: number) => {
+    shouldFocusDomRef.current = true;
     const currentIndex = focusedId ? visibleIds.indexOf(focusedId) : -1;
     if (currentIndex === -1) {
       setFocusedId(visibleIds[0] ?? null);
@@ -112,6 +139,11 @@ export function RoomFolderTree({
     if (next) {
       setFocusedId(next);
     }
+  };
+
+  const focusNode = (id: 'root' | string) => {
+    shouldFocusDomRef.current = true;
+    setFocusedId(id);
   };
 
   const handleKeyDown = (
@@ -143,9 +175,9 @@ export function RoomFolderTree({
         if (nodeId !== 'root' && isExpanded) {
           onToggleExpand(nodeId);
         } else if (parentId) {
-          setFocusedId(parentId);
+          focusNode(parentId);
         } else {
-          setFocusedId('root');
+          focusNode('root');
         }
         break;
       case 'Enter':
@@ -166,6 +198,7 @@ export function RoomFolderTree({
     return (
       <div
         key={node.id}
+        ref={setRowRef(node.id)}
         role="treeitem"
         aria-expanded={hasChildren ? isExpanded : undefined}
         aria-selected={isSelected}
@@ -233,6 +266,7 @@ export function RoomFolderTree({
   return (
     <div role="tree" aria-label="Folder tree" className="flex flex-col">
       <div
+        ref={setRowRef('root')}
         role="treeitem"
         aria-selected={rootSelected}
         aria-level={1}
