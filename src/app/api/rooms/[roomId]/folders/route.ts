@@ -20,6 +20,11 @@ import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { HTTP_STATUS } from '@/lib/constants';
 import { getPermissionEngine } from '@/lib/permissions';
+import {
+  FolderDepthExceededError,
+  MAX_FOLDER_DEPTH,
+  validateFolderCreateDepth,
+} from '@/lib/rooms/folderDepth';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -124,6 +129,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
           parentPath = parentFolder.path;
         }
 
+        try {
+          validateFolderCreateDepth(parentPath || null, parentId || null);
+        } catch (depthErr) {
+          if (depthErr instanceof FolderDepthExceededError) {
+            return {
+              depthError: {
+                code: depthErr.code,
+                message: depthErr.message,
+                details: {
+                  maxDepth: depthErr.maxDepth,
+                  attemptedDepth: depthErr.attemptedDepth,
+                  parentFolderId: depthErr.parentFolderId ?? null,
+                  operation: depthErr.operation,
+                },
+              },
+            };
+          }
+          throw depthErr;
+        }
+
         // Build the full path
         const path = parentPath ? `${parentPath}/${folderName}` : `/${folderName}`;
 
@@ -168,6 +193,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     );
 
+    if ('depthError' in result) {
+      return NextResponse.json(
+        { success: false, error: result.depthError },
+        { status: HTTP_STATUS.BAD_REQUEST }
+      );
+    }
+
     if ('error' in result) {
       return NextResponse.json(
         { success: false, error: { message: result.error } },
@@ -199,6 +231,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const searchParams = request.nextUrl.searchParams;
     const parentId = searchParams.get('parentId') || undefined;
+    const treeMode = searchParams.get('tree') === '1';
 
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(
@@ -232,14 +265,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
           return { error: 'Room not found', status: HTTP_STATUS.NOT_FOUND };
         }
 
-        // Get folders
+        // Get folders. In tree mode, ignore parentId and return the whole room.
         const folders = await tx.folder.findMany({
-          where: {
-            roomId,
-            organizationId: session.organizationId,
-            parentId: parentId || null,
-          },
-          orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+          where: treeMode
+            ? {
+                roomId,
+                organizationId: session.organizationId,
+              }
+            : {
+                roomId,
+                organizationId: session.organizationId,
+                parentId: parentId || null,
+              },
+          orderBy: [{ path: 'asc' }, { displayOrder: 'asc' }, { name: 'asc' }],
           include: {
             _count: {
               select: {
@@ -263,12 +301,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
+      maxDepth: MAX_FOLDER_DEPTH,
       folders: result.folders.map((f: FolderWithCounts) => ({
         id: f.id,
         name: f.name,
         path: f.path,
         parentId: f.parentId,
         displayOrder: f.displayOrder,
+        depth: f.path.split('/').filter(Boolean).length,
         childCount: f._count.children,
         documentCount: f._count.documents,
         createdAt: f.createdAt.toISOString(),

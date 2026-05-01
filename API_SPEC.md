@@ -29,6 +29,7 @@
    - [Health Endpoints](#health-endpoints)
 6. [Request/Response Examples](#requestresponse-examples)
 7. [Webhook Events [V1]](#webhook-events-v1)
+8. [Room Navigation Phase 1 Addendum](#room-navigation-phase-1-addendum)
 
 ---
 
@@ -141,6 +142,7 @@ GET /api/rooms/{roomId}/documents?status=active&createdAfter=2026-01-01
 | `ROOM_NOT_FOUND`        | 404    | Specified room does not exist                                     |
 | `DOCUMENT_NOT_FOUND`    | 404    | Specified document does not exist                                 |
 | `FOLDER_NOT_FOUND`      | 404    | Specified folder does not exist                                   |
+| `FOLDER_DEPTH_EXCEEDED` | 400    | Folder create, move, or import would exceed allowed hierarchy     |
 | `LINK_NOT_FOUND`        | 404    | Specified share link does not exist                               |
 | `LINK_EXPIRED`          | 410    | Share link has expired                                            |
 | `LINK_ACCESS_DENIED`    | 403    | Access restrictions prevent viewing (password, IP, NDA)           |
@@ -3343,3 +3345,259 @@ Content-Type: application/json
 **End of API_SPEC.md**
 
 This specification is the authoritative contract between frontend and backend teams for the VaultSpace MVP. All 63 features are mapped to their corresponding endpoints. Frontend teams can develop against this spec; backend teams implement according to these contracts. See ARCHITECTURE.md, PERMISSION_MODEL.md, and DATABASE_SCHEMA.md for supporting technical details.
+
+---
+
+## Room Navigation Phase 1 Addendum
+
+**Status:** Approved addendum derived from `docs/ROOM_NAVIGATION_AND_FOLDER_DEPTH_GUIDANCE_v3.md`  
+**Applies To:** Room folder browsing, folder mutation rules, and folder-preserving imports
+
+Where this addendum conflicts with older folder endpoint descriptions, this addendum wins.
+
+### Summary
+
+Phase 1 introduces:
+
+- deterministic room view-mode defaults
+- per-room browser persistence for room navigation preferences
+- folder depth enforcement at create, move, and import time
+- atomic reject-with-report behavior for folder-preserving imports
+
+### Error Contract: `FOLDER_DEPTH_EXCEEDED`
+
+Use `FOLDER_DEPTH_EXCEEDED` whenever a create, move, or import operation would create a folder deeper than the allowed hierarchy.
+
+**HTTP status:** `400 Bad Request`
+
+**Error response:**
+
+```typescript
+{
+  "error": {
+    "code": "FOLDER_DEPTH_EXCEEDED",
+    "message": "This folder would exceed the maximum allowed depth of 3.",
+    "status": 400,
+    "requestId": "req_123",
+    "details": {
+      "maxDepth": 3,
+      "attemptedDepth": 4,
+      "parentFolderId": "fld_parent_123",
+      "operation": "create" // "create" | "move" | "import"
+    }
+  }
+}
+```
+
+Rules:
+
+- `maxDepth` is the maximum folder depth from room root.
+- `attemptedDepth` is the depth that would have been created.
+- `operation` is required for all depth-cap failures.
+- `parentFolderId` is included for create/move when applicable.
+
+### Folder Depth Definitions
+
+Allowed:
+
+- room root
+- top-level folder
+- mid-level subfolder
+- leaf-level subfolder
+- files at the root or any folder level
+
+Not allowed:
+
+- any folder at depth `4` or deeper from the room root
+
+Examples:
+
+- `/Financials` -> depth `1`
+- `/Financials/2025` -> depth `2`
+- `/Financials/2025/Q3` -> depth `3`
+- `/Financials/2025/Q3/Weekly` -> invalid depth `4`
+
+### `POST /api/rooms/:roomId/folders`
+
+Creates a folder in the room or under a parent folder.
+
+**Request:**
+
+```typescript
+{
+  "name": string,
+  "parentId"?: string | null
+}
+```
+
+**Behavior additions for Phase 1:**
+
+- If `parentId` is omitted or `null`, the new folder is created at depth `1`.
+- If `parentId` points to a folder at depth `3`, reject with `FOLDER_DEPTH_EXCEEDED`.
+- Duplicate folder names at the same level still return `409`.
+
+**Success response (201):**
+
+```typescript
+{
+  "success": true,
+  "folder": {
+    "id": string,
+    "roomId": string,
+    "parentId": string | null,
+    "name": string,
+    "path": string,
+    "displayOrder": number
+  }
+}
+```
+
+### `PATCH /api/rooms/:roomId/folders/:folderId`
+
+Updates a folder. Phase 1 explicitly supports rename and move semantics in the same endpoint.
+
+**Request:**
+
+```typescript
+{
+  "name"?: string,
+  "parentId"?: string | null
+}
+```
+
+Rules:
+
+- `name` only -> rename
+- `parentId` only -> move/re-parent
+- `name` + `parentId` -> move and rename in one request
+- empty payload -> `400 INVALID_INPUT`
+
+Move validation:
+
+- The destination parent must belong to the same room and organization.
+- The folder cannot be moved into itself or one of its descendants.
+- The moved folder’s entire subtree must remain within max depth `3`.
+- If the move would place the folder or any descendant at depth `4+`, return `FOLDER_DEPTH_EXCEEDED`.
+
+**Example depth failure:**
+
+Moving `/Financials/2025` under `/Legal/Contracts/Customer` would make the moved node depth `4`, so the API returns `400 FOLDER_DEPTH_EXCEEDED`.
+
+**Success response (200):**
+
+```typescript
+{
+  "folder": {
+    "id": string,
+    "roomId": string,
+    "parentId": string | null,
+    "name": string,
+    "path": string
+  }
+}
+```
+
+### `GET /api/rooms/:roomId/folders`
+
+No contract change for basic listing, but Phase 1 UI relies on this endpoint for tree rendering.
+
+**Query params:**
+
+- `parentId?: string`
+
+**Notes for frontend consumption:**
+
+- Root request uses `parentId` omitted.
+- Tree rendering should use returned `childCount` / children count metadata where available to show expand affordances.
+- If the existing endpoint does not return enough metadata for an efficient tree, backend may add non-breaking fields such as:
+
+```typescript
+{
+  "folders": [
+    {
+      "id": string,
+      "name": string,
+      "parentId": string | null,
+      "path": string,
+      "depth": number,
+      "childCount": number,
+      "documentCount": number
+    }
+  ]
+}
+```
+
+### Folder-Preserving Import Contract
+
+This contract applies to any Phase 1 or future path-aware import path, including:
+
+- drag-folder upload
+- ZIP import
+- any bulk upload flow that creates folders from source paths
+
+If the current UI does not yet expose all of these flows, backend and service-layer behavior must still follow this contract when they are introduced.
+
+#### Import input model
+
+Each imported file is treated as a normalized path relative to the room root.
+
+Examples:
+
+- `Financials/2025/Q3/cash-flow.pdf`
+- `Legal/Contracts/Customer/msa-acme.pdf`
+
+#### Validation rules
+
+- Normalize path separators before validation.
+- Ignore empty segments.
+- Reject any path that would require a folder deeper than depth `3`.
+- Reject the entire import if any single path violates the depth cap.
+
+#### Atomicity
+
+- Import is atomic.
+- If one path fails validation, no folders or documents from that import request are created.
+- Partial success is not allowed in Phase 1.
+
+#### Import failure response
+
+**HTTP status:** `400`
+
+```typescript
+{
+  "error": {
+    "code": "FOLDER_DEPTH_EXCEEDED",
+    "message": "One or more import paths exceed the maximum allowed depth of 3.",
+    "status": 400,
+    "requestId": "req_456",
+    "details": {
+      "operation": "import",
+      "maxDepth": 3,
+      "rejections": [
+        {
+          "sourcePath": "Legal/Contracts/Customer/Enterprise/NDA.pdf",
+          "attemptedDepth": 4,
+          "reason": "Folder path exceeds maximum depth"
+        }
+      ]
+    }
+  }
+}
+```
+
+Rules:
+
+- `rejections` is required for import failures.
+- The UI should surface this list inline in the import dialog, not as a generic toast alone.
+
+### Preference Persistence Notes
+
+Phase 1 does not introduce a backend endpoint for room navigation preferences.
+
+Frontend localStorage keys:
+
+- `vaultspace:room:{roomId}:viewMode`
+- `vaultspace:room:{roomId}:folderPaneOpen`
+- `vaultspace:room:listModeHintDismissed` (global per browser, one-time tooltip dismissal)
+
+Future server-side persistence, if implemented, should be considered a Phase 3 enhancement rather than an MVP API dependency.

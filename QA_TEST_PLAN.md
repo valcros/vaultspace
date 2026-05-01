@@ -1285,3 +1285,255 @@ If all 10 pass, basic MVP functionality is confirmed.
 - Some tests may require specific infrastructure (ClamAV for virus scanning)
 - Mobile tests require actual device or browser dev tools responsive mode
 - Rate limit tests may require waiting between runs
+
+---
+
+## Room Navigation Phase 1 Addendum
+
+These tests cover the split-pane room browser and folder-depth enforcement described in `docs/ROOM_NAVIGATION_AND_FOLDER_DEPTH_GUIDANCE_v3.md`.
+
+### Automated Coverage Required
+
+Before manual QA sign-off, add or update automated coverage for:
+
+- folder create at allowed depth
+- folder create rejected at disallowed depth
+- folder move rejected when subtree would exceed max depth
+- folder rename preserves valid paths
+- per-room localStorage view-mode persistence
+- per-room localStorage desktop pane-open persistence
+- import validation rejects atomically when one path exceeds max depth
+
+### RN001: First Visit Defaults To Grid
+
+**Preconditions:** Use a browser/profile with no `vaultspace:room:*` navigation keys.
+
+**Test Steps:**
+
+1. Login as admin.
+2. Open a room with at least one folder and one document.
+3. Observe the first render.
+
+**Expected Results:**
+
+- [ ] Room opens in grid mode
+- [ ] No persistent folder pane is shown
+- [ ] Breadcrumb, toolbar, and content grid render correctly
+
+### RN002: View Mode Persists Per Room
+
+**Preconditions:** Admin user logged in. Two different rooms exist.
+
+**Test Steps:**
+
+1. Open Room A and switch to list mode.
+2. Open Room B and leave it in grid mode.
+3. Return to Room A.
+4. Return to Room B.
+
+**Expected Results:**
+
+- [ ] Room A reopens in list mode
+- [ ] Room B reopens in grid mode
+- [ ] The preference from one room does not affect the other
+
+### RN003: Desktop Pane Open State Persists Per Room
+
+**Preconditions:** Viewport at `lg` or above. Room is in list mode.
+
+**Test Steps:**
+
+1. Open Room A in list mode.
+2. Collapse the folder pane.
+3. Navigate away and return to Room A.
+4. Open Room B in list mode without collapsing its pane.
+
+**Expected Results:**
+
+- [ ] Room A returns with the pane collapsed
+- [ ] Room B still shows the pane open
+- [ ] Collapsed state is stored independently per room
+
+### RN004: Mobile Folder Tree Uses Drawer, Not Persistent Pane
+
+**Preconditions:** Viewport below `lg`.
+
+**Test Steps:**
+
+1. Open a room in list mode.
+2. Verify the initial layout.
+3. Tap the folder toggle.
+4. Close the folder drawer.
+
+**Expected Results:**
+
+- [ ] Folder pane is hidden by default
+- [ ] Tapping the control opens a drawer over content
+- [ ] Closing the drawer returns focus to the toggle
+- [ ] Reloading the room does not auto-open the drawer
+
+### RN005: Breadcrumb And Tree Selection Stay In Sync
+
+**Preconditions:** Room contains at least three levels of allowed folders.
+
+**Test Steps:**
+
+1. In desktop list mode, select a nested folder from the tree.
+2. Click a parent breadcrumb.
+3. Select a different folder from the tree.
+
+**Expected Results:**
+
+- [ ] Selected tree node updates the breadcrumb
+- [ ] Clicking a breadcrumb updates the tree highlight
+- [ ] Content pane always matches the selected node
+
+### RN006: One-Time Tooltip Educates Without Auto-Switching
+
+**Preconditions:** Clear the tooltip dismissal key in localStorage.
+
+**Test Steps:**
+
+1. Open a folder-heavy room in grid mode.
+2. Observe the list-mode toggle.
+3. Dismiss the tooltip.
+4. Reload the room.
+
+**Expected Results:**
+
+- [ ] Tooltip appears once near the list-mode toggle
+- [ ] Tooltip explains list view’s folder-tree benefit
+- [ ] Tooltip does not switch the room into list mode automatically
+- [ ] Tooltip does not reappear after dismissal in the same browser profile
+
+### RN007: Create Folder Allowed Up To Depth 3
+
+**Preconditions:** Admin user with folder-create permission.
+
+**Test Steps:**
+
+1. Create a top-level folder.
+2. Inside it, create a mid-level subfolder.
+3. Inside that, create a leaf-level subfolder.
+
+**Expected Results:**
+
+- [ ] All three creates succeed
+- [ ] Resulting tree structure is visible in list mode
+- [ ] Breadcrumb navigation works at the leaf level
+
+### RN008: Create Folder Blocked Beyond Depth 3
+
+**Preconditions:** A leaf-level subfolder exists.
+
+**Test Steps:**
+
+1. Navigate into the leaf-level subfolder.
+2. Attempt to create another subfolder inside it.
+
+**Expected Results:**
+
+- [ ] UI disables or clearly discourages the subfolder affordance before submit
+- [ ] If a submit is still attempted through any edge path, API returns `FOLDER_DEPTH_EXCEEDED`
+- [ ] User sees clear recovery guidance
+
+### RN009: Move Folder Rejected If Subtree Would Exceed Max Depth
+
+**Preconditions:** A folder structure exists where moving one subtree deeper would create depth 4.
+
+**Test Steps:**
+
+1. Invoke the folder move path using UI or API test harness.
+2. Attempt the invalid move.
+
+**Expected Results:**
+
+- [ ] Operation is rejected
+- [ ] No folder paths are partially updated
+- [ ] Error payload includes `FOLDER_DEPTH_EXCEEDED`
+
+### RN010: Existing Valid Structure Remains Navigable After Rename
+
+**Preconditions:** Nested folders exist within allowed depth.
+
+**Test Steps:**
+
+1. Rename a top-level or mid-level folder.
+2. Refresh the room.
+3. Reopen the renamed branch.
+
+**Expected Results:**
+
+- [ ] Folder rename succeeds
+- [ ] Descendant paths remain navigable
+- [ ] Breadcrumbs and tree labels reflect the new name
+
+### RN011: Import Rejects Atomically On One Invalid Path
+
+**Preconditions:** Path-aware import harness or bulk import UI available.
+
+**Test Steps:**
+
+1. Prepare an import set with:
+   - one valid path at depth 3
+   - one invalid path at depth 4
+2. Submit the import.
+
+**Expected Results:**
+
+- [ ] Import fails as a whole
+- [ ] No folders or documents are created from the request
+- [ ] UI shows a per-path rejection report inline
+
+### RN012: Accessibility - Keyboard Tree Navigation
+
+**Preconditions:** Desktop list mode, room with expandable folders.
+
+**Test Steps:**
+
+1. Focus the folder tree.
+2. Use arrow keys to navigate, expand, and collapse.
+3. Use `Enter` or `Space` to select a folder.
+
+**Expected Results:**
+
+- [ ] Tree is keyboard navigable
+- [ ] Expanded/collapsed state is announced correctly
+- [ ] Selected folder updates the content pane
+
+### RN013: Accessibility - Focus Return From Mobile Drawer
+
+**Preconditions:** Viewport below `lg`.
+
+**Test Steps:**
+
+1. Open the folder drawer.
+2. Close it via explicit close action and via `Escape`.
+
+**Expected Results:**
+
+- [ ] Focus returns to the button that opened the drawer
+- [ ] Focus does not jump to the top of the page or disappear
+
+### RN014: Regression - Manage Drawer And Dock Behavior Still Hold
+
+**Preconditions:** Current room canvas redesign is already present.
+
+**Test Steps:**
+
+1. Open room in grid mode and in list mode.
+2. Open `Manage room`.
+3. Use the compact dock puck.
+
+**Expected Results:**
+
+- [ ] Split-pane work does not reintroduce room tabs
+- [ ] `Manage room` still opens and closes cleanly
+- [ ] Compact dock behavior is unchanged
+
+### Manual Acceptance Checklist
+
+- [ ] Desktop list mode feels familiar without overpowering the document surface
+- [ ] Grid mode remains the calmer, first-visit presentation
+- [ ] Folder depth policy is understandable from the UI, not just from API failures
+- [ ] Room navigation state feels consistent when moving between multiple rooms
