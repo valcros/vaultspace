@@ -218,6 +218,10 @@ export default function RoomDetailPage() {
   const [admins, setAdmins] = React.useState<Admin[]>([]);
   const [links, setLinks] = React.useState<ShareLink[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  // Tracks whether documents AND folders have finished their initial fetch.
+  // Without this, the room renders for a tick with empty arrays and the
+  // empty-state branch flashes "No documents yet" before the data arrives.
+  const [contentLoaded, setContentLoaded] = React.useState(false);
   // Drawer-internal pane state. Documents are the page body now, not a tab,
   // so this only chooses which secondary surface (Access / Share Links /
   // Q&A / Checklist / Calendar) is visible inside the Manage Room drawer.
@@ -847,13 +851,23 @@ export default function RoomDetailPage() {
   }, [fetchRoom]);
 
   // Documents are the always-on page body — fetch them as soon as the room
-  // loads, regardless of whether the manage drawer is open.
+  // loads, regardless of whether the manage drawer is open. Wait for both
+  // documents and folders to resolve before flipping `contentLoaded`, so the
+  // empty-state branch cannot flash on initial render.
   React.useEffect(() => {
-    if (room) {
-      fetchDocuments();
-      fetchFolders();
-      fetchBookmarks();
+    if (!room) {
+      return;
     }
+    let cancelled = false;
+    Promise.all([fetchDocuments(), fetchFolders()]).finally(() => {
+      if (!cancelled) {
+        setContentLoaded(true);
+      }
+    });
+    fetchBookmarks();
+    return () => {
+      cancelled = true;
+    };
   }, [room, fetchDocuments, fetchFolders, fetchBookmarks]);
 
   // Refetch documents when navigating folders.
@@ -1754,7 +1768,14 @@ export default function RoomDetailPage() {
       </div>
       {/* end Room identity plane */}
 
-      {folders.length === 0 && documents.length === 0 && !categoryFilter ? (
+      {!contentLoaded ? (
+        <AdminSurface className="p-6">
+          <Skeleton className="mb-3 h-5 w-40" />
+          <Skeleton className="mb-2 h-4 w-full" />
+          <Skeleton className="mb-2 h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </AdminSurface>
+      ) : folders.length === 0 && documents.length === 0 && !categoryFilter ? (
         <AdminEmptyState
           icon={<FileText className="h-6 w-6" />}
           title="No documents yet"
