@@ -1754,7 +1754,7 @@ export default function RoomDetailPage() {
       </div>
       {/* end Room identity plane */}
 
-      {folders.length === 0 && documents.length === 0 ? (
+      {folders.length === 0 && documents.length === 0 && !categoryFilter ? (
         <AdminEmptyState
           icon={<FileText className="h-6 w-6" />}
           title="No documents yet"
