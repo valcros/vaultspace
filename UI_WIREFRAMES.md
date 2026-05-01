@@ -16,6 +16,7 @@
 5. [Component Library](#component-library)
 6. [Accessibility Requirements](#accessibility-requirements)
 7. [Responsive Breakpoints](#responsive-breakpoints)
+8. [Room Navigation Phase 1 Addendum](#room-navigation-phase-1-addendum)
 
 ---
 
@@ -1584,3 +1585,255 @@ Follow BEM (Block Element Modifier) for custom classes, but prefer Tailwind util
 **Document Version:** 1.0
 **Created:** 2026-03-14
 **Status:** Ready for Implementation
+
+---
+
+## Room Navigation Phase 1 Addendum
+
+**Status:** Approved design addendum derived from `docs/ROOM_NAVIGATION_AND_FOLDER_DEPTH_GUIDANCE_v3.md`  
+**Applies To:** `/rooms/[roomId]`  
+**Implementation Target:** Phase 1 split-pane navigation for desktop list mode
+
+This section supersedes older room-detail concepts in this document where they conflict with the current documents-first room canvas.
+
+### Design Intent
+
+The room remains a documents-first workspace. The new navigation model borrows familiarity from Finder and File Explorer without turning VaultSpace into a literal file manager.
+
+The split pane exists to help users move through folder hierarchy in folder-heavy rooms. It must not compete with:
+
+- the room title and context
+- the document toolbar
+- the document list/grid itself
+- the separate `Manage room` drawer
+
+### Route And Mode Rules
+
+- The split pane exists only on `/rooms/[roomId]`.
+- It is introduced in `list` mode first.
+- `grid` mode remains content-led and does not show the persistent folder pane.
+- First visit to any room defaults to `grid`.
+- Once the user explicitly chooses `grid` or `list`, that choice is remembered for that specific room.
+
+### Desktop Layout (`lg` and above, list mode, pane open)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Room title / breadcrumb / Manage / More                                     │
+│ [Upload Files] [New Folder] [Category] [Sort] [List|Grid] [Columns]         │
+├───────────────────────┬──────────────────────────────────────────────────────┤
+│ Folders               │ Current folder contents                              │
+│                       │                                                      │
+│ ▾ Financials          │ Name            Size        Uploaded         ...     │
+│   ▸ 2024              │ ────────────────────────────────────────────────     │
+│   ▾ 2025              │ / Financials / 2025                                  │
+│     • Q1              │ Folder A                                             │
+│     • Q2              │ Folder B                                             │
+│     • Q3              │ cap-table.xlsx                                       │
+│ ▸ Legal               │ audited-fs.pdf                                       │
+│ ▸ HR                  │ board-consent.pdf                                    │
+│                       │                                                      │
+└───────────────────────┴──────────────────────────────────────────────────────┘
+```
+
+Rules:
+
+- Left pane width is fixed at `280px`.
+- Left pane shows folders only.
+- Right pane shows the selected folder’s immediate child folders and documents.
+- Breadcrumbs remain visible even when the tree is visible.
+- The inline document toolbar stays in the content pane, not in the tree rail.
+
+### Desktop Layout (`lg` and above, list mode, pane collapsed)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Room title / breadcrumb / Manage / More                                     │
+│ [Pane Toggle] [Upload Files] [New Folder] [Category] [Sort] [List|Grid]     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Current folder contents                                                     │
+│                                                                              │
+│ Name            Size        Uploaded         ...                             │
+│ ────────────────────────────────────────────────────────────────             │
+│ / Financials / 2025                                                        │
+│ Folder A                                                                    │
+│ cap-table.xlsx                                                              │
+│ audited-fs.pdf                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Rules:
+
+- The pane toggle remains visible in the toolbar when the tree is collapsed.
+- Collapsed/expanded state is remembered per-room on desktop.
+- Collapsing the pane must not change the selected folder or breadcrumb state.
+
+### Grid Mode
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Room title / breadcrumb / Manage / More                                     │
+│ [Upload Files] [New Folder] [Category] [Sort] [List|Grid]                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Folder cards + document cards grid                                          │
+│ No persistent folder pane                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Rules:
+
+- Grid mode remains the first-load default.
+- Grid mode does not show the persistent split pane.
+- Folder hierarchy is still navigable through cards and breadcrumbs.
+
+### Mobile / Narrow Width (`< lg`)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Room title / breadcrumb / Manage / More                    │
+│ [Folders] [Upload Files] [New Folder] [Category] [Sort]    │
+├─────────────────────────────────────────────────────────────┤
+│ Content list or grid                                       │
+└─────────────────────────────────────────────────────────────┘
+
+Tap [Folders]
+
+┌─────────────────────────────────────────────────────────────┐
+│ Folder drawer                                               │
+│ ─────────────────────────────────────────────────────────── │
+│ ▾ Financials                                                │
+│   ▸ 2024                                                    │
+│   ▾ 2025                                                    │
+│     • Q1                                                    │
+│     • Q2                                                    │
+│ ▸ Legal                                                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Rules:
+
+- Below `lg`, the folder pane is never persistently visible.
+- The folder tree opens as a drawer over content.
+- Drawer open/closed state is ephemeral on narrow widths and is not restored automatically on page load.
+- Breadcrumbs remain visible in the page chrome even when the drawer is closed.
+
+### One-Time Discoverability Tooltip
+
+The first time a user lands in a folder-heavy room and has not yet dismissed the hint, the `List` toggle shows a one-time tooltip.
+
+Tooltip copy:
+
+> Use list view to browse folders from a left-hand tree.
+
+Rules:
+
+- The tooltip is educational, not coercive.
+- It must not auto-switch the room into list mode.
+- Dismiss on first explicit interaction with the toggle, closing the tooltip, or switching to list mode.
+- The dismissal state is stored locally and does not require backend persistence in Phase 1.
+
+### Folder Depth UX
+
+Room hierarchy policy:
+
+- room root
+- top-level folder
+- mid-level subfolder
+- leaf-level subfolder
+- files
+
+Not allowed:
+
+- folder depth of 4 or more
+- creating a subfolder inside a leaf-level subfolder
+
+UI expectations:
+
+- Disable the “create subfolder” affordance when the current folder is already at the maximum depth.
+- Show inline explanation near the disabled state, not only after a failed submit.
+- If a server-side depth error still occurs, show a destructive toast using the API message and offer recovery guidance:
+  - create another top-level folder
+  - flatten the current structure
+  - create a new room if the content is materially separate
+
+### Error And Empty States
+
+#### Empty room
+
+- Existing empty-state behavior remains valid.
+- The split pane is not shown when the room has no folders and no documents.
+
+#### Empty folder
+
+When a selected folder has no immediate child folders and no documents:
+
+- Preserve the folder tree and breadcrumb context.
+- Show an empty state in the content pane:
+  - title: `This folder is empty`
+  - actions: `Upload Files`, `New Folder` when the depth cap allows it
+
+#### Depth-cap error
+
+- Use a destructive toast for failed create or move operations.
+- The toast must surface the `FOLDER_DEPTH_EXCEEDED` message from the API.
+- If the create dialog is open, keep it open and leave the entered name intact.
+
+#### Import rejection
+
+If a folder-preserving import path is invoked and any path exceeds the depth limit:
+
+- Keep the import dialog open.
+- Show a structured per-path rejection report inline.
+- Do not create any folders or documents from that import attempt.
+
+### Interaction Specification
+
+#### Folder tree
+
+- Click on a folder row selects that folder and updates the content pane.
+- Expand/collapse affordance should not navigate when activated directly.
+- Keyboard arrow behavior:
+  - `Right Arrow`: expand collapsed folder or move into first child
+  - `Left Arrow`: collapse expanded folder or move to parent
+  - `Up Arrow` / `Down Arrow`: move visible focus through rows
+  - `Enter` / `Space`: select focused folder
+
+#### Breadcrumbs
+
+- Breadcrumbs remain the canonical path indicator.
+- Clicking a breadcrumb navigates to that ancestor folder and updates the tree selection.
+- The current breadcrumb endpoint uses the stronger active-state styling.
+
+#### View-mode switching
+
+- Switching `grid` -> `list` opens the pane on desktop unless the user explicitly collapsed it for that room.
+- Switching `list` -> `grid` hides the pane but does not forget the room’s last desktop pane-open state.
+
+### Accessibility Requirements For This Feature
+
+- Folder tree uses the ARIA tree pattern:
+  - container: `role="tree"`
+  - row: `role="treeitem"`
+  - nested group: `role="group"`
+- The selected folder exposes `aria-selected="true"`.
+- Expanded nodes expose `aria-expanded`.
+- The pane toggle and mobile folder-drawer toggle require explicit accessible names.
+- Tooltip content must be reachable by screen readers and dismissible by keyboard.
+- Focus order:
+  - page header actions
+  - toolbar controls
+  - tree toggle / tree
+  - content list/grid
+- Closing the mobile folder drawer returns focus to the button that opened it.
+
+### Responsive Notes
+
+- `lg` (`1024px`) is the cut-over point between persistent desktop pane and drawer behavior.
+- The content pane must not shrink below readable table width. If the viewport is technically `lg` but horizontal space is constrained by browser UI, prioritize content width and allow the pane to collapse.
+
+### Implementation Notes For Design Consistency
+
+- The split pane should inherit the lighter, work-oriented room styling already established in the room canvas.
+- The folder rail is a secondary utility surface, not a dominant navigation shell.
+- Active states must use the accent system established in the room visual pass rather than gray-on-gray only.
+- The pane must not reintroduce the pre-refactor feeling of “navigation above content everywhere.”

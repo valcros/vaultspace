@@ -88,6 +88,9 @@ import {
 import { QATab } from '@/components/rooms/QATab';
 import { ChecklistTab } from '@/components/rooms/ChecklistTab';
 import { CalendarTab } from '@/components/rooms/CalendarTab';
+import { RoomFolderTree, RoomFolderTreeNode } from '@/components/rooms/RoomFolderTree';
+import { useRoomNavigationPreferences } from '@/components/rooms/useRoomNavigationPreferences';
+import { PanelLeftClose, PanelLeftOpen, PanelLeft, Info } from 'lucide-react';
 import { UploadZone } from '@/components/documents/UploadZone';
 import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
 import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
@@ -221,12 +224,18 @@ export default function RoomDetailPage() {
   const [managePane, setManagePane] = React.useState<
     'members' | 'links' | 'qa' | 'checklist' | 'calendar'
   >('members');
-  const [viewMode, setViewMode] = React.useState<'list' | 'grid'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('vaultspace-doc-view') as 'list' | 'grid') || 'list';
-    }
-    return 'list';
-  });
+  const {
+    viewMode,
+    setViewMode,
+    folderPaneOpen,
+    setFolderPaneOpen,
+    toggleFolderPane,
+    listModeHintDismissed,
+    dismissListModeHint,
+  } = useRoomNavigationPreferences({ roomId });
+  const [folderTree, setFolderTree] = React.useState<RoomFolderTreeNode[]>([]);
+  const [expandedFolderIds, setExpandedFolderIds] = React.useState<Set<string>>(new Set());
+  const [folderDrawerOpen, setFolderDrawerOpen] = React.useState(false);
 
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [compact, setCompact] = React.useState(() => {
@@ -476,6 +485,128 @@ export default function RoomDetailPage() {
       console.error('Failed to fetch folders:', error);
     }
   }, [roomId, currentFolderId]);
+
+  const fetchFolderTree = React.useCallback(async () => {
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/folders?tree=1`);
+      if (!response.ok) {
+        return;
+      }
+      const data = await response.json();
+      const nodes: RoomFolderTreeNode[] = (data.folders || []).map(
+        (f: {
+          id: string;
+          name: string;
+          parentId: string | null;
+          path: string;
+          depth?: number;
+          childCount?: number;
+        }) => ({
+          id: f.id,
+          name: f.name,
+          parentId: f.parentId,
+          path: f.path,
+          depth: f.depth ?? f.path.split('/').filter(Boolean).length,
+          childCount: f.childCount ?? 0,
+        })
+      );
+      setFolderTree(nodes);
+    } catch (error) {
+      console.error('Failed to fetch folder tree:', error);
+    }
+  }, [roomId]);
+
+  React.useEffect(() => {
+    if (viewMode === 'list') {
+      fetchFolderTree();
+    }
+  }, [viewMode, fetchFolderTree]);
+
+  const folderById = React.useMemo(() => {
+    const map = new Map<string, RoomFolderTreeNode>();
+    for (const f of folderTree) {
+      map.set(f.id, f);
+    }
+    return map;
+  }, [folderTree]);
+
+  // Auto-expand ancestors of the currently selected folder so the tree always
+  // reveals the active branch.
+  React.useEffect(() => {
+    if (!currentFolderId) {
+      return;
+    }
+    setExpandedFolderIds((prev) => {
+      const next = new Set(prev);
+      let cursor: string | null | undefined = currentFolderId;
+      while (cursor) {
+        const node: RoomFolderTreeNode | undefined = folderById.get(cursor);
+        if (!node || !node.parentId) {
+          break;
+        }
+        next.add(node.parentId);
+        cursor = node.parentId;
+      }
+      return next;
+    });
+  }, [currentFolderId, folderById]);
+
+  const handleTreeSelect = React.useCallback(
+    (folderId: string | null) => {
+      if (folderId === null) {
+        setCurrentFolderId(null);
+        setBreadcrumbs([{ id: null, name: 'Root' }]);
+        setFolderDrawerOpen(false);
+        return;
+      }
+      const node = folderById.get(folderId);
+      if (!node) {
+        return;
+      }
+      const trail: BreadcrumbItem[] = [{ id: null, name: 'Root' }];
+      const segments = node.path.split('/').filter(Boolean);
+      let pathSoFar = '';
+      for (const segment of segments) {
+        pathSoFar = `${pathSoFar}/${segment}`;
+        const match = folderTree.find((f) => f.path === pathSoFar);
+        if (match) {
+          trail.push({ id: match.id, name: match.name });
+        }
+      }
+      setCurrentFolderId(folderId);
+      setBreadcrumbs(trail);
+      setFolderDrawerOpen(false);
+    },
+    [folderById, folderTree]
+  );
+
+  const handleToggleExpand = React.useCallback((folderId: string) => {
+    setExpandedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Determine whether the folder-heavy hint is worth showing on this room.
+  // Spec threshold: at room root with >=4 root folders, or any root folder
+  // with childCount > 0.
+  const listModeHintEligible = React.useMemo(() => {
+    if (currentFolderId !== null) {
+      return false;
+    }
+    const roots = folderTree.filter((f) => f.parentId === null);
+    if (roots.length >= 4) {
+      return true;
+    }
+    return roots.some((f) => f.childCount > 0);
+  }, [folderTree, currentFolderId]);
+
+  const showListModeHint = viewMode === 'grid' && listModeHintEligible && !listModeHintDismissed;
 
   const fetchAdmins = React.useCallback(async () => {
     try {
@@ -1416,6 +1547,37 @@ export default function RoomDetailPage() {
             are visually quieter still. */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-md ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:ring-slate-800">
           <div className="flex flex-wrap items-center gap-2">
+            {viewMode === 'list' && (
+              <>
+                {/* Mobile/tablet: open folder tree as a drawer. */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="lg:hidden"
+                  onClick={() => setFolderDrawerOpen(true)}
+                  aria-label="Open folder tree"
+                >
+                  <PanelLeft className="h-4 w-4" />
+                  <span className="ml-2">Folders</span>
+                </Button>
+                {/* Desktop: collapse / reopen the persistent folder pane. */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="hidden lg:inline-flex"
+                  onClick={toggleFolderPane}
+                  aria-pressed={folderPaneOpen}
+                  aria-label={folderPaneOpen ? 'Collapse folder pane' : 'Expand folder pane'}
+                  title={folderPaneOpen ? 'Collapse folder pane' : 'Expand folder pane'}
+                >
+                  {folderPaneOpen ? (
+                    <PanelLeftClose className="h-4 w-4" />
+                  ) : (
+                    <PanelLeftOpen className="h-4 w-4" />
+                  )}
+                </Button>
+              </>
+            )}
             <Button size="sm" onClick={() => setShowUploadDialog(true)}>
               <Upload className="mr-2 h-4 w-4" />
               Upload Files
@@ -1549,9 +1711,9 @@ export default function RoomDetailPage() {
               <button
                 onClick={() => {
                   setViewMode('list');
-                  localStorage.setItem('vaultspace-doc-view', 'list');
+                  dismissListModeHint();
                 }}
-                className={`rounded-md p-1.5 transition-colors ${
+                className={`relative rounded-md p-1.5 transition-colors ${
                   viewMode === 'list'
                     ? 'bg-white text-primary-700 shadow-sm ring-1 ring-primary-200 dark:bg-slate-950 dark:text-primary-200 dark:ring-primary-800'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
@@ -1561,12 +1723,15 @@ export default function RoomDetailPage() {
                 title="List view"
               >
                 <List className="h-4 w-4" aria-hidden="true" />
+                {showListModeHint && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary-500 ring-2 ring-white dark:ring-slate-900"
+                  />
+                )}
               </button>
               <button
-                onClick={() => {
-                  setViewMode('grid');
-                  localStorage.setItem('vaultspace-doc-view', 'grid');
-                }}
+                onClick={() => setViewMode('grid')}
                 className={`rounded-md p-1.5 transition-colors ${
                   viewMode === 'grid'
                     ? 'bg-white text-primary-700 shadow-sm ring-1 ring-primary-200 dark:bg-slate-950 dark:text-primary-200 dark:ring-primary-800'
@@ -1598,293 +1763,320 @@ export default function RoomDetailPage() {
           }
         />
       ) : viewMode === 'list' ? (
-        <AdminSurface className="overflow-hidden p-0">
-          <table className="w-full">
-            <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
-              <tr>
-                <th className="w-8 px-2 py-2">
-                  <button
-                    onClick={toggleSelectAll}
-                    className="flex items-center text-neutral-400 hover:text-neutral-600"
-                  >
-                    {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
-                      <CheckSquare className="h-4 w-4 text-primary-500" />
-                    ) : (
-                      <Square className="h-4 w-4" />
-                    )}
-                  </button>
-                </th>
-                <th
-                  className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                  onClick={() => handleSort('name')}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    Name
-                    {sortField === 'name' ? (
-                      sortDir === 'asc' ? (
-                        <ChevronUp className="h-3 w-3" />
-                      ) : (
-                        <ChevronDown className="h-3 w-3" />
-                      )
-                    ) : (
-                      <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
-                    )}
-                  </span>
-                </th>
-                {visibleColumns['size'] && (
-                  <th
-                    className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                    onClick={() => handleSort('size')}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      Size
-                      {sortField === 'size' ? (
-                        sortDir === 'asc' ? (
-                          <ChevronUp className="h-3 w-3" />
+        <div
+          className={
+            folderPaneOpen ? 'lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-4' : undefined
+          }
+        >
+          {folderPaneOpen && (
+            <aside aria-label="Folder navigation" className="hidden lg:block">
+              <div className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-2 dark:border-slate-800 dark:bg-slate-900/60">
+                <RoomFolderTree
+                  folders={folderTree}
+                  selectedFolderId={currentFolderId}
+                  expandedFolderIds={expandedFolderIds}
+                  onSelect={handleTreeSelect}
+                  onToggleExpand={handleToggleExpand}
+                />
+              </div>
+            </aside>
+          )}
+          <div className="min-w-0">
+            <AdminSurface className="overflow-hidden p-0">
+              <table className="w-full">
+                <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
+                  <tr>
+                    <th className="w-8 px-2 py-2">
+                      <button
+                        onClick={toggleSelectAll}
+                        className="flex items-center text-neutral-400 hover:text-neutral-600"
+                      >
+                        {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
+                          <CheckSquare className="h-4 w-4 text-primary-500" />
                         ) : (
-                          <ChevronDown className="h-3 w-3" />
-                        )
-                      ) : null}
-                    </span>
-                  </th>
-                )}
-                {visibleColumns['uploaded'] && (
-                  <th
-                    className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                    onClick={() => handleSort('createdAt')}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      Uploaded
-                      {sortField === 'createdAt' ? (
-                        sortDir === 'asc' ? (
-                          <ChevronUp className="h-3 w-3" />
+                          <Square className="h-4 w-4" />
+                        )}
+                      </button>
+                    </th>
+                    <th
+                      className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                      onClick={() => handleSort('name')}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Name
+                        {sortField === 'name' ? (
+                          sortDir === 'asc' ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )
                         ) : (
-                          <ChevronDown className="h-3 w-3" />
-                        )
-                      ) : null}
-                    </span>
-                  </th>
-                )}
-                <th className="w-8"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Render folders first */}
-              {folders.map((folder) => (
-                <tr
-                  key={folder.id}
-                  className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
-                  onClick={() => handleFolderClick(folder)}
-                >
-                  <td className="w-8 px-2" />
-                  <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                    <div className="flex items-center gap-2">
-                      <Folder className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`} />
-                      <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
-                        {folder.name}
+                          <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                        )}
                       </span>
-                    </div>
-                  </td>
-                  {visibleColumns['size'] && (
-                    <td
-                      className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                    >
-                      {folder.documentCount} files, {folder.childCount} folders
-                    </td>
-                  )}
-                  {visibleColumns['uploaded'] && (
-                    <td
-                      className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                    >
-                      {formatDate(folder.createdAt)}
-                    </td>
-                  )}
-                  <td
-                    className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
-                        >
-                          <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          Open
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handleFolderDelete(folder)}
-                          className="text-danger-600"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-              ))}
-              {/* Render documents */}
-              {sortedDocuments.map((doc) => (
-                <tr
-                  key={doc.id}
-                  className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
-                  onClick={() => handlePreview(doc)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setContextMenu({ x: e.clientX, y: e.clientY, doc });
-                  }}
-                >
-                  <td
-                    className="w-8 px-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleDocSelection(doc.id);
-                    }}
-                  >
-                    {selectedDocs.has(doc.id) ? (
-                      <CheckSquare className="h-4 w-4 text-primary-500" />
-                    ) : (
-                      <Square className="h-4 w-4 text-neutral-300" />
+                    </th>
+                    {visibleColumns['size'] && (
+                      <th
+                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                        onClick={() => handleSort('size')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Size
+                          {sortField === 'size' ? (
+                            sortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )
+                          ) : null}
+                        </span>
+                      </th>
                     )}
-                  </td>
-                  <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                    <div className="flex items-center gap-2">
-                      <FileTypeIcon
-                        mimeType={doc.mimeType}
-                        className={compact ? 'h-4 w-4' : undefined}
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`truncate font-medium ${compact ? 'text-sm' : ''}`}>
-                            {doc.name}
+                    {visibleColumns['uploaded'] && (
+                      <th
+                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                        onClick={() => handleSort('createdAt')}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Uploaded
+                          {sortField === 'createdAt' ? (
+                            sortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )
+                          ) : null}
+                        </span>
+                      </th>
+                    )}
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Render folders first */}
+                  {folders.map((folder) => (
+                    <tr
+                      key={folder.id}
+                      className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
+                      onClick={() => handleFolderClick(folder)}
+                    >
+                      <td className="w-8 px-2" />
+                      <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                        <div className="flex items-center gap-2">
+                          <Folder
+                            className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`}
+                          />
+                          <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
+                            {folder.name}
                           </span>
-                          {(doc.confidential || room?.allDocumentsConfidential) && (
-                            <Lock className="h-3 w-3 shrink-0 text-amber-500" />
-                          )}
                         </div>
-                        {!compact && (
-                          <div className="mt-0.5 flex flex-wrap gap-1">
-                            {doc.category && (
-                              <span
-                                className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
-                              >
-                                {getCategoryLabel(doc.category)}
+                      </td>
+                      {visibleColumns['size'] && (
+                        <td
+                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                        >
+                          {folder.documentCount} files, {folder.childCount} folders
+                        </td>
+                      )}
+                      {visibleColumns['uploaded'] && (
+                        <td
+                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                        >
+                          {formatDate(folder.createdAt)}
+                        </td>
+                      )}
+                      <td
+                        className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                            >
+                              <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Open
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleFolderDelete(folder)}
+                              className="text-danger-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  ))}
+                  {/* Render documents */}
+                  {sortedDocuments.map((doc) => (
+                    <tr
+                      key={doc.id}
+                      className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
+                      onClick={() => handlePreview(doc)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({ x: e.clientX, y: e.clientY, doc });
+                      }}
+                    >
+                      <td
+                        className="w-8 px-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDocSelection(doc.id);
+                        }}
+                      >
+                        {selectedDocs.has(doc.id) ? (
+                          <CheckSquare className="h-4 w-4 text-primary-500" />
+                        ) : (
+                          <Square className="h-4 w-4 text-neutral-300" />
+                        )}
+                      </td>
+                      <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
+                        <div className="flex items-center gap-2">
+                          <FileTypeIcon
+                            mimeType={doc.mimeType}
+                            className={compact ? 'h-4 w-4' : undefined}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`truncate font-medium ${compact ? 'text-sm' : ''}`}>
+                                {doc.name}
                               </span>
-                            )}
-                            {doc.tags?.map((tag) => (
-                              <Badge key={tag} variant="outline" className="px-1 py-0 text-[10px]">
-                                {tag}
-                              </Badge>
-                            ))}
-                            {doc.expiresAt && (
-                              <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
-                                <Clock className="h-2.5 w-2.5" />
-                                Expires {new Date(doc.expiresAt).toLocaleDateString()}
-                              </span>
+                              {(doc.confidential || room?.allDocumentsConfidential) && (
+                                <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                              )}
+                            </div>
+                            {!compact && (
+                              <div className="mt-0.5 flex flex-wrap gap-1">
+                                {doc.category && (
+                                  <span
+                                    className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
+                                  >
+                                    {getCategoryLabel(doc.category)}
+                                  </span>
+                                )}
+                                {doc.tags?.map((tag) => (
+                                  <Badge
+                                    key={tag}
+                                    variant="outline"
+                                    className="px-1 py-0 text-[10px]"
+                                  >
+                                    {tag}
+                                  </Badge>
+                                ))}
+                                {doc.expiresAt && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
+                                    <Clock className="h-2.5 w-2.5" />
+                                    Expires {new Date(doc.expiresAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  {visibleColumns['size'] && (
-                    <td
-                      className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                    >
-                      {formatFileSize(doc.size)}
-                    </td>
-                  )}
-                  {visibleColumns['uploaded'] && (
-                    <td
-                      className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                    >
-                      {formatDate(doc.createdAt)}
-                    </td>
-                  )}
-                  <td
-                    className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                        </div>
+                      </td>
+                      {visibleColumns['size'] && (
+                        <td
+                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
                         >
-                          <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handlePreview(doc)}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          Preview
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                          <Download className="mr-2 h-4 w-4" />
-                          Download
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setEditingTagsDoc(doc);
-                            setTagInput((doc.tags || []).join(', '));
-                          }}
+                          {formatFileSize(doc.size)}
+                        </td>
+                      )}
+                      {visibleColumns['uploaded'] && (
+                        <td
+                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
                         >
-                          <Tag className="mr-2 h-4 w-4" />
-                          Edit Properties
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
-                          <Star
-                            className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
-                          />
-                          {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
-                          <History className="mr-2 h-4 w-4" />
-                          Version History
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={async () => {
-                            const next = !doc.confidential;
-                            await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
-                              method: 'PATCH',
-                              headers: {
-                                'Content-Type': 'application/json',
-                              },
-                              body: JSON.stringify({
-                                confidential: next,
-                              }),
-                            });
-                            fetchDocuments();
-                          }}
-                        >
-                          <Lock className="mr-2 h-4 w-4" />
-                          {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(doc)}
-                          className="text-danger-600"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </AdminSurface>
+                          {formatDate(doc.createdAt)}
+                        </td>
+                      )}
+                      <td
+                        className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                            >
+                              <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handlePreview(doc)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Preview
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDownload(doc)}>
+                              <Download className="mr-2 h-4 w-4" />
+                              Download
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingTagsDoc(doc);
+                                setTagInput((doc.tags || []).join(', '));
+                              }}
+                            >
+                              <Tag className="mr-2 h-4 w-4" />
+                              Edit Properties
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
+                              <Star
+                                className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
+                              />
+                              {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
+                              <History className="mr-2 h-4 w-4" />
+                              Version History
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                const next = !doc.confidential;
+                                await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+                                  method: 'PATCH',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                  },
+                                  body: JSON.stringify({
+                                    confidential: next,
+                                  }),
+                                });
+                                fetchDocuments();
+                              }}
+                            >
+                              <Lock className="mr-2 h-4 w-4" />
+                              {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(doc)}
+                              className="text-danger-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </AdminSurface>
+          </div>
+        </div>
       ) : (
         /* Grid / Thumbnail View */
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -2007,6 +2199,71 @@ export default function RoomDetailPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Mobile folder drawer for list mode. Below lg, the folder tree opens
+          as a slide-in sheet so it never competes with content for width.
+          Drawer state is intentionally not persisted so revisits start
+          closed -- per the v3 spec. */}
+      <Sheet open={folderDrawerOpen} onOpenChange={setFolderDrawerOpen}>
+        <SheetContent side="left" className="lg:hidden">
+          <SheetHeader>
+            <SheetTitle>Folders</SheetTitle>
+            <SheetDescription>
+              Browse the folder hierarchy without leaving this room.
+            </SheetDescription>
+          </SheetHeader>
+          <SheetBody className="px-2">
+            <RoomFolderTree
+              folders={folderTree}
+              selectedFolderId={currentFolderId}
+              expandedFolderIds={expandedFolderIds}
+              onSelect={handleTreeSelect}
+              onToggleExpand={handleToggleExpand}
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
+      {/* One-time discoverability tooltip for the list-mode toggle. Educational
+          only -- never auto-switches the room. Dismissed on any toggle interaction
+          or close click; persists globally so it does not nag across rooms. */}
+      {showListModeHint && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-auto fixed bottom-6 right-6 z-50 max-w-xs rounded-xl border border-primary-200 bg-white p-4 shadow-lg ring-1 ring-primary-100 dark:border-primary-800 dark:bg-slate-900 dark:ring-primary-900"
+        >
+          <div className="flex items-start gap-3">
+            <Info
+              className="mt-0.5 h-5 w-5 flex-none text-primary-600 dark:text-primary-300"
+              aria-hidden="true"
+            />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                Try list view
+              </p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                Use list view to browse folders from a left-hand tree.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setViewMode('list');
+                    setFolderPaneOpen(true);
+                    dismissListModeHint();
+                  }}
+                >
+                  Switch to list
+                </Button>
+                <Button size="sm" variant="ghost" onClick={dismissListModeHint}>
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
