@@ -1808,12 +1808,17 @@ export default function RoomDetailPage() {
           )}
           <div className="min-w-0">
             <AdminSurface className="overflow-hidden p-0">
-              <table className="w-full">
+              <table className="w-full" aria-label="Room contents">
                 <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
                   <tr>
                     <th className="w-8 px-2 py-2">
                       <button
                         onClick={toggleSelectAll}
+                        aria-label={
+                          selectedDocs.size > 0 && selectedDocs.size === documents.length
+                            ? 'Deselect all'
+                            : 'Select all'
+                        }
                         className="flex items-center text-neutral-400 hover:text-neutral-600"
                       >
                         {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
@@ -1919,9 +1924,13 @@ export default function RoomDetailPage() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              aria-label={`Actions for folder ${folder.name}`}
                               className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
                             >
-                              <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                              <MoreHorizontal
+                                aria-hidden="true"
+                                className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}
+                              />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -2033,9 +2042,13 @@ export default function RoomDetailPage() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              aria-label={`Actions for ${doc.name}`}
                               className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
                             >
-                              <MoreHorizontal className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                              <MoreHorizontal
+                                aria-hidden="true"
+                                className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}
+                              />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
