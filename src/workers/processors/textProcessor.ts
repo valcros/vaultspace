@@ -169,6 +169,7 @@ export async function processSearchIndexJob(job: Job<SearchIndexJobPayload>): Pr
         organizationId,
         documentId,
         versionId,
+        roomId: roomId ?? null,
         documentTitle: fileName,
         extractedText: text,
         fileName,
@@ -178,6 +179,7 @@ export async function processSearchIndexJob(job: Job<SearchIndexJobPayload>): Pr
         uploadedAt: version?.createdAt ?? new Date(),
       },
       update: {
+        roomId: roomId ?? null,
         documentTitle: fileName,
         extractedText: text,
         fileName,
