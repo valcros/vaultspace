@@ -95,7 +95,7 @@ These were called out as gaps during review. Items closed since the 2026-05-02 p
 When the next session opens:
 
 1. Read this file plus `docs/ROOM_NAVIGATION_AND_FOLDER_DEPTH_GUIDANCE_v3.md` for spec context.
-2. Confirm working tree is still clean (`git status`) and HEAD is at `b6d671c` or further.
+2. Confirm working tree is still clean (`git status`) and HEAD is at `d3d6b7c` or further.
 3. Remaining human-gated items: QA-2 (screen reader), QA-5 (Firefox/Safari cross-browser), QA-6 (mobile layout functional issues per user).
 4. For any new bug, follow the same pattern: minimal targeted fix, prettier + tsc + eslint + vitest, project-wide `prettier --check .`, commit, push, watch CI/Deploy land on a new revision.
 5. Do not start Phase 2 work (resizable, server-side preferences, folder-permissions UI, public-viewer tree) until the user explicitly opens that scope.
