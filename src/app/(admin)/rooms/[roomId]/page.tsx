@@ -240,6 +240,7 @@ export default function RoomDetailPage() {
   const [folderTree, setFolderTree] = React.useState<RoomFolderTreeNode[]>([]);
   const [expandedFolderIds, setExpandedFolderIds] = React.useState<Set<string>>(new Set());
   const [folderDrawerOpen, setFolderDrawerOpen] = React.useState(false);
+  const folderDrawerTriggerRef = React.useRef<HTMLButtonElement>(null);
 
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [compact, setCompact] = React.useState(() => {
@@ -1569,6 +1570,7 @@ export default function RoomDetailPage() {
               <>
                 {/* Mobile/tablet: open folder tree as a drawer. */}
                 <Button
+                  ref={folderDrawerTriggerRef}
                   size="sm"
                   variant="outline"
                   className="lg:hidden"
@@ -1605,13 +1607,18 @@ export default function RoomDetailPage() {
               New Folder
             </Button>
             {/* Visual separator between primary actions and secondary
-                browsing utilities. Keeps the row readable as two clusters. */}
-            <div aria-hidden="true" className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700" />
+                browsing utilities. Hidden on mobile where the selects are
+                also hidden. */}
+            <div
+              aria-hidden="true"
+              className="mx-1 hidden h-6 w-px bg-slate-200 dark:bg-slate-700 sm:block"
+            />
             {/* SelectTrigger ships with `w-full` baked in, so the trigger
                     fills its parent. Wrap each select in a fixed-width
                     flex-none div so the row doesn't expand them and they sit
-                    inline with Upload / New Folder. */}
-            <div className="w-[170px] flex-none">
+                    inline with Upload / New Folder. Hidden on mobile to keep
+                    the primary action row to a single line. */}
+            <div className="hidden w-[170px] sm:block">
               <Select
                 value={categoryFilter ?? 'all'}
                 onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
@@ -1637,7 +1644,7 @@ export default function RoomDetailPage() {
                     user has one mental model regardless of layout. The list
                     view's sortable column headers stay as a power-user
                     convenience but bind to the same sortField/sortDir. */}
-            <div className="w-[180px] flex-none">
+            <div className="hidden w-[180px] sm:block">
               <Select
                 value={`${sortField}:${sortDir}`}
                 onValueChange={(v) => {
@@ -1668,7 +1675,8 @@ export default function RoomDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Compact toggle (list view only) */}
+            {/* Compact toggle (list view only; hidden on mobile — not meaningful
+                at single-column widths) */}
             {viewMode === 'list' && (
               <button
                 onClick={() => {
@@ -1676,47 +1684,50 @@ export default function RoomDetailPage() {
                   setCompact(next);
                   localStorage.setItem('vaultspace-compact', String(next));
                 }}
-                className={`rounded-md border p-1.5 transition-colors ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
+                className={`hidden rounded-md border p-1.5 transition-colors sm:block ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
                 title={compact ? 'Standard density' : 'Compact density'}
               >
                 <Minus className="h-4 w-4" />
               </button>
             )}
-            {/* Column picker (list view only) */}
+            {/* Column picker (list view only; hidden on mobile — columns are
+                auto-hidden below sm anyway) */}
             {viewMode === 'list' && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
-                    title="Show/hide columns"
-                  >
-                    <Columns3 className="h-4 w-4" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {[
-                    { key: 'size', label: 'Size' },
-                    { key: 'uploaded', label: 'Uploaded' },
-                  ].map((col) => (
-                    <DropdownMenuItem
-                      key={col.key}
-                      onClick={() => {
-                        const next = {
-                          ...visibleColumns,
-                          [col.key]: !visibleColumns[col.key],
-                        };
-                        setVisibleColumns(next);
-                        localStorage.setItem('vaultspace-columns', JSON.stringify(next));
-                      }}
+              <div className="hidden sm:block">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
+                      title="Show/hide columns"
                     >
-                      <span
-                        className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
-                      />
-                      {col.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                      <Columns3 className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {[
+                      { key: 'size', label: 'Size' },
+                      { key: 'uploaded', label: 'Uploaded' },
+                    ].map((col) => (
+                      <DropdownMenuItem
+                        key={col.key}
+                        onClick={() => {
+                          const next = {
+                            ...visibleColumns,
+                            [col.key]: !visibleColumns[col.key],
+                          };
+                          setVisibleColumns(next);
+                          localStorage.setItem('vaultspace-columns', JSON.stringify(next));
+                        }}
+                      >
+                        <span
+                          className={`mr-2 inline-block h-3 w-3 rounded-sm border ${visibleColumns[col.key] ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
+                        />
+                        {col.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
             {/* View toggle. Active mode uses a primary tint + ring so the
                   user can read the current view at a glance without parsing
@@ -1847,7 +1858,7 @@ export default function RoomDetailPage() {
                     </th>
                     {visibleColumns['size'] && (
                       <th
-                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                        className="hidden cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700 sm:table-cell"
                         onClick={() => handleSort('size')}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -1864,7 +1875,7 @@ export default function RoomDetailPage() {
                     )}
                     {visibleColumns['uploaded'] && (
                       <th
-                        className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
+                        className="hidden cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700 sm:table-cell"
                         onClick={() => handleSort('createdAt')}
                       >
                         <span className="inline-flex items-center gap-1">
@@ -1903,14 +1914,14 @@ export default function RoomDetailPage() {
                       </td>
                       {visibleColumns['size'] && (
                         <td
-                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
                         >
                           {folder.documentCount} files, {folder.childCount} folders
                         </td>
                       )}
                       {visibleColumns['uploaded'] && (
                         <td
-                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
                         >
                           {formatDate(folder.createdAt)}
                         </td>
@@ -1925,7 +1936,7 @@ export default function RoomDetailPage() {
                               variant="ghost"
                               size="sm"
                               aria-label={`Actions for folder ${folder.name}`}
-                              className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                              className={`${compact ? 'h-6 w-6' : 'h-9 w-9 sm:h-7 sm:w-7'} p-0`}
                             >
                               <MoreHorizontal
                                 aria-hidden="true"
@@ -2021,14 +2032,14 @@ export default function RoomDetailPage() {
                       </td>
                       {visibleColumns['size'] && (
                         <td
-                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
                         >
                           {formatFileSize(doc.size)}
                         </td>
                       )}
                       {visibleColumns['uploaded'] && (
                         <td
-                          className={`px-3 ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+                          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
                         >
                           {formatDate(doc.createdAt)}
                         </td>
@@ -2043,7 +2054,7 @@ export default function RoomDetailPage() {
                               variant="ghost"
                               size="sm"
                               aria-label={`Actions for ${doc.name}`}
-                              className={`${compact ? 'h-6 w-6' : 'h-7 w-7'} p-0`}
+                              className={`${compact ? 'h-6 w-6' : 'h-9 w-9 sm:h-7 sm:w-7'} p-0`}
                             >
                               <MoreHorizontal
                                 aria-hidden="true"
@@ -2245,7 +2256,14 @@ export default function RoomDetailPage() {
           Drawer state is intentionally not persisted so revisits start
           closed -- per the v3 spec. */}
       <Sheet open={folderDrawerOpen} onOpenChange={setFolderDrawerOpen}>
-        <SheetContent side="left" className="lg:hidden">
+        <SheetContent
+          side="left"
+          className="lg:hidden"
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            folderDrawerTriggerRef.current?.focus();
+          }}
+        >
           <SheetHeader>
             <SheetTitle>Folders</SheetTitle>
             <SheetDescription>
