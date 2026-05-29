@@ -111,11 +111,11 @@ services:
       SMTP_FROM: ${SMTP_FROM:-noreply@vaultspace.local}
 
       # Preview
-      PREVIEW_PROVIDER: ${PREVIEW_PROVIDER:-gotenberg}
+      PREVIEW_ENGINE: ${PREVIEW_ENGINE:-gotenberg}
       GOTENBERG_URL: http://gotenberg:3000
 
       # Virus Scanning
-      SCAN_PROVIDER: ${SCAN_PROVIDER:-clamav}
+      SCAN_ENGINE: ${SCAN_ENGINE:-clamav}
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
 
@@ -161,6 +161,7 @@ services:
       SMTP_TLS: ${SMTP_TLS:-true}
       SMTP_FROM: ${SMTP_FROM:-noreply@vaultspace.local}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-postgres}
       ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       GENERAL_WORKER_CONCURRENCY: ${GENERAL_WORKER_CONCURRENCY:-10}
@@ -189,8 +190,9 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       STORAGE_LOCAL_PATH: /app/storage
-      PREVIEW_PROVIDER: ${PREVIEW_PROVIDER:-gotenberg}
+      PREVIEW_ENGINE: ${PREVIEW_ENGINE:-gotenberg}
       GOTENBERG_URL: http://gotenberg:3000
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-postgres}
       ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PREVIEW_WORKER_CONCURRENCY: ${PREVIEW_WORKER_CONCURRENCY:-2}
@@ -219,9 +221,10 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
       STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
       STORAGE_LOCAL_PATH: /app/storage
-      SCAN_PROVIDER: ${SCAN_PROVIDER:-clamav}
+      SCAN_ENGINE: ${SCAN_ENGINE:-clamav}
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-postgres}
       ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       SCAN_WORKER_CONCURRENCY: ${SCAN_WORKER_CONCURRENCY:-5}
