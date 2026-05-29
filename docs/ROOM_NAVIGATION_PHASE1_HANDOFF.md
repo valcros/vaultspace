@@ -64,15 +64,17 @@ Earlier same-day commits relevant to room canvas tone: `45b73d9`, `be65541` (vis
 
 ## What is NOT Verified (Manual QA Required)
 
-These were called out as gaps during review and remain open for the QA pass:
+These were called out as gaps during review. Items closed since the 2026-05-02 pause are struck through.
 
-1. **Per-resource a11y scans** against `/rooms/[roomId]` with the new tree + drawer (Playwright fixtures pending).
-2. **Manual screen-reader pass** (VoiceOver / NVDA) on the folder tree, the mobile drawer, and the one-time hint.
-3. **Tree freshness** after folder create/delete in an open list view (the source has the fix, but no automated regression test — verifying in browser is on the QA list).
-4. **Hint visibility** on first-visit grid mode when room has folders (the gate fix is in source, no automated test).
-5. **Cross-browser desktop pane behavior** (Chrome verified via CSS bundle probe; Firefox / Safari not explicitly checked).
-6. **Mobile drawer focus-return-to-opener** behavior after close.
-7. **Legacy over-depth data check.** Any room with depth-4+ folders from before Phase 1 still renders, but new create/move beyond depth 3 is blocked. No automated migration audit yet — note in PR if any are found during QA.
+1. ~~**Per-resource a11y scans** against `/rooms/[roomId]` with the new tree + drawer~~ — Automated axe scan added to E2E suite (`fa97669`). Three WCAG 4.1.2 violations found and fixed in the same session (`59355af`).
+2. **Manual screen-reader pass** (VoiceOver / NVDA) on the folder tree, the mobile drawer, and the one-time hint. Still needs human tester.
+3. ~~**Tree freshness** after folder create/delete in an open list view~~ — regression test added (`b95ad39`), verified in browser.
+4. ~~**Hint visibility** on first-visit grid mode~~ — gate fix verified via automated test added in `b95ad39`.
+5. **Cross-browser desktop pane behavior** (Chrome verified; Firefox / Safari not explicitly checked). Still open.
+6. ~~**Mobile drawer focus-return-to-opener**~~ — `ref` + `onCloseAutoFocus` implemented in `fc53ab5`.
+7. ~~**Legacy over-depth data check**~~ — checked in prior session, no depth-4+ folders found in seed data.
+
+**Open (requires human):** QA-2 (screen reader), QA-5 (Firefox/Safari), QA-6 (mobile layout functional issues reported by user but put on hold).
 
 ---
 
@@ -93,9 +95,9 @@ These were called out as gaps during review and remain open for the QA pass:
 When the next session opens:
 
 1. Read this file plus `docs/ROOM_NAVIGATION_AND_FOLDER_DEPTH_GUIDANCE_v3.md` for spec context.
-2. Confirm working tree is still clean (`git status`) and HEAD is still `1995d9c` or further ahead — no further changes were planned in this session beyond the four Phase 1 commits above.
-3. Pull QA findings from the user. Each finding should map to one of the open items in "What is NOT Verified" or be a new bug.
-4. For any new bug, follow the same pattern used in this session: minimal targeted fix, prettier + tsc + eslint + vitest, project-wide `prettier --check .`, commit, push, watch CI/Deploy land on a new revision.
+2. Confirm working tree is still clean (`git status`) and HEAD is at `b6d671c` or further.
+3. Remaining human-gated items: QA-2 (screen reader), QA-5 (Firefox/Safari cross-browser), QA-6 (mobile layout functional issues per user).
+4. For any new bug, follow the same pattern: minimal targeted fix, prettier + tsc + eslint + vitest, project-wide `prettier --check .`, commit, push, watch CI/Deploy land on a new revision.
 5. Do not start Phase 2 work (resizable, server-side preferences, folder-permissions UI, public-viewer tree) until the user explicitly opens that scope.
 
 ---
