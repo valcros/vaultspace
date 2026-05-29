@@ -812,6 +812,7 @@ model SearchIndex {
   customMetadata Json?
   mimeType       String   @db.VarChar(100)
   uploadedAt     DateTime
+  roomId         String?
 
   // Relations
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -820,6 +821,7 @@ model SearchIndex {
 
   @@unique([organizationId, versionId])
   @@index([organizationId])
+  @@index([organizationId, roomId])
   @@index([documentId])
   @@index([versionId])
   @@map("search_indexes")
