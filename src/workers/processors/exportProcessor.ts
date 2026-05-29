@@ -201,11 +201,31 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
       },
     });
 
-    // TODO: Send notification email to user with download link
-    // const user = await db.user.findUnique({ where: { id: requestedByUserId } });
-    // if (user?.email) {
-    //   await providers.email.sendEmail({...});
-    // }
+    // Notify the requesting user with a signed download link (valid 24 hours)
+    const user = await db.user.findUnique({
+      where: { id: requestedByUserId },
+      select: { email: true, firstName: true },
+    });
+
+    if (user?.email) {
+      try {
+        const downloadUrl = await providers.storage.getSignedUrl(
+          'documents',
+          exportKey,
+          24 * 60 * 60
+        );
+        await providers.email.sendEmail({
+          to: user.email,
+          subject: `Your export of "${room.name}" is ready`,
+          html: `<p>Hi ${user.firstName ?? 'there'},</p>
+<p>Your export of <strong>${room.name}</strong> is ready to download.</p>
+<p><a href="${downloadUrl}">Download ZIP (${Math.round(zipBuffer.length / 1024)} KB)</a></p>
+<p>This link expires in 24 hours.</p>`,
+        });
+      } catch (emailError) {
+        console.error(`[ExportProcessor] Failed to send download email:`, emailError);
+      }
+    }
 
     console.log(`[ExportProcessor] Export completed: ${exportKey}`);
   } catch (error) {
