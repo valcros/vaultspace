@@ -79,3 +79,35 @@ test.describe('WCAG 2.1 AA smoke tests — authenticated pages', () => {
     });
   }
 });
+
+test.describe('WCAG 2.1 AA smoke tests — room detail page', () => {
+  test.use({ storageState: 'tests/e2e/.auth/admin.json' });
+
+  test('Room detail page has no critical accessibility violations', async ({
+    page: pwPage,
+    request,
+  }) => {
+    const roomsRes = await request.get('/api/rooms');
+    if (!roomsRes.ok()) {
+      test.skip();
+      return;
+    }
+    const body = await roomsRes.json();
+    const roomId = (body.rooms as Array<{ id: string }>)?.[0]?.id;
+    if (!roomId) {
+      test.skip();
+      return;
+    }
+
+    await pwPage.goto(`/rooms/${roomId}`);
+    await pwPage.waitForLoadState('networkidle');
+
+    const results = await new AxeBuilder({ page: pwPage }).withTags(TAGS).analyze();
+
+    if (results.violations.length > 0) {
+      console.log(`Violations on Room detail:\n${summarize(results.violations)}`);
+    }
+
+    expect(results.violations).toEqual([]);
+  });
+});
