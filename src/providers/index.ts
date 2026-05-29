@@ -25,6 +25,7 @@ import { S3StorageProvider } from './storage/S3StorageProvider';
 import { createOCRProvider } from './ocr';
 import { createScanProvider } from './scan';
 import { createPreviewProvider } from './preview';
+import { PostgresSearchProvider } from './search/PostgresSearchProvider';
 import { isAzureMode } from '../lib/deployment-mode';
 
 // Singleton instance
@@ -211,9 +212,19 @@ function createJobProvider(): JobProvider {
   };
 }
 
-// Stub implementations for providers that will be fully implemented in later phases
-
+// SEARCH_PROVIDER=postgres uses PostgresSearchProvider for FTS over search_indexes.
+// NOTE: /api/search does not call providers.search.search() — it has its own direct
+// SQL that returns enriched fields (roomName etc.) the provider interface cannot express.
+// This provider's index() and remove() are the live paths; search() fulfils the
+// interface contract and is available for future migration of the API route.
 function createSearchProvider() {
+  const provider = process.env['SEARCH_PROVIDER'] ?? 'stub';
+
+  if (provider === 'postgres') {
+    return new PostgresSearchProvider();
+  }
+
+  // Default stub: no-op, used in Azure mode and when SEARCH_PROVIDER is unset
   return {
     search: async () => ({ results: [], total: 0, took: 0 }),
     index: async () => {},
