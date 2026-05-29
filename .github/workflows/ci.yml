@@ -278,3 +278,81 @@ jobs:
             DEPLOYMENT_MODE=standalone
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  e2e:
+    name: E2E (a11y + security)
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
+      SESSION_SECRET: e2e-ci-test-secret-32-chars-long!
+      DEPLOYMENT_MODE: standalone
+      APP_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      PLAYWRIGHT_BASE_URL: http://localhost:3000
+      PLAYWRIGHT_ADMIN_EMAIL: admin@demo.vaultspace.app
+      PLAYWRIGHT_ADMIN_PASSWORD: Demo123!
+      # Override the dev command to avoid hot-reload overhead in CI
+      PLAYWRIGHT_WEB_SERVER_COMMAND: npm run dev:standalone
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+
+      - name: Seed database with demo data
+        run: npx prisma db seed
+
+      - name: Install Playwright (Chromium only)
+        run: npx playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        run: npx playwright test tests/e2e/a11y.test.ts tests/e2e/security.test.ts
+        timeout-minutes: 10
+
+      - name: Upload Playwright report on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
