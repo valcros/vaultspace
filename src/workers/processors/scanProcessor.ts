@@ -7,6 +7,7 @@
 import { Job } from 'bullmq';
 
 import { db } from '@/lib/db';
+import { createEventBus } from '@/lib/events/EventBus';
 import { getProviders } from '@/providers';
 
 import type { ScanJobPayload } from '../types';
@@ -107,8 +108,49 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
         },
       });
 
-      // TODO: Emit document.flagged_infected event
-      // TODO: Notify room admin
+      // Emit DOCUMENT_SCANNED event for audit trail
+      const eventBus = createEventBus(organizationId, { actorType: 'SYSTEM' });
+      const document = await db.document.findFirst({
+        where: { id: documentId, organizationId },
+        select: { roomId: true },
+      });
+
+      await eventBus.emit('DOCUMENT_SCANNED', {
+        roomId: document?.roomId,
+        documentId,
+        metadata: {
+          versionId,
+          scanStatus: 'INFECTED',
+          threats: scanResult.threats ?? [],
+        },
+      });
+
+      // Notify organization admins
+      const admins = await db.userOrganization.findMany({
+        where: { organizationId, role: 'ADMIN', isActive: true },
+        include: { user: { select: { email: true, firstName: true } } },
+      });
+
+      for (const admin of admins) {
+        if (!admin.user.email) {
+          continue;
+        }
+        try {
+          await providers.email.sendEmail({
+            to: admin.user.email,
+            subject: 'Security Alert: Infected file detected',
+            html: `<p>Hi ${admin.user.firstName ?? 'Admin'},</p>
+<p>A file uploaded to your VaultSpace organization has been flagged as infected and blocked from use.</p>
+<ul>
+  <li><strong>File:</strong> ${job.data.fileName}</li>
+  <li><strong>Threats:</strong> ${scanResult.threats?.join(', ') ?? 'Unknown'}</li>
+</ul>
+<p>The file has been quarantined and will not be accessible to viewers.</p>`,
+          });
+        } catch (emailError) {
+          console.error(`[ScanProcessor] Failed to notify admin ${admin.user.email}:`, emailError);
+        }
+      }
     }
   } catch (error) {
     console.error(`[ScanProcessor] Scan failed for document ${documentId}:`, error);
