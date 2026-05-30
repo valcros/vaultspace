@@ -2,7 +2,8 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Deployment mode: azure (default) or standalone
+# Pass --build-arg DEPLOYMENT_MODE=standalone for self-hosted installs.
+# Default is azure (fail-closed); do not change the default here.
 ARG DEPLOYMENT_MODE=azure
 ENV DEPLOYMENT_MODE=${DEPLOYMENT_MODE}
 
