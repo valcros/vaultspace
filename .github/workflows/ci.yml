@@ -313,6 +313,8 @@ jobs:
       REDIS_URL: redis://localhost:6379
       SESSION_SECRET: e2e-ci-test-secret-32-chars-long!
       DEPLOYMENT_MODE: standalone
+      STORAGE_PROVIDER: local
+      STORAGE_LOCAL_PATH: ./storage
       APP_URL: http://localhost:3000
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
