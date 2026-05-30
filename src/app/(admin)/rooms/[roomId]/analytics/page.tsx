@@ -271,7 +271,7 @@ export default function RoomAnalyticsPage() {
                           );
                         })}
                       </div>
-                      <div className="mt-2 flex justify-between text-xs text-neutral-400">
+                      <div className="mt-2 flex justify-between text-xs text-neutral-600">
                         <span>
                           {data[0]
                             ? new Date(data[0].date).toLocaleDateString('en-US', {
