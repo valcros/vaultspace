@@ -9,7 +9,8 @@
  * direct SQL that returns roomName and other join-derived fields the provider
  * interface cannot express. This provider's search() fulfils the interface
  * contract and is available for future use, but does not affect the current
- * API search behavior.
+ * API search behavior. search() is FTS-only; before any route is migrated to
+ * it, add the ILIKE title/fileName fallback that /api/search currently includes.
  *
  * Index ownership:
  *   The worker's processSearchIndexJob upserts SearchIndex directly (with
