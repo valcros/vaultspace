@@ -54,8 +54,8 @@ reset-dev: ## WARNING: destroy all data. Requires VAULTSPACE_ENV=dev and localho
 	  { echo "Error: VAULTSPACE_ENV must equal 'dev' to use reset-dev."; exit 1; }
 	@APP_URL=$$(grep -E '^APP_URL=' .env 2>/dev/null | head -1 | cut -d= -f2-); \
 	  case "$$APP_URL" in \
-	    *localhost*|*127.0.0.1*|"") ;; \
-	    *) echo "Error: reset-dev refused — APP_URL='$$APP_URL' is not a localhost address."; exit 1; ;; \
+	    *localhost*|*127.0.0.1*) ;; \
+	    *) echo "Error: reset-dev refused — APP_URL='$$APP_URL' must contain localhost or 127.0.0.1. Ensure .env exists and APP_URL is set to a localhost address."; exit 1; ;; \
 	  esac
 	@printf 'This will DELETE ALL DATA (volumes + containers). Type YES to confirm: '; \
 	  read ans; \

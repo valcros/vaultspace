@@ -363,10 +363,21 @@ are unavailable; the app is still functional for core operations.
 To start completely fresh (destroys all data):
 
 ```bash
-make reset-dev
+VAULTSPACE_ENV=dev make reset-dev
 ```
 
-Or manually:
+`reset-dev` enforces two safety conditions before touching anything:
+
+1. `VAULTSPACE_ENV` must equal `dev` — you must explicitly declare this is a
+   dev environment.
+2. `APP_URL` in `.env` must contain `localhost` or `127.0.0.1` — the target
+   refuses to run against a non-localhost URL, protecting remote installs from
+   accidental data loss.
+
+If `.env` is absent or `APP_URL` is blank the command will fail with an error
+rather than proceeding.
+
+Or manually (no guards):
 
 ```bash
 docker compose down -v --remove-orphans
