@@ -493,23 +493,23 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 #### Preview & Document Conversion
 
-| Variable                       | Required    | Default     | Example                    | Description                                                                                       |
-| ------------------------------ | ----------- | ----------- | -------------------------- | ------------------------------------------------------------------------------------------------- |
-| `PREVIEW_ENGINE`               | No          | `sharp`     | `gotenberg`, `sharp`       | Preview backend. `gotenberg` for full document conversion (recommended); `sharp` for image-only thumbnails without Gotenberg. |
-| `GOTENBERG_URL`                | Conditional | —           | `http://gotenberg:3000`    | Gotenberg service URL. Required for `PREVIEW_ENGINE=gotenberg`.                                   |
-| `PREVIEW_TIMEOUT_SECONDS`      | No          | `60`        | `120`                      | Timeout for document conversion jobs. Increase for large/complex documents.                       |
-| `PREVIEW_MAX_FILE_SIZE_MB`     | No          | `100`       | `500`                      | Maximum file size to attempt conversion. Files larger are marked unconvertible.                   |
-| `PREVIEW_ENABLE_PDF_WATERMARK` | No          | `true`      | `true` or `false`          | Apply watermark overlay to PDF previews at render time.                                           |
+| Variable                       | Required    | Default | Example                 | Description                                                                                                                   |
+| ------------------------------ | ----------- | ------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `PREVIEW_ENGINE`               | No          | `sharp` | `gotenberg`, `sharp`    | Preview backend. `gotenberg` for full document conversion (recommended); `sharp` for image-only thumbnails without Gotenberg. |
+| `GOTENBERG_URL`                | Conditional | —       | `http://gotenberg:3000` | Gotenberg service URL. Required for `PREVIEW_ENGINE=gotenberg`.                                                               |
+| `PREVIEW_TIMEOUT_SECONDS`      | No          | `60`    | `120`                   | Timeout for document conversion jobs. Increase for large/complex documents.                                                   |
+| `PREVIEW_MAX_FILE_SIZE_MB`     | No          | `100`   | `500`                   | Maximum file size to attempt conversion. Files larger are marked unconvertible.                                               |
+| `PREVIEW_ENABLE_PDF_WATERMARK` | No          | `true`  | `true` or `false`       | Apply watermark overlay to PDF previews at render time.                                                                       |
 
 #### Virus & Malware Scanning
 
-| Variable               | Required    | Default        | Example               | Description                                                                                                 |
-| ---------------------- | ----------- | -------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Variable               | Required    | Default        | Example                 | Description                                                                                                          |
+| ---------------------- | ----------- | -------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `SCAN_ENGINE`          | No          | `clamav`       | `clamav`, `passthrough` | Virus scanner backend. `clamav` for ClamAV; `passthrough` skips scanning. **Never use `passthrough` in production.** |
-| `CLAMAV_HOST`          | Conditional | —              | `localhost` (sidecar)   | ClamAV daemon hostname. Use `localhost` for sidecar container in Azure Container Apps.                        |
-| `CLAMAV_PORT`          | Conditional | `3310`         | `3310`                  | ClamAV daemon port. Required for `SCAN_ENGINE=clamav`.                                                        |
-| `SCAN_TIMEOUT_SECONDS` | No          | `30`           | `60`                  | Timeout for scan jobs. Increase if scanning is slow.                                                        |
-| `SCAN_QUARANTINE_PATH` | No          | `./quarantine` | `/secure/quarantine`  | Local path to store quarantined files. Keep on encrypted storage.                                           |
+| `CLAMAV_HOST`          | Conditional | —              | `localhost` (sidecar)   | ClamAV daemon hostname. Use `localhost` for sidecar container in Azure Container Apps.                               |
+| `CLAMAV_PORT`          | Conditional | `3310`         | `3310`                  | ClamAV daemon port. Required for `SCAN_ENGINE=clamav`.                                                               |
+| `SCAN_TIMEOUT_SECONDS` | No          | `30`           | `60`                    | Timeout for scan jobs. Increase if scanning is slow.                                                                 |
+| `SCAN_QUARANTINE_PATH` | No          | `./quarantine` | `/secure/quarantine`    | Local path to store quarantined files. Keep on encrypted storage.                                                    |
 
 #### Search Indexing
 
