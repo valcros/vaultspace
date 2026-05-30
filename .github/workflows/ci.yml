@@ -344,8 +344,8 @@ jobs:
       - name: Seed database with demo data
         run: npx prisma db seed
 
-      - name: Install Playwright (Chromium only)
-        run: npx playwright install chromium --with-deps
+      - name: Install Playwright browsers
+        run: npx playwright install chromium firefox --with-deps
 
       - name: Run E2E tests
         run: npx playwright test tests/e2e/a11y.test.ts tests/e2e/security.test.ts

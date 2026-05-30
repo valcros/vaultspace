@@ -257,7 +257,7 @@ export default function RoomAuditPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger className="w-[200px]" aria-label="Filter by event type">
               <SelectValue placeholder="All events" />
             </SelectTrigger>
             <SelectContent>
@@ -313,7 +313,7 @@ export default function RoomAuditPage() {
                       {event.description && (
                         <p className="mt-1 text-sm text-neutral-600">{event.description}</p>
                       )}
-                      <div className="mt-1 flex items-center gap-3 text-xs text-neutral-400">
+                      <div className="mt-1 flex items-center gap-3 text-xs text-neutral-600">
                         <span>{formatDate(event.createdAt)}</span>
                         {event.ipAddress && (
                           <>
