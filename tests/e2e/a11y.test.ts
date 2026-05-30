@@ -142,6 +142,17 @@ test.describe('WCAG 2.1 AA smoke tests — room sub-pages', () => {
       await pwPage.goto(`/rooms/${roomId}${subPage.suffix}`);
       await pwPage.waitForLoadState('networkidle');
 
+      const debug = await pwPage.evaluate(() => ({
+        url: window.location.href,
+        htmlLang: document.documentElement.lang,
+        title: document.title,
+        titleEl: document.querySelector('title')?.outerHTML ?? null,
+        bodyChildCount: document.body.children.length,
+        bodyFirstChild: document.body.firstElementChild?.outerHTML?.slice(0, 300) ?? null,
+        headSnippet: document.head.outerHTML.slice(0, 500),
+      }));
+      console.log(`DEBUG ${subPage.name}:`, JSON.stringify(debug, null, 2));
+
       const results = await new AxeBuilder({ page: pwPage }).withTags(TAGS).analyze();
 
       if (results.violations.length > 0) {
