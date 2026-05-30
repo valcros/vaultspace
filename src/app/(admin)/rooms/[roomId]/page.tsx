@@ -1684,8 +1684,9 @@ export default function RoomDetailPage() {
                   setCompact(next);
                   localStorage.setItem('vaultspace-compact', String(next));
                 }}
-                className={`hidden rounded-md border p-1.5 transition-colors sm:block ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-400 hover:text-neutral-600'}`}
+                className={`hidden rounded-md border p-1.5 transition-colors sm:block ${compact ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-500 hover:text-neutral-600'}`}
                 title={compact ? 'Standard density' : 'Compact density'}
+                aria-label={compact ? 'Switch to standard density' : 'Switch to compact density'}
               >
                 <Minus className="h-4 w-4" />
               </button>
@@ -1697,8 +1698,9 @@ export default function RoomDetailPage() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
-                      className="rounded-md border border-transparent p-1.5 text-neutral-400 transition-colors hover:text-neutral-600"
+                      className="rounded-md border border-transparent p-1.5 text-neutral-500 transition-colors hover:text-neutral-600"
                       title="Show/hide columns"
+                      aria-label="Show or hide columns"
                     >
                       <Columns3 className="h-4 w-4" />
                     </button>
@@ -1830,7 +1832,7 @@ export default function RoomDetailPage() {
                             ? 'Deselect all'
                             : 'Select all'
                         }
-                        className="flex items-center text-neutral-400 hover:text-neutral-600"
+                        className="flex items-center text-neutral-500 hover:text-neutral-600"
                       >
                         {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
                           <CheckSquare className="h-4 w-4 text-primary-500" />
@@ -2140,7 +2142,7 @@ export default function RoomDetailPage() {
                 <Folder className="h-12 w-12 text-amber-500" />
               </div>
               <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
-              <p className="text-xs text-neutral-400">{folder.documentCount} files</p>
+              <p className="text-xs text-neutral-600">{folder.documentCount} files</p>
             </div>
           ))}
           {/* Documents — render the same sorted view the list mode uses
@@ -2170,7 +2172,7 @@ export default function RoomDetailPage() {
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-1">
-                <p className="text-xs text-neutral-400">{formatFileSize(doc.size)}</p>
+                <p className="text-xs text-neutral-600">{formatFileSize(doc.size)}</p>
                 {doc.category && (
                   <span
                     className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
@@ -2192,7 +2194,12 @@ export default function RoomDetailPage() {
               >
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="secondary" size="sm" className="h-7 w-7 p-0 shadow-sm">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-7 w-7 p-0 shadow-sm"
+                      aria-label={`Actions for ${doc.name}`}
+                    >
                       <MoreHorizontal className="h-3.5 w-3.5" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -2414,7 +2421,7 @@ export default function RoomDetailPage() {
                                   {req.reason}
                                 </p>
                               )}
-                              <p className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
+                              <p className="mt-1 flex items-center gap-1 text-xs text-neutral-600">
                                 <Clock className="h-3 w-3" />
                                 {new Date(req.createdAt).toLocaleDateString()} at{' '}
                                 {new Date(req.createdAt).toLocaleTimeString([], {
@@ -2518,7 +2525,12 @@ export default function RoomDetailPage() {
                               <td className="px-4 py-2">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 w-8 p-0"
+                                      aria-label={`Actions for ${admin.firstName} ${admin.lastName}`}
+                                    >
                                       <MoreHorizontal className="h-4 w-4" />
                                     </Button>
                                   </DropdownMenuTrigger>
@@ -3140,7 +3152,7 @@ export default function RoomDetailPage() {
                   }
                 }}
               />
-              <p className="text-xs text-neutral-400">Separate tags with commas</p>
+              <p className="text-xs text-neutral-600">Separate tags with commas</p>
             </div>
             <div className="space-y-1.5">
               <Label>Expiry Date</Label>
@@ -3163,7 +3175,7 @@ export default function RoomDetailPage() {
                   }
                 }}
               />
-              <p className="text-xs text-neutral-400">
+              <p className="text-xs text-neutral-600">
                 Document will auto-archive or delete after this date
               </p>
             </div>
