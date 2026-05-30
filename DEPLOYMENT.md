@@ -190,11 +190,11 @@ STORAGE_KEY_ID=your-access-key
 STORAGE_SECRET_KEY=your-secret-key
 
 # Preview generation
-PREVIEW_PROVIDER=gotenberg
+PREVIEW_ENGINE=gotenberg
 GOTENBERG_URL=http://gotenberg:3000
 
 # Virus scanning
-SCAN_PROVIDER=clamav
+SCAN_ENGINE=clamav
 CLAMAV_HOST=clamav
 CLAMAV_PORT=3310
 
@@ -495,8 +495,8 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 | Variable                       | Required    | Default     | Example                    | Description                                                                                       |
 | ------------------------------ | ----------- | ----------- | -------------------------- | ------------------------------------------------------------------------------------------------- |
-| `PREVIEW_PROVIDER`             | Yes         | `gotenberg` | `gotenberg`, `libreoffice` | Document conversion backend. `gotenberg` for containerized service; `libreoffice` for in-process. |
-| `GOTENBERG_URL`                | Conditional | —           | `http://gotenberg:3000`    | Gotenberg service URL. Required for `PREVIEW_PROVIDER=gotenberg`.                                 |
+| `PREVIEW_ENGINE`               | Yes         | `gotenberg` | `gotenberg`, `libreoffice` | Document conversion backend. `gotenberg` for containerized service; `libreoffice` for in-process. |
+| `GOTENBERG_URL`                | Conditional | —           | `http://gotenberg:3000`    | Gotenberg service URL. Required for `PREVIEW_ENGINE=gotenberg`.                                   |
 | `PREVIEW_TIMEOUT_SECONDS`      | No          | `60`        | `120`                      | Timeout for document conversion jobs. Increase for large/complex documents.                       |
 | `PREVIEW_MAX_FILE_SIZE_MB`     | No          | `100`       | `500`                      | Maximum file size to attempt conversion. Files larger are marked unconvertible.                   |
 | `PREVIEW_ENABLE_PDF_WATERMARK` | No          | `true`      | `true` or `false`          | Apply watermark overlay to PDF previews at render time.                                           |
@@ -505,9 +505,9 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 | Variable               | Required    | Default        | Example               | Description                                                                                                 |
 | ---------------------- | ----------- | -------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `SCAN_PROVIDER`        | No          | `clamav`       | `clamav`, `none`      | Virus scanner backend. `clamav` for ClamAV; `none` to disable scanning. **Never use `none` in production.** |
+| `SCAN_ENGINE`          | No          | `clamav`       | `clamav`, `none`      | Virus scanner backend. `clamav` for ClamAV; `none` to disable scanning. **Never use `none` in production.** |
 | `CLAMAV_HOST`          | Conditional | —              | `localhost` (sidecar) | ClamAV daemon hostname. Use `localhost` for sidecar container in Azure Container Apps.                      |
-| `CLAMAV_PORT`          | Conditional | `3310`         | `3310`                | ClamAV daemon port. Required for `SCAN_PROVIDER=clamav`.                                                    |
+| `CLAMAV_PORT`          | Conditional | `3310`         | `3310`                | ClamAV daemon port. Required for `SCAN_ENGINE=clamav`.                                                      |
 | `SCAN_TIMEOUT_SECONDS` | No          | `30`           | `60`                  | Timeout for scan jobs. Increase if scanning is slow.                                                        |
 | `SCAN_QUARANTINE_PATH` | No          | `./quarantine` | `/secure/quarantine`  | Local path to store quarantined files. Keep on encrypted storage.                                           |
 
@@ -706,7 +706,7 @@ ENCRYPTION_KEY_ROTATION_DAYS=365
 # ============================================================================
 
 # Preview provider: gotenberg or libreoffice
-PREVIEW_PROVIDER=gotenberg
+PREVIEW_ENGINE=gotenberg
 
 # For Gotenberg (recommended):
 GOTENBERG_URL=http://gotenberg:3000
@@ -721,7 +721,7 @@ PREVIEW_ENABLE_PDF_WATERMARK=true
 # ============================================================================
 
 # Scan provider: clamav or none (never use 'none' in production)
-SCAN_PROVIDER=clamav
+SCAN_ENGINE=clamav
 
 # ClamAV configuration:
 CLAMAV_HOST=clamav
