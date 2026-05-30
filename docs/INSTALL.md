@@ -265,17 +265,20 @@ gunzip -c backups/vaultspace-20260101.sql.gz | \
 
 Storage backup depends on your storage backend.
 
-**Local filesystem:** The `storage` volume holds uploaded files. Back it up
-with a volume tar archive:
+**Local filesystem:** Uploaded files are stored as bind mounts at `./storage`
+and `./uploads` in the repository directory. Back them up with a tar archive:
 
 ```bash
-docker run --rm \
-  -v vaultspace_storage:/data \
-  -v $(pwd)/backups:/out \
-  alpine tar czf /out/storage-$(date +%Y%m%d).tar.gz -C /data .
+mkdir -p backups
+tar czf backups/storage-$(date +%Y%m%d).tar.gz ./storage ./uploads
 ```
 
-Restore by reversing the archive into a fresh volume before starting the stack.
+Restore by extracting the archive into the same directory before starting the
+stack:
+
+```bash
+tar xzf backups/storage-20260101.tar.gz
+```
 
 **S3-compatible storage:** VaultSpace writes files to S3 but does not manage
 bucket-level replication or versioning. Configure backup at the bucket level:
