@@ -174,6 +174,19 @@ prompt_secret() {
   printf -v "$var" '%s' "$input"
 }
 
+# Usage: prompt_optional VARNAME "prompt text"
+# Like prompt_text but does NOT die if input is empty (for optional fields).
+prompt_optional() {
+  local var="$1" prompt="$2"
+  if [[ "$OPT_NON_INTERACTIVE" == true ]]; then
+    return  # Keep whatever flag value was set (may be empty — that is valid here)
+  fi
+  printf '%s%s (leave blank to skip)%s: ' "$BOLD" "$prompt" "$RESET"
+  local input
+  read -r input
+  [[ -n "$input" ]] && printf -v "$var" '%s' "$input"
+}
+
 # Usage: prompt_choice VARNAME "prompt" option1 option2 ...
 prompt_choice() {
   local var="$1" prompt="$2"; shift 2
@@ -191,9 +204,12 @@ prompt_choice() {
 }
 
 # Usage: confirm "question" — returns 0 if yes, 1 if no
+# --yes bypasses confirmations; --non-interactive does NOT (it dies instead of prompting)
 confirm() {
   [[ "$OPT_YES" == true ]] && return 0
-  [[ "$OPT_NON_INTERACTIVE" == true ]] && return 0
+  if [[ "$OPT_NON_INTERACTIVE" == true ]]; then
+    die "--non-interactive: confirmation required but no --yes flag. Add --yes or resolve the issue first: $1"
+  fi
   printf '%s%s [y/N]%s: ' "$BOLD" "$1" "$RESET"
   local input
   read -r input
@@ -243,14 +259,12 @@ check_prerequisites() {
   fi
   success "curl"
 
-  # jq (optional but used for setup API response parsing)
+  # jq (required — used for health status parsing and setup API response)
   if ! command -v jq &>/dev/null; then
-    warn "jq not found. Setup API response will not be validated. Install: brew install jq / apt install jq"
-    HAS_JQ=false
-  else
-    success "jq $(jq --version)"
-    HAS_JQ=true
+    die "jq not found. Required for health check and setup API parsing. Install: brew install jq / apt install jq"
   fi
+  success "jq $(jq --version)"
+  HAS_JQ=true
 }
 
 # =============================================================================
@@ -299,6 +313,19 @@ _port_in_use() {
 # =============================================================================
 # Existing .env detection
 # =============================================================================
+
+# Populate OPT_APP_URL and OPT_APP_PORT from an existing .env so that the
+# health-check URL and summary are correct when keeping existing config.
+_load_env_file() {
+  local env_file="$REPO_ROOT/.env"
+  [[ -f "$env_file" ]] || return
+  local val
+  val=$(grep -E '^APP_URL=' "$env_file" | head -1 | cut -d= -f2-)
+  [[ -n "$val" ]] && OPT_APP_URL="$val"
+  val=$(grep -E '^APP_PORT=' "$env_file" | head -1 | cut -d= -f2-)
+  [[ -n "$val" ]] && OPT_APP_PORT="$val"
+}
+
 handle_existing_env() {
   local env_file="$REPO_ROOT/.env"
   if [[ ! -f "$env_file" ]]; then
@@ -320,7 +347,7 @@ handle_existing_env() {
   case "${choice,,}" in
     r) info "Replacing .env" ;;
     a) die "Aborted." ;;
-    *) info "Keeping existing .env"; KEEP_ENV=true ;;
+    *) info "Keeping existing .env"; KEEP_ENV=true; _load_env_file ;;
   esac
 }
 KEEP_ENV=false
@@ -331,7 +358,7 @@ KEEP_ENV=false
 configure_storage() {
   header "Storage configuration"
 
-  if [[ "$OPT_STORAGE" == 'local' ]] && [[ "$OPT_NON_INTERACTIVE" == false ]]; then
+  if [[ "$OPT_STORAGE" == 'local' ]] && [[ "$OPT_NON_INTERACTIVE" != true ]]; then
     local choice='l'
     prompt_choice choice "Storage backend" "l (local filesystem)" "s (S3-compatible)"
     [[ "${choice,,}" == 's'* ]] && OPT_STORAGE='s3' || OPT_STORAGE='local'
@@ -373,7 +400,7 @@ configure_email() {
   prompt_text OPT_SMTP_PORT "SMTP port" "587"
   local tls_choice='n'
   if [[ -z "$OPT_SMTP_USER" ]]; then
-    prompt_text OPT_SMTP_USER "SMTP username (leave blank if none)" ""
+    prompt_optional OPT_SMTP_USER "SMTP username"
   fi
   if [[ -z "$OPT_SMTP_PASSWORD" ]] && [[ -n "$OPT_SMTP_USER" ]]; then
     prompt_secret OPT_SMTP_PASSWORD "SMTP password"
@@ -486,6 +513,7 @@ SMTP_FROM=${OPT_SMTP_FROM}"
 DEPLOYMENT_MODE=standalone
 NODE_ENV=production
 APP_URL=${OPT_APP_URL}
+APP_PORT=${OPT_APP_PORT}
 APP_NAME=VaultSpace
 DEFAULT_ORG_NAME=My Organization
 LOG_LEVEL=info
@@ -648,10 +676,15 @@ create_first_admin() {
 
   local setup_url="${OPT_APP_URL:-http://localhost:${OPT_APP_PORT}}/api/setup"
 
-  # Escape values for JSON (basic; does not handle all unicode edge cases)
   local payload
-  payload=$(printf '{"organizationName":"%s","organizationSlug":"%s","adminFirstName":"%s","adminLastName":"%s","adminEmail":"%s","adminPassword":"%s"}' \
-    "$OPT_ORG_NAME" "$OPT_ORG_SLUG" "$OPT_ADMIN_FIRST" "$OPT_ADMIN_LAST" "$OPT_ADMIN_EMAIL" "$OPT_ADMIN_PASSWORD")
+  payload=$(jq -n \
+    --arg org   "$OPT_ORG_NAME" \
+    --arg slug  "$OPT_ORG_SLUG" \
+    --arg first "$OPT_ADMIN_FIRST" \
+    --arg last  "$OPT_ADMIN_LAST" \
+    --arg email "$OPT_ADMIN_EMAIL" \
+    --arg pass  "$OPT_ADMIN_PASSWORD" \
+    '{organizationName:$org,organizationSlug:$slug,adminFirstName:$first,adminLastName:$last,adminEmail:$email,adminPassword:$pass}')
 
   local http_code response
   response=$(curl -s -o /tmp/vs_setup.json -w '%{http_code}' \
@@ -697,9 +730,9 @@ print_success() {
   fi
   printf '\n'
   printf '  Useful commands:\n'
-  printf '    make logs          # tail all service logs\n'
-  printf '    make stop          # stop all containers\n'
-  printf '    docker compose ps  # check container status\n'
+  printf '    docker compose logs -f  # tail all service logs\n'
+  printf '    docker compose stop     # stop all containers\n'
+  printf '    docker compose ps       # check container status\n'
   printf '\n'
   printf '  Health endpoint:\n'
   printf '    %s/api/health?deep=true\n' "$app_url"
