@@ -314,8 +314,10 @@ _port_in_use() {
 # Existing .env detection
 # =============================================================================
 
-# Populate OPT_APP_URL and OPT_APP_PORT from an existing .env so that the
-# health-check URL and summary are correct when keeping existing config.
+# Populate installer variables from an existing .env so that health-check URLs,
+# summary output, and check_ports() all reflect the kept configuration.
+# Also loads DATABASE_PORT and REDIS_PORT so check_ports() checks the right
+# host ports when Compose is configured to use non-default values.
 _load_env_file() {
   local env_file="$REPO_ROOT/.env"
   [[ -f "$env_file" ]] || return
@@ -324,6 +326,10 @@ _load_env_file() {
   [[ -n "$val" ]] && OPT_APP_URL="$val"
   val=$(grep -E '^APP_PORT=' "$env_file" | head -1 | cut -d= -f2-)
   [[ -n "$val" ]] && OPT_APP_PORT="$val"
+  val=$(grep -E '^DATABASE_PORT=' "$env_file" | head -1 | cut -d= -f2-)
+  [[ -n "$val" ]] && DATABASE_PORT="$val"
+  val=$(grep -E '^REDIS_PORT=' "$env_file" | head -1 | cut -d= -f2-)
+  [[ -n "$val" ]] && REDIS_PORT="$val"
 }
 
 handle_existing_env() {
@@ -333,9 +339,12 @@ handle_existing_env() {
   fi
 
   warn ".env already exists at $env_file"
-  if [[ "$OPT_NON_INTERACTIVE" == true ]] || [[ "$OPT_YES" == true ]]; then
-    info "Overwriting existing .env (--yes or --non-interactive)"
+  if [[ "$OPT_YES" == true ]]; then
+    info "Overwriting existing .env (--yes)"
     return
+  fi
+  if [[ "$OPT_NON_INTERACTIVE" == true ]]; then
+    die "--non-interactive: .env already exists. Use --yes to overwrite, or remove .env manually first."
   fi
 
   printf '%s%s%s\n' "$BOLD" "What would you like to do?" "$RESET"
