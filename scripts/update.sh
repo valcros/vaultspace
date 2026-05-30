@@ -155,10 +155,10 @@ warn_local_storage() {
     storage_backend=$(grep -E '^STORAGE_PROVIDER=' "$env_file" | head -1 | cut -d= -f2-)
     if [[ "$storage_backend" == 'local' || -z "$storage_backend" ]]; then
       warn "You are using local filesystem storage."
-      warn "Uploaded files live in the 'storage' volume and are NOT backed up by this script."
+      warn "Uploaded files in ./storage and ./uploads are NOT backed up by this script."
       warn "Back up your data before proceeding:"
-      warn "  docker run --rm -v vaultspace_postgres_data:/data -v \$(pwd)/backups:/out alpine tar czf /out/postgres-\$(date +%Y%m%d).tar.gz -C /data ."
-      warn "  docker run --rm -v vaultspace_storage:/data -v \$(pwd)/backups:/out alpine tar czf /out/storage-\$(date +%Y%m%d).tar.gz -C /data ."
+      warn "  make backup                                    # PostgreSQL dump"
+      warn "  tar czf backups/storage-\$(date +%Y%m%d).tar.gz ./storage ./uploads"
     fi
   fi
 }
