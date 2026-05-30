@@ -98,9 +98,9 @@ For a fully non-interactive install (CI/CD or scripted deployments):
 
 ### Local filesystem (default)
 
-Files are stored in a Docker named volume (`vaultspace_storage`). Simple and
-zero-config; suitable for single-host deployments. Back up the volume before
-updating or migrating hosts.
+Files are stored as bind mounts at `./storage` and `./uploads` in the
+repository directory. Simple and zero-config; suitable for single-host
+deployments. Back up these directories before updating or migrating hosts.
 
 Generated `.env` entry:
 
@@ -189,10 +189,10 @@ upgrades, the full reference follows.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `PREVIEW_ENGINE` | No | `gotenberg` | Document conversion backend: `gotenberg` or `noop` |
+| `PREVIEW_ENGINE` | No | `sharp` | Preview backend: `gotenberg` (full document conversion, requires Gotenberg service) or `sharp` (image-only thumbnails, no Gotenberg needed). Standalone installer sets `gotenberg`. |
 | `GOTENBERG_URL` | Conditional | `http://gotenberg:3000` | Required for `PREVIEW_ENGINE=gotenberg` |
 | `PREVIEW_TIMEOUT_SECONDS` | No | `60` | Timeout for document conversion |
-| `SCAN_ENGINE` | No | `clamav` | Virus scanner: `clamav` or `none`. Never use `none` in production |
+| `SCAN_ENGINE` | No | `clamav` | Virus scanner: `clamav` or `passthrough`. `passthrough` skips scanning — never use in production |
 | `CLAMAV_HOST` | Conditional | `clamav` | Required for `SCAN_ENGINE=clamav` |
 | `CLAMAV_PORT` | No | `3310` | ClamAV daemon port |
 
@@ -383,7 +383,7 @@ Then re-run `./scripts/setup.sh`.
 - `SESSION_SECRET`, `DATABASE_PASSWORD`, and `REDIS_PASSWORD` are generated
   with `openssl rand -hex 32` by the installer. Do not reuse values across
   environments.
-- ClamAV virus scanning is enabled by default. Do not set `SCAN_ENGINE=none`
+- ClamAV virus scanning is enabled by default. Do not set `SCAN_ENGINE=passthrough`
   in production — documents would become accessible without a scan.
 - Signed preview URLs expire after 5 minutes (`SIGNED_URL_EXPIRY_SECONDS=300`).
   Do not increase this value without understanding the access-control

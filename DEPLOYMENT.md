@@ -495,7 +495,7 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 | Variable                       | Required    | Default     | Example                    | Description                                                                                       |
 | ------------------------------ | ----------- | ----------- | -------------------------- | ------------------------------------------------------------------------------------------------- |
-| `PREVIEW_ENGINE`               | Yes         | `gotenberg` | `gotenberg`, `libreoffice` | Document conversion backend. `gotenberg` for containerized service; `libreoffice` for in-process. |
+| `PREVIEW_ENGINE`               | No          | `sharp`     | `gotenberg`, `sharp`       | Preview backend. `gotenberg` for full document conversion (recommended); `sharp` for image-only thumbnails without Gotenberg. |
 | `GOTENBERG_URL`                | Conditional | —           | `http://gotenberg:3000`    | Gotenberg service URL. Required for `PREVIEW_ENGINE=gotenberg`.                                   |
 | `PREVIEW_TIMEOUT_SECONDS`      | No          | `60`        | `120`                      | Timeout for document conversion jobs. Increase for large/complex documents.                       |
 | `PREVIEW_MAX_FILE_SIZE_MB`     | No          | `100`       | `500`                      | Maximum file size to attempt conversion. Files larger are marked unconvertible.                   |
@@ -505,9 +505,9 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 | Variable               | Required    | Default        | Example               | Description                                                                                                 |
 | ---------------------- | ----------- | -------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `SCAN_ENGINE`          | No          | `clamav`       | `clamav`, `none`      | Virus scanner backend. `clamav` for ClamAV; `none` to disable scanning. **Never use `none` in production.** |
-| `CLAMAV_HOST`          | Conditional | —              | `localhost` (sidecar) | ClamAV daemon hostname. Use `localhost` for sidecar container in Azure Container Apps.                      |
-| `CLAMAV_PORT`          | Conditional | `3310`         | `3310`                | ClamAV daemon port. Required for `SCAN_ENGINE=clamav`.                                                      |
+| `SCAN_ENGINE`          | No          | `clamav`       | `clamav`, `passthrough` | Virus scanner backend. `clamav` for ClamAV; `passthrough` skips scanning. **Never use `passthrough` in production.** |
+| `CLAMAV_HOST`          | Conditional | —              | `localhost` (sidecar)   | ClamAV daemon hostname. Use `localhost` for sidecar container in Azure Container Apps.                        |
+| `CLAMAV_PORT`          | Conditional | `3310`         | `3310`                  | ClamAV daemon port. Required for `SCAN_ENGINE=clamav`.                                                        |
 | `SCAN_TIMEOUT_SECONDS` | No          | `30`           | `60`                  | Timeout for scan jobs. Increase if scanning is slow.                                                        |
 | `SCAN_QUARANTINE_PATH` | No          | `./quarantine` | `/secure/quarantine`  | Local path to store quarantined files. Keep on encrypted storage.                                           |
 
@@ -705,7 +705,7 @@ ENCRYPTION_KEY_ROTATION_DAYS=365
 # PREVIEW & DOCUMENT CONVERSION
 # ============================================================================
 
-# Preview provider: gotenberg or libreoffice
+# Preview provider: gotenberg (full document conversion) or sharp (image-only thumbnails)
 PREVIEW_ENGINE=gotenberg
 
 # For Gotenberg (recommended):
@@ -720,7 +720,7 @@ PREVIEW_ENABLE_PDF_WATERMARK=true
 # VIRUS & MALWARE SCANNING
 # ============================================================================
 
-# Scan provider: clamav or none (never use 'none' in production)
+# Scan provider: clamav or passthrough (never use 'passthrough' in production)
 SCAN_ENGINE=clamav
 
 # ClamAV configuration:

@@ -91,7 +91,7 @@ confirm() {
 # =============================================================================
 _load_env_file() {
   local env_file="$REPO_ROOT/.env"
-  [[ -f "$env_file" ]] || return
+  [[ -f "$env_file" ]] || return 0
   local val
   val=$(grep -E '^APP_URL=' "$env_file" | head -1 | cut -d= -f2-)
   [[ -n "$val" ]] && OPT_APP_URL="$val"
