@@ -318,7 +318,9 @@ test.describe('SEC-004: Request query param organizationId is ignored', () => {
   let orgBSetup: OrgBSetup = { cookie: '', roomId: null, orgId: null };
 
   test.beforeAll(async ({ request }) => {
-    [orgACookie, orgBSetup] = await Promise.all([loginAsAdmin(request), ensureOrgBSetup(request)]);
+    // Sequential to avoid shared cookie-jar mutation between the two flows
+    orgACookie = await loginAsAdmin(request);
+    orgBSetup = await ensureOrgBSetup(request);
     if (!orgBSetup.orgId) {
       test.skip();
     }
@@ -359,15 +361,18 @@ test.describe('SEC-006/007: x-organization-id header is ignored', () => {
   let orgACookie = '';
   let orgARoomId = '';
   let orgBOrgId = '';
+  let orgBRoomId = '';
 
   test.beforeAll(async ({ request }) => {
-    const [orgBSetup] = await Promise.all([ensureOrgBSetup(request)]);
-    if (!orgBSetup.orgId) {
+    // Sequential to avoid shared cookie-jar mutation between the two flows
+    orgACookie = await loginAsAdmin(request);
+    const orgBSetup = await ensureOrgBSetup(request);
+    if (!orgBSetup.orgId || !orgBSetup.roomId) {
       test.skip();
       return;
     }
     orgBOrgId = orgBSetup.orgId;
-    orgACookie = await loginAsAdmin(request);
+    orgBRoomId = orgBSetup.roomId;
     const id = await getFirstRoomId(request, orgACookie);
     orgARoomId = id ?? '';
   });
@@ -381,9 +386,9 @@ test.describe('SEC-006/007: x-organization-id header is ignored', () => {
     expect(res.ok()).toBe(true);
     const body = await res.json();
     const ids = (body.rooms as Array<{ id: string }>).map((r) => r.id);
-    if (orgARoomId) {
-      expect(ids).toContain(orgARoomId);
-    }
+    // Org-A room must be present; Org-B room must not — a leak would pass the first but fail the second
+    expect(ids).toContain(orgARoomId);
+    expect(ids).not.toContain(orgBRoomId);
   });
 
   test('SEC-007: Unauthenticated request with x-organization-id header returns 401', async ({
