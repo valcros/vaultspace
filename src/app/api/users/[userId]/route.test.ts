@@ -268,10 +268,9 @@ describe('DELETE /api/users/:userId', () => {
     expect(body.error).toContain('not found');
   });
 
-  it('deletes user and redacts data per GDPR requirements', async () => {
+  it('deletes user, preserves immutable audit events, and redacts mutable data', async () => {
     const mockUserUpdate = vi.fn().mockResolvedValue({});
     const mockUserOrgUpdate = vi.fn().mockResolvedValue({});
-    const mockEventUpdateMany = vi.fn().mockResolvedValue({ count: 5 });
     const mockDocVersionUpdateMany = vi.fn().mockResolvedValue({ count: 3 });
     const mockPermissionDeleteMany = vi.fn().mockResolvedValue({ count: 2 });
     const mockRoleDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
@@ -287,7 +286,6 @@ describe('DELETE /api/users/:userId', () => {
           update: mockUserOrgUpdate,
         },
         user: { update: mockUserUpdate },
-        event: { updateMany: mockEventUpdateMany },
         documentVersion: { updateMany: mockDocVersionUpdateMany },
         permission: { deleteMany: mockPermissionDeleteMany },
         roleAssignment: { deleteMany: mockRoleDeleteMany },
@@ -321,18 +319,6 @@ describe('DELETE /api/users/:userId', () => {
     expect(mockUserOrgUpdate).toHaveBeenCalledWith({
       where: { id: 'uo-1' },
       data: { isActive: false },
-    });
-
-    // Verify events were redacted
-    expect(mockEventUpdateMany).toHaveBeenCalledWith({
-      where: {
-        organizationId: 'org-1',
-        actorId: 'user-2',
-      },
-      data: {
-        actorId: null,
-        actorEmail: 'deleted_user@redacted',
-      },
     });
 
     // Verify document versions were redacted
