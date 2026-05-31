@@ -42,6 +42,7 @@ describe('GET /api/view/[shareToken]/documents', () => {
       roomId: 'room-1',
       link: {
         slug: 'share-token',
+        isActive: true,
         scope: 'ROOM',
         scopedFolderId: null,
         scopedDocumentId: null,
@@ -99,5 +100,46 @@ describe('GET /api/view/[shareToken]/documents', () => {
 
     expect(response.status).toBe(401);
     expect(body.error).toBe('Session expired or invalid');
+  });
+
+  it('rejects existing viewer sessions whose link has been deactivated', async () => {
+    mockViewSessionFindFirst.mockResolvedValue({
+      id: 'view-session-1',
+      createdAt: new Date(),
+      isActive: true,
+      organizationId: 'org-1',
+      roomId: 'room-1',
+      link: {
+        slug: 'share-token',
+        isActive: false,
+        scope: 'ROOM',
+        scopedFolderId: null,
+        scopedDocumentId: null,
+        maxSessionMinutes: 30,
+      },
+      room: {
+        id: 'room-1',
+        name: 'Room Name',
+        allowDownloads: true,
+        enableWatermark: false,
+        watermarkTemplate: null,
+        brandColor: '#123456',
+        brandLogoUrl: null,
+      },
+      organization: {
+        name: 'Org Name',
+        logoUrl: null,
+        primaryColor: '#654321',
+      },
+    });
+
+    const request = new NextRequest('http://localhost:3000/api/view/share-token/documents');
+
+    const response = await GET(request, makeContext('share-token'));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error).toBe('Session expired or invalid');
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
   });
 });
