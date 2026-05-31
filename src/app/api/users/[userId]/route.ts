@@ -137,17 +137,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
         data: { isActive: false },
       });
 
-      // 3. Redact events - keep for audit but anonymize
-      await tx.event.updateMany({
-        where: {
-          organizationId: session.organizationId,
-          actorId: userId,
-        },
-        data: {
-          actorId: null,
-          actorEmail: 'deleted_user@redacted',
-        },
-      });
+      // 3. Preserve audit events as append-only records. The user row was redacted above.
 
       // 4. Redact document versions uploaded by user
       await tx.documentVersion.updateMany({
