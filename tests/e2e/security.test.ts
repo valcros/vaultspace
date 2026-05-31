@@ -19,8 +19,6 @@
  *   SEC-008: Revoked permission takes effect immediately
  *   SEC-009: Removed group membership revokes access
  *   SEC-015: Signed URL expiry
- *
- * Known gap:
  *   SEC-016: Signed URL and existing viewer session revocation
  *
  * These tests run against a live server and create/clean up their own test

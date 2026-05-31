@@ -52,6 +52,7 @@ describe('viewerSession guard', () => {
       isActive: true,
       link: {
         slug: 'different-token',
+        isActive: true,
         maxSessionMinutes: 30,
       },
     });
@@ -70,6 +71,7 @@ describe('viewerSession guard', () => {
       isActive: true,
       link: {
         slug: 'share-token',
+        isActive: true,
         maxSessionMinutes: 30,
       },
     });
@@ -78,5 +80,20 @@ describe('viewerSession guard', () => {
     await expect(response?.json()).resolves.toEqual({ error: 'Session time limit exceeded' });
 
     vi.useRealTimers();
+  });
+
+  it('rejects sessions whose link has been deactivated', async () => {
+    const response = getViewerSessionGuardResponse('share-token', {
+      createdAt: new Date(),
+      isActive: true,
+      link: {
+        slug: 'share-token',
+        isActive: false,
+        maxSessionMinutes: 30,
+      },
+    });
+
+    expect(response?.status).toBe(401);
+    await expect(response?.json()).resolves.toEqual({ error: 'Session expired or invalid' });
   });
 });
