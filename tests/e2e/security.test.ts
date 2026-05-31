@@ -13,14 +13,15 @@
  *
  * Covered in tests/integration/rls.test.ts (DB-level):
  *   SEC-005: RLS prevents cross-tenant at DB level
+ *   SEC-013, SEC-014: Event audit immutability
  *
- * Require document-level access + file upload (out of scope for E2E batch):
+ * Covered by focused unit tests:
  *   SEC-008: Revoked permission takes effect immediately
  *   SEC-009: Removed group membership revokes access
+ *   SEC-015: Signed URL expiry
  *
- * Require time manipulation (out of scope for E2E):
- *   SEC-013, SEC-014: Event audit immutability
- *   SEC-015, SEC-016: Signed URL expiry / revocation
+ * Known gap:
+ *   SEC-016: Signed URL and existing viewer session revocation
  *
  * These tests run against a live server and create/clean up their own test
  * data so they are safe to run against any seeded environment.
