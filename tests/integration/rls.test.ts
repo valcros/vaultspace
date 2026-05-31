@@ -31,17 +31,26 @@ let org2Id: string;
 let room1Id: string;
 let room2Id: string;
 let user1Id: string;
+let org1Slug: string;
+let org2Slug: string;
+let room1Slug: string;
+let room2Slug: string;
 
 describe('RLS Enforcement', () => {
   beforeAll(async () => {
     await rawPrisma.$connect();
     await db.$connect();
+    const runId = Date.now();
+    org1Slug = `rls-org1-${runId}`;
+    org2Slug = `rls-org2-${runId}`;
+    room1Slug = `rls-room1-${runId}`;
+    room2Slug = `rls-room2-${runId}`;
 
     // Create two test organizations
     const org1 = await rawPrisma.organization.create({
       data: {
         name: 'RLS Test Org 1',
-        slug: `rls-org1-${Date.now()}`,
+        slug: org1Slug,
         isActive: true,
       },
     });
@@ -50,7 +59,7 @@ describe('RLS Enforcement', () => {
     const org2 = await rawPrisma.organization.create({
       data: {
         name: 'RLS Test Org 2',
-        slug: `rls-org2-${Date.now()}`,
+        slug: org2Slug,
         isActive: true,
       },
     });
@@ -61,7 +70,7 @@ describe('RLS Enforcement', () => {
       data: {
         organizationId: org1Id,
         name: 'RLS Test Room 1',
-        slug: `rls-room1-${Date.now()}`,
+        slug: room1Slug,
         status: 'ACTIVE',
       },
     });
@@ -71,7 +80,7 @@ describe('RLS Enforcement', () => {
       data: {
         organizationId: org2Id,
         name: 'RLS Test Room 2',
-        slug: `rls-room2-${Date.now()}`,
+        slug: room2Slug,
         status: 'ACTIVE',
       },
     });
@@ -123,24 +132,12 @@ describe('RLS Enforcement', () => {
   });
 
   afterAll(async () => {
-    // Cleanup test data (order matters due to foreign keys)
-    await rawPrisma.event.deleteMany({
-      where: { organizationId: { in: [org1Id, org2Id] } },
-    });
+    // Cleanup mutable test data only. Immutable events intentionally remain.
     await rawPrisma.document.deleteMany({
-      where: { organizationId: { in: [org1Id, org2Id] } },
-    });
-    await rawPrisma.room.deleteMany({
       where: { organizationId: { in: [org1Id, org2Id] } },
     });
     await rawPrisma.userOrganization.deleteMany({
       where: { organizationId: { in: [org1Id, org2Id] } },
-    });
-    await rawPrisma.user.deleteMany({
-      where: { id: user1Id },
-    });
-    await rawPrisma.organization.deleteMany({
-      where: { id: { in: [org1Id, org2Id] } },
     });
 
     await rawPrisma.$disconnect();
@@ -176,7 +173,7 @@ describe('RLS Enforcement', () => {
       const roomsInOrg1Context = await withOrgContext(org1Id, async (tx) => {
         return tx.room.findMany({
           where: {
-            slug: { startsWith: 'rls-room' },
+            slug: room1Slug,
           },
         });
       });
@@ -273,7 +270,7 @@ describe('RLS Enforcement', () => {
       // an organization before we can establish context
       const org = await db.organization.findFirst({
         where: {
-          slug: { startsWith: 'rls-org1-' },
+          slug: org1Slug,
           isActive: true,
         },
         select: {
@@ -319,9 +316,6 @@ describe('RLS Enforcement', () => {
 
       expect(event.id).toBeDefined();
       expect(event.organizationId).toBe(org1Id);
-
-      // Cleanup
-      await rawPrisma.event.delete({ where: { id: event.id } });
     });
 
     it('should scope event queries to organization', async () => {
@@ -355,11 +349,6 @@ describe('RLS Enforcement', () => {
 
       expect(org1Events.some((e) => e.description === 'Org1 event')).toBe(true);
       expect(org1Events.some((e) => e.description === 'Org2 event')).toBe(false);
-
-      // Cleanup
-      await rawPrisma.event.deleteMany({
-        where: { id: { in: [event1.id, event2.id] } },
-      });
     });
   });
 
@@ -426,9 +415,6 @@ describe('RLS Enforcement', () => {
 
       expect(event).toBeDefined();
       expect(event?.organizationId).toBe(org1Id);
-
-      // Cleanup
-      await rawPrisma.event.delete({ where: { id: eventId } });
     });
 
     it('should use provided transaction client for event writes', async () => {
@@ -458,9 +444,6 @@ describe('RLS Enforcement', () => {
       });
 
       expect(event?.description).toBe('EventBus with tx test');
-
-      // Cleanup
-      await rawPrisma.event.delete({ where: { id: eventId } });
     });
   });
 
