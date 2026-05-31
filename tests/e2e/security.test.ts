@@ -454,6 +454,7 @@ test.describe('SEC-003/011: Link view session is scoped to its org — cross-org
   test('SEC-003: Org-A view session cannot access Org-B room document (returns 404)', async ({
     request,
   }) => {
+    // POST to link → get sessionToken; view route reads it from cookie viewer_${slug}
     const sessionRes = await request.post(`/api/links/${orgALinkSlug}`, {
       data: { email: 'sec003-viewer@test.local' },
     });
@@ -468,14 +469,18 @@ test.describe('SEC-003/011: Link view session is scoped to its org — cross-org
       return;
     }
 
-    // Use Org-B's roomId as the documentId — it exists in Org-B but not in Org-A's session scope
-    const docRes = await request.get(`/api/view/${sessionToken}/documents/${orgBRoomId}`);
+    // URL uses the link slug; authentication is via cookie viewer_${slug}
+    // orgBRoomId is a UUID in Org-B's namespace — not a document in Org-A's session scope
+    const docRes = await request.get(`/api/view/${orgALinkSlug}/documents/${orgBRoomId}`, {
+      headers: { Cookie: `viewer_${orgALinkSlug}=${sessionToken}` },
+    });
     expect(docRes.status()).toBe(404);
   });
 
   test('SEC-011: Org-B view session cannot access Org-A room document (returns 404)', async ({
     request,
   }) => {
+    // POST to link → get sessionToken; view route reads it from cookie viewer_${slug}
     const sessionRes = await request.post(`/api/links/${orgBLinkSlug}`, {
       data: { email: 'sec011-viewer@test.local' },
     });
@@ -490,8 +495,11 @@ test.describe('SEC-003/011: Link view session is scoped to its org — cross-org
       return;
     }
 
-    // Use Org-A's roomId as the documentId — it exists in Org-A but not in Org-B's session scope
-    const docRes = await request.get(`/api/view/${sessionToken}/documents/${orgARoomId}`);
+    // URL uses the link slug; authentication is via cookie viewer_${slug}
+    // orgARoomId is a UUID in Org-A's namespace — not a document in Org-B's session scope
+    const docRes = await request.get(`/api/view/${orgBLinkSlug}/documents/${orgARoomId}`, {
+      headers: { Cookie: `viewer_${orgBLinkSlug}=${sessionToken}` },
+    });
     expect(docRes.status()).toBe(404);
   });
 });
