@@ -178,6 +178,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         },
       });
 
+      if (isActive === false) {
+        await tx.viewSession.updateMany({
+          where: {
+            linkId,
+            organizationId: session.organizationId,
+            isActive: true,
+          },
+          data: { isActive: false },
+        });
+      }
+
       return { link: updatedLink };
     });
 
@@ -236,6 +247,15 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       // Deactivate rather than hard delete
       await tx.link.update({
         where: { id: linkId },
+        data: { isActive: false },
+      });
+
+      await tx.viewSession.updateMany({
+        where: {
+          linkId,
+          organizationId: session.organizationId,
+          isActive: true,
+        },
         data: { isActive: false },
       });
 

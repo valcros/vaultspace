@@ -12,6 +12,7 @@ export const viewerSessionBaseSelect = {
   link: {
     select: {
       slug: true,
+      isActive: true,
       scope: true,
       scopedFolderId: true,
       scopedDocumentId: true,
@@ -25,6 +26,7 @@ type ViewerSessionGuardable = {
   isActive: boolean;
   link: {
     slug: string | null;
+    isActive: boolean;
     maxSessionMinutes: number | null;
   } | null;
 };
@@ -62,6 +64,10 @@ export function getViewerSessionGuardResponse(
   session: ViewerSessionGuardable | null
 ): NextResponse | null {
   if (!session || !session.isActive || !session.link || session.link.slug !== shareToken) {
+    return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
+  }
+
+  if (!session.link.isActive) {
     return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
   }
 
