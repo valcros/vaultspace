@@ -85,7 +85,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
  * DELETE /api/users/:userId
  * GDPR-compliant user deletion
  * - Soft deletes user
- * - Redacts events to preserve audit trail
+ * - Preserves immutable audit events
  * - Transfers room ownership if needed
  */
 export async function DELETE(_request: NextRequest, context: RouteContext) {
