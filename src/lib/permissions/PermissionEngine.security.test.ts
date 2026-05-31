@@ -141,6 +141,115 @@ describe('PermissionEngine Security Tests', () => {
     });
   });
 
+  // SEC-008: Permission revocation (isActive: false)
+  describe('SEC-008: Revoked permission is denied immediately', () => {
+    const actor: Actor = { userId: 'user-1', role: 'VIEWER' };
+    const resource: Resource = { type: 'ROOM', organizationId: 'org-1', roomId: 'room-1' };
+
+    const viewerMembership = {
+      role: 'VIEWER',
+      userId: 'user-1',
+      organizationId: 'org-1',
+    };
+
+    it('should allow when permission is active (isActive: true)', async () => {
+      mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
+      mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+      mockedDb.permission.findFirst.mockResolvedValue({
+        permissionLevel: 'VIEW',
+        userId: 'user-1',
+        granteeType: 'USER',
+        isActive: true,
+      } as never);
+
+      const result = await engine.evaluate(actor, 'view', resource);
+
+      expect(result.allowed).toBe(true);
+    });
+
+    it('should deny when permission is revoked (isActive: false filters it out)', async () => {
+      mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
+      mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+      // isActive: false records are excluded by the query; mock returns null to simulate that
+      mockedDb.permission.findFirst.mockResolvedValue(null);
+      mockedDb.link.findUnique.mockResolvedValue(null);
+
+      const result = await engine.evaluate(actor, 'view', resource);
+
+      expect(result.allowed).toBe(false);
+    });
+
+    it('should query with isActive: true to enforce revocation', async () => {
+      mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
+      mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+      mockedDb.permission.findFirst.mockResolvedValue(null);
+
+      await engine.evaluate(actor, 'view', resource);
+
+      expect(mockedDb.permission.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ isActive: true }),
+        })
+      );
+    });
+  });
+
+  // SEC-009: Group membership removal revokes access
+  describe('SEC-009: Group permission removal revokes access', () => {
+    const resource: Resource = { type: 'ROOM', organizationId: 'org-1', roomId: 'room-1' };
+
+    const viewerMembership = {
+      role: 'VIEWER',
+      userId: 'user-1',
+      organizationId: 'org-1',
+    };
+
+    it('should allow when user is in a group with permission', async () => {
+      const actorWithGroup: Actor = { userId: 'user-1', groupIds: ['group-1'] };
+
+      mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
+      mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+      // First call: explicit user permission (null); second call: group permission (granted)
+      mockedDb.permission.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        permissionLevel: 'VIEW',
+        groupId: 'group-1',
+        granteeType: 'GROUP',
+        isActive: true,
+      } as never);
+
+      const result = await engine.evaluate(actorWithGroup, 'view', resource);
+
+      expect(result.allowed).toBe(true);
+    });
+
+    it('should deny when user is removed from the group (no groupIds)', async () => {
+      const actorWithoutGroup: Actor = { userId: 'user-1' };
+
+      mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
+      mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+      mockedDb.permission.findFirst.mockResolvedValue(null);
+      mockedDb.link.findUnique.mockResolvedValue(null);
+
+      const result = await engine.evaluate(actorWithoutGroup, 'view', resource);
+
+      expect(result.allowed).toBe(false);
+    });
+
+    it('should deny when user is in group but group permission was revoked', async () => {
+      const actorWithGroup: Actor = { userId: 'user-1', groupIds: ['group-1'] };
+
+      mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
+      mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+      // Both explicit user and group permission queries return null (revoked)
+      mockedDb.permission.findFirst.mockResolvedValue(null);
+      mockedDb.link.findUnique.mockResolvedValue(null);
+
+      const result = await engine.evaluate(actorWithGroup, 'view', resource);
+
+      expect(result.allowed).toBe(false);
+    });
+  });
+
   // SEC-013: Event immutability
   describe('SEC-013: Audit events immutable', () => {
     it('should not expose update/delete on EventBus', async () => {
