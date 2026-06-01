@@ -24,6 +24,8 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:standalone": "DEPLOYMENT_MODE=standalone vitest run --config vitest.integration.config.ts",
+    "test:integration:rls": "ENABLE_RLS=true DEPLOYMENT_MODE=standalone vitest run --config vitest.integration.config.ts tests/integration/rls.test.ts",
+    "db:setup:rls-test": "tsx scripts/setup-rls-test-db.ts",
     "test:e2e": "playwright test",
     "mcp:playwright": "playwright-mcp --config ./playwright.mcp.config.json",
     "db:generate": "prisma generate",

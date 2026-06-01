@@ -18,7 +18,13 @@ guardIntegrationTests();
 const mode = getDeploymentMode();
 console.log(`[Integration Setup] Running in ${mode} mode`);
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env['DATABASE_URL_ADMIN'] || process.env['DATABASE_URL'],
+    },
+  },
+});
 
 // Tables to clean between tests (in order to respect FK constraints)
 const TABLES_TO_CLEAN = [

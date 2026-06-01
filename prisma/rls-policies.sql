@@ -32,6 +32,8 @@ ALTER TABLE preview_assets ENABLE ROW LEVEL SECURITY;
 
 -- Access control
 ALTER TABLE permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE group_memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE view_sessions ENABLE ROW LEVEL SECURITY;
 
@@ -194,6 +196,26 @@ CREATE POLICY permission_org_isolation ON permissions
     "organizationId" = current_setting('app.current_org_id', true)
   );
 
+-- Groups policy
+DROP POLICY IF EXISTS group_org_isolation ON groups;
+CREATE POLICY group_org_isolation ON groups
+  FOR ALL
+  USING (
+    "organizationId" = current_setting('app.current_org_id', true)
+  );
+
+-- Group Memberships policy
+DROP POLICY IF EXISTS group_membership_org_isolation ON group_memberships;
+CREATE POLICY group_membership_org_isolation ON group_memberships
+  FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM groups g
+      WHERE g.id = group_memberships."groupId"
+      AND g."organizationId" = current_setting('app.current_org_id', true)
+    )
+  );
+
 -- Links policy
 DROP POLICY IF EXISTS link_org_isolation ON links;
 CREATE POLICY link_org_isolation ON links
@@ -277,6 +299,8 @@ ALTER TABLE document_versions FORCE ROW LEVEL SECURITY;
 ALTER TABLE file_blobs FORCE ROW LEVEL SECURITY;
 ALTER TABLE preview_assets FORCE ROW LEVEL SECURITY;
 ALTER TABLE permissions FORCE ROW LEVEL SECURITY;
+ALTER TABLE groups FORCE ROW LEVEL SECURITY;
+ALTER TABLE group_memberships FORCE ROW LEVEL SECURITY;
 ALTER TABLE links FORCE ROW LEVEL SECURITY;
 ALTER TABLE view_sessions FORCE ROW LEVEL SECURITY;
 ALTER TABLE events FORCE ROW LEVEL SECURITY;
