@@ -241,6 +241,10 @@ docker compose run --rm --entrypoint="" app npx prisma migrate deploy
 
 ## Backup and Restore
 
+VaultSpace audit events are immutable at the database layer. Restore operations
+must treat any existing audit events as evidence that the target database is not
+empty.
+
 ### PostgreSQL
 
 Back up before every upgrade and on a regular schedule.
@@ -260,6 +264,30 @@ Restore from a dump:
 gunzip -c backups/vaultspace-20260101.sql.gz | \
   docker exec -i vaultspace-postgres psql -U vaultspace vaultspace
 ```
+
+For application-level JSONL backups created with `npm run db:backup`, restore
+into an empty or explicitly disposable database:
+
+```bash
+npm run db:restore -- backups/2026-01-01T00-00-00Z
+```
+
+The restore script fails before clearing data if the target database already
+contains audit events. This protects SEC-013/014 event immutability and prevents
+operators from silently deleting audit history from a non-disposable database.
+
+Use the destructive reset path only for a disposable target where clearing
+existing immutable audit events is intentional:
+
+```bash
+npm run db:restore -- backups/2026-01-01T00-00-00Z \
+  --allow-destructive-reset \
+  --acknowledge-destructive-reset DELETE_IMMUTABLE_AUDIT_EVENTS
+```
+
+`--force` only skips the general restore confirmation prompt. It does not imply
+permission to clear immutable audit events. The restore script does not disable,
+drop, or recreate the event immutability trigger.
 
 ### File Storage
 

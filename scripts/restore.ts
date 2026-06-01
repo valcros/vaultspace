@@ -8,17 +8,30 @@
  *   npx ts-node scripts/restore.ts <backup-dir>
  *
  * Options:
- *   --dry-run    Show what would be restored without making changes
- *   --force      Skip confirmation prompt
+ *   --dry-run                          Show what would be restored without making changes
+ *   --force                            Skip the general restore confirmation prompt
+ *   --allow-destructive-reset          Permit clearing immutable audit events in a disposable DB
+ *   --acknowledge-destructive-reset    Required value: DELETE_IMMUTABLE_AUDIT_EVENTS
  */
 
 import { readFileSync, existsSync, readdirSync, statSync, mkdirSync, copyFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { createInterface } from 'readline';
+import { pathToFileURL } from 'url';
 
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+export const DESTRUCTIVE_RESET_ACKNOWLEDGEMENT = 'DELETE_IMMUTABLE_AUDIT_EVENTS';
+
+const restoreUsage =
+  'Usage: restore.ts <backup-dir> [--dry-run] [--force] [--allow-destructive-reset] [--acknowledge-destructive-reset DELETE_IMMUTABLE_AUDIT_EVENTS]';
+
+export class RestoreUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RestoreUsageError';
+  }
+}
 
 interface BackupManifest {
   version: string;
@@ -33,30 +46,138 @@ interface BackupManifest {
   };
 }
 
+export interface RestoreOptions {
+  backupDir: string;
+  dryRun: boolean;
+  force: boolean;
+  allowDestructiveReset: boolean;
+  destructiveResetAcknowledgement?: string;
+}
+
+export type EventResetMode = 'delete-many' | 'truncate' | 'none';
+
+export interface EventResetPlan {
+  canProceed: boolean;
+  mode: EventResetMode;
+  message?: string;
+  warnings: string[];
+}
+
 // Parse command line arguments
-function parseArgs(): { backupDir: string; dryRun: boolean; force: boolean } {
-  const args = process.argv.slice(2);
+export function parseArgs(args = process.argv.slice(2)): RestoreOptions {
   let backupDir = '';
   let dryRun = false;
   let force = false;
+  let allowDestructiveReset = false;
+  let destructiveResetAcknowledgement: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (!arg) {
+      continue;
+    }
     if (arg === '--dry-run') {
       dryRun = true;
     } else if (arg === '--force') {
       force = true;
+    } else if (arg === '--allow-destructive-reset') {
+      allowDestructiveReset = true;
+    } else if (arg === '--acknowledge-destructive-reset') {
+      const value = args[i + 1];
+      if (!value) {
+        throw new RestoreUsageError(
+          `--acknowledge-destructive-reset requires ${DESTRUCTIVE_RESET_ACKNOWLEDGEMENT}`
+        );
+      }
+      destructiveResetAcknowledgement = value;
+      i++;
+    } else if (arg.startsWith('--acknowledge-destructive-reset=')) {
+      destructiveResetAcknowledgement = arg.slice('--acknowledge-destructive-reset='.length);
+    } else if (arg.startsWith('--')) {
+      throw new RestoreUsageError(`Unknown option: ${arg}`);
     } else if (!backupDir && arg) {
       backupDir = arg;
+    } else {
+      throw new RestoreUsageError(`Unexpected argument: ${arg}`);
     }
   }
 
   if (!backupDir) {
-    console.error('Usage: restore.ts <backup-dir> [--dry-run] [--force]');
-    process.exit(1);
+    throw new RestoreUsageError(restoreUsage);
   }
 
-  return { backupDir, dryRun, force };
+  return {
+    backupDir,
+    dryRun,
+    force,
+    allowDestructiveReset,
+    ...(destructiveResetAcknowledgement !== undefined && { destructiveResetAcknowledgement }),
+  };
+}
+
+export function getEventResetPlan(
+  existingEventCount: number,
+  options: Pick<
+    RestoreOptions,
+    'dryRun' | 'allowDestructiveReset' | 'destructiveResetAcknowledgement'
+  >
+): EventResetPlan {
+  if (!Number.isInteger(existingEventCount) || existingEventCount < 0) {
+    throw new Error(`Invalid existing audit event count: ${existingEventCount}`);
+  }
+
+  if (existingEventCount === 0) {
+    return {
+      canProceed: true,
+      mode: options.dryRun ? 'none' : 'delete-many',
+      warnings: [],
+    };
+  }
+
+  const baseMessage = [
+    `Restore target already contains ${existingEventCount} immutable audit event(s).`,
+    'Audit events are append-only under SEC-013/014 and are not silently deleted by restore.',
+    'Restore into an empty or explicitly disposable database by default.',
+  ].join(' ');
+
+  if (options.dryRun) {
+    return {
+      canProceed: true,
+      mode: 'none',
+      warnings: [
+        `${baseMessage} A live restore without --allow-destructive-reset would stop before clearing data.`,
+      ],
+    };
+  }
+
+  if (!options.allowDestructiveReset) {
+    return {
+      canProceed: false,
+      mode: 'none',
+      message: `${baseMessage} Re-run only against a disposable target with --allow-destructive-reset and explicit acknowledgement if clearing those events is intended.`,
+      warnings: [],
+    };
+  }
+
+  if (options.destructiveResetAcknowledgement !== DESTRUCTIVE_RESET_ACKNOWLEDGEMENT) {
+    return {
+      canProceed: false,
+      mode: 'none',
+      message: [
+        `${baseMessage} --allow-destructive-reset was provided, but the required acknowledgement is missing.`,
+        `Add --acknowledge-destructive-reset ${DESTRUCTIVE_RESET_ACKNOWLEDGEMENT} or enter that exact phrase at the prompt.`,
+      ].join(' '),
+      warnings: [],
+    };
+  }
+
+  return {
+    canProceed: true,
+    mode: 'truncate',
+    warnings: [
+      `${baseMessage} Explicit destructive disposable reset was acknowledged; restore will clear existing audit events with TRUNCATE without disabling or dropping the immutability trigger.`,
+    ],
+  };
 }
 
 // Read JSONL file and return parsed records
@@ -125,8 +246,63 @@ async function confirm(message: string): Promise<boolean> {
   });
 }
 
+async function promptForExactAcknowledgement(message: string, expected: string): Promise<boolean> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`${message}\nType ${expected} to continue: `, (answer) => {
+      rl.close();
+      resolve(answer === expected);
+    });
+  });
+}
+
+async function buildEventResetPlan(
+  prisma: PrismaClient,
+  options: RestoreOptions
+): Promise<EventResetPlan> {
+  const existingEventCount = await prisma.event.count();
+  let plan = getEventResetPlan(existingEventCount, options);
+
+  if (
+    !plan.canProceed &&
+    options.allowDestructiveReset &&
+    !options.force &&
+    options.destructiveResetAcknowledgement !== DESTRUCTIVE_RESET_ACKNOWLEDGEMENT
+  ) {
+    const acknowledged = await promptForExactAcknowledgement(
+      'WARNING: This disposable restore path will clear existing immutable audit events.',
+      DESTRUCTIVE_RESET_ACKNOWLEDGEMENT
+    );
+
+    if (acknowledged) {
+      plan = getEventResetPlan(existingEventCount, {
+        ...options,
+        destructiveResetAcknowledgement: DESTRUCTIVE_RESET_ACKNOWLEDGEMENT,
+      });
+    }
+  }
+
+  return plan;
+}
+
 async function main() {
-  const { backupDir, dryRun, force } = parseArgs();
+  let options: RestoreOptions;
+  try {
+    options = parseArgs();
+  } catch (error) {
+    if (error instanceof RestoreUsageError) {
+      console.error(error.message);
+      process.exit(1);
+    }
+    throw error;
+  }
+
+  const { backupDir, dryRun, force } = options;
+  const prisma = new PrismaClient();
   const databaseDir = join(backupDir, 'database');
   const storageDir = join(backupDir, 'storage');
   const manifestPath = join(backupDir, 'manifest.json');
@@ -156,6 +332,16 @@ async function main() {
     console.log('[DRY RUN] No changes will be made.\n');
   }
 
+  const eventResetPlan = await buildEventResetPlan(prisma, options);
+  for (const warning of eventResetPlan.warnings) {
+    console.warn(`WARNING: ${warning}`);
+  }
+  if (!eventResetPlan.canProceed) {
+    console.error(`Restore blocked: ${eventResetPlan.message}`);
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+
   // Confirm restore
   if (!force && !dryRun) {
     const confirmed = await confirm('WARNING: This will overwrite existing data. Continue?');
@@ -173,7 +359,12 @@ async function main() {
   if (!dryRun) {
     // Clear existing data in reverse dependency order
     console.log('  - Clearing existing data...');
-    await prisma.event.deleteMany();
+    if (eventResetPlan.mode === 'truncate') {
+      console.log('  - Clearing immutable audit events with explicit destructive reset...');
+      await prisma.$executeRawUnsafe('TRUNCATE TABLE "events"');
+    } else {
+      await prisma.event.deleteMany();
+    }
     await prisma.permission.deleteMany();
     await prisma.link.deleteMany();
     await prisma.groupMembership.deleteMany();
@@ -322,7 +513,13 @@ async function main() {
   await prisma.$disconnect();
 }
 
-main().catch((error) => {
-  console.error('Restore failed:', error);
-  process.exit(1);
-});
+const isDirectRun = process.argv[1]
+  ? import.meta.url === pathToFileURL(process.argv[1]).href
+  : false;
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error('Restore failed:', error);
+    process.exit(1);
+  });
+}
