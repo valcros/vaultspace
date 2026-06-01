@@ -1,8 +1,8 @@
 /**
  * Row-Level Security (RLS) Integration Tests
  *
- * AZURE-ONLY: These tests run against Azure PostgreSQL.
- * Local execution is not permitted.
+ * These tests run against PostgreSQL with real RLS policies enabled.
+ * CI uses a disposable standalone database with a NOBYPASSRLS app role.
  *
  * Verifies that RLS enforcement works correctly when ENABLE_RLS=true.
  * These tests ensure proper tenant isolation at the database level.
@@ -13,17 +13,26 @@
  * - PRE-RLS bootstrap patterns work correctly
  * - Direct queries without context are blocked
  *
- * Run with: DATABASE_URL=<azure-postgres-url> npm run test:integration
+ * Run with:
+ *   DATABASE_URL_ADMIN=<admin-url> \
+ *   DATABASE_URL=<vaultspace_app-url> \
+ *   ENABLE_RLS=true \
+ *   npm run test:integration:rls
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { PrismaClient, UserRole } from '@prisma/client';
 import { withOrgContext, db } from '@/lib/db';
 import { getPermissionEngine } from '@/lib/permissions';
 import { createEventBus } from '@/lib/events/EventBus';
 
-// Create a separate Prisma client for raw SQL operations
-const rawPrisma = new PrismaClient();
+const rawPrisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env['DATABASE_URL_ADMIN'] || process.env['DATABASE_URL'],
+    },
+  },
+});
 
 // Test data
 let org1Id: string;
@@ -40,6 +49,9 @@ describe('RLS Enforcement', () => {
   beforeAll(async () => {
     await rawPrisma.$connect();
     await db.$connect();
+  });
+
+  beforeEach(async () => {
     const runId = Date.now();
     org1Slug = `rls-org1-${runId}`;
     org2Slug = `rls-org2-${runId}`;
@@ -132,16 +144,79 @@ describe('RLS Enforcement', () => {
   });
 
   afterAll(async () => {
-    // Cleanup mutable test data only. Immutable events intentionally remain.
-    await rawPrisma.document.deleteMany({
-      where: { organizationId: { in: [org1Id, org2Id] } },
-    });
-    await rawPrisma.userOrganization.deleteMany({
-      where: { organizationId: { in: [org1Id, org2Id] } },
-    });
-
     await rawPrisma.$disconnect();
     await db.$disconnect();
+  });
+
+  describe('SEC-005: RLS database posture', () => {
+    it('runs as a non-bypass database role with forced RLS on tenant tables', async () => {
+      const [role] = await db.$queryRaw<Array<{ current_user: string; bypasses_rls: boolean }>>`
+        SELECT current_user, rolbypassrls AS bypasses_rls
+        FROM pg_roles
+        WHERE rolname = current_user
+      `;
+
+      expect(role?.current_user).toBe('vaultspace_app');
+      expect(role?.bypasses_rls).toBe(false);
+
+      const protectedTables = await db.$queryRaw<
+        Array<{ table_name: string; rls_enabled: boolean; rls_forced: boolean }>
+      >`
+        SELECT c.relname AS table_name,
+               c.relrowsecurity AS rls_enabled,
+               c.relforcerowsecurity AS rls_forced
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname IN (
+            'rooms',
+            'documents',
+            'events',
+            'groups',
+            'group_memberships',
+            'links',
+            'view_sessions'
+          )
+        ORDER BY c.relname
+      `;
+
+      expect(protectedTables).toHaveLength(7);
+      expect(protectedTables.every((table) => table.rls_enabled && table.rls_forced)).toBe(true);
+    });
+
+    it('blocks direct cross-tenant SQL without relying on application filters', async () => {
+      const roomsInOrg1Context = await withOrgContext(org1Id, async (tx) => {
+        return tx.$queryRaw<Array<{ id: string; organizationId: string }>>`
+          SELECT id, "organizationId"
+          FROM rooms
+          ORDER BY name
+        `;
+      });
+
+      expect(roomsInOrg1Context).toHaveLength(1);
+      expect(roomsInOrg1Context[0]?.id).toBe(room1Id);
+      expect(roomsInOrg1Context[0]?.organizationId).toBe(org1Id);
+
+      const forbiddenDocument = await withOrgContext(org1Id, async (tx) => {
+        return tx.$queryRaw<Array<{ id: string; organizationId: string }>>`
+          SELECT id, "organizationId"
+          FROM documents
+          WHERE "roomId" = ${room2Id}
+        `;
+      });
+
+      expect(forbiddenDocument).toHaveLength(0);
+    });
+
+    it('hides tenant rows when no org context is set', async () => {
+      const roomsWithoutContext = await db.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM rooms
+        WHERE id IN (${room1Id}, ${room2Id})
+      `;
+
+      expect(roomsWithoutContext).toHaveLength(0);
+    });
   });
 
   describe('withOrgContext', () => {
@@ -178,17 +253,8 @@ describe('RLS Enforcement', () => {
         });
       });
 
-      // Without RLS, this might return both rooms
-      // With RLS, it should only return org1's room
-      const rlsEnabled = process.env['ENABLE_RLS'] === 'true';
-      if (rlsEnabled) {
-        expect(roomsInOrg1Context).toHaveLength(1);
-        expect(roomsInOrg1Context[0]?.organizationId).toBe(org1Id);
-      } else {
-        // When RLS is disabled, Prisma middleware should still filter
-        // but the test acknowledges both behaviors are valid in dev mode
-        expect(roomsInOrg1Context.length).toBeGreaterThanOrEqual(1);
-      }
+      expect(roomsInOrg1Context).toHaveLength(1);
+      expect(roomsInOrg1Context[0]?.organizationId).toBe(org1Id);
     });
 
     it('should properly scope document queries to organization', async () => {
@@ -241,11 +307,7 @@ describe('RLS Enforcement', () => {
         });
       });
 
-      // Should not find org2's room when in org1's context
-      const rlsEnabled = process.env['ENABLE_RLS'] === 'true';
-      if (rlsEnabled) {
-        expect(crossTenantRoom).toBeNull();
-      }
+      expect(crossTenantRoom).toBeNull();
     });
 
     it('should not allow org2 to access org1 documents', async () => {
@@ -256,11 +318,7 @@ describe('RLS Enforcement', () => {
         });
       });
 
-      // Should not find org1's documents when in org2's context
-      const rlsEnabled = process.env['ENABLE_RLS'] === 'true';
-      if (rlsEnabled) {
-        expect(crossTenantDocs).toHaveLength(0);
-      }
+      expect(crossTenantDocs).toHaveLength(0);
     });
   });
 
@@ -268,19 +326,24 @@ describe('RLS Enforcement', () => {
     it('should allow organization lookup by slug without context', async () => {
       // This simulates the bootstrap pattern where we need to resolve
       // an organization before we can establish context
-      const org = await db.organization.findFirst({
-        where: {
-          slug: org1Slug,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          slug: true,
-        },
-      });
+      const bootstrapPrisma = new PrismaClient();
+      try {
+        const org = await bootstrapPrisma.organization.findFirst({
+          where: {
+            slug: org1Slug,
+            isActive: true,
+          },
+          select: {
+            id: true,
+            slug: true,
+          },
+        });
 
-      expect(org).toBeDefined();
-      expect(org?.id).toBe(org1Id);
+        expect(org).not.toBeNull();
+        expect(org?.id).toBe(org1Id);
+      } finally {
+        await bootstrapPrisma.$disconnect();
+      }
     });
 
     it('should allow session lookup by token (non-RLS table)', async () => {
@@ -463,11 +526,7 @@ describe('RLS Enforcement', () => {
       // All returned rooms should belong to org1
       const allBelongToOrg1 = rooms.every((r) => r.organizationId === org1Id);
 
-      // With RLS enabled, only org1 rooms should be returned
-      const rlsEnabled = process.env['ENABLE_RLS'] === 'true';
-      if (rlsEnabled) {
-        expect(allBelongToOrg1).toBe(true);
-      }
+      expect(allBelongToOrg1).toBe(true);
     });
 
     it('should verify GroupService patterns work with RLS', async () => {
@@ -499,10 +558,7 @@ describe('RLS Enforcement', () => {
         });
       });
 
-      const rlsEnabled = process.env['ENABLE_RLS'] === 'true';
-      if (rlsEnabled) {
-        expect(crossTenantGroup).toBeNull();
-      }
+      expect(crossTenantGroup).toBeNull();
 
       // Cleanup
       await rawPrisma.group.delete({ where: { id: group.id } });
