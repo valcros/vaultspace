@@ -21,6 +21,8 @@ const EXPECTED_RLS_TABLES = [
   'file_blobs',
   'preview_assets',
   'permissions',
+  'groups',
+  'group_memberships',
   'links',
   'view_sessions',
   'events',
