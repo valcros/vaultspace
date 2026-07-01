@@ -14,7 +14,6 @@ import { PrismaClient, Prisma } from '@prisma/client';
 
 declare global {
   // Allow global `var` declarations for singleton pattern
-  // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
 
@@ -29,7 +28,6 @@ if (process.env['NODE_ENV'] !== 'production') {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var prismaBootstrap: PrismaClient | undefined;
 }
 
@@ -38,9 +36,10 @@ declare global {
  *
  * Use this ONLY for the small set of pre-session operations that legitimately
  * need to read or write across organizations: login user lookup, registration
- * (creating the very first user/org/UserOrganization triple), and password
- * reset token lookup. Every other code path must use the regular `db` client
- * with `withOrgContext(orgId, …)` so RLS enforces tenant isolation.
+ * (creating the very first user/org/UserOrganization triple), password reset
+ * token lookup, public share-link bootstrap lookup, and cookie-backed public
+ * viewer-session lookup. Every other code path must use the regular `db`
+ * client with `withOrgContext(orgId, …)` so RLS enforces tenant isolation.
  *
  * Falls back to DATABASE_URL when DATABASE_URL_ADMIN is unset (e.g. local
  * dev where a single role does everything).

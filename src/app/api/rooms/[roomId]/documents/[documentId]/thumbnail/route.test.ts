@@ -148,8 +148,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
       expect.objectContaining({
         documentId: 'doc-1',
         versionId: 'ver-1',
-      }),
-      expect.any(Object)
+      })
     );
 
     // Restore

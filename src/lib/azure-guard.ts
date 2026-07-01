@@ -156,10 +156,17 @@ export function validateConfig(): { valid: boolean; errors: string[]; warnings: 
       errors.push('DATABASE_URL must point to Azure PostgreSQL (.database.azure.com)');
     }
 
-    // Check REDIS_URL points to Azure Cache for Redis
+    // Check REDIS_URL points to an Azure Redis endpoint. Azure Cache for Redis uses
+    // .redis.cache.windows.net; Azure Managed Redis uses .redis.azure.net.
     const redisUrl = process.env['REDIS_URL'];
-    if (redisUrl && !redisUrl.includes('.redis.cache.windows.net')) {
-      errors.push('REDIS_URL must point to Azure Cache for Redis (.redis.cache.windows.net)');
+    if (
+      redisUrl &&
+      !redisUrl.includes('.redis.cache.windows.net') &&
+      !redisUrl.includes('.redis.azure.net')
+    ) {
+      errors.push(
+        'REDIS_URL must point to an Azure Redis endpoint (.redis.cache.windows.net or .redis.azure.net)'
+      );
     }
 
     // Check Azure Storage is configured

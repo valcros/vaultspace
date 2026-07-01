@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-import { db } from '@/lib/db';
+import { bootstrapDb } from '@/lib/db';
 
 export const viewerSessionBaseSelect = {
   id: true,
@@ -50,7 +50,7 @@ export async function getViewerSession<T extends Prisma.ViewSessionSelect>(
     return null;
   }
 
-  return db.viewSession.findFirst({
+  return bootstrapDb.viewSession.findFirst({
     where: {
       sessionToken: viewerToken,
       isActive: true,

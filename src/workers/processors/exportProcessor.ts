@@ -8,7 +8,7 @@ import { Job } from 'bullmq';
 import archiver from 'archiver';
 import { PassThrough } from 'stream';
 
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 export interface RoomExportJobPayload {
@@ -21,6 +21,7 @@ export interface RoomExportJobPayload {
     includeMetadata?: boolean;
     documentIds?: string[];
     folderId?: string;
+    sendEmail?: boolean;
   };
 }
 
@@ -32,58 +33,66 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
   const providers = getProviders();
 
   try {
-    // Get room info
-    const room = await db.room.findFirst({
-      where: { id: roomId, organizationId },
-      select: { id: true, name: true },
+    const { room, documents } = await withOrgContext(organizationId, async (tx) => {
+      // Get room info
+      const roomRecord = await tx.room.findFirst({
+        where: { id: roomId, organizationId },
+        select: { id: true, name: true },
+      });
+
+      if (!roomRecord) {
+        return { room: null, documents: [] };
+      }
+
+      // Build document query
+      const documentWhere: {
+        roomId: string;
+        organizationId: string;
+        status: 'ACTIVE';
+        id?: { in: string[] };
+        folderId?: string;
+      } = {
+        roomId,
+        organizationId,
+        status: 'ACTIVE',
+      };
+
+      if (options.documentIds?.length) {
+        documentWhere.id = { in: options.documentIds };
+      }
+
+      if (options.folderId) {
+        documentWhere.folderId = options.folderId;
+      }
+
+      // Get documents to export with their versions and file blobs
+      const documentRecords = await tx.document.findMany({
+        where: documentWhere,
+        include: {
+          folder: {
+            select: { name: true, path: true },
+          },
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: options.includeOriginals ? undefined : 1,
+            include: {
+              fileBlob: {
+                select: {
+                  storageKey: true,
+                  storageBucket: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return { room: roomRecord, documents: documentRecords };
     });
 
     if (!room) {
       throw new Error('Room not found');
     }
-
-    // Build document query
-    const documentWhere: {
-      roomId: string;
-      organizationId: string;
-      status: 'ACTIVE';
-      id?: { in: string[] };
-      folderId?: string;
-    } = {
-      roomId,
-      organizationId,
-      status: 'ACTIVE',
-    };
-
-    if (options.documentIds?.length) {
-      documentWhere.id = { in: options.documentIds };
-    }
-
-    if (options.folderId) {
-      documentWhere.folderId = options.folderId;
-    }
-
-    // Get documents to export with their versions and file blobs
-    const documents = await db.document.findMany({
-      where: documentWhere,
-      include: {
-        folder: {
-          select: { name: true, path: true },
-        },
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          take: options.includeOriginals ? undefined : 1,
-          include: {
-            fileBlob: {
-              select: {
-                storageKey: true,
-                storageBucket: true,
-              },
-            },
-          },
-        },
-      },
-    });
 
     if (documents.length === 0) {
       console.log(`[ExportProcessor] No documents to export for room ${roomId}`);
@@ -102,6 +111,12 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
     const passthrough = new PassThrough();
 
     passthrough.on('data', (chunk) => chunks.push(chunk));
+
+    const archiveFinished = new Promise<void>((resolve, reject) => {
+      passthrough.on('end', resolve);
+      passthrough.on('error', reject);
+      archive.on('error', reject);
+    });
 
     archive.pipe(passthrough);
 
@@ -171,10 +186,7 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
     await archive.finalize();
 
     // Wait for stream to finish
-    await new Promise<void>((resolve, reject) => {
-      passthrough.on('end', resolve);
-      passthrough.on('error', reject);
-    });
+    await archiveFinished;
 
     // Combine chunks into final buffer
     const zipBuffer = Buffer.concat(chunks);
@@ -185,29 +197,31 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
     const exportKey = `exports/${organizationId}/${roomId}/${Date.now()}.zip`;
     await providers.storage.put('documents', exportKey, zipBuffer);
 
-    // Create export event
-    await db.event.create({
-      data: {
-        organizationId,
-        roomId,
-        actorType: 'ADMIN',
-        actorId: requestedByUserId,
-        eventType: 'ADMIN_EXPORT_INITIATED',
-        metadata: {
-          documentCount: documents.length,
-          exportKey,
-          zipSize: zipBuffer.length,
+    const user = await withOrgContext(organizationId, async (tx) => {
+      // Create export event
+      await tx.event.create({
+        data: {
+          organizationId,
+          roomId,
+          actorType: 'ADMIN',
+          actorId: requestedByUserId,
+          eventType: 'ADMIN_EXPORT_INITIATED',
+          metadata: {
+            documentCount: documents.length,
+            exportKey,
+            zipSize: zipBuffer.length,
+          },
         },
-      },
+      });
+
+      // Notify the requesting user with a signed download link (valid 24 hours)
+      return tx.user.findUnique({
+        where: { id: requestedByUserId },
+        select: { email: true, firstName: true },
+      });
     });
 
-    // Notify the requesting user with a signed download link (valid 24 hours)
-    const user = await db.user.findUnique({
-      where: { id: requestedByUserId },
-      select: { email: true, firstName: true },
-    });
-
-    if (user?.email) {
+    if (options.sendEmail !== false && user?.email) {
       try {
         const downloadUrl = await providers.storage.getSignedUrl(
           'documents',

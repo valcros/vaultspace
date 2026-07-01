@@ -143,6 +143,7 @@ describe('POST /api/rooms/:roomId/export', () => {
         includePreviews: false,
         includeMetadata: true,
         folderId: 'folder-1',
+        sendEmail: false,
       }),
     });
     const context = { params: Promise.resolve({ roomId: 'room-1' }) };
@@ -159,9 +160,9 @@ describe('POST /api/rooms/:roomId/export', () => {
           includeOriginals: true,
           includePreviews: false,
           folderId: 'folder-1',
+          sendEmail: false,
         }),
-      }),
-      expect.any(Object)
+      })
     );
   });
 
@@ -193,8 +194,7 @@ describe('POST /api/rooms/:roomId/export', () => {
         options: expect.objectContaining({
           documentIds: ['doc-1', 'doc-2', 'doc-3'],
         }),
-      }),
-      expect.any(Object)
+      })
     );
   });
 });

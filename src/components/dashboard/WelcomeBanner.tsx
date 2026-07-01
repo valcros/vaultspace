@@ -67,7 +67,7 @@ export function WelcomeBanner({ roomCount, dismissed = false, onDismiss }: Welco
             </div>
             <div>
               <p className="text-sm font-medium text-white">{step.title}</p>
-              <p className="text-xs text-primary-100">{step.desc}</p>
+              <p className="text-xs text-white">{step.desc}</p>
             </div>
           </div>
         ))}

@@ -14,6 +14,7 @@ import { withOrgContext } from '@/lib/db';
 import { NotFoundError, UploadError, ValidationError } from '@/lib/errors';
 import { getPermissionEngine } from '@/lib/permissions';
 import { UPLOAD_CONFIG } from '@/lib/constants';
+import { DOCUMENT_SCAN_JOB_OPTIONS } from '@/workers/types';
 
 import type { PaginatedResult, PaginationOptions, ServiceContext } from './types';
 
@@ -298,15 +299,20 @@ export class DocumentService {
       result.version.fileName
     );
 
-    await providers.job.addJob('high', 'document.scan', {
-      documentId: result.document.id,
-      versionId: result.version.id,
-      organizationId,
-      storageKey: jobStorageKey,
-      contentType: file.mimeType,
-      fileName: file.filename,
-      fileSizeBytes: file.size,
-    });
+    await providers.job.addJob(
+      'high',
+      'document.scan',
+      {
+        documentId: result.document.id,
+        versionId: result.version.id,
+        organizationId,
+        storageKey: jobStorageKey,
+        contentType: file.mimeType,
+        fileName: file.filename,
+        fileSizeBytes: file.size,
+      },
+      DOCUMENT_SCAN_JOB_OPTIONS
+    );
 
     return {
       ...result.document,

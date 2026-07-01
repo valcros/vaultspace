@@ -128,7 +128,8 @@ export interface JobResult<T = unknown> {
 
 export interface JobProvider {
   /**
-   * Add a job to the queue
+   * Add a job to the queue. Queue names carry the normal priority model;
+   * options.priority is an explicit BullMQ priority override.
    */
   addJob<T>(queueName: string, jobName: string, data: T, options?: JobOptions): Promise<string>;
 

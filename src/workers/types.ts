@@ -143,6 +143,16 @@ export const JOB_NAMES = {
   CLEANUP_TRASH: 'cleanup.trash',
 } as const;
 
+// Scan jobs may cold-start the worker and ClamAV sidecar together in Azure.
+// Give clamd time to become ready without requiring a warm worker replica.
+export const DOCUMENT_SCAN_JOB_OPTIONS = {
+  attempts: 10,
+  backoff: {
+    type: 'exponential',
+    delay: 10000,
+  },
+} as const;
+
 // =============================================================================
 // Queue Names
 // =============================================================================

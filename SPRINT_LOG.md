@@ -5,6 +5,70 @@
 
 ---
 
+## Ops Stabilization And MVP Packaging — 2026-06-30
+
+### Goal
+
+Stabilize the VaultSpace Azure staging environment, reduce unnecessary operating waste without harming active development, complete the Redis upgrade, close known worker/email issues, and package current MVP launch status.
+
+### Delivered
+
+| Area                  | Result                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Worker queues         | BullMQ queue naming and worker processors stabilized for high, normal, and low queues                               |
+| Email jobs            | Password reset and digest now queue supported `email.send` jobs                                                     |
+| Export jobs           | Archive stream completion race fixed; export can now skip notification email for no-email smoke                     |
+| Worker scaling        | Worker remains at `minReplicas=0` with KEDA Redis wait-list scalers and a scheduled delayed-job waker               |
+| Web availability      | Web app set to `minReplicas=1` to avoid public cold starts during active development                                |
+| Redis                 | Migrated staging from Redis 6.0.14 to Azure Managed Redis Enterprise 7.4                                            |
+| Security dependencies | Upgraded Next.js, React, Nodemailer, ESLint, and PostCSS; production dependency audit now reports 0 vulnerabilities |
+| QA guardrails         | Smoke script defaults now avoid repeated password reset, digest, and export download emails                         |
+| Documentation         | Added a public-safe MVP package and refreshed current status, backlog, README, QA plan, and operations notes        |
+
+### Commits
+
+| Commit    | Summary                                              |
+| --------- | ---------------------------------------------------- |
+| `f6cd2f6` | `fix(workers): stabilize BullMQ processing on Azure` |
+| `aef8820` | `fix(email): queue supported reset and digest jobs`  |
+| `b45577f` | `feat(ops): add BullMQ delayed-job waker`            |
+| `d9bf917` | `docs(ops): record deployment audit`                 |
+| `163a851` | `docs(ops): record web stabilization and tag status` |
+| `e46a863` | `chore(security): raise postcss floor`               |
+| `755c547` | `chore(security): upgrade nodemailer`                |
+| `60634e7` | `chore(security): upgrade next runtime stack`        |
+| `43585fc` | `fix(qa): suppress export email in smoke flow`       |
+
+### Verification
+
+Local verification passed on 2026-06-30:
+
+- `npm run lint`
+- `npm run type-check`
+- `npm run build`
+- `npm run test`
+- `npm audit --omit=dev`
+- Focused export route and worker tests
+- `git diff --check`
+
+Azure read-only verification on 2026-06-30:
+
+- `https://www.vaultspace.org/api/health?deep=true` returned healthy Azure mode with no degraded capabilities.
+- Web staging is active with 100 percent traffic and one warm replica.
+- Worker staging is configured with high, normal, and low Redis KEDA wait-list scalers and scales to zero when idle.
+- Delayed waker executions succeeded after deployment and Redis migration.
+- Managed Redis reports a BullMQ-supported version with encrypted protocol enabled.
+
+### Remaining Active Items
+
+1. Deploy the latest local branch code after the security and no-email QA commits.
+2. Re-verify worker KEDA scaler metadata immediately after deployment.
+3. Run a no-email live smoke pass using a durable QA account.
+4. Complete the manual MVP QA checklist and cross-browser/accessibility closeout.
+5. Prepare release notes, changelog, release tag, and Docker Compose smoke evidence.
+
+---
+
 ## Sprint 1: "Wire It Up" — 2026-03-25
 
 ### Session Start

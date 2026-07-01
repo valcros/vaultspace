@@ -14,7 +14,7 @@
  *
  * Usage:
  *   APP_ROLE_PASSWORD=$(cat /tmp/app_pass.txt) \
- *   DATABASE_URL=$(az keyvault secret show --vault-name <azure-key-vault> --name database-secret --query value -o tsv) \
+ *   DATABASE_URL=$(az keyvault secret show --vault-name <key-vault-name> --name <database-url-secret-name> --query value -o tsv) \
  *     npx tsx scripts/rls-fix.ts
  */
 import { PrismaClient } from '@prisma/client';

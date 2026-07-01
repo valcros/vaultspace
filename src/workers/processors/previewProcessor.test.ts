@@ -13,8 +13,8 @@ const mockPreviewAssetCreate = vi.fn().mockResolvedValue({ id: 'asset-1' });
 const mockPreviewAssetUpsert = vi.fn().mockResolvedValue({ id: 'thumb-1' });
 const mockDocumentFindFirst = vi.fn().mockResolvedValue({ roomId: 'room-1' });
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const mockDb = {
     documentVersion: { update: (...args: unknown[]) => mockVersionUpdate(...args) },
     document: {
       update: (...args: unknown[]) => mockDocumentUpdate(...args),
@@ -24,8 +24,16 @@ vi.mock('@/lib/db', () => ({
       create: (...args: unknown[]) => mockPreviewAssetCreate(...args),
       upsert: (...args: unknown[]) => mockPreviewAssetUpsert(...args),
     },
-  },
-}));
+  };
+
+  return {
+    db: mockDb,
+    withOrgContext: async (
+      _organizationId: string,
+      operation: (tx: typeof mockDb) => Promise<unknown>
+    ) => operation(mockDb),
+  };
+});
 
 // Mock providers
 const mockStorageGet = vi.fn().mockResolvedValue(Buffer.from('file-content'));
@@ -193,8 +201,7 @@ describe('processPreviewJob', () => {
       expect.objectContaining({
         documentId: 'doc-1',
         versionId: 'ver-1',
-      }),
-      expect.any(Object)
+      })
     );
   });
 });

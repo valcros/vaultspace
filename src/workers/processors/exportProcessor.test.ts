@@ -5,10 +5,12 @@ let _capturedStream: { push: (chunk: Buffer | null) => void } | null = null;
 const _archiverPipe = vi.fn();
 const _archiverAppend = vi.fn();
 const _archiverFinalize = vi.fn();
+const _archiverOn = vi.fn();
 const _archiverInstance = {
   pipe: _archiverPipe,
   append: _archiverAppend,
   finalize: _archiverFinalize,
+  on: _archiverOn,
 };
 vi.mock('archiver', () => ({ default: vi.fn(() => _archiverInstance) }));
 
@@ -18,14 +20,22 @@ const mockDocumentFindMany = vi.fn();
 const mockEventCreate = vi.fn().mockResolvedValue({});
 const mockUserFindUnique = vi.fn();
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const mockDb = {
     room: { findFirst: (...args: unknown[]) => mockRoomFindFirst(...args) },
     document: { findMany: (...args: unknown[]) => mockDocumentFindMany(...args) },
     event: { create: (...args: unknown[]) => mockEventCreate(...args) },
     user: { findUnique: (...args: unknown[]) => mockUserFindUnique(...args) },
-  },
-}));
+  };
+
+  return {
+    db: mockDb,
+    withOrgContext: async (
+      _organizationId: string,
+      operation: (tx: typeof mockDb) => Promise<unknown>
+    ) => operation(mockDb),
+  };
+});
 
 // ------ Provider mocks -------------------------------------------------------
 const mockStorageGet = vi.fn().mockResolvedValue(Buffer.from('file-content'));
@@ -83,6 +93,8 @@ const MOCK_DOCUMENTS = [
 
 function setupArchiverMock() {
   _capturedStream = null;
+  mockStorageGet.mockResolvedValue(Buffer.from('file-content'));
+  mockEmailSendEmail.mockResolvedValue({ messageId: 'msg-1' });
   _archiverPipe.mockImplementation((s: typeof _capturedStream) => {
     _capturedStream = s;
   });
@@ -205,6 +217,14 @@ describe('processRoomExportJob — user not found / no email', () => {
   it('skips the email when user has no email address', async () => {
     mockUserFindUnique.mockResolvedValue({ email: null, firstName: 'Ghost' });
     await processRoomExportJob(createMockJob());
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+  });
+
+  it('skips the email when export notification is disabled', async () => {
+    mockUserFindUnique.mockResolvedValue({ email: 'alice@example.com', firstName: 'Alice' });
+    await processRoomExportJob(createMockJob({ options: { sendEmail: false } }));
+    expect(mockStoragePut).toHaveBeenCalled();
+    expect(mockStorageGetSignedUrl).not.toHaveBeenCalled();
     expect(mockEmailSendEmail).not.toHaveBeenCalled();
   });
 });

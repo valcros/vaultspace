@@ -7,7 +7,7 @@
 
 import { Job } from 'bullmq';
 
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 import type { PreviewGenerateJobPayload, ThumbnailGenerateJobPayload } from '../types';
@@ -25,9 +25,11 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
   const providers = getProviders();
 
   // Update status to processing
-  await db.documentVersion.update({
-    where: { id: versionId },
-    data: { previewStatus: 'PROCESSING' },
+  await withOrgContext(organizationId, async (tx) => {
+    await tx.documentVersion.update({
+      where: { id: versionId },
+      data: { previewStatus: 'PROCESSING' },
+    });
   });
 
   // Check if preview is supported for this content type
@@ -36,12 +38,14 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       `[PreviewProcessor] Content type ${contentType} not supported, marking unsupported`
     );
 
-    await db.documentVersion.update({
-      where: { id: versionId },
-      data: {
-        previewStatus: 'UNSUPPORTED',
-        previewGeneratedAt: new Date(),
-      },
+    await withOrgContext(organizationId, async (tx) => {
+      await tx.documentVersion.update({
+        where: { id: versionId },
+        data: {
+          previewStatus: 'UNSUPPORTED',
+          previewGeneratedAt: new Date(),
+        },
+      });
     });
 
     // Queue search indexing directly (skip preview)
@@ -68,48 +72,52 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       await providers.storage.put('previews', renderKey, page.data);
 
       // Upsert preview asset record (idempotent — safe for re-processing)
-      await db.previewAsset.upsert({
-        where: {
-          versionId_assetType_pageNumber: {
+      await withOrgContext(organizationId, async (tx) => {
+        await tx.previewAsset.upsert({
+          where: {
+            versionId_assetType_pageNumber: {
+              versionId,
+              assetType,
+              pageNumber: page.pageNumber,
+            },
+          },
+          create: {
+            organizationId,
             versionId,
             assetType,
+            storageKey: renderKey,
             pageNumber: page.pageNumber,
+            mimeType: page.mimeType,
+            width: page.width,
+            height: page.height,
+            fileSizeBytes: BigInt(page.data.length),
           },
-        },
-        create: {
-          organizationId,
-          versionId,
-          assetType,
-          storageKey: renderKey,
-          pageNumber: page.pageNumber,
-          mimeType: page.mimeType,
-          width: page.width,
-          height: page.height,
-          fileSizeBytes: BigInt(page.data.length),
-        },
-        update: {
-          storageKey: renderKey,
-          mimeType: page.mimeType,
-          width: page.width,
-          height: page.height,
-          fileSizeBytes: BigInt(page.data.length),
-        },
+          update: {
+            storageKey: renderKey,
+            mimeType: page.mimeType,
+            width: page.width,
+            height: page.height,
+            fileSizeBytes: BigInt(page.data.length),
+          },
+        });
       });
     }
 
     // Update document version with preview info
-    await db.documentVersion.update({
-      where: { id: versionId },
-      data: {
-        previewStatus: 'READY',
-        previewGeneratedAt: new Date(),
-      },
-    });
+    await withOrgContext(organizationId, async (tx) => {
+      await tx.documentVersion.update({
+        where: { id: versionId },
+        data: {
+          previewStatus: 'READY',
+          previewGeneratedAt: new Date(),
+        },
+      });
 
-    // Update document page count
-    await db.document.update({
-      where: { id: documentId },
-      data: { totalVersions: { increment: 0 } }, // Touch for updatedAt
+      // Update document page count
+      await tx.document.update({
+        where: { id: documentId },
+        data: { totalVersions: { increment: 0 } }, // Touch for updatedAt
+      });
     });
 
     console.log(
@@ -160,32 +168,34 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
           await providers.storage.put('previews', thumbnailKey, thumbnailBuffer);
 
           // Upsert thumbnail asset (idempotent — safe for concurrent/retry)
-          await db.previewAsset.upsert({
-            where: {
-              versionId_assetType_pageNumber: {
+          await withOrgContext(organizationId, async (tx) => {
+            await tx.previewAsset.upsert({
+              where: {
+                versionId_assetType_pageNumber: {
+                  versionId,
+                  assetType: 'THUMBNAIL',
+                  pageNumber: 1,
+                },
+              },
+              create: {
+                organizationId,
                 versionId,
                 assetType: 'THUMBNAIL',
+                storageKey: thumbnailKey,
                 pageNumber: 1,
+                mimeType: 'image/png',
+                width: 200,
+                height: 280,
+                fileSizeBytes: BigInt(thumbnailBuffer.length),
               },
-            },
-            create: {
-              organizationId,
-              versionId,
-              assetType: 'THUMBNAIL',
-              storageKey: thumbnailKey,
-              pageNumber: 1,
-              mimeType: 'image/png',
-              width: 200,
-              height: 280,
-              fileSizeBytes: BigInt(thumbnailBuffer.length),
-            },
-            update: {
-              storageKey: thumbnailKey,
-              mimeType: 'image/png',
-              width: 200,
-              height: 280,
-              fileSizeBytes: BigInt(thumbnailBuffer.length),
-            },
+              update: {
+                storageKey: thumbnailKey,
+                mimeType: 'image/png',
+                width: 200,
+                height: 280,
+                fileSizeBytes: BigInt(thumbnailBuffer.length),
+              },
+            });
           });
 
           console.log(`[PreviewProcessor] Thumbnail generated inline: ${thumbnailKey}`);
@@ -204,32 +214,29 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
     }
 
     // Queue text extraction using the original document
-    await providers.job.addJob(
-      'high',
-      'text.extract',
-      {
-        documentId,
-        versionId,
-        organizationId,
-        storageKey,
-        contentType,
-        fileName,
-        pageCount: previewResult.totalPages,
-      },
-      { priority: 'normal' }
-    );
+    await providers.job.addJob('high', 'text.extract', {
+      documentId,
+      versionId,
+      organizationId,
+      storageKey,
+      contentType,
+      fileName,
+      pageCount: previewResult.totalPages,
+    });
   } catch (error) {
     console.error(
       `[PreviewProcessor] Preview generation failed for document ${documentId}:`,
       error
     );
 
-    await db.documentVersion.update({
-      where: { id: versionId },
-      data: {
-        previewStatus: 'FAILED',
-        previewError: error instanceof Error ? error.message : 'Unknown error',
-      },
+    await withOrgContext(organizationId, async (tx) => {
+      await tx.documentVersion.update({
+        where: { id: versionId },
+        data: {
+          previewStatus: 'FAILED',
+          previewError: error instanceof Error ? error.message : 'Unknown error',
+        },
+      });
     });
 
     throw error;
@@ -302,32 +309,34 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
     await providers.storage.put('previews', thumbnailKey, thumbnailBuffer);
 
     // Upsert thumbnail asset (idempotent)
-    await db.previewAsset.upsert({
-      where: {
-        versionId_assetType_pageNumber: {
+    await withOrgContext(organizationId, async (tx) => {
+      await tx.previewAsset.upsert({
+        where: {
+          versionId_assetType_pageNumber: {
+            versionId,
+            assetType: 'THUMBNAIL',
+            pageNumber: 1,
+          },
+        },
+        create: {
+          organizationId,
           versionId,
           assetType: 'THUMBNAIL',
+          storageKey: thumbnailKey,
           pageNumber: 1,
+          mimeType: 'image/png',
+          width,
+          height,
+          fileSizeBytes: BigInt(thumbnailBuffer.length),
         },
-      },
-      create: {
-        organizationId,
-        versionId,
-        assetType: 'THUMBNAIL',
-        storageKey: thumbnailKey,
-        pageNumber: 1,
-        mimeType: 'image/png',
-        width,
-        height,
-        fileSizeBytes: BigInt(thumbnailBuffer.length),
-      },
-      update: {
-        storageKey: thumbnailKey,
-        mimeType: 'image/png',
-        width,
-        height,
-        fileSizeBytes: BigInt(thumbnailBuffer.length),
-      },
+        update: {
+          storageKey: thumbnailKey,
+          mimeType: 'image/png',
+          width,
+          height,
+          fileSizeBytes: BigInt(thumbnailBuffer.length),
+        },
+      });
     });
 
     console.log(`[PreviewProcessor] Legacy thumbnail generated: ${thumbnailKey}`);
@@ -349,24 +358,21 @@ async function queueSearchIndex(
   organizationId: string,
   fileName: string
 ): Promise<void> {
-  const document = await db.document.findFirst({
-    where: { id: documentId, organizationId },
-    select: { roomId: true },
+  const document = await withOrgContext(organizationId, async (tx) => {
+    return tx.document.findFirst({
+      where: { id: documentId, organizationId },
+      select: { roomId: true },
+    });
   });
 
   if (document) {
-    await providers.job.addJob(
-      'normal',
-      'search.index',
-      {
-        documentId,
-        versionId,
-        organizationId,
-        roomId: document.roomId,
-        fileName,
-        text: '', // No extracted text
-      },
-      { priority: 'normal' }
-    );
+    await providers.job.addJob('normal', 'search.index', {
+      documentId,
+      versionId,
+      organizationId,
+      roomId: document.roomId,
+      fileName,
+      text: '', // No extracted text
+    });
   }
 }

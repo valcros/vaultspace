@@ -61,27 +61,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
       includeMetadata = true,
       documentIds,
       folderId,
+      sendEmail = true,
     } = body;
 
     // Create export job on the QUEUE_NAMES.LOW queue (consumed by report worker type)
     const providers = getProviders();
-    const jobId = await providers.job.addJob(
-      QUEUE_NAMES.LOW,
-      'room.export',
-      {
-        roomId,
-        organizationId: session.organizationId,
-        requestedByUserId: session.userId,
-        options: {
-          includeOriginals,
-          includePreviews,
-          includeMetadata,
-          documentIds,
-          folderId,
-        },
+    const jobId = await providers.job.addJob(QUEUE_NAMES.LOW, 'room.export', {
+      roomId,
+      organizationId: session.organizationId,
+      requestedByUserId: session.userId,
+      options: {
+        includeOriginals,
+        includePreviews,
+        includeMetadata,
+        documentIds,
+        folderId,
+        sendEmail,
       },
-      { priority: QUEUE_NAMES.LOW }
-    );
+    });
 
     return NextResponse.json(
       {

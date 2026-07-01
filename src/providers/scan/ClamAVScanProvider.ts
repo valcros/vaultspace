@@ -16,6 +16,10 @@ export interface ClamAVConfig {
   maxSize?: number; // Max file size in bytes (default: 25MB)
 }
 
+function normalizeClamdResponse(response: string): string {
+  return response.replace(/\0/g, '').trim();
+}
+
 export class ClamAVScanProvider implements ScanProvider {
   private host: string;
   private port: number;
@@ -74,7 +78,7 @@ export class ClamAVScanProvider implements ScanProvider {
 
       socket.on('end', () => {
         const scanDuration = Date.now() - startTime;
-        const result = this.parseResponse(response.trim(), scanDuration);
+        const result = this.parseResponse(normalizeClamdResponse(response), scanDuration);
         resolve(result);
       });
 
@@ -103,7 +107,7 @@ export class ClamAVScanProvider implements ScanProvider {
       });
 
       socket.on('data', (data) => {
-        const response = data.toString().trim();
+        const response = normalizeClamdResponse(data.toString());
         socket.destroy();
         resolve(response === 'PONG');
       });

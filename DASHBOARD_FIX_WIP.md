@@ -138,4 +138,4 @@ Each row unit = 60px + 16px margin = 76px
 
 ## Staging URL
 
-https://<web-container-app>.<azure-container-app-suffix>.eastus.azurecontainerapps.io/dashboard
+Use the public VaultSpace staging domain or an operator-provided staging URL. Do not commit raw Container Apps FQDNs.

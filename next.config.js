@@ -2,14 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // Enable instrumentation for Azure-only runtime guard
   experimental: {
-    instrumentationHook: true,
     serverActions: {
       bodySizeLimit: '500mb',
     },
-    serverComponentsExternalPackages: ['bullmq', 'ioredis', 'nodemailer'],
   },
+  serverExternalPackages: ['bullmq', 'ioredis', 'nodemailer'],
   // Standalone output for Docker
   output: 'standalone',
   // Security headers are set in middleware.ts instead of here

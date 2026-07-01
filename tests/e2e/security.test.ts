@@ -42,6 +42,43 @@ async function loginAsAdmin(request: APIRequestContext): Promise<string> {
   return res.headers()['set-cookie'] ?? '';
 }
 
+interface RoomSummary {
+  id: string;
+  organizationId: string;
+  status?: string;
+}
+
+async function createActiveRoom(
+  request: APIRequestContext,
+  cookie: string,
+  name: string
+): Promise<RoomSummary | null> {
+  const createRes = await request.post('/api/rooms', {
+    headers: { Cookie: cookie },
+    data: { name },
+  });
+  if (!createRes.ok()) {
+    return null;
+  }
+
+  const createBody = await createRes.json();
+  const room = createBody.room as RoomSummary | null;
+  if (!room?.id) {
+    return null;
+  }
+
+  const activateRes = await request.patch(`/api/rooms/${room.id}`, {
+    headers: { Cookie: cookie },
+    data: { status: 'ACTIVE' },
+  });
+  if (!activateRes.ok()) {
+    return null;
+  }
+
+  const activateBody = await activateRes.json();
+  return { ...room, ...((activateBody.room as RoomSummary | null) ?? {}), status: 'ACTIVE' };
+}
+
 async function getFirstRoomId(request: APIRequestContext, cookie: string): Promise<string | null> {
   const res = await request.get('/api/rooms', {
     headers: cookie ? { Cookie: cookie } : {},
@@ -50,7 +87,14 @@ async function getFirstRoomId(request: APIRequestContext, cookie: string): Promi
     return null;
   }
   const body = await res.json();
-  return (body.rooms as Array<{ id: string }>)?.[0]?.id ?? null;
+  const rooms = (body.rooms as RoomSummary[]) ?? [];
+  const activeRoom = rooms.find((room) => room.status === 'ACTIVE');
+  if (activeRoom) {
+    return activeRoom.id;
+  }
+
+  const createdRoom = await createActiveRoom(request, cookie, `SEC E2E Active Room ${Date.now()}`);
+  return createdRoom?.id ?? null;
 }
 
 async function createLink(
@@ -253,23 +297,13 @@ async function ensureOrgBSetup(request: APIRequestContext): Promise<OrgBSetup> {
     return { cookie, roomId: null, orgId: null };
   }
   const roomsBody = await roomsRes.json();
-  const rooms = (roomsBody.rooms as Array<{ id: string; organizationId: string }>) ?? [];
-  let roomId = rooms[0]?.id ?? null;
-  let orgId = rooms[0]?.organizationId ?? null;
-
-  if (!roomId) {
-    const createRes = await request.post('/api/rooms', {
-      headers: { Cookie: cookie },
-      data: { name: 'SEC-Test Org-B Room' },
-    });
-    if (createRes.ok()) {
-      const body = await createRes.json();
-      roomId = (body.room as { id: string; organizationId: string } | null)?.id ?? null;
-      orgId = (body.room as { id: string; organizationId: string } | null)?.organizationId ?? null;
-    }
+  const rooms = (roomsBody.rooms as RoomSummary[]) ?? [];
+  let room = rooms.find((candidate) => candidate.status === 'ACTIVE') ?? null;
+  if (!room) {
+    room = await createActiveRoom(request, cookie, `SEC-Test Org-B Room ${Date.now()}`);
   }
 
-  return { cookie, roomId, orgId };
+  return { cookie, roomId: room?.id ?? null, orgId: room?.organizationId ?? null };
 }
 
 // ---------------------------------------------------------------------------

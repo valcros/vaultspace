@@ -30,11 +30,33 @@ jobs:
     env:
       ACR_SERVER: ${{ vars.ACR_SERVER }}
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
-      CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+      WEB_CONTAINER_APP: ${{ vars.WEB_CONTAINER_APP }}
+      WORKER_CONTAINER_APP: ${{ vars.WORKER_CONTAINER_APP }}
+      WEB_CONTAINER_NAME: ${{ vars.WEB_CONTAINER_NAME }}
+      WORKER_CONTAINER_NAME: ${{ vars.WORKER_CONTAINER_NAME }}
       APP_URL: ${{ vars.APP_URL }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate deployment variables
+        run: |
+          required_vars=(
+            ACR_SERVER
+            RESOURCE_GROUP
+            WEB_CONTAINER_APP
+            WORKER_CONTAINER_APP
+            WEB_CONTAINER_NAME
+            WORKER_CONTAINER_NAME
+            APP_URL
+          )
+
+          for var_name in "${required_vars[@]}"; do
+            if [ -z "${!var_name}" ]; then
+              echo "ERROR: repository variable ${var_name} is required"
+              exit 1
+            fi
+          done
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -79,23 +101,23 @@ jobs:
       - name: Update Container App - Web
         run: |
           az containerapp update \
-            --name $CONTAINER_APP_NAME \
+            --name $WEB_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
-            --container-name <web-container-app> \
+            --container-name $WEB_CONTAINER_NAME \
             --image $ACR_SERVER/vaultspace-web:${{ github.sha }}
 
       - name: Update Container App - Worker
         run: |
           az containerapp update \
-            --name <worker-container-app> \
+            --name $WORKER_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
-            --container-name <worker-container-app> \
+            --container-name $WORKER_CONTAINER_NAME \
             --image $ACR_SERVER/vaultspace-worker:${{ github.sha }}
 
       - name: Validate Container App env shape
         run: |
           chmod +x scripts/validate-container-env.sh
-          scripts/validate-container-env.sh "$RESOURCE_GROUP" <web-container-app> <worker-container-app>
+          scripts/validate-container-env.sh "$RESOURCE_GROUP" "$WEB_CONTAINER_APP" "$WORKER_CONTAINER_APP" "$WORKER_CONTAINER_NAME"
 
       - name: Health check with deployment mode validation
         run: |
@@ -113,7 +135,7 @@ jobs:
           # Get container app revision info for diagnostics
           echo "=== Container App Diagnostics ==="
           REVISION_INFO=$(az containerapp revision list \
-            --name $CONTAINER_APP_NAME \
+            --name $WEB_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
             --query "[0].{name:name, active:properties.active, replicas:properties.replicas, createdTime:properties.createdTime, runningState:properties.runningState}" \
             -o json 2>/dev/null || echo '{}')
@@ -165,7 +187,7 @@ jobs:
                 echo "ERROR: New container did not become active after $MAX_ATTEMPTS attempts"
                 # Show final revision state for debugging
                 az containerapp revision list \
-                  --name $CONTAINER_APP_NAME \
+                  --name $WEB_CONTAINER_APP \
                   --resource-group $RESOURCE_GROUP \
                   --query "[].{name:name, active:properties.active, replicas:properties.replicas, runningState:properties.runningState}" \
                   -o table 2>/dev/null || true

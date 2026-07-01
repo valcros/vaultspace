@@ -12,6 +12,7 @@ import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { createHash } from 'crypto';
 import { sanitizeFilename, resolveMimeType } from '@/lib/fileTypes';
+import { DOCUMENT_SCAN_JOB_OPTIONS } from '@/workers/types';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -224,14 +225,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     // Queue processing jobs (high priority queue) - outside transaction
     const providers = getProviders();
-    await providers.job.addJob('high', 'document.scan', {
-      documentId,
-      versionId: result.version.id,
-      organizationId: session.organizationId,
-      storageKey: result.storageKey,
-      contentType: file.type || result.document.mimeType,
-      fileName: file.name,
-    });
+    await providers.job.addJob(
+      'high',
+      'document.scan',
+      {
+        documentId,
+        versionId: result.version.id,
+        organizationId: session.organizationId,
+        storageKey: result.storageKey,
+        contentType: file.type || result.document.mimeType,
+        fileName: file.name,
+      },
+      DOCUMENT_SCAN_JOB_OPTIONS
+    );
 
     return NextResponse.json({ version: result.version }, { status: 201 });
   } catch (error) {

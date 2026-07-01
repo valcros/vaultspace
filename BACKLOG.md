@@ -4,6 +4,21 @@ Post-MVP enhancements and technical debt items.
 
 ## High Priority
 
+### MVP Launch Closeout (Active)
+
+**Status:** In progress
+**Updated:** 2026-06-30
+
+Current active work before MVP launch readiness:
+
+- Deploy the latest `sprint/ops-stabilization-20260630` branch code to Azure staging.
+- Re-verify worker KEDA Redis scaler metadata after deployment.
+- Run no-email live smoke with a durable QA account.
+- Complete the manual `QA_TEST_PLAN.md` pass.
+- Complete cross-browser and per-resource accessibility QA.
+- Create release notes, changelog entry, and an agreed release tag.
+- Smoke Docker Compose self-hosting before any public beta release.
+
 ### Dashboard UX Redesign (Stakeholder Feedback) ✅ IMPLEMENTED
 
 **Status:** Complete
@@ -69,14 +84,15 @@ Implemented via two-tier architecture (see DOCUMENT_PREVIEW_PLAN.md):
 
 - ~~**Phase 3 formats** (deferred): EPS/AI (Ghostscript), DXF (dxf-parser), DWG (ODA converter)~~ ✅ EPS/AI/DXF implemented (DWG deferred - requires ODA File Converter with complex licensing)
 - ~~**PDF page rasterization**: Sharp with poppler support for high-fidelity page renders~~ ✅ Implemented via pdftoppm (poppler-utils)
-- **highlight.js CDN dependency**: Bundle CSS locally instead of CDN link
+- ~~**highlight.js CDN dependency:**~~ Resolved. `TextPreviewRenderer` imports `highlight.js/styles/github.css` from the package. Remaining related item: PDF.js worker still loads from `unpkg.com` and should be bundled locally if self-hosted/no-CDN operation is required.
 - **Smart thumbnail cropping**: ✅ Implemented (ThumbnailCropper class handles sparse content like CAD drawings)
 
 ## Medium Priority
 
 - ~~Replace remaining `window.confirm()` calls with proper confirmation dialogs~~ ✅ Done (webhooks, share links, remove member)
-- ~~Accessibility audit (WCAG 2.1 AA)~~ ✅ Updated 2026-04-27 — full automated pass against staging revision 0167 covers 4 public + 8 authenticated pages, all 13 tests green. Login fixture lives at `tests/e2e/auth.setup.ts`. Per-resource pages (room detail, document viewer, public viewer link landing) and the manual screen-reader pass remain on the punch list before MVP launch. Full audit trail in `docs/A11Y_AUDIT.md`.
+- ~~Accessibility audit (WCAG 2.1 AA)~~ ✅ Updated 2026-04-27 — full automated pass against staging covers 4 public + 8 authenticated pages, all 13 tests green. Login fixture lives at `tests/e2e/auth.setup.ts`. Per-resource pages (room detail, document viewer, public viewer link landing) and the manual screen-reader pass remain on the punch list before MVP launch. Full audit trail in `docs/A11Y_AUDIT.md`.
 - Production deployment workflow (tag-based)
+- Durable QA account and smoke-secret handling for staging
 
 ## Low Priority
 
@@ -97,16 +113,16 @@ Implemented via two-tier architecture (see DOCUMENT_PREVIEW_PLAN.md):
 
 ## Resolved Critical (2026-04-26)
 
-- ~~**RLS is enabled but not enforcing in staging**~~ Fixed 2026-04-26. Created `vaultspace_app` role (NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, NOREPLICATION, LOGIN) with minimum grants (USAGE on `public`, SELECT/INSERT/UPDATE/DELETE on all tables, USAGE/SELECT on all sequences, ALTER DEFAULT PRIVILEGES for future objects). Forced RLS on all 16 org-scoped tables. Rotated `database-secret` Key Vault secret to use the new role and added a separate `<database-admin-secret>` secret (vaultspaceadmin) for migrations and DDL. Wired `DATABASE_URL_ADMIN` into the web Container App via `secretref:databaseurladmin`. Patched `docker-entrypoint.sh` so migrations and `psql -f rls-policies.sql` run against `DATABASE_URL_ADMIN` (with `ON_ERROR_STOP=1`) and the runtime app connects as the low-privilege role. Removed `watermark_configs` from `prisma/rls-policies.sql` (V1-deferred). Added `FORCE ROW LEVEL SECURITY` statements to `prisma/rls-policies.sql` so future fresh deploys produce the same enforcement posture. Validation script now checks for `DATABASE_URL_ADMIN` on the web container. Re-running `npm run rls:audit` as `vaultspace_app` returns 0 rooms without org context (was 7 as `vaultspaceadmin`) — RLS is now enforcing.
+- ~~**RLS is enabled but not enforcing in staging**~~ Fixed 2026-04-26. Added a low-privilege runtime database role, forced RLS on org-scoped tables, separated migration/admin credentials from runtime credentials, and updated deployment validation to require the admin URL only where migrations run. Re-running the RLS audit as the runtime role returns no rooms without org context. Exact role and secret names are kept in private operator records.
 
 ## Security / Operations
 
-- **Container App env var audit (in progress):** Ensure every sensitive env var on every Container App is bound via `secretRef` to a Key Vault secret rather than a literal `value`. On 2026-04-26 a stray plaintext `ACS_CONNECTION_STRING` on `<web-container-app>` exposed the ACS access key in `az containerapp show` output, requiring an emergency key rotation. Worker was correctly configured. Add a periodic guardrail (script or pre-deploy CI check) that fails when any `properties.template.containers[].env[].value` matches a known secret pattern. See `.private/azure-staging.md` for rotation log.
+- **Container App env var audit (in progress):** Ensure every sensitive env var on every Container App is bound via `secretRef` rather than a literal `value`. A past staging plaintext secret exposure required key rotation, so the deployment guardrail must fail when container env output contains likely secret material. Keep rotation logs in private operator records.
 - ~~**Health check email/scan capability gap:**~~ Resolved 2026-04-26 (capability resolver). The capability resolver now recognizes `EMAIL_PROVIDER=acs` + `ACS_CONNECTION_STRING` as a valid email transport and treats `SCAN_ENGINE=passthrough` as an intentional scanning configuration rather than a missing dependency. ClamAV remains intentionally bypassed in staging.
-- ~~**Async notification jobs are unconsumed in staging:**~~ Resolved 2026-04-26. The `general` worker type now subscribes to all three BullMQ priority queues (`high`, `normal`, `low`) with concurrency 6, so a single worker Container App handles previews, scans, notifications, exports, and cleanup. Specialized worker types (preview, scan, report) remain available for future scale-out. `<worker-container-app>` env updated to `WORKER_TYPE=general`. While verifying the rollout, two pre-existing config gaps surfaced: the worker container had no `SESSION_SECRET` (it was crash-looping silently for an unknown duration, masked by Container Apps "Healthy" status during restart cycles) and no `APP_URL` (so notification jobs were failing on dequeue). Both env vars were added — `SESSION_SECRET` via `secretref:sessionsecret` Key Vault binding, `APP_URL=https://vaultspace.org` matching the web app. Worker now drains all queues cleanly.
+- ~~**Async notification jobs are unconsumed in staging:**~~ Resolved 2026-04-26. The `general` worker type now subscribes to all three BullMQ priority queues (`high`, `normal`, `low`) with concurrency 6, so a single worker Container App handles previews, scans, notifications, exports, and cleanup. Specialized worker types remain available for future scale-out. Verification surfaced missing runtime config in the worker, which is now covered by deployment validation. Worker now drains all queues cleanly.
 - ~~**Worker config drift between web and worker Container Apps:**~~ Resolved 2026-04-26. Added `scripts/validate-container-env.sh` that fails the deploy when a required env var is missing or when a secret-backed var is bound as a literal value rather than a Key Vault `secretRef`. Wired into `deploy-staging.yml` after the image update step.
 - ~~**Worker startup failures masked as Healthy:**~~ Resolved 2026-04-26. Worker now starts an HTTP health server on port 3000 (`WORKER_HEALTH_PORT` overridable) only after BullMQ workers initialize and subscribe to their queues. Container Apps Liveness, Readiness, and Startup probes attached to the worker spec target this port via TCP. A crash-looping worker now correctly fails the probe and is reported as unhealthy. Validation script also checks that the probe is present so a future YAML round-trip cannot silently strip it.
-- **Redis version warning:** Worker logs show "It is highly recommended to use a minimum Redis version of 6.2.0. Current: 6.0.14". The Azure Cache for Redis Basic SKU is on 6.0.14. Plan a SKU upgrade or version bump before MVP launch.
+- ~~**Redis version warning:**~~ Resolved 2026-06-30. Staging was migrated to managed Redis on a BullMQ-supported version with encrypted protocol enabled, and recent app health checks are clean. Keep rollback cache infrastructure only through the approved observation window; do not delete it without fresh explicit cleanup approval.
 - ~~**Investigate duplicate ACS resources:**~~ Resolved 2026-04-26. Not duplicates — `acs-vaultspace-email` is a `Microsoft.Communication/EmailServices` resource that owns the verified `vaultspace.org` sender domain, and `acs-vaultspace-staging` is a `Microsoft.Communication/CommunicationServices` resource that holds the SDK connection string and is linked to the email domain. Both are required.
 - ~~**Complete DMARC verification for vaultspace.org sender domain:**~~ Resolved 2026-04-26. `_dmarc.vaultspace.org` is already published as `v=DMARC1; p=quarantine; pct=100` and resolves publicly via Cloudflare DoH. ACS does not actively verify DMARC (the dashboard's `DMARC: NotStarted` is a reserved informational field — only Domain/SPF/DKIM/DKIM2 appear in `verificationRecords`). Optional follow-up: add `rua=mailto:dmarc-reports@vaultspace.org` once an inbox is provisioned to receive aggregate reports.
 - ~~**`watermark_configs` table referenced in RLS but never created:**~~ Resolved 2026-04-26. Removed the watermark_configs ENABLE RLS / CREATE POLICY blocks from `prisma/rls-policies.sql` (with comments indicating they should be restored when the V1 watermarking table lands). Added `psql -v ON_ERROR_STOP=1` to `docker-entrypoint.sh` so any future missing-table error fails the deploy loudly instead of silently leaving the database half-configured.

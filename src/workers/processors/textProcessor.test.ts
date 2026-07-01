@@ -12,16 +12,24 @@ const mockDocumentFindFirst = vi.fn();
 const mockDocumentVersionFindUnique = vi.fn();
 const mockSearchIndexUpsert = vi.fn().mockResolvedValue({});
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const mockDb = {
     extractedText: { upsert: (...args: unknown[]) => mockExtractedTextUpsert(...args) },
     document: { findFirst: (...args: unknown[]) => mockDocumentFindFirst(...args) },
     documentVersion: {
       findUnique: (...args: unknown[]) => mockDocumentVersionFindUnique(...args),
     },
     searchIndex: { upsert: (...args: unknown[]) => mockSearchIndexUpsert(...args) },
-  },
-}));
+  };
+
+  return {
+    db: mockDb,
+    withOrgContext: async (
+      _organizationId: string,
+      operation: (tx: typeof mockDb) => Promise<unknown>
+    ) => operation(mockDb),
+  };
+});
 
 // ------ Provider mocks -------------------------------------------------------
 const mockStorageGet = vi.fn().mockResolvedValue(Buffer.from('file-bytes'));
@@ -100,8 +108,7 @@ describe('processTextExtractJob — plain text', () => {
     expect(mockJobAddJob).toHaveBeenCalledWith(
       'normal',
       'search.index',
-      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1', roomId: 'room-1' }),
-      expect.any(Object)
+      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1', roomId: 'room-1' })
     );
   });
 });

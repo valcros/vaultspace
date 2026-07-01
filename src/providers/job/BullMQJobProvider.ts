@@ -101,13 +101,14 @@ export class BullMQJobProvider implements JobProvider {
     options?: JobOptions
   ): Promise<string> {
     const queue = this.getQueue(queueName);
-
-    const job = await queue.add(jobName, data, {
-      priority: options?.priority ? PRIORITY_MAP[options.priority] : PRIORITY_MAP.normal,
+    const jobOptions = {
       delay: options?.delay,
       attempts: options?.attempts,
       backoff: options?.backoff,
-    });
+      ...(options?.priority ? { priority: PRIORITY_MAP[options.priority] } : {}),
+    };
+
+    const job = await queue.add(jobName, data, jobOptions);
 
     return job.id ?? `job-${Date.now()}`;
   }
