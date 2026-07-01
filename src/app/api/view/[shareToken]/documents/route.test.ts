@@ -20,6 +20,11 @@ vi.mock('@/lib/db', () => ({
       findFirst: (...args: unknown[]) => mockViewSessionFindFirst(...args),
     },
   },
+  bootstrapDb: {
+    viewSession: {
+      findFirst: (...args: unknown[]) => mockViewSessionFindFirst(...args),
+    },
+  },
   withOrgContext: (...args: Parameters<typeof mockWithOrgContext>) => mockWithOrgContext(...args),
 }));
 

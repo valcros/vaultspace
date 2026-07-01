@@ -5,7 +5,7 @@
  *   3. Whether RLS actually enforces tenant isolation when no org context is set
  *
  * Usage:
- *   DATABASE_URL=$(az keyvault secret show --vault-name <key-vault-name> --name <database-url-secret-name> --query value -o tsv) \
+ *   DATABASE_URL=$(az keyvault secret show --vault-name <key-vault-name> --name <db-connection-secret-name> --query value -o tsv) \
  *     npx tsx scripts/rls-audit.ts
  */
 import { PrismaClient } from '@prisma/client';
