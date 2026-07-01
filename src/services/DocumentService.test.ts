@@ -135,7 +135,14 @@ describe('DocumentService', () => {
       expect(mockJob.addJob).toHaveBeenCalledWith(
         'high',
         'document.scan',
-        expect.objectContaining({ documentId: 'doc-1' })
+        expect.objectContaining({ documentId: 'doc-1' }),
+        expect.objectContaining({
+          attempts: 10,
+          backoff: {
+            type: 'exponential',
+            delay: 10000,
+          },
+        })
       );
       expect(mockEventBus.emit).toHaveBeenCalledWith(
         'DOCUMENT_UPLOADED',
@@ -210,6 +217,13 @@ describe('DocumentService', () => {
           documentId: 'doc-1',
           versionId: 'ver-1',
           organizationId: 'org-1',
+        }),
+        expect.objectContaining({
+          attempts: 10,
+          backoff: {
+            type: 'exponential',
+            delay: 10000,
+          },
         })
       );
     });

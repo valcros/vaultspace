@@ -106,13 +106,54 @@ describe('processEmailJob — template rendering', () => {
     await processEmailJob(
       makeEmailJob({
         template: 'password-reset',
-        data: { resetUrl: 'https://app.example.com/reset?token=abc' },
+        data: {
+          resetUrl: 'https://app.example.com/reset?token=abc',
+          userName: 'Dana',
+          organizationName: 'Demo Organization',
+          expiresIn: '1 hour',
+        },
       })
     );
     expect(mockEmailSendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
-        subject: expect.stringContaining('password'),
+        subject: 'Reset your Demo Organization password',
         html: expect.stringContaining('https://app.example.com/reset?token=abc'),
+      })
+    );
+  });
+
+  it('renders room-digest template', async () => {
+    await processEmailJob(
+      makeEmailJob({
+        template: 'room-digest',
+        data: {
+          recipientName: 'Ada Admin',
+          period: 'weekly',
+          roomName: 'Diligence Room',
+          from: '2026-06-23T00:00:00.000Z',
+          to: '2026-06-30T00:00:00.000Z',
+          roomUrl: 'https://app.example.com/rooms/room-1',
+          summary: {
+            documentsUploaded: 2,
+            documentsViewed: 5,
+            documentsDownloaded: 1,
+            uniqueViewers: 3,
+            questionsSubmitted: 1,
+            questionsAnswered: 1,
+            newShareLinks: 2,
+          },
+          topDocuments: [{ name: 'Report.pdf', views: 5, downloads: 1 }],
+          recentQuestions: [{ subject: 'Clarify revenue?', status: 'OPEN' }],
+          viewerActivity: [{ email: 'viewer@example.com', views: 2 }],
+        },
+      })
+    );
+
+    expect(mockEmailSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: 'Weekly digest: Diligence Room',
+        html: expect.stringContaining('Report.pdf'),
+        text: expect.stringContaining('Documents uploaded: 2'),
       })
     );
   });

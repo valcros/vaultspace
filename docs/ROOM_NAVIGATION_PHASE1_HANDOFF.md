@@ -14,8 +14,8 @@
 - **HEAD:** `1995d9c` — `fix(rooms): suppress "no documents yet" flash on initial room load`.
 - **CI for HEAD:** ✅ success (16m18s).
 - **Deploy for HEAD:** ✅ success (5m33s, finished 2026-05-01 17:26 UTC).
-- **Active Azure revision:** `<web-container-app>--0000178` @ 100% traffic, Healthy.
-- **Image hash on revision 178:** `1995d9c0e0eec87beed40d82e3380e9b28fdc4f2`.
+- **Azure deployment:** Deployed to staging at 100% traffic and healthy.
+- **Image hash:** Omitted from the public repository; keep exact image references in private deployment records.
 - **Test suite:** 558 tests across 64 files, all passing as of HEAD.
 
 Working tree is clean. `git status` reports nothing to commit. `git branch -vv` reports a single local `main` tracking `origin/main` at the same SHA.

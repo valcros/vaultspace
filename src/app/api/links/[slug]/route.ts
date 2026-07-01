@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
-import { db, withOrgContext } from '@/lib/db';
+import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -26,7 +26,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // PRE-RLS BOOTSTRAP: Public link info lookup by slug
     // This is intentionally unauthenticated - returns minimal public info
-    const link = await db.link.findFirst({
+    const link = await bootstrapDb.link.findFirst({
       where: {
         slug,
         isActive: true,
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { password, email } = body;
 
     // PRE-RLS BOOTSTRAP: Narrowly scoped lookup to resolve organizationId from slug
-    const link = await db.link.findFirst({
+    const link = await bootstrapDb.link.findFirst({
       where: {
         slug,
         isActive: true,

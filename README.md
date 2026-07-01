@@ -22,11 +22,11 @@ VaultSpace provides enterprise-grade document security and collaboration for M&A
 
 | Layer     | Technology                                           |
 | --------- | ---------------------------------------------------- |
-| Framework | Next.js 14+ (App Router)                             |
+| Framework | Next.js 16+ (App Router)                             |
 | Language  | TypeScript (strict mode)                             |
 | Database  | PostgreSQL 15+ with Prisma ORM                       |
-| Queue     | Redis + BullMQ (4 priority queues)                   |
-| UI        | React 18+ / TailwindCSS / shadcn/ui                  |
+| Queue     | Redis 7+ + BullMQ priority queues                    |
+| UI        | React 19+ / TailwindCSS / shadcn/ui                  |
 | Auth      | Custom DB-backed sessions (bcrypt, HttpOnly cookies) |
 | Storage   | Azure Blob Storage / S3 / Local filesystem           |
 | Scanning  | ClamAV virus scanning                                |
@@ -35,9 +35,9 @@ VaultSpace provides enterprise-grade document security and collaboration for M&A
 
 ## Status
 
-**MVP implementation in progress.** Backend APIs complete (61 routes), admin UI fully wired, and local validation currently passes with 479 unit tests.
+**MVP launch packaging in progress.** The Azure staging app is operational at `https://www.vaultspace.org`, the current API surface has 94 route handlers, the admin and viewer surfaces are broadly wired, and local validation currently passes with 668 Vitest tests. One live-Postgres search integration file remains intentionally opt-in and is skipped unless `RUN_POSTGRES_SEARCH_INTEGRATION=true`.
 
-See [MASTER_PLAN.md](MASTER_PLAN.md) for the full sprint plan and [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for current progress.
+See [docs/VAULTSPACE_MVP_PACKAGE_2026-06-30.md](docs/VAULTSPACE_MVP_PACKAGE_2026-06-30.md) for the current MVP package, [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for live progress, and [MASTER_PLAN.md](MASTER_PLAN.md) for the historical sprint plan.
 
 ## Quick Start
 
@@ -57,7 +57,7 @@ npm install
 # Run checks (no Azure services required)
 npm run type-check    # TypeScript
 npm run lint          # ESLint
-npm run test          # Unit tests (479 tests)
+npm run test          # Vitest suite (668 passing tests as of 2026-06-30)
 ```
 
 ### Playwright MCP
@@ -128,16 +128,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
 ## Documentation
 
-| Document                                     | Purpose                                              |
-| -------------------------------------------- | ---------------------------------------------------- |
-| [AI_BUILD_PLAYBOOK.md](AI_BUILD_PLAYBOOK.md) | Implementation guide and build phases                |
-| [ARCHITECTURE.md](ARCHITECTURE.md)           | System design, provider pattern, directory structure |
-| [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)     | Prisma schema, indexes, RLS                          |
-| [PERMISSION_MODEL.md](PERMISSION_MODEL.md)   | 14-layer permission engine specification             |
-| [API_SPEC.md](API_SPEC.md)                   | REST API endpoints and schemas                       |
-| [DEPLOYMENT.md](DEPLOYMENT.md)               | Azure deployment guide                               |
-| [SECURITY.md](SECURITY.md)                   | Security policies and vulnerability disclosure       |
-| [CONTRIBUTING.md](CONTRIBUTING.md)           | Development workflow and code standards              |
+| Document                                                 | Purpose                                                   |
+| -------------------------------------------------------- | --------------------------------------------------------- |
+| [AI_BUILD_PLAYBOOK.md](AI_BUILD_PLAYBOOK.md)             | Implementation guide and build phases                     |
+| [MVP Package](docs/VAULTSPACE_MVP_PACKAGE_2026-06-30.md) | Current staging status, blockers, and next sprint backlog |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                       | System design, provider pattern, directory structure      |
+| [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)                 | Prisma schema, indexes, RLS                               |
+| [PERMISSION_MODEL.md](PERMISSION_MODEL.md)               | 14-layer permission engine specification                  |
+| [API_SPEC.md](API_SPEC.md)                               | REST API endpoints and schemas                            |
+| [DEPLOYMENT.md](DEPLOYMENT.md)                           | Azure deployment guide                                    |
+| [SECURITY.md](SECURITY.md)                               | Security policies and vulnerability disclosure            |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                       | Development workflow and code standards                   |
 
 ## Contributing
 

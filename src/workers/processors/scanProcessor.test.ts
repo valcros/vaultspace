@@ -5,20 +5,28 @@
  * and ERROR path (re-throw for BullMQ retry).
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock db
 const mockVersionUpdate = vi.fn().mockResolvedValue({});
 const mockDocumentFindFirst = vi.fn().mockResolvedValue({ roomId: 'room-1' });
 const mockUserOrgFindMany = vi.fn().mockResolvedValue([]);
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const mockDb = {
     documentVersion: { update: (...args: unknown[]) => mockVersionUpdate(...args) },
     document: { findFirst: (...args: unknown[]) => mockDocumentFindFirst(...args) },
     userOrganization: { findMany: (...args: unknown[]) => mockUserOrgFindMany(...args) },
-  },
-}));
+  };
+
+  return {
+    db: mockDb,
+    withOrgContext: async (
+      _organizationId: string,
+      operation: (tx: typeof mockDb) => Promise<unknown>
+    ) => operation(mockDb),
+  };
+});
 
 // Mock EventBus
 const mockEmit = vi.fn().mockResolvedValue('event-1');
@@ -44,7 +52,38 @@ vi.mock('@/providers', () => ({
 
 import { processScanJob } from './scanProcessor';
 
-function createMockJob(overrides = {}) {
+const originalScanEngine = process.env['SCAN_ENGINE'];
+const originalClamavHost = process.env['CLAMAV_HOST'];
+const originalClamavReadyTimeoutMs = process.env['CLAMAV_READY_TIMEOUT_MS'];
+const originalClamavReadyPollMs = process.env['CLAMAV_READY_POLL_MS'];
+
+afterEach(() => {
+  if (originalScanEngine === undefined) {
+    delete process.env['SCAN_ENGINE'];
+  } else {
+    process.env['SCAN_ENGINE'] = originalScanEngine;
+  }
+
+  if (originalClamavHost === undefined) {
+    delete process.env['CLAMAV_HOST'];
+  } else {
+    process.env['CLAMAV_HOST'] = originalClamavHost;
+  }
+
+  if (originalClamavReadyTimeoutMs === undefined) {
+    delete process.env['CLAMAV_READY_TIMEOUT_MS'];
+  } else {
+    process.env['CLAMAV_READY_TIMEOUT_MS'] = originalClamavReadyTimeoutMs;
+  }
+
+  if (originalClamavReadyPollMs === undefined) {
+    delete process.env['CLAMAV_READY_POLL_MS'];
+  } else {
+    process.env['CLAMAV_READY_POLL_MS'] = originalClamavReadyPollMs;
+  }
+});
+
+function createMockJob(overrides = {}, jobOverrides = {}) {
   return {
     data: {
       documentId: 'doc-1',
@@ -58,6 +97,9 @@ function createMockJob(overrides = {}) {
     },
     id: 'job-1',
     name: 'scan.document',
+    attemptsMade: 0,
+    opts: { attempts: 10 },
+    ...jobOverrides,
   } as never;
 }
 
@@ -80,8 +122,7 @@ describe('processScanJob — CLEAN path', () => {
     expect(mockJobAddJob).toHaveBeenCalledWith(
       'high',
       'preview.generate',
-      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1' }),
-      expect.any(Object)
+      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1' })
     );
   });
 
@@ -97,6 +138,8 @@ describe('processScanJob — scanner unavailable', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockScanIsAvailable.mockResolvedValue(false);
+    delete process.env['SCAN_ENGINE'];
+    delete process.env['CLAMAV_HOST'];
   });
 
   it('marks as CLEAN and queues preview when scanner is unavailable', async () => {
@@ -106,6 +149,71 @@ describe('processScanJob — scanner unavailable', () => {
       expect.objectContaining({ data: expect.objectContaining({ scanStatus: 'CLEAN' }) })
     );
     expect(mockJobAddJob).toHaveBeenCalled();
+  });
+
+  it('keeps scan PENDING when ClamAV is configured but unavailable and attempts remain', async () => {
+    process.env['SCAN_ENGINE'] = 'clamav';
+    process.env['CLAMAV_HOST'] = 'localhost';
+    process.env['CLAMAV_READY_TIMEOUT_MS'] = '0';
+
+    await expect(processScanJob(createMockJob())).rejects.toThrow(
+      'Configured virus scanner is not available'
+    );
+
+    expect(mockVersionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          scanStatus: 'PENDING',
+          scanError: null,
+          scannedAt: null,
+        }),
+      })
+    );
+    expect(mockJobAddJob).not.toHaveBeenCalled();
+  });
+
+  it('marks ERROR when ClamAV is unavailable on the final attempt', async () => {
+    process.env['SCAN_ENGINE'] = 'clamav';
+    process.env['CLAMAV_HOST'] = 'localhost';
+    process.env['CLAMAV_READY_TIMEOUT_MS'] = '0';
+
+    await expect(
+      processScanJob(createMockJob({}, { attemptsMade: 9, opts: { attempts: 10 } }))
+    ).rejects.toThrow('Configured virus scanner is not available');
+
+    expect(mockVersionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          scanStatus: 'ERROR',
+          scanError: 'Configured virus scanner is not available',
+        }),
+      })
+    );
+    expect(mockJobAddJob).not.toHaveBeenCalled();
+  });
+
+  it('waits for configured ClamAV to become available before scanning', async () => {
+    process.env['SCAN_ENGINE'] = 'clamav';
+    process.env['CLAMAV_HOST'] = 'localhost';
+    process.env['CLAMAV_READY_TIMEOUT_MS'] = '500';
+    process.env['CLAMAV_READY_POLL_MS'] = '100';
+    mockScanIsAvailable.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockScanScan.mockResolvedValue({ clean: true });
+
+    await processScanJob(createMockJob());
+
+    expect(mockScanIsAvailable).toHaveBeenCalledTimes(2);
+    expect(mockScanScan).toHaveBeenCalledWith(Buffer.from('file-content'));
+    expect(mockVersionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ scanStatus: 'CLEAN' }),
+      })
+    );
+    expect(mockJobAddJob).toHaveBeenCalledWith(
+      'high',
+      'preview.generate',
+      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1' })
+    );
   });
 });
 
@@ -207,8 +315,24 @@ describe('processScanJob — ERROR path', () => {
     mockScanScan.mockRejectedValue(new Error('ClamAV unreachable'));
   });
 
-  it('marks version as ERROR and re-throws for BullMQ retry', async () => {
+  it('keeps scan PENDING and re-throws while attempts remain', async () => {
     await expect(processScanJob(createMockJob())).rejects.toThrow('ClamAV unreachable');
+
+    expect(mockVersionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          scanStatus: 'PENDING',
+          scanError: null,
+          scannedAt: null,
+        }),
+      })
+    );
+  });
+
+  it('marks version as ERROR on the final attempt', async () => {
+    await expect(
+      processScanJob(createMockJob({}, { attemptsMade: 9, opts: { attempts: 10 } }))
+    ).rejects.toThrow('ClamAV unreachable');
 
     expect(mockVersionUpdate).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -28,7 +28,7 @@ export async function register() {
       );
       errors.forEach((err) => console.error(`  - ${err}`));
       console.error('\nSee DEPLOYMENT.md for configuration requirements.\n');
-      process.exit(1);
+      throw new Error(`[DeploymentGuard] Invalid ${mode} configuration`);
     }
 
     // Log warnings (but don't block startup)

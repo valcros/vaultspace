@@ -1,8 +1,8 @@
 properties:
   template:
     containers:
-      - name: <web-container-app>
-        image: <azure-container-registry>/vaultspace-web:latest
+      - name: vaultspace-web
+        image: example.azurecr.io/vaultspace-web:latest
         resources:
           cpu: 0.5
           memory: 1Gi

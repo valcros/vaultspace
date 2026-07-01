@@ -110,6 +110,19 @@ describe('azure-guard', () => {
         expect(errors).toEqual([]);
       });
 
+      it('accepts Azure Managed Redis endpoint format', async () => {
+        process.env['DATABASE_URL'] = 'postgresql://azure.postgres.database.azure.com/db';
+        process.env['SESSION_SECRET'] = 'test-session-secret';
+        process.env['REDIS_URL'] = 'rediss://azure.redis.azure.net:10000';
+        process.env['AZURE_STORAGE_ACCOUNT_NAME'] = 'teststorage';
+        process.env['AZURE_STORAGE_ACCOUNT_KEY'] = 'base64key==';
+
+        const { validateConfig } = await import('./azure-guard');
+        const { errors } = validateConfig();
+
+        expect(errors).toEqual([]);
+      });
+
       it('accepts Azure storage connection string format', async () => {
         process.env['DATABASE_URL'] = 'postgresql://azure.postgres.database.azure.com/db';
         process.env['SESSION_SECRET'] = 'test-session-secret';

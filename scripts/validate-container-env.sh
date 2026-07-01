@@ -6,15 +6,14 @@
 # crash-loop silently behind a "Healthy" status.
 #
 # Usage:
-#   scripts/validate-container-env.sh <resource-group> [web-app-name] [worker-app-name]
-#
-# Defaults match the staging environment.
+#   scripts/validate-container-env.sh <resource-group> <web-app-name> <worker-app-name> [worker-container-name]
 
 set -euo pipefail
 
-RG="${1:-<azure-resource-group>}"
-WEB_APP="${2:-<web-container-app>}"
-WORKER_APP="${3:-<worker-container-app>}"
+RG="${1:?resource group is required}"
+WEB_APP="${2:?web Container App name is required}"
+WORKER_APP="${3:?worker Container App name is required}"
+WORKER_CONTAINER_NAME="${4:-${WORKER_APP}}"
 
 # Vars that every container needs (web image and worker image share the same
 # bootstrapping path through enforceDeploymentMode + validateConfig).
@@ -114,7 +113,7 @@ echo "=== Validating ${WORKER_APP} probes ==="
 worker_probes=$(az containerapp show \
   --name "${WORKER_APP}" \
   --resource-group "${RG}" \
-  --query "properties.template.containers[?name=='${WORKER_APP}'].probes | [0]" \
+  --query "properties.template.containers[?name=='${WORKER_CONTAINER_NAME}'].probes | [0]" \
   -o json)
 probe_count=$(echo "${worker_probes}" | jq -r 'if . == null then 0 else map(select(.tcpSocket.port == 3000)) | length end')
 if [ "${probe_count}" -lt 1 ]; then

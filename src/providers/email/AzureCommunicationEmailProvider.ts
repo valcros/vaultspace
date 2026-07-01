@@ -27,10 +27,8 @@ export class AzureCommunicationEmailProvider implements EmailProvider {
       ? options.to.map((email) => ({ address: email }))
       : [{ address: options.to }];
 
-    // ACS sender format: "Display Name <email>" sets the From display name
-    const senderWithName = `VaultSpace <${this.senderAddress}>`;
     const message = {
-      senderAddress: senderWithName,
+      senderAddress: this.senderAddress,
       content: {
         subject: options.subject,
         html: options.html,

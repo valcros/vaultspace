@@ -133,21 +133,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     if (latestVersion.fileBlob && hasCapability('canGenerateAsyncPreviews')) {
       // Fire-and-forget: enqueue full preview generation which includes inline thumbnail
       providers.job
-        .addJob(
-          'high',
-          'preview.generate',
-          {
-            documentId,
-            versionId: latestVersion.id,
-            organizationId: session.organizationId,
-            storageKey: latestVersion.fileBlob.storageKey,
-            contentType: document.mimeType || 'application/octet-stream',
-            fileName: document.name,
-            fileSizeBytes: 0,
-            isScanned: false,
-          },
-          { priority: 'normal' }
-        )
+        .addJob('high', 'preview.generate', {
+          documentId,
+          versionId: latestVersion.id,
+          organizationId: session.organizationId,
+          storageKey: latestVersion.fileBlob.storageKey,
+          contentType: document.mimeType || 'application/octet-stream',
+          fileName: document.name,
+          fileSizeBytes: 0,
+          isScanned: false,
+        })
         .catch((err: unknown) => {
           console.error('[ThumbnailAPI] Failed to enqueue preview job:', err);
         });

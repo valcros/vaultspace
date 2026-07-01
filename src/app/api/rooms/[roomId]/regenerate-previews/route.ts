@@ -108,21 +108,16 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
       const storageKey = version.fileBlob.storageKey;
 
-      await providers.job.addJob(
-        'high',
-        'preview.generate',
-        {
-          documentId: doc.id,
-          versionId: version.id,
-          organizationId: session.organizationId,
-          storageKey,
-          contentType: doc.mimeType,
-          fileName: doc.name,
-          fileSizeBytes: Number(doc.fileSize),
-          isScanned: true,
-        },
-        { priority: 'high' }
-      );
+      await providers.job.addJob('high', 'preview.generate', {
+        documentId: doc.id,
+        versionId: version.id,
+        organizationId: session.organizationId,
+        storageKey,
+        contentType: doc.mimeType,
+        fileName: doc.name,
+        fileSizeBytes: Number(doc.fileSize),
+        isScanned: true,
+      });
       queued++;
     }
 

@@ -7,6 +7,8 @@ dist
 out
 
 # Development files
+.env
+.env.*
 .env*.local
 *.log
 npm-debug.log*
@@ -40,3 +42,4 @@ Thumbs.db
 # Local development
 docker-compose*.yml
 .env.example
+.private

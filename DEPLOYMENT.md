@@ -433,10 +433,10 @@ All environment variables used by VaultSpace. Required variables must be set; op
 
 #### Redis
 
-| Variable    | Required    | Default | Example                                                 | Description                                                                                                                                                           |
-| ----------- | ----------- | ------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `REDIS_URL` | Conditional | —       | `rediss://:key@yourserver.redis.cache.windows.net:6380` | Redis connection string. Required in Azure mode. Optional in standalone mode (async features disabled without Redis). Format: `rediss://[:password@]host[:port][/db]` |
-| `REDIS_TLS` | No          | `false` | `true`                                                  | Enable TLS for Redis connection. Required if using Azure Cache for Redis with SSL.                                                                                    |
+| Variable    | Required    | Default | Example                                          | Description                                                                                                                                                                                                                                                               |
+| ----------- | ----------- | ------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REDIS_URL` | Conditional | —       | `rediss://:key@yourserver.redis.azure.net:10000` | Redis connection string. Required in Azure mode. Optional in standalone mode (async features disabled without Redis). Azure Cache for Redis uses `.redis.cache.windows.net`; Azure Managed Redis uses `.redis.azure.net`. Format: `rediss://[:password@]host[:port][/db]` |
+| `REDIS_TLS` | No          | `false` | `true`                                           | Enable TLS for Redis connection. Required if using Azure Redis with SSL.                                                                                                                                                                                                  |
 
 #### Storage
 

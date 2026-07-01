@@ -11,6 +11,7 @@ import { bootstrapDb as db } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { z } from 'zod';
 import { hasCapability } from '@/lib/deployment-capabilities';
+import { JOB_NAMES, QUEUE_NAMES } from '@/workers/types';
 
 const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -69,12 +70,16 @@ export async function POST(request: NextRequest) {
 
     // Try async email first (via job queue), fall back to sync if unavailable
     if (hasCapability('canSendAsyncEmail')) {
-      await providers.job.addJob('normal', 'send-password-reset', {
+      await providers.job.addJob(QUEUE_NAMES.NORMAL, JOB_NAMES.EMAIL_SEND, {
         to: user.email,
-        userName: user.firstName || 'User',
-        organizationName: orgName,
-        resetUrl,
-        expiresIn: '1 hour',
+        subject: `Reset your ${orgName} password`,
+        template: 'password-reset',
+        data: {
+          userName: user.firstName || 'User',
+          organizationName: orgName,
+          resetUrl,
+          expiresIn: '1 hour',
+        },
       });
     } else if (hasCapability('canSendSyncEmail')) {
       // Fallback: send email synchronously (may timeout on slow SMTP)

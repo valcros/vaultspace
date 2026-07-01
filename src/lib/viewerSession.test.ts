@@ -11,7 +11,7 @@ vi.mock('next/headers', () => ({
 }));
 
 vi.mock('@/lib/db', () => ({
-  db: {
+  bootstrapDb: {
     viewSession: {
       findFirst: (...args: unknown[]) => mockViewSessionFindFirst(...args),
     },

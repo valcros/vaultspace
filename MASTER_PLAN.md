@@ -2,7 +2,7 @@
 
 > **Created:** 2026-03-25
 > **Last Updated:** 2026-03-25 (post-sync with latest push)
-> **Status:** Draft for Stakeholder Review
+> **Status:** Historical sprint plan. For the current 2026-06-30 staging status, active launch blockers, passive monitoring items, and next sprint backlog, see `docs/VAULTSPACE_MVP_PACKAGE_2026-06-30.md`.
 > **Prepared by:** Development Team
 
 ---
@@ -439,7 +439,7 @@ Options under consideration: client-side viewers, server-side PDF conversion (Li
 ## Working Model
 
 - **Lead Developer:** Claude (AI) — autonomous execution, self-review, continuous progress
-- **Stakeholder:** Project Owner — review and approval at sprint boundaries; decision points flagged only when blocking
+- **Stakeholder:** Project owner — review and approval at sprint boundaries; decision points flagged only when blocking
 - **Testing:** Live validation via Chrome browser against deployed staging environment
 - **Process:** No pause-and-confirm cycles. AI writes code, self-reviews, tests in browser, fixes issues, and continues. Issues are flagged only if they require stakeholder decisions.
 - Azure infrastructure already provisioned (Container Apps, PostgreSQL, Redis, Blob Storage)

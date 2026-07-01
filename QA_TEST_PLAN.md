@@ -6,7 +6,7 @@ This document contains comprehensive QA tests for all 63 MVP features defined in
 
 **Primary Test Environment:** Azure staging deployment
 
-- **Current staging URL:** `https://<web-container-app>.<azure-container-app-suffix>.eastus.azurecontainerapps.io`
+- **Current staging URL:** `https://www.vaultspace.org` (Azure staging on the public VaultSpace domain)
 - **Source of truth for staging URL:** GitHub repository variable `APP_URL` and the latest successful `deploy-staging.yml` workflow run
 - **Seed credentials:**
   - Admin: `admin@demo.vaultspace.app` / `Demo123!`
@@ -34,11 +34,15 @@ Before running manual QA against staging:
 
 ### Current QA Status
 
-- `main` CI and staging deployment are currently green
-- Staging browser smoke validation has been completed for login, `/api/health`, and `/dashboard`
-- Desktop dashboard validation has been completed at `lg`, `xl`, and `2xl` breakpoints with no detected widget overlap in the executed staging pass
-- Dashboard edit mode was verified to enter successfully on staging
-- Remaining work is the full manual pass through the checklist below, especially feature areas not covered by the current smoke run
+- Azure staging deep health returned healthy on 2026-06-30 with `mode=azure`, no degraded capabilities, and all listed async/sync capabilities available.
+- The final live worker-flow smoke before the email-repeat guard passed password reset, login, upload, ClamAV scan, preview, digest, export, and cleanup.
+- After repeated QA digest emails were reported, no additional live email smoke was run.
+- The worker-flow smoke script now skips password reset and digest email tests unless `QA_ALLOW_EMAIL_TESTS=true`.
+- The worker-flow smoke script now suppresses export download email unless `QA_ALLOW_EXPORT_EMAIL=true`.
+- The local QA closeout passed lint, type-check, build, focused export tests, the full Vitest suite, and `npm audit --omit=dev`.
+- Full local Vitest result on 2026-06-30: 78 files passed, 1 file skipped, 668 tests passed, and 7 tests skipped.
+- The skipped Vitest file is `src/providers/search/PostgresSearchProvider.integration.test.ts`; it is intentionally opt-in with `RUN_POSTGRES_SEARCH_INTEGRATION=true` because it requires a live PostgreSQL database.
+- Remaining work is the full manual pass through the checklist below, especially feature areas not covered by the current smoke run, cross-browser validation, document viewer accessibility, and public viewer link-flow accessibility.
 
 ### Demo Naming Clarification
 

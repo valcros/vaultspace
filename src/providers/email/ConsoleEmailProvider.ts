@@ -4,7 +4,6 @@
  * Development provider that logs emails to console instead of sending.
  */
 
-/* eslint-disable no-console */
 import type { EmailOptions, EmailProvider } from '../types';
 
 export class ConsoleEmailProvider implements EmailProvider {

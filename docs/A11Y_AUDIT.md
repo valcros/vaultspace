@@ -1,7 +1,7 @@
 # Accessibility (WCAG 2.1 AA) Audit
 
 > **Last scanned:** 2026-04-27
-> **Scanner:** `@axe-core/playwright` 4.11.x against staging (`<web-container-app>` revision 0167)
+> **Scanner:** `@axe-core/playwright` 4.11.x against staging
 > **Tags applied:** `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`
 > **Test path:** `tests/e2e/a11y.test.ts` (auth setup at `tests/e2e/auth.setup.ts`)
 > **Run command:** `PLAYWRIGHT_BASE_URL=<staging-url> npx playwright test tests/e2e/a11y.test.ts`
@@ -12,7 +12,7 @@ This document is the rolling audit trail for VaultSpace's WCAG 2.1 AA compliance
 
 Public surfaces (landing, login, register, forgot-password) and the primary authenticated surfaces (dashboard, rooms list, users, groups, activity, settings hub + organization + notifications) are scanned automatically. Per-resource pages (specific room detail, document viewer, link viewer) and admin destructive flows are out of the automated scope; they remain on the manual-pass checklist.
 
-## Latest Scan Results (2026-04-27, revision 0167, image `d74b03e`)
+## Latest Scan Results (2026-04-27)
 
 | Group         | Page                     | Path                      | Violations | Result |
 | ------------- | ------------------------ | ------------------------- | ---------- | ------ |
@@ -56,14 +56,14 @@ Public surfaces (landing, login, register, forgot-password) and the primary auth
 
 ## Audit Trail
 
-| Date       | Change                                                                                                                                                                                                                                                          | Triggering commit |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| 2026-04-26 | Initial scan via `@axe-core/playwright`. 3/4 public pages pass clean. One violation found (`text-neutral-400` on `bg-neutral-50` in landing footer) and fixed in the same commit. Test added so future regressions fail.                                        | `7701808`         |
-| 2026-04-26 | Landing-footer fix shipped in revision 0159. Re-scan: 4/4 public pages clean.                                                                                                                                                                                   | `b0f3375`         |
-| 2026-04-27 | Added `tests/e2e/auth.setup.ts` storage-state fixture and extended a11y suite to 8 authenticated pages. First authenticated scan flagged Activity and Settings for `scrollable-region-focusable` on the shell `<main>` element.                                 | `b10b50a`         |
-| 2026-04-27 | `tabIndex={0}` + `aria-label="Main content"` + `focus:outline-none` on `<main>` in `DockShell` and `AppShell`. Re-scan: 12/13 (Activity still flagged for an unrelated Select trigger and color-contrast issue).                                                | `4664208`         |
-| 2026-04-27 | Activity Select trigger gets `aria-label="Filter activity by event type"`; event-meta row light mode bumped from `text-neutral-400` to `text-neutral-600`. Re-scan against revision 0167: **13/13 pass clean** (4 public + 8 authenticated + auth-setup green). | `d74b03e`         |
-| 2026-05-28 | Room detail page QA-1: fixed three WCAG 4.1.2 violations — `<table aria-label="Room contents">`, dynamic aria-label on select-all button, aria-label + `aria-hidden` on folder and document action buttons.                                                     | `59355af`         |
-| 2026-05-28 | CI `e2e` job added to `.github/workflows/ci.yml`. Both `a11y.test.ts` and `security.test.ts` now run on every push/PR against a seeded standalone stack.                                                                                                        | `7a294ea`         |
-| 2026-05-28 | Room detail page added to a11y E2E suite. Uses `/api/rooms` to resolve first seeded room; skips gracefully if none. First automated scan of the Phase 1 split-pane room layout.                                                                                 | `fa97669`         |
-| 2026-05-28 | Room sub-pages added to a11y E2E suite: `/settings`, `/audit`, `/trash`, `/analytics` — same dynamic roomId resolution pattern. Unit tests added for exportProcessor, emailProcessor, textProcessor (613 total, all passing).                                   | `d3d6b7c`         |
+| Date       | Change                                                                                                                                                                                                                                                    | Triggering commit |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 2026-04-26 | Initial scan via `@axe-core/playwright`. 3/4 public pages pass clean. One violation found (`text-neutral-400` on `bg-neutral-50` in landing footer) and fixed in the same commit. Test added so future regressions fail.                                  | `7701808`         |
+| 2026-04-26 | Landing-footer fix shipped in revision 0159. Re-scan: 4/4 public pages clean.                                                                                                                                                                             | `b0f3375`         |
+| 2026-04-27 | Added `tests/e2e/auth.setup.ts` storage-state fixture and extended a11y suite to 8 authenticated pages. First authenticated scan flagged Activity and Settings for `scrollable-region-focusable` on the shell `<main>` element.                           | `b10b50a`         |
+| 2026-04-27 | `tabIndex={0}` + `aria-label="Main content"` + `focus:outline-none` on `<main>` in `DockShell` and `AppShell`. Re-scan: 12/13 (Activity still flagged for an unrelated Select trigger and color-contrast issue).                                          | `4664208`         |
+| 2026-04-27 | Activity Select trigger gets `aria-label="Filter activity by event type"`; event-meta row light mode bumped from `text-neutral-400` to `text-neutral-600`. Re-scan against staging: **13/13 pass clean** (4 public + 8 authenticated + auth-setup green). | `d74b03e`         |
+| 2026-05-28 | Room detail page QA-1: fixed three WCAG 4.1.2 violations — `<table aria-label="Room contents">`, dynamic aria-label on select-all button, aria-label + `aria-hidden` on folder and document action buttons.                                               | `59355af`         |
+| 2026-05-28 | CI `e2e` job added to `.github/workflows/ci.yml`. Both `a11y.test.ts` and `security.test.ts` now run on every push/PR against a seeded standalone stack.                                                                                                  | `7a294ea`         |
+| 2026-05-28 | Room detail page added to a11y E2E suite. Uses `/api/rooms` to resolve first seeded room; skips gracefully if none. First automated scan of the Phase 1 split-pane room layout.                                                                           | `fa97669`         |
+| 2026-05-28 | Room sub-pages added to a11y E2E suite: `/settings`, `/audit`, `/trash`, `/analytics` — same dynamic roomId resolution pattern. Unit tests added for exportProcessor, emailProcessor, textProcessor (613 total, all passing).                             | `d3d6b7c`         |

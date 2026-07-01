@@ -7,7 +7,7 @@
  * pages once a login fixture is in place.
  *
  * Run against staging:
- *   PLAYWRIGHT_BASE_URL=https://<web-container-app>.<azure-container-app-suffix>.eastus.azurecontainerapps.io \
+ *   PLAYWRIGHT_BASE_URL=https://www.vaultspace.org \
  *     PLAYWRIGHT_WEB_SERVER_COMMAND= npx playwright test tests/e2e/a11y.test.ts
  */
 import AxeBuilder from '@axe-core/playwright';
