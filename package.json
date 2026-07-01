@@ -102,6 +102,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",
+    "@babel/core": "^7.29.7",
     "@playwright/mcp": "^0.0.70",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.6.3",
@@ -126,14 +127,14 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
     "jsdom": "^25.0.1",
-    "postcss": "^8.5.16",
+    "postcss": "8.5.16",
     "prettier": "^3.3.3",
     "prettier-plugin-tailwindcss": "^0.6.9",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.15",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.5"
+    "vitest": "^3.2.6"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -144,6 +145,14 @@
   "overrides": {
     "esbuild": "0.28.1",
     "glob": "10.5.0",
-    "postcss": "$postcss"
+    "postcss": "8.5.16",
+    "vite": "6.4.3",
+    "jsdom": {
+      "form-data": "4.0.6",
+      "ws": "8.21.0"
+    },
+    "minimatch@3.1.5": {
+      "brace-expansion": "1.1.13"
+    }
   }
 }
