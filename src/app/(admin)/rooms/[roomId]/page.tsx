@@ -83,9 +83,13 @@ const UploadZone = dynamic(
   () => import('@/components/documents/UploadZone').then((m) => m.UploadZone),
   { loading: paneLoading, ssr: false }
 );
-import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
+// The preview dialog only mounts on user action (row click / ?doc= deep
+// link); load it lazily client-side so it stays out of the initial chunk.
+const PreviewDialog = dynamic(
+  () => import('./_components/PreviewDialog').then((m) => m.PreviewDialog),
+  { loading: () => null, ssr: false }
+);
 import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
-import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
@@ -226,8 +230,6 @@ export default function RoomDetailPage() {
   const [selectedDocument, setSelectedDocument] = React.useState<Document | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
-  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
-  const [previewError, setPreviewError] = React.useState<string | null>(null);
 
   // Version history states
   const [showVersionDialog, setShowVersionDialog] = React.useState(false);
@@ -742,59 +744,13 @@ export default function RoomDetailPage() {
     [roomId]
   );
 
-  // Handle document preview
-  const handlePreview = React.useCallback(
-    async (doc: Document) => {
-      setSelectedDocument(doc);
-      setPreviewUrl(null);
-      setPreviewError(null);
-      setShowPreviewDialog(true);
-
-      // Types that can be previewed (inline or via client-side renderer)
-      // All types we can preview — inline, via Gotenberg conversion, or client-side rendering
-      const previewableTypes = [
-        // Inline (served directly)
-        'application/pdf',
-        'image/jpeg',
-        'image/png',
-        'image/gif',
-        'image/webp',
-        'image/tiff',
-        'image/svg+xml',
-        // Client-side rendered
-        'text/plain',
-        'text/csv',
-        'text/markdown',
-        'text/html',
-        'text/yaml',
-        'text/xml',
-        'application/json',
-        'application/xml',
-        // Gotenberg conversion (office formats → PDF)
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
-        'application/msword', // DOC
-        'application/vnd.ms-excel', // XLS
-        'application/vnd.ms-powerpoint', // PPT
-        'application/vnd.oasis.opendocument.text', // ODT
-        'application/vnd.oasis.opendocument.spreadsheet', // ODS
-        'application/vnd.oasis.opendocument.presentation', // ODP
-        'application/vnd.oasis.opendocument.graphics', // ODG
-        'application/vnd.ms-visio.drawing.main+xml', // VSDX
-        'application/vnd.visio', // VSD
-        'application/rtf',
-        'application/epub+zip',
-      ];
-
-      if (previewableTypes.includes(doc.mimeType)) {
-        setPreviewUrl(`/api/rooms/${roomId}/documents/${doc.id}/preview`);
-      } else {
-        setPreviewError('Preview not available for this file type. Use download instead.');
-      }
-    },
-    [roomId]
-  );
+  // Handle document preview. PreviewDialog derives the preview URL (or the
+  // not-previewable error) from the document itself; the page only tracks
+  // which document is open.
+  const handlePreview = React.useCallback((doc: Document) => {
+    setSelectedDocument(doc);
+    setShowPreviewDialog(true);
+  }, []);
 
   // ?doc=<id> deep links (landing "Continue reading" / bookmarks) open the
   // preview directly. Fetched by id because the document may live in a folder
@@ -2151,84 +2107,18 @@ export default function RoomDetailPage() {
       />
 
       {/* Preview Dialog */}
-      <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
-        <DialogContent className="max-h-[92vh] w-[95vw] max-w-6xl overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>{selectedDocument?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="relative h-[78vh] overflow-auto">
-            {room?.enableWatermark && (
-              <WatermarkOverlay
-                template={room.watermarkTemplate || undefined}
-                viewerEmail={undefined}
-                viewerName="Admin Preview"
-                roomName={room.name}
-              />
-            )}
-            {previewError ? (
-              <div className="flex h-full flex-col items-center justify-center text-center">
-                <FileText className="mb-4 h-16 w-16 text-neutral-300" />
-                <p className="mb-4 text-neutral-500">{previewError}</p>
-                {selectedDocument && (
-                  <Button onClick={() => handleDownload(selectedDocument)}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Download Instead
-                  </Button>
-                )}
-              </div>
-            ) : previewUrl ? (
-              selectedDocument?.mimeType === 'application/pdf' ? (
-                <iframe
-                  src={previewUrl}
-                  className="h-full w-full border-0"
-                  title={selectedDocument?.name}
-                />
-              ) : selectedDocument?.mimeType.startsWith('image/') &&
-                selectedDocument?.mimeType !== 'image/svg+xml' ? (
-                <div className="flex h-full items-center justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt={selectedDocument?.name}
-                    className="max-h-full max-w-full object-contain"
-                  />
-                </div>
-              ) : selectedDocument?.mimeType.startsWith('text/') ||
-                selectedDocument?.mimeType === 'application/json' ||
-                selectedDocument?.mimeType === 'application/xml' ||
-                selectedDocument?.mimeType === 'image/svg+xml' ? (
-                <TextPreviewFetcher
-                  url={previewUrl}
-                  mimeType={selectedDocument?.mimeType ?? 'text/plain'}
-                  fileName={selectedDocument?.name ?? 'file'}
-                />
-              ) : (
-                <ConvertedPreview
-                  url={previewUrl}
-                  name={selectedDocument?.name ?? 'file'}
-                  onDownload={() => selectedDocument && handleDownload(selectedDocument)}
-                />
-              )
-            ) : (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center">
-                  <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
-                  <p className="text-neutral-500">Loading preview...</p>
-                </div>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            {selectedDocument && (
-              <Button variant="outline" onClick={() => handleDownload(selectedDocument)}>
-                <Download className="mr-2 h-4 w-4" />
-                Download
-              </Button>
-            )}
-            <Button onClick={() => setShowPreviewDialog(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PreviewDialog
+        open={showPreviewDialog}
+        onOpenChange={setShowPreviewDialog}
+        roomId={roomId}
+        doc={selectedDocument}
+        room={room}
+        onDownload={() => {
+          if (selectedDocument) {
+            handleDownload(selectedDocument);
+          }
+        }}
+      />
 
       {/* Version History Dialog */}
       <Dialog
@@ -2467,123 +2357,4 @@ function DocumentThumbnail({
       )}
     </div>
   );
-}
-
-/**
- * Fetches a converted preview (e.g. PDF from Gotenberg) via blob URL.
- * Shows error UI if the server returns 404 or a JSON error response.
- */
-function ConvertedPreview({
-  url,
-  name,
-  onDownload,
-}: {
-  url: string;
-  name: string;
-  onDownload: () => void;
-}) {
-  const [blobUrl, setBlobUrl] = React.useState<string | null>(null);
-  const [error, setError] = React.useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    fetch(url)
-      .then(async (res) => {
-        if (cancelled) {
-          return;
-        }
-        const ct = res.headers.get('content-type') || '';
-        if (!res.ok || ct.startsWith('application/json')) {
-          setError(true);
-          return;
-        }
-        const blob = await res.blob();
-        if (!cancelled) {
-          objectUrl = URL.createObjectURL(blob);
-          setBlobUrl(objectUrl);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [url]);
-
-  if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center text-center">
-        <FileText className="mb-4 h-16 w-16 text-neutral-300" />
-        <p className="mb-4 text-neutral-500">Preview not available for this file type</p>
-        <Button onClick={onDownload}>
-          <Download className="mr-2 h-4 w-4" />
-          Download Instead
-        </Button>
-      </div>
-    );
-  }
-
-  if (!blobUrl) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
-      </div>
-    );
-  }
-
-  return <iframe src={blobUrl} className="h-full w-full border-0" title={name} />;
-}
-
-/**
- * Fetches text content from a URL then renders via TextPreviewRenderer
- */
-function TextPreviewFetcher({
-  url,
-  mimeType,
-  fileName,
-}: {
-  url: string;
-  mimeType: string;
-  fileName: string;
-}) {
-  const [content, setContent] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    fetch(url)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error('Failed to load');
-        }
-        // Belt-and-suspenders: if server returns JSON but we expected a text file, treat as error
-        const ct = res.headers.get('content-type') || '';
-        if (ct.startsWith('application/json') && mimeType !== 'application/json') {
-          throw new Error('Preview not available');
-        }
-        return res.text();
-      })
-      .then(setContent)
-      .catch((err) => setError(err.message));
-  }, [url, mimeType]);
-
-  if (error) {
-    return <div className="flex h-full items-center justify-center text-neutral-500">{error}</div>;
-  }
-
-  if (content === null) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
-      </div>
-    );
-  }
-
-  return <TextPreviewRenderer content={content} mimeType={mimeType} fileName={fileName} />;
 }
