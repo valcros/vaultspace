@@ -16,6 +16,7 @@ import { DockHeader } from './dock-header';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { clsx } from 'clsx';
 import {
+  Home,
   LayoutDashboard,
   FolderOpen,
   Users,
@@ -65,7 +66,7 @@ type DockPosition = 'top' | 'bottom' | 'left' | 'right';
 // ============================================================================
 
 const navigationItems: DockItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
+  { id: 'dashboard', label: 'Home', icon: Home, href: '/dashboard' },
   { id: 'rooms', label: 'Rooms', icon: FolderOpen, href: '/rooms' },
   { id: 'users', label: 'Users', icon: Users, href: '/users' },
   { id: 'groups', label: 'Groups', icon: UsersRound, href: '/groups' },

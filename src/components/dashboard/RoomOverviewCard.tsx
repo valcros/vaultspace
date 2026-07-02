@@ -101,7 +101,7 @@ export function RoomOverviewCard({ room, continueDocument }: RoomOverviewCardPro
       )}
 
       {room.topFolders && room.topFolders.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Folders in this room">
+        <div className="mb-4 mt-4 flex flex-wrap gap-1.5" aria-label="Folders in this room">
           {room.topFolders.map((folder) => (
             <span
               key={folder.id}
@@ -115,7 +115,7 @@ export function RoomOverviewCard({ room, continueDocument }: RoomOverviewCardPro
         </div>
       )}
 
-      <div className="mt-auto flex items-center gap-4 pt-4 text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
+      <div className="mt-auto flex items-center gap-4 border-t border-neutral-100 pt-3 text-sm tabular-nums text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
         <span className="flex items-center gap-1.5">
           <FileText className="h-4 w-4" aria-hidden="true" />
           {room.documentCount} {room.documentCount === 1 ? 'document' : 'documents'}
