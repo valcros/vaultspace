@@ -117,6 +117,12 @@ export interface JobOptions {
     type: 'exponential' | 'fixed';
     delay: number;
   };
+  /**
+   * Deterministic job id for deduplication: backends that support it (BullMQ)
+   * drop an add while a job with the same id is still queued. Use for
+   * idempotent work like preview generation.
+   */
+  jobId?: string;
 }
 
 export interface JobResult<T = unknown> {
