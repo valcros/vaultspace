@@ -67,13 +67,9 @@ export async function createSession(
     },
   });
 
-  // Cache session data in Redis
-  await cacheSessionData(token, {
-    sessionId: session.id,
-    userId,
-    organizationId,
-    expiresAt,
-  });
+  // Deliberately NOT cached here: only validateSession writes the cache, and
+  // only with a complete membership-checked snapshot. Caching a partial blob
+  // at creation was the malformed-cache hazard the read path guards against.
 
   return { session, token };
 }
@@ -82,7 +78,73 @@ export async function createSession(
  * Validate and refresh a session token
  * Returns session data if valid, throws otherwise
  */
+// Read-through cache contract:
+// - Only validateSession writes the cache, and only with a COMPLETE, versioned
+//   SessionData snapshot. Never cache partial data.
+// - Cache TTL is short (60s) and independent of the 24h idle window: Redis is
+//   an accelerator, never the source of truth for authorization. Any endpoint
+//   that mutates membership, role, or user active state MUST deactivate
+//   sessions and call clearSessionCache (see reset-password and user delete).
+// - Anything unexpected in a cached value falls through to full DB validation
+//   (fail closed on the cheap path, never on security).
+const SESSION_CACHE_VERSION = 1;
+const SESSION_CACHE_TTL_SECONDS = 60;
+const ACTIVITY_REFRESH_MIN_MS = 5 * 60 * 1000;
+
+interface CachedSessionEnvelope {
+  v: number;
+  data: SessionData;
+}
+
+function reviveCachedSession(raw: unknown): SessionData | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const envelope = raw as Partial<CachedSessionEnvelope>;
+  if (envelope.v !== SESSION_CACHE_VERSION || !envelope.data || typeof envelope.data !== 'object') {
+    return null;
+  }
+  const d = envelope.data as SessionData & { expiresAt: string | Date; issuedAt: string | Date };
+  if (
+    !d.sessionId ||
+    !d.userId ||
+    !d.organizationId ||
+    !d.user?.id ||
+    !d.organization?.id ||
+    !d.organization?.role ||
+    !d.expiresAt ||
+    !d.issuedAt
+  ) {
+    return null;
+  }
+  const expiresAt = new Date(d.expiresAt);
+  const issuedAt = new Date(d.issuedAt);
+  if (Number.isNaN(expiresAt.getTime()) || Number.isNaN(issuedAt.getTime())) {
+    return null;
+  }
+  return { ...d, expiresAt, issuedAt };
+}
+
 export async function validateSession(token: string): Promise<SessionData> {
+  // Fast path: recent full validation cached in Redis.
+  try {
+    const cached = await getProviders().cache.get(`session:${token}`);
+    const revived = reviveCachedSession(cached);
+    if (revived) {
+      const now = new Date();
+      const absoluteMax = new Date(
+        revived.issuedAt.getTime() + SESSION_CONFIG.ABSOLUTE_MAX_DAYS * 24 * 60 * 60 * 1000
+      );
+      if (revived.expiresAt > now && now <= absoluteMax && revived.user.isActive) {
+        return revived;
+      }
+      // Expired or inactive in cache: fall through to the DB path, which owns
+      // deactivation and error semantics.
+    }
+  } catch {
+    // Cache unavailable or malformed — full DB validation below.
+  }
+
   // Fetch from database. Uses bootstrapDb because:
   //   1. The session token is the only thing we have at this point — we don't
   //      yet know the user's org, so we can't establish RLS context.
@@ -182,11 +244,15 @@ export async function validateSession(token: string): Promise<SessionData> {
     issuedAt: session.createdAt,
   };
 
-  // Cache the session data
+  // Cache the complete snapshot (short TTL; see contract above)
   await cacheSessionData(token, sessionData);
 
-  // Refresh session in background
-  refreshSessionActivity(session.id).catch(() => {});
+  // Sliding-window refresh, throttled: writing lastActiveAt/expiresAt on
+  // every request added a DB write per API call for a 24h idle window that
+  // only needs minute-level resolution.
+  if (now.getTime() - session.lastActiveAt.getTime() > ACTIVITY_REFRESH_MIN_MS) {
+    refreshSessionActivity(session.id).catch(() => {});
+  }
 
   return sessionData;
 }
@@ -258,10 +324,10 @@ export async function clearSessionCache(tokens: string[]): Promise<void> {
 }
 
 /**
- * Cache session data in Redis
+ * Cache a complete session snapshot in Redis (short TTL; accelerator only)
  */
-async function cacheSessionData(token: string, data: Partial<SessionData>): Promise<void> {
+async function cacheSessionData(token: string, data: SessionData): Promise<void> {
   const cache = getProviders().cache;
-  const ttl = SESSION_CONFIG.IDLE_TIMEOUT_HOURS * 60 * 60;
-  await cache.set(`session:${token}`, data, ttl);
+  const envelope: CachedSessionEnvelope = { v: SESSION_CACHE_VERSION, data };
+  await cache.set(`session:${token}`, envelope, SESSION_CACHE_TTL_SECONDS);
 }
