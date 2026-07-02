@@ -120,6 +120,7 @@ import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/docu
 import { AddMemberDialog } from './_components/AddMemberDialog';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
 import { CreateLinkDialog, type CreateLinkValues } from './_components/CreateLinkDialog';
+import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
 
 interface Room {
   id: string;
@@ -343,7 +344,6 @@ export default function RoomDetailPage() {
 
   // Tag editor states
   const [editingTagsDoc, setEditingTagsDoc] = React.useState<Document | null>(null);
-  const [tagInput, setTagInput] = React.useState('');
 
   // Access request states
   const [accessRequests, setAccessRequests] = React.useState<AccessRequest[]>([]);
@@ -2129,12 +2129,7 @@ export default function RoomDetailPage() {
                               <Download className="mr-2 h-4 w-4" />
                               Download
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setEditingTagsDoc(doc);
-                                setTagInput((doc.tags || []).join(', '));
-                              }}
-                            >
+                            <DropdownMenuItem onClick={() => setEditingTagsDoc(doc)}>
                               <Tag className="mr-2 h-4 w-4" />
                               Edit Properties
                             </DropdownMenuItem>
@@ -2279,12 +2274,7 @@ export default function RoomDetailPage() {
                       <Download className="mr-2 h-4 w-4" />
                       Download
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setEditingTagsDoc(doc);
-                        setTagInput((doc.tags || []).join(', '));
-                      }}
-                    >
+                    <DropdownMenuItem onClick={() => setEditingTagsDoc(doc)}>
                       <Tag className="mr-2 h-4 w-4" />
                       Edit Properties
                     </DropdownMenuItem>
@@ -3033,7 +3023,6 @@ export default function RoomDetailPage() {
               className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"
               onClick={() => {
                 setEditingTagsDoc(contextMenu.doc);
-                setTagInput((contextMenu.doc.tags || []).join(', '));
                 setContextMenu(null);
               }}
             >
@@ -3124,138 +3113,17 @@ export default function RoomDetailPage() {
       />
 
       {/* Edit Properties Dialog */}
-      <Dialog
-        open={!!editingTagsDoc}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingTagsDoc(null);
+      <EditPropertiesDialog
+        doc={editingTagsDoc}
+        roomId={roomId}
+        onClose={() => setEditingTagsDoc(null)}
+        onRefresh={fetchDocuments}
+        onSaveTags={(tags) => {
+          if (editingTagsDoc) {
+            handleSaveTags(editingTagsDoc, tags);
           }
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Properties</DialogTitle>
-            <DialogDescription>
-              Update tags and category for &quot;{editingTagsDoc?.name}&quot;.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Category</Label>
-              <Select
-                value={editingTagsDoc?.category ?? 'none'}
-                onValueChange={async (v) => {
-                  if (editingTagsDoc) {
-                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ category: v === 'none' ? null : v }),
-                    });
-                    fetchDocuments();
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No category</SelectItem>
-                  {CATEGORY_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Tags</Label>
-              <Input
-                placeholder="confidential, financial, q4-2026"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && editingTagsDoc) {
-                    const tags = tagInput
-                      .split(',')
-                      .map((t) => t.trim())
-                      .filter(Boolean);
-                    handleSaveTags(editingTagsDoc, tags);
-                  }
-                }}
-              />
-              <p className="text-xs text-neutral-600">Separate tags with commas</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Expiry Date</Label>
-              <Input
-                type="datetime-local"
-                value={
-                  editingTagsDoc?.expiresAt
-                    ? new Date(editingTagsDoc.expiresAt).toISOString().slice(0, 16)
-                    : ''
-                }
-                onChange={async (e) => {
-                  if (editingTagsDoc) {
-                    const val = e.target.value ? new Date(e.target.value).toISOString() : null;
-                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ expiresAt: val }),
-                    });
-                    fetchDocuments();
-                  }
-                }}
-              />
-              <p className="text-xs text-neutral-600">
-                Document will auto-archive or delete after this date
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Expiry Action</Label>
-              <Select
-                value={editingTagsDoc?.expiryAction ?? 'ARCHIVE'}
-                onValueChange={async (v) => {
-                  if (editingTagsDoc) {
-                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ expiryAction: v }),
-                    });
-                    fetchDocuments();
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select action" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ARCHIVE">Archive</SelectItem>
-                  <SelectItem value="DELETE">Delete</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingTagsDoc(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (editingTagsDoc) {
-                  const tags = tagInput
-                    .split(',')
-                    .map((t) => t.trim())
-                    .filter(Boolean);
-                  handleSaveTags(editingTagsDoc, tags);
-                }
-              }}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
 
       {/* Create Link Dialog */}
       <CreateLinkDialog
