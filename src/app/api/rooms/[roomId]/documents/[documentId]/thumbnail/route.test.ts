@@ -114,7 +114,8 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('image/png');
-    expect(response.headers.get('Cache-Control')).toBe('private, max-age=300');
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=86400, immutable');
+    expect(response.headers.get('ETag')).toBeTruthy();
   });
 
   it('serves stored thumbnail for ALL types including PDF', async () => {
@@ -148,7 +149,8 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
       expect.objectContaining({
         documentId: 'doc-1',
         versionId: 'ver-1',
-      })
+      }),
+      expect.objectContaining({ jobId: 'preview:ver-1' })
     );
 
     // Restore
@@ -170,8 +172,10 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
     expect(response.headers.get('Cache-Control')).toBe('private, max-age=30');
   });
 
-  it('returns placeholder when storage.exists returns false', async () => {
-    mockStorageExists.mockResolvedValue(false);
+  it('returns placeholder when stored thumbnail fetch fails', async () => {
+    // The exists() pre-check was removed (audit finding 5-adjacent): a failed
+    // get falls through to the placeholder path instead.
+    mockStorageGet.mockRejectedValueOnce(new Error('not found'));
 
     const response = await GET(createRequest(), createContext());
 

@@ -113,14 +113,17 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           take: 20,
         }),
 
-        tx.event.findMany({
-          where: {
-            ...orgRoomFilter,
-            eventType: 'DOCUMENT_VIEWED',
-            createdAt: { gte: periodStart },
-          },
-          select: { createdAt: true },
-        }),
+        // Daily view counts aggregated in the database; fetching every event
+        // row to bucket in JS scaled with event volume, not with PERIOD_DAYS.
+        tx.$queryRaw<{ day: Date; views: bigint }[]>`
+          SELECT date_trunc('day', "createdAt") AS day, count(*)::bigint AS views
+          FROM "events"
+          WHERE "organizationId" = ${session.organizationId}
+            AND "roomId" = ${roomId}
+            AND "eventType" = 'DOCUMENT_VIEWED'
+            AND "createdAt" >= ${periodStart}
+          GROUP BY 1
+        `,
       ]);
 
       // Build daily view timeline over the period
@@ -130,9 +133,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         d.setDate(d.getDate() + i);
         dayCountMap.set(d.toISOString().slice(0, 10), 0);
       }
-      for (const event of viewEvents) {
-        const key = event.createdAt.toISOString().slice(0, 10);
-        dayCountMap.set(key, (dayCountMap.get(key) ?? 0) + 1);
+      for (const bucket of viewEvents) {
+        const key = bucket.day.toISOString().slice(0, 10);
+        dayCountMap.set(key, (dayCountMap.get(key) ?? 0) + Number(bucket.views));
       }
       const viewTimeline = Array.from(dayCountMap.entries()).map(([date, count]) => ({
         date,

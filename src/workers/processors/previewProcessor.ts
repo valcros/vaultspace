@@ -64,15 +64,25 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       dpi: 150,
     });
 
-    // Store each page as a preview asset
+    // Store page files first (outside any transaction), then record all
+    // asset rows in ONE org context: the previous per-page transaction made
+    // a 100-page PDF open 100 transactions.
+    const storedPages: {
+      page: (typeof previewResult.pages)[number];
+      assetType: 'PDF' | 'RENDER';
+      renderKey: string;
+    }[] = [];
     for (const page of previewResult.pages) {
       const ext = page.mimeType === 'application/pdf' ? 'pdf' : 'png';
       const assetType = page.mimeType === 'application/pdf' ? 'PDF' : 'RENDER';
       const renderKey = `previews/${documentId}/${versionId}/page-${page.pageNumber}.${ext}`;
       await providers.storage.put('previews', renderKey, page.data);
+      storedPages.push({ page, assetType, renderKey });
+    }
 
-      // Upsert preview asset record (idempotent — safe for re-processing)
-      await withOrgContext(organizationId, async (tx) => {
+    await withOrgContext(organizationId, async (tx) => {
+      // Upserts are idempotent — safe for BullMQ re-delivery.
+      for (const { page, assetType, renderKey } of storedPages) {
         await tx.previewAsset.upsert({
           where: {
             versionId_assetType_pageNumber: {
@@ -100,11 +110,8 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
             fileSizeBytes: BigInt(page.data.length),
           },
         });
-      });
-    }
+      }
 
-    // Update document version with preview info
-    await withOrgContext(organizationId, async (tx) => {
       await tx.documentVersion.update({
         where: { id: versionId },
         data: {
@@ -112,12 +119,9 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
           previewGeneratedAt: new Date(),
         },
       });
-
-      // Update document page count
-      await tx.document.update({
-        where: { id: documentId },
-        data: { totalVersions: { increment: 0 } }, // Touch for updatedAt
-      });
+      // The old increment-0 "touch" write made every preview run look like a
+      // document update, polluting the "new since last visit" freshness the
+      // landing now headlines. Preview readiness lives on the version row.
     });
 
     console.log(

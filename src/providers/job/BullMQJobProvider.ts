@@ -106,6 +106,9 @@ export class BullMQJobProvider implements JobProvider {
       attempts: options?.attempts,
       backoff: options?.backoff,
       ...(options?.priority ? { priority: PRIORITY_MAP[options.priority] } : {}),
+      // BullMQ drops adds sharing a jobId while that job is still queued —
+      // stops thumbnail-miss stampedes re-enqueueing the same preview work.
+      ...(options?.jobId ? { jobId: options.jobId } : {}),
     };
 
     const job = await queue.add(jobName, data, jobOptions);

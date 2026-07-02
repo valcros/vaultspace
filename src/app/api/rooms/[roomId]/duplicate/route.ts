@@ -85,25 +85,48 @@ export async function POST(request: NextRequest, context: RouteContext) {
         orderBy: { path: 'asc' },
       });
 
-      // Recreate folder structure, maintaining parent-child relationships
+      // Recreate folder structure, maintaining parent-child relationships.
+      // Batch by depth level: all folders at one depth share resolved parent
+      // ids, so each level is a single createMany instead of one round trip
+      // per folder. Depth is capped at 3, so this is at most 3 round trips
+      // plus one findMany per level to recover generated ids.
       const oldIdToNewId = new Map<string, string>();
-
+      const byDepth = new Map<number, typeof sourceFolders>();
       for (const folder of sourceFolders) {
-        const mappedParentId = folder.parentId ? (oldIdToNewId.get(folder.parentId) ?? null) : null;
+        const depth = folder.path.split('/').filter(Boolean).length;
+        const level = byDepth.get(depth) ?? [];
+        level.push(folder);
+        byDepth.set(depth, level);
+      }
 
-        const newFolder = await tx.folder.create({
-          data: {
+      for (const depth of [...byDepth.keys()].sort((a, b) => a - b)) {
+        const level = byDepth.get(depth)!;
+        await tx.folder.createMany({
+          data: level.map((folder) => ({
             organizationId: session.organizationId,
             roomId: duplicatedRoom.id,
             name: folder.name,
             path: folder.path,
-            parentId: mappedParentId,
+            parentId: folder.parentId ? (oldIdToNewId.get(folder.parentId) ?? null) : null,
             displayOrder: folder.displayOrder,
             confidential: folder.confidential,
-          },
+          })),
         });
-
-        oldIdToNewId.set(folder.id, newFolder.id);
+        const created = await tx.folder.findMany({
+          where: {
+            organizationId: session.organizationId,
+            roomId: duplicatedRoom.id,
+            path: { in: level.map((f) => f.path) },
+          },
+          select: { id: true, path: true },
+        });
+        const newIdByPath = new Map(created.map((f) => [f.path, f.id]));
+        for (const folder of level) {
+          const newId = newIdByPath.get(folder.path);
+          if (newId) {
+            oldIdToNewId.set(folder.id, newId);
+          }
+        }
       }
 
       return duplicatedRoom;
