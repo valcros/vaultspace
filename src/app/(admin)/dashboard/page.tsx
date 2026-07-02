@@ -241,7 +241,15 @@ export default function DashboardPage() {
 
         {rooms.length > 0 ? (
           <section aria-label="Your rooms">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {/* With one or two rooms, let the cards breathe as wide overview
+                panels; the compact 3-up grid only earns its keep at volume. */}
+            <div
+              className={
+                rooms.length <= 2
+                  ? 'grid max-w-4xl gap-4 md:grid-cols-1'
+                  : 'grid gap-4 sm:grid-cols-2 xl:grid-cols-3'
+              }
+            >
               {rooms.map((room) => {
                 const continueDoc = continueByRoom.get(room.id);
                 return (

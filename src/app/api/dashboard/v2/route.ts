@@ -60,6 +60,8 @@ interface RoomSummary {
   questionCount: number;
   /** Documents added since the caller's previous login. */
   newDocumentCount: number;
+  /** Root folders (up to 4) as a contents peek for the landing card. */
+  topFolders: { id: string; name: string; documentCount: number }[];
   lastActivity?: string;
 }
 
@@ -584,6 +586,22 @@ export async function GET() {
         }),
       ]);
 
+      // Root folders for the listed rooms (landing card contents peek)
+      const rootFolders = await tx.folder.findMany({
+        where: {
+          organizationId: orgId,
+          roomId: { in: userRooms.map((r) => r.id) },
+          parentId: null,
+        },
+        select: {
+          id: true,
+          name: true,
+          roomId: true,
+          _count: { select: { documents: { where: { status: 'ACTIVE' } } } },
+        },
+        orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+      });
+
       // Get top viewed documents
       const topDocuments = await tx.document.findMany({
         where: {
@@ -662,6 +680,18 @@ export async function GET() {
       // My Rooms
       const elevatedRoomIds = new Set(roomAdminElevations.map((a) => a.roomId));
       const newDocCountByRoomId = new Map(newDocCountsByRoom.map((g) => [g.roomId, g._count._all]));
+      const foldersByRoomId = new Map<
+        string,
+        { id: string; name: string; documentCount: number }[]
+      >();
+      for (const f of rootFolders) {
+        const list = foldersByRoomId.get(f.roomId) ?? [];
+        if (list.length < 4) {
+          list.push({ id: f.id, name: f.name, documentCount: f._count.documents });
+        }
+        foldersByRoomId.set(f.roomId, list);
+      }
+
       response.myRooms = userRooms.map((r) => ({
         id: r.id,
         name: r.name,
@@ -672,6 +702,7 @@ export async function GET() {
         viewerCount: r._count.links, // Active links as proxy for viewer access
         questionCount: r._count.questions,
         newDocumentCount: newDocCountByRoomId.get(r.id) ?? 0,
+        topFolders: foldersByRoomId.get(r.id) ?? [],
         lastActivity: r.updatedAt.toISOString(),
       }));
 

@@ -1,8 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { FileText, Link2, MessageCircleQuestion } from 'lucide-react';
+import { FileText, Folder, Link2, MessageCircleQuestion } from 'lucide-react';
 import Link from 'next/link';
+import { formatDistanceToNow } from 'date-fns';
 import { clsx } from 'clsx';
 
 export interface RoomOverview {
@@ -15,6 +16,8 @@ export interface RoomOverview {
   viewerCount: number;
   questionCount: number;
   newDocumentCount: number;
+  topFolders?: { id: string; name: string; documentCount: number }[];
+  lastActivity?: string;
 }
 
 interface RoomOverviewCardProps {
@@ -93,6 +96,21 @@ export function RoomOverviewCard({ room, continueDocument }: RoomOverviewCardPro
         </p>
       )}
 
+      {room.topFolders && room.topFolders.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Folders in this room">
+          {room.topFolders.map((folder) => (
+            <span
+              key={folder.id}
+              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs tabular-nums text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+            >
+              <Folder className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+              {folder.name}
+              <span className="text-neutral-400 dark:text-neutral-500">{folder.documentCount}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="mt-auto flex items-center gap-4 pt-4 text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
         <span className="flex items-center gap-1.5">
           <FileText className="h-4 w-4" aria-hidden="true" />
@@ -106,6 +124,11 @@ export function RoomOverviewCard({ room, continueDocument }: RoomOverviewCardPro
           <span className="flex items-center gap-1.5">
             <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
             {room.questionCount} open
+          </span>
+        )}
+        {room.lastActivity && (
+          <span className="ml-auto text-xs">
+            Updated {formatDistanceToNow(new Date(room.lastActivity), { addSuffix: true })}
           </span>
         )}
       </div>
