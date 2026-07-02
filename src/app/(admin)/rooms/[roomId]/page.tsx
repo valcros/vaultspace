@@ -119,6 +119,7 @@ import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
 import { AddMemberDialog } from './_components/AddMemberDialog';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
+import { CreateLinkDialog, type CreateLinkValues } from './_components/CreateLinkDialog';
 
 interface Room {
   id: string;
@@ -332,11 +333,6 @@ export default function RoomDetailPage() {
   const [isDeletingFolder, setIsDeletingFolder] = React.useState(false);
 
   // Link create states
-  const [newLinkName, setNewLinkName] = React.useState('');
-  const [newLinkPermission, setNewLinkPermission] = React.useState<'VIEW' | 'DOWNLOAD'>('VIEW');
-  const [newLinkPassword, setNewLinkPassword] = React.useState('');
-  const [newLinkExpiry, setNewLinkExpiry] = React.useState('');
-  const [newLinkSessionLimit, setNewLinkSessionLimit] = React.useState('');
   const [isCreatingLink, setIsCreatingLink] = React.useState(false);
 
   // Confirmation dialog states
@@ -1301,68 +1297,61 @@ export default function RoomDetailPage() {
   }, [roomId, selectedFolder, fetchFolders, fetchDocuments, fetchFolderTree]);
 
   // Handle share link creation
-  const handleCreateLink = React.useCallback(async () => {
-    if (!newLinkName.trim()) {
-      toast({ title: 'Required', description: 'Please enter a link name' });
-      return;
-    }
+  const handleCreateLink = React.useCallback(
+    async (values: CreateLinkValues) => {
+      if (!values.name.trim()) {
+        toast({ title: 'Required', description: 'Please enter a link name' });
+        return false;
+      }
 
-    setIsCreatingLink(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/links`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newLinkName.trim(),
-          permission: newLinkPermission,
-          scope: 'ENTIRE_ROOM',
-          ...(newLinkPassword && { password: newLinkPassword }),
-          ...(newLinkExpiry && { expiresAt: new Date(newLinkExpiry).toISOString() }),
-          ...(newLinkSessionLimit && { maxSessionMinutes: parseInt(newLinkSessionLimit, 10) }),
-        }),
-      });
+      setIsCreatingLink(true);
+      let created = false;
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/links`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: values.name.trim(),
+            permission: values.permission,
+            scope: 'ENTIRE_ROOM',
+            ...(values.password && { password: values.password }),
+            ...(values.expiry && { expiresAt: new Date(values.expiry).toISOString() }),
+            ...(values.sessionLimit && { maxSessionMinutes: parseInt(values.sessionLimit, 10) }),
+          }),
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        setShowLinkDialog(false);
-        setNewLinkName('');
-        setNewLinkPermission('VIEW');
-        setNewLinkPassword('');
-        setNewLinkExpiry('');
-        setNewLinkSessionLimit('');
-        fetchLinks();
-        // Copy link URL to clipboard
-        if (data.link?.url) {
-          await navigator.clipboard.writeText(data.link.url);
+        if (response.ok) {
+          const data = await response.json();
+          created = true;
+          setShowLinkDialog(false);
+          fetchLinks();
+          // Copy link URL to clipboard
+          if (data.link?.url) {
+            await navigator.clipboard.writeText(data.link.url);
+            toast({
+              title: 'Success',
+              description: 'Link created and copied to clipboard!',
+              variant: 'success',
+            });
+          }
+        } else {
+          const error = await response.json();
           toast({
-            title: 'Success',
-            description: 'Link created and copied to clipboard!',
-            variant: 'success',
+            title: 'Error',
+            description: error.error || 'Failed to create link',
+            variant: 'destructive',
           });
         }
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to create link',
-          variant: 'destructive',
-        });
+      } catch (error) {
+        console.error('Create link error:', error);
+        toast({ title: 'Error', description: 'Failed to create link', variant: 'destructive' });
+      } finally {
+        setIsCreatingLink(false);
       }
-    } catch (error) {
-      console.error('Create link error:', error);
-      toast({ title: 'Error', description: 'Failed to create link', variant: 'destructive' });
-    } finally {
-      setIsCreatingLink(false);
-    }
-  }, [
-    roomId,
-    newLinkName,
-    newLinkPermission,
-    newLinkPassword,
-    newLinkExpiry,
-    newLinkSessionLimit,
-    fetchLinks,
-  ]);
+      return created;
+    },
+    [roomId, fetchLinks]
+  );
 
   // Handle copy link
   const handleCopyLink = React.useCallback(async (link: ShareLink) => {
@@ -3269,95 +3258,12 @@ export default function RoomDetailPage() {
       </Dialog>
 
       {/* Create Link Dialog */}
-      <Dialog open={showLinkDialog} onOpenChange={setShowLinkDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Share Link</DialogTitle>
-            <DialogDescription>
-              Create a link to share this room with external users.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="linkName">Link Name</Label>
-              <Input
-                id="linkName"
-                placeholder="Investor Access"
-                value={newLinkName}
-                onChange={(e) => setNewLinkName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isCreatingLink) {
-                    handleCreateLink();
-                  }
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkPermission">Permission Level</Label>
-              <Select
-                value={newLinkPermission}
-                onValueChange={(value) => setNewLinkPermission(value as 'VIEW' | 'DOWNLOAD')}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="VIEW">View Only</SelectItem>
-                  <SelectItem value="DOWNLOAD">View & Download</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkPassword">Password Protection (optional)</Label>
-              <Input
-                id="linkPassword"
-                type="password"
-                placeholder="Leave blank for no password"
-                value={newLinkPassword}
-                onChange={(e) => setNewLinkPassword(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkExpiry">Expiration Date (optional)</Label>
-              <Input
-                id="linkExpiry"
-                type="datetime-local"
-                value={newLinkExpiry}
-                onChange={(e) => setNewLinkExpiry(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkSessionLimit">Session Time Limit in Minutes (optional)</Label>
-              <Input
-                id="linkSessionLimit"
-                type="number"
-                min="1"
-                placeholder="e.g. 60"
-                value={newLinkSessionLimit}
-                onChange={(e) => setNewLinkSessionLimit(e.target.value)}
-              />
-              <p className="text-xs text-neutral-500">
-                Maximum viewing time per session. Leave blank for unlimited.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowLinkDialog(false);
-                setNewLinkName('');
-                setNewLinkPermission('VIEW');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleCreateLink} disabled={isCreatingLink || !newLinkName.trim()}>
-              {isCreatingLink ? 'Creating...' : 'Create Link'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateLinkDialog
+        open={showLinkDialog}
+        onOpenChange={setShowLinkDialog}
+        onCreate={handleCreateLink}
+        isCreating={isCreatingLink}
+      />
 
       {/* Create Folder Dialog */}
       <CreateFolderDialog
