@@ -133,8 +133,11 @@ test.describe('Room interactions', () => {
     await page.getByRole('button', { name: 'List view' }).click();
     await expect(page.getByText(ROOT_DOCUMENT)).toBeVisible({ timeout: 10000 });
 
-    const firstCheckbox = page.getByRole('checkbox').first();
-    await expect(firstCheckbox).toBeVisible();
-    await firstCheckbox.click();
+    // Selection is rendered as icon buttons (CheckSquare/Square), not
+    // checkbox roles; the accessible name flips when selection fills.
+    const selectAll = page.getByRole('button', { name: 'Select all' });
+    await expect(selectAll).toBeVisible();
+    await selectAll.click();
+    await expect(page.getByRole('button', { name: 'Deselect all' })).toBeVisible();
   });
 });
