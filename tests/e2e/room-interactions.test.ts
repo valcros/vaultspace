@@ -133,7 +133,7 @@ test.describe('Room interactions', () => {
     await page.getByRole('button', { name: 'List view' }).click();
     await expect(page.getByText(ROOT_DOCUMENT)).toBeVisible({ timeout: 10000 });
 
-    const firstCheckbox = page.locator('input[type="checkbox"], [role="checkbox"]').first();
+    const firstCheckbox = page.getByRole('checkbox').first();
     await expect(firstCheckbox).toBeVisible();
     await firstCheckbox.click();
   });
