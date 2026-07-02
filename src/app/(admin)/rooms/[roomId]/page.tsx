@@ -85,13 +85,32 @@ import {
   SheetDescription,
   SheetBody,
 } from '@/components/ui/sheet';
-import { QATab } from '@/components/rooms/QATab';
-import { ChecklistTab } from '@/components/rooms/ChecklistTab';
-import { CalendarTab } from '@/components/rooms/CalendarTab';
+import dynamic from 'next/dynamic';
 import { RoomFolderTree, RoomFolderTreeNode } from '@/components/rooms/RoomFolderTree';
 import { useRoomNavigationPreferences } from '@/components/rooms/useRoomNavigationPreferences';
 import { PanelLeftClose, PanelLeftOpen, PanelLeft, Info } from 'lucide-react';
-import { UploadZone } from '@/components/documents/UploadZone';
+
+// Manage-drawer panes and the upload surface only render on user action;
+// ~2,000 lines of tab code stay out of the initial room chunk.
+const paneLoading = () => (
+  <div className="p-6 text-sm text-neutral-500 dark:text-neutral-400">Loading…</div>
+);
+const QATab = dynamic(() => import('@/components/rooms/QATab').then((m) => m.QATab), {
+  loading: paneLoading,
+  ssr: false,
+});
+const ChecklistTab = dynamic(
+  () => import('@/components/rooms/ChecklistTab').then((m) => m.ChecklistTab),
+  { loading: paneLoading, ssr: false }
+);
+const CalendarTab = dynamic(
+  () => import('@/components/rooms/CalendarTab').then((m) => m.CalendarTab),
+  { loading: paneLoading, ssr: false }
+);
+const UploadZone = dynamic(
+  () => import('@/components/documents/UploadZone').then((m) => m.UploadZone),
+  { loading: paneLoading, ssr: false }
+);
 import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
 import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
 import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
@@ -533,13 +552,16 @@ export default function RoomDetailPage() {
     }
   }, [roomId]);
 
-  // Fetch the whole-room folder tree on every room load. The list-mode rail
-  // needs it directly, but grid mode also needs it to evaluate the one-time
-  // discoverability hint -- otherwise the hint can never trigger on a true
-  // first visit because the hint condition reads from folderTree.
+  // The whole-room folder tree is only needed by the list-mode rail, the
+  // mobile folder drawer, and (once) the grid-mode discoverability hint.
+  // Returning grid-mode users who dismissed the hint skip the fetch entirely
+  // instead of paying for the full hierarchy on every room open.
+  const needsFolderTree = viewMode === 'list' || folderDrawerOpen || !listModeHintDismissed;
   React.useEffect(() => {
-    fetchFolderTree();
-  }, [fetchFolderTree]);
+    if (needsFolderTree) {
+      fetchFolderTree();
+    }
+  }, [needsFolderTree, fetchFolderTree]);
 
   const folderById = React.useMemo(() => {
     const map = new Map<string, RoomFolderTreeNode>();
