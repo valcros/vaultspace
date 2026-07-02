@@ -65,6 +65,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           organizationId: session.organizationId,
           visitorEmail: { not: null },
         },
+        orderBy: { lastActivityAt: 'desc' },
+        // Guardrail cap (audit finding 22): the JS dedupe below is O(sessions);
+        // 2000 recent sessions cover the roster views this feeds.
+        take: 2000,
         select: {
           visitorEmail: true,
           visitorName: true,
@@ -80,7 +84,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             },
           },
         },
-        orderBy: { lastActivityAt: 'desc' },
       });
 
       // Deduplicate by email

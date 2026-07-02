@@ -50,6 +50,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           organizationId: session.organizationId,
           isActive: true,
         },
+        // Guardrail cap (audit finding 22); UI renders a flat list.
+        take: 500,
         include: {
           user: {
             select: {
