@@ -22,6 +22,7 @@ export { AttentionStrip } from './AttentionStrip';
 export type { AttentionChip } from './AttentionStrip';
 export { YourWorkStrip } from './YourWorkStrip';
 export type { YourWorkItem } from './YourWorkStrip';
+export { VaultTombstone } from './VaultTombstone';
 
 // V2 dashboard system (modern grid layout, retired from the landing page 2026-07;
 // kept for the mothball window pending dependency audit)

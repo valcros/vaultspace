@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export function ThemeToggle() {
+export function ThemeToggle({ className = 'h-9 w-9' }: { className?: string }) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
@@ -23,7 +23,7 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <Button variant="ghost" size="icon" className="h-9 w-9">
+      <Button variant="ghost" size="icon" className={className}>
         <Sun className="h-4 w-4" />
         <span className="sr-only">Toggle theme</span>
       </Button>
@@ -33,7 +33,7 @@ export function ThemeToggle() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9">
+        <Button variant="ghost" size="icon" className={className}>
           {theme === 'dark' ? (
             <Moon className="h-4 w-4" />
           ) : theme === 'light' ? (

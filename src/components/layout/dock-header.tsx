@@ -44,16 +44,20 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
     router.refresh();
   };
 
+  // The header sits on the dark vault-frame chrome in both color modes, so
+  // every control carries explicit dark-surface styling instead of relying on
+  // the light-surface ghost hover defaults.
+  const chromeButton =
+    'text-slate-300 hover:bg-white/10 hover:text-white focus-visible:ring-offset-slate-950';
+
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200/90 bg-white/95 px-4 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/95 lg:px-6">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between bg-slate-950 px-4 lg:px-6">
       {/* Logo */}
       <Link href="/rooms" className="flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
           V
         </div>
-        <span className="hidden font-semibold text-neutral-900 dark:text-neutral-50 sm:inline">
-          VaultSpace
-        </span>
+        <span className="hidden font-semibold text-slate-100 sm:inline">VaultSpace</span>
       </Link>
 
       {/* Center: Search Trigger */}
@@ -61,9 +65,9 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
         onClick={onSearchClick}
         className={clsx(
           'flex items-center gap-3 rounded-xl px-4 py-2',
-          'bg-slate-100 dark:bg-slate-900',
-          'text-sm text-slate-700 dark:text-slate-200',
-          'hover:bg-slate-200 dark:hover:bg-slate-800',
+          'bg-white/10',
+          'text-sm text-slate-300',
+          'hover:bg-white/15 hover:text-slate-100',
           'transition-colors duration-200',
           'w-64 md:w-80'
         )}
@@ -71,20 +75,20 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
         <Search className="h-4 w-4" />
         <span className="flex-1 text-left">Search...</span>
         <div className="hidden items-center gap-1 sm:flex">
-          <kbd className="rounded bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-800">
+          <kbd className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-slate-300">
             <Command className="inline h-3 w-3" />
           </kbd>
-          <kbd className="rounded bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-800">K</kbd>
+          <kbd className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-slate-300">K</kbd>
         </div>
       </button>
 
       {/* Right Actions */}
       <div className="flex items-center gap-2">
         {/* Theme toggle */}
-        <ThemeToggle />
+        <ThemeToggle className={clsx('h-9 w-9', chromeButton)} />
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" className={clsx('relative', chromeButton)}>
           <Bell className="h-5 w-5" />
           <span className="sr-only">Notifications</span>
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger-500" />
