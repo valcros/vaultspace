@@ -830,6 +830,11 @@ model SearchIndex {
   @@map("search_indexes")
 }
 
+// Note: search_indexes also carries a generated tsvector column ("tsv",
+// GIN-indexed) created in migration 20260702230000_search_tsv_gin. Prisma
+// cannot model STORED generated columns, so it lives only in migration SQL;
+// the search route queries it via $queryRaw.
+
 // Link (Shareable Access Links)
 model Link {
   id        String   @id @default(cuid())

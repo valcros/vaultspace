@@ -51,9 +51,7 @@ describe('GET /api/search', () => {
   });
 
   it('returns search results with correct shape', async () => {
-    // First call: count query
-    mockTx.$queryRaw.mockResolvedValueOnce([{ count: BigInt(1) }]);
-    // Second call: results query
+    // Single query: results carry the window count
     mockTx.$queryRaw.mockResolvedValueOnce([
       {
         documentId: 'doc-1',
@@ -67,6 +65,7 @@ describe('GET /api/search', () => {
         uploadedAt: new Date('2026-01-01'),
         roomId: 'room-1',
         roomName: 'Test Room',
+        totalCount: BigInt(1),
       },
     ]);
 
@@ -83,7 +82,7 @@ describe('GET /api/search', () => {
   });
 
   it('returns empty results for no matches', async () => {
-    mockTx.$queryRaw.mockResolvedValueOnce([{ count: BigInt(0) }]);
+    mockTx.$queryRaw.mockResolvedValueOnce([]);
 
     const req = new NextRequest('http://localhost:3000/api/search?q=nonexistent');
     const res = await GET(req);
@@ -97,7 +96,7 @@ describe('GET /api/search', () => {
 
   it('scopes search by organizationId via withOrgContext', async () => {
     const { withOrgContext } = await import('@/lib/db');
-    mockTx.$queryRaw.mockResolvedValueOnce([{ count: BigInt(0) }]);
+    mockTx.$queryRaw.mockResolvedValueOnce([]);
 
     const req = new NextRequest('http://localhost:3000/api/search?q=test');
     await GET(req);
