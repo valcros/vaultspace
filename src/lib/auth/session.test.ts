@@ -117,3 +117,99 @@ describe('auth session invalidation', () => {
     });
   });
 });
+
+describe('validateSession read-through cache', () => {
+  const futureDate = () => new Date(Date.now() + 60 * 60 * 1000);
+  const recentDate = () => new Date(Date.now() - 60 * 60 * 1000);
+
+  const completeSnapshot = () => ({
+    v: 1,
+    data: {
+      sessionId: 'session-1',
+      userId: 'user-1',
+      organizationId: 'org-1',
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+        firstName: 'Test',
+        lastName: 'User',
+        isActive: true,
+      },
+      organization: {
+        id: 'org-1',
+        name: 'Org',
+        slug: 'org',
+        role: 'ADMIN',
+        canManageUsers: true,
+        canManageRooms: true,
+      },
+      expiresAt: futureDate().toISOString(),
+      issuedAt: recentDate().toISOString(),
+    },
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns a valid cached snapshot without touching the database', async () => {
+    mockCacheGet.mockResolvedValue(completeSnapshot());
+
+    const result = await validateSession('session-token');
+
+    expect(result.userId).toBe('user-1');
+    expect(result.organization.role).toBe('ADMIN');
+    expect(result.expiresAt).toBeInstanceOf(Date);
+    expect(mockSessionFindUnique).not.toHaveBeenCalled();
+    expect(mockUserOrganizationFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('falls through to full DB validation on a version mismatch', async () => {
+    const stale = completeSnapshot();
+    stale.v = 0;
+    mockCacheGet.mockResolvedValue(stale);
+    mockSessionFindUnique.mockResolvedValue(null);
+
+    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockSessionFindUnique).toHaveBeenCalled();
+  });
+
+  it('falls through to full DB validation when the cached snapshot is incomplete', async () => {
+    const partial = completeSnapshot();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (partial.data as any).organization;
+    mockCacheGet.mockResolvedValue(partial);
+    mockSessionFindUnique.mockResolvedValue(null);
+
+    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockSessionFindUnique).toHaveBeenCalled();
+  });
+
+  it('falls through to the DB path when the cached snapshot is expired', async () => {
+    const expired = completeSnapshot();
+    expired.data.expiresAt = recentDate().toISOString();
+    mockCacheGet.mockResolvedValue(expired);
+    mockSessionFindUnique.mockResolvedValue(null);
+
+    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockSessionFindUnique).toHaveBeenCalled();
+  });
+
+  it('falls through to the DB path when the cached user is inactive', async () => {
+    const disabled = completeSnapshot();
+    disabled.data.user.isActive = false;
+    mockCacheGet.mockResolvedValue(disabled);
+    mockSessionFindUnique.mockResolvedValue(null);
+
+    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockSessionFindUnique).toHaveBeenCalled();
+  });
+
+  it('validates against the database when the cache read itself fails', async () => {
+    mockCacheGet.mockRejectedValue(new Error('redis down'));
+    mockSessionFindUnique.mockResolvedValue(null);
+
+    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockSessionFindUnique).toHaveBeenCalled();
+  });
+});
