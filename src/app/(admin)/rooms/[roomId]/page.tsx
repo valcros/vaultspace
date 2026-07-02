@@ -2168,19 +2168,30 @@ export default function RoomDetailPage() {
       ) : (
         /* Grid / Thumbnail View */
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {/* Folders */}
+          {/* Folders — compact name-first tiles (Drive convention): the name
+              is the significant information, the icon just types the tile.
+              Documents keep the tall preview cards; the height difference is
+              the visual distinction between containers and content. */}
           {folders.map((folder) => (
-            <div
+            <button
               key={folder.id}
-              className="group cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all hover:border-sky-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-sky-800"
+              type="button"
+              title={folder.name}
               onClick={() => handleFolderClick(folder)}
+              className="group flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-3 text-left transition-all hover:border-amber-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-amber-700"
             >
-              <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-amber-50">
-                <Folder className="h-12 w-12 text-amber-500" />
-              </div>
-              <p className="mt-2 truncate text-sm font-medium">{folder.name}</p>
-              <p className="text-xs text-neutral-600">{folder.documentCount} files</p>
-            </div>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                <Folder className="h-5 w-5 text-amber-500" aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
+                <span className="line-clamp-2 block text-sm font-semibold leading-snug text-neutral-900 dark:text-neutral-100">
+                  {folder.name}
+                </span>
+                <span className="block text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                  {folder.documentCount} {folder.documentCount === 1 ? 'file' : 'files'}
+                </span>
+              </span>
+            </button>
           ))}
           {/* Documents — render the same sorted view the list mode uses
                   so the grid and list stay coherent regardless of how the
