@@ -60,6 +60,8 @@ const config: Config = {
           800: '#92400e',
           900: '#78350f',
         },
+        // Warm app canvas; cards stay white for a subtle warm/cool separation.
+        canvas: '#FAFAF7',
         neutral: {
           50: '#fafafa',
           100: '#f4f4f5',
@@ -81,6 +83,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'Menlo', 'monospace'],
       },
       fontSize: {
