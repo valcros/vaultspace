@@ -34,10 +34,17 @@ jobs:
       WORKER_CONTAINER_APP: ${{ vars.WORKER_CONTAINER_APP }}
       WEB_CONTAINER_NAME: ${{ vars.WEB_CONTAINER_NAME }}
       WORKER_CONTAINER_NAME: ${{ vars.WORKER_CONTAINER_NAME }}
+      WAKER_JOB_APP: ${{ vars.WAKER_JOB_APP }}
+      WAKER_CONTAINER_NAME: ${{ vars.WAKER_CONTAINER_NAME }}
       APP_URL: ${{ vars.APP_URL }}
+      # For workflow_run triggers, deploy the exact commit CI validated, not the
+      # branch head at event time (they can differ if another push lands mid-run).
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Validate deployment variables
         run: |
@@ -48,6 +55,8 @@ jobs:
             WORKER_CONTAINER_APP
             WEB_CONTAINER_NAME
             WORKER_CONTAINER_NAME
+            WAKER_JOB_APP
+            WAKER_CONTAINER_NAME
             APP_URL
           )
 
@@ -74,14 +83,14 @@ jobs:
 
       - name: Build and push web image
         run: |
-          docker build -t $ACR_SERVER/vaultspace-web:${{ github.sha }} -t $ACR_SERVER/vaultspace-web:latest -f Dockerfile .
-          docker push $ACR_SERVER/vaultspace-web:${{ github.sha }}
+          docker build -t $ACR_SERVER/vaultspace-web:$DEPLOY_SHA -t $ACR_SERVER/vaultspace-web:latest -f Dockerfile .
+          docker push $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
           docker push $ACR_SERVER/vaultspace-web:latest
 
       - name: Build and push worker image
         run: |
-          docker build -t $ACR_SERVER/vaultspace-worker:${{ github.sha }} -t $ACR_SERVER/vaultspace-worker:latest -f Dockerfile.worker .
-          docker push $ACR_SERVER/vaultspace-worker:${{ github.sha }}
+          docker build -t $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA -t $ACR_SERVER/vaultspace-worker:latest -f Dockerfile.worker .
+          docker push $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
           docker push $ACR_SERVER/vaultspace-worker:latest
 
       - name: Setup Node.js for migrations
@@ -104,7 +113,7 @@ jobs:
             --name $WEB_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
             --container-name $WEB_CONTAINER_NAME \
-            --image $ACR_SERVER/vaultspace-web:${{ github.sha }}
+            --image $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
 
       - name: Update Container App - Worker
         run: |
@@ -112,7 +121,41 @@ jobs:
             --name $WORKER_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
             --container-name $WORKER_CONTAINER_NAME \
-            --image $ACR_SERVER/vaultspace-worker:${{ github.sha }}
+            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
+
+      - name: Update Container App Job - Delayed Waker
+        run: |
+          az containerapp job update \
+            --name $WAKER_JOB_APP \
+            --resource-group $RESOURCE_GROUP \
+            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
+
+      - name: Validate waker job template
+        run: |
+          JOB_JSON=$(az containerapp job show \
+            --name $WAKER_JOB_APP \
+            --resource-group $RESOURCE_GROUP \
+            --output json)
+
+          IMAGE=$(echo "$JOB_JSON" | jq -r --arg c "$WAKER_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | .image')
+          ARGS=$(echo "$JOB_JSON" | jq -r --arg c "$WAKER_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.args // []) | join(" ")')
+          TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
+
+          if [ "$IMAGE" != "$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA" ]; then
+            echo "ERROR: waker image mismatch: $IMAGE"
+            exit 1
+          fi
+          if ! echo "$ARGS" | grep -q "worker:wake-delayed"; then
+            echo "ERROR: waker no longer invokes worker:wake-delayed (args: $ARGS)"
+            exit 1
+          fi
+          if [ "$TRIGGER" != "Schedule" ]; then
+            echo "ERROR: waker trigger type changed: $TRIGGER"
+            exit 1
+          fi
+          echo "✓ Waker job image, command, and trigger verified"
 
       - name: Validate Container App env shape
         run: |
@@ -240,8 +283,9 @@ jobs:
           echo "## Staging Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deployment Info" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image:** $ACR_SERVER/vaultspace-web:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** $DEPLOY_SHA" >> $GITHUB_STEP_SUMMARY
+          echo "- **Web image:** $ACR_SERVER/vaultspace-web:$DEPLOY_SHA" >> $GITHUB_STEP_SUMMARY
+          echo "- **Worker/waker image:** $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** $APP_URL" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deployment Mode" >> $GITHUB_STEP_SUMMARY
