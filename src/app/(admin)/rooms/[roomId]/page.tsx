@@ -58,8 +58,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -117,6 +115,14 @@ import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
+import { AddMemberDialog } from './_components/AddMemberDialog';
+import { CreateFolderDialog } from './_components/CreateFolderDialog';
+import { CreateLinkDialog, type CreateLinkValues } from './_components/CreateLinkDialog';
+import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
+import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
+import { DeleteLinkConfirmDialog } from './_components/DeleteLinkConfirmDialog';
+import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
+import { RemoveMemberConfirmDialog } from './_components/RemoveMemberConfirmDialog';
 
 interface Room {
   id: string;
@@ -308,7 +314,6 @@ export default function RoomDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = React.useState(false);
   const [selectedDocument, setSelectedDocument] = React.useState<Document | null>(null);
-  const [newFolderName, setNewFolderName] = React.useState('');
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
@@ -331,11 +336,6 @@ export default function RoomDetailPage() {
   const [isDeletingFolder, setIsDeletingFolder] = React.useState(false);
 
   // Link create states
-  const [newLinkName, setNewLinkName] = React.useState('');
-  const [newLinkPermission, setNewLinkPermission] = React.useState<'VIEW' | 'DOWNLOAD'>('VIEW');
-  const [newLinkPassword, setNewLinkPassword] = React.useState('');
-  const [newLinkExpiry, setNewLinkExpiry] = React.useState('');
-  const [newLinkSessionLimit, setNewLinkSessionLimit] = React.useState('');
   const [isCreatingLink, setIsCreatingLink] = React.useState(false);
 
   // Confirmation dialog states
@@ -346,7 +346,6 @@ export default function RoomDetailPage() {
 
   // Tag editor states
   const [editingTagsDoc, setEditingTagsDoc] = React.useState<Document | null>(null);
-  const [tagInput, setTagInput] = React.useState('');
 
   // Access request states
   const [accessRequests, setAccessRequests] = React.useState<AccessRequest[]>([]);
@@ -360,7 +359,6 @@ export default function RoomDetailPage() {
   const [revokingViewerEmail, setRevokingViewerEmail] = React.useState<string | null>(null);
 
   // Member add states
-  const [newMemberEmail, setNewMemberEmail] = React.useState('');
   const [isAddingMember, setIsAddingMember] = React.useState(false);
 
   // Manage drawer (Access / Share Links / Q&A / Checklist / Calendar) open
@@ -957,43 +955,47 @@ export default function RoomDetailPage() {
   );
 
   // Handle folder creation
-  const handleCreateFolder = React.useCallback(async () => {
-    if (!newFolderName.trim()) {
-      return;
-    }
-
-    setIsCreatingFolder(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/folders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newFolderName.trim(),
-          parentId: currentFolderId,
-        }),
-      });
-
-      if (response.ok) {
-        setShowFolderDialog(false);
-        setNewFolderName('');
-        fetchFolders(); // Refresh current folder listing
-        fetchFolderTree(); // Keep the split-pane rail in sync
-      } else {
-        const error = await response.json();
-        console.error('Failed to create folder:', error);
-        toast({
-          title: 'Error',
-          description: error.error?.message || 'Failed to create folder',
-          variant: 'destructive',
-        });
+  const handleCreateFolder = React.useCallback(
+    async (name: string) => {
+      if (!name.trim()) {
+        return false;
       }
-    } catch (error) {
-      console.error('Failed to create folder:', error);
-      toast({ title: 'Error', description: 'Failed to create folder', variant: 'destructive' });
-    } finally {
-      setIsCreatingFolder(false);
-    }
-  }, [roomId, newFolderName, currentFolderId, fetchFolders, fetchFolderTree]);
+
+      setIsCreatingFolder(true);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/folders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            parentId: currentFolderId,
+          }),
+        });
+
+        if (response.ok) {
+          setShowFolderDialog(false);
+          fetchFolders(); // Refresh current folder listing
+          fetchFolderTree(); // Keep the split-pane rail in sync
+          return true;
+        } else {
+          const error = await response.json();
+          console.error('Failed to create folder:', error);
+          toast({
+            title: 'Error',
+            description: error.error?.message || 'Failed to create folder',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Failed to create folder:', error);
+        toast({ title: 'Error', description: 'Failed to create folder', variant: 'destructive' });
+      } finally {
+        setIsCreatingFolder(false);
+      }
+      return false;
+    },
+    [roomId, currentFolderId, fetchFolders, fetchFolderTree]
+  );
 
   // Navigate into a folder
   const handleFolderClick = React.useCallback((folder: FolderItem) => {
@@ -1297,68 +1299,61 @@ export default function RoomDetailPage() {
   }, [roomId, selectedFolder, fetchFolders, fetchDocuments, fetchFolderTree]);
 
   // Handle share link creation
-  const handleCreateLink = React.useCallback(async () => {
-    if (!newLinkName.trim()) {
-      toast({ title: 'Required', description: 'Please enter a link name' });
-      return;
-    }
+  const handleCreateLink = React.useCallback(
+    async (values: CreateLinkValues) => {
+      if (!values.name.trim()) {
+        toast({ title: 'Required', description: 'Please enter a link name' });
+        return false;
+      }
 
-    setIsCreatingLink(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/links`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newLinkName.trim(),
-          permission: newLinkPermission,
-          scope: 'ENTIRE_ROOM',
-          ...(newLinkPassword && { password: newLinkPassword }),
-          ...(newLinkExpiry && { expiresAt: new Date(newLinkExpiry).toISOString() }),
-          ...(newLinkSessionLimit && { maxSessionMinutes: parseInt(newLinkSessionLimit, 10) }),
-        }),
-      });
+      setIsCreatingLink(true);
+      let created = false;
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/links`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: values.name.trim(),
+            permission: values.permission,
+            scope: 'ENTIRE_ROOM',
+            ...(values.password && { password: values.password }),
+            ...(values.expiry && { expiresAt: new Date(values.expiry).toISOString() }),
+            ...(values.sessionLimit && { maxSessionMinutes: parseInt(values.sessionLimit, 10) }),
+          }),
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        setShowLinkDialog(false);
-        setNewLinkName('');
-        setNewLinkPermission('VIEW');
-        setNewLinkPassword('');
-        setNewLinkExpiry('');
-        setNewLinkSessionLimit('');
-        fetchLinks();
-        // Copy link URL to clipboard
-        if (data.link?.url) {
-          await navigator.clipboard.writeText(data.link.url);
+        if (response.ok) {
+          const data = await response.json();
+          created = true;
+          setShowLinkDialog(false);
+          fetchLinks();
+          // Copy link URL to clipboard
+          if (data.link?.url) {
+            await navigator.clipboard.writeText(data.link.url);
+            toast({
+              title: 'Success',
+              description: 'Link created and copied to clipboard!',
+              variant: 'success',
+            });
+          }
+        } else {
+          const error = await response.json();
           toast({
-            title: 'Success',
-            description: 'Link created and copied to clipboard!',
-            variant: 'success',
+            title: 'Error',
+            description: error.error || 'Failed to create link',
+            variant: 'destructive',
           });
         }
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to create link',
-          variant: 'destructive',
-        });
+      } catch (error) {
+        console.error('Create link error:', error);
+        toast({ title: 'Error', description: 'Failed to create link', variant: 'destructive' });
+      } finally {
+        setIsCreatingLink(false);
       }
-    } catch (error) {
-      console.error('Create link error:', error);
-      toast({ title: 'Error', description: 'Failed to create link', variant: 'destructive' });
-    } finally {
-      setIsCreatingLink(false);
-    }
-  }, [
-    roomId,
-    newLinkName,
-    newLinkPermission,
-    newLinkPassword,
-    newLinkExpiry,
-    newLinkSessionLimit,
-    fetchLinks,
-  ]);
+      return created;
+    },
+    [roomId, fetchLinks]
+  );
 
   // Handle copy link
   const handleCopyLink = React.useCallback(async (link: ShareLink) => {
@@ -1409,42 +1404,46 @@ export default function RoomDetailPage() {
   }, [roomId, fetchLinks, deleteLinkTarget]);
 
   // Handle add member (room admin)
-  const handleAddMember = React.useCallback(async () => {
-    if (!newMemberEmail.trim()) {
-      toast({ title: 'Required', description: 'Please enter an email address' });
-      return;
-    }
-
-    setIsAddingMember(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/admins`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: newMemberEmail.trim(),
-        }),
-      });
-
-      if (response.ok) {
-        setShowMemberDialog(false);
-        setNewMemberEmail('');
-        fetchAdmins();
-        toast({ title: 'Success', description: 'Admin added successfully!', variant: 'success' });
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to add admin',
-          variant: 'destructive',
-        });
+  const handleAddMember = React.useCallback(
+    async (email: string) => {
+      if (!email.trim()) {
+        toast({ title: 'Required', description: 'Please enter an email address' });
+        return false;
       }
-    } catch (error) {
-      console.error('Add member error:', error);
-      toast({ title: 'Error', description: 'Failed to add admin', variant: 'destructive' });
-    } finally {
-      setIsAddingMember(false);
-    }
-  }, [roomId, newMemberEmail, fetchAdmins]);
+
+      setIsAddingMember(true);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/admins`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email.trim(),
+          }),
+        });
+
+        if (response.ok) {
+          setShowMemberDialog(false);
+          fetchAdmins();
+          toast({ title: 'Success', description: 'Admin added successfully!', variant: 'success' });
+          return true;
+        } else {
+          const error = await response.json();
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to add admin',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Add member error:', error);
+        toast({ title: 'Error', description: 'Failed to add admin', variant: 'destructive' });
+      } finally {
+        setIsAddingMember(false);
+      }
+      return false;
+    },
+    [roomId, fetchAdmins]
+  );
 
   // Handle remove member
   const handleRemoveMemberClick = React.useCallback((admin: Admin) => {
@@ -2132,12 +2131,7 @@ export default function RoomDetailPage() {
                               <Download className="mr-2 h-4 w-4" />
                               Download
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setEditingTagsDoc(doc);
-                                setTagInput((doc.tags || []).join(', '));
-                              }}
-                            >
+                            <DropdownMenuItem onClick={() => setEditingTagsDoc(doc)}>
                               <Tag className="mr-2 h-4 w-4" />
                               Edit Properties
                             </DropdownMenuItem>
@@ -2282,12 +2276,7 @@ export default function RoomDetailPage() {
                       <Download className="mr-2 h-4 w-4" />
                       Download
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setEditingTagsDoc(doc);
-                        setTagInput((doc.tags || []).join(', '));
-                      }}
-                    >
+                    <DropdownMenuItem onClick={() => setEditingTagsDoc(doc)}>
                       <Tag className="mr-2 h-4 w-4" />
                       Edit Properties
                     </DropdownMenuItem>
@@ -3036,7 +3025,6 @@ export default function RoomDetailPage() {
               className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"
               onClick={() => {
                 setEditingTagsDoc(contextMenu.doc);
-                setTagInput((contextMenu.doc.tags || []).join(', '));
                 setContextMenu(null);
               }}
             >
@@ -3119,371 +3107,67 @@ export default function RoomDetailPage() {
       </Dialog>
 
       {/* Add Member Dialog */}
-      <Dialog open={showMemberDialog} onOpenChange={setShowMemberDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Room Admin</DialogTitle>
-            <DialogDescription>
-              Add a team member as an admin of this data room. They must have an existing account.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="memberEmail">Email Address</Label>
-              <Input
-                id="memberEmail"
-                type="email"
-                placeholder="member@example.com"
-                value={newMemberEmail}
-                onChange={(e) => setNewMemberEmail(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isAddingMember) {
-                    handleAddMember();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowMemberDialog(false);
-                setNewMemberEmail('');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleAddMember} disabled={isAddingMember || !newMemberEmail.trim()}>
-              {isAddingMember ? 'Adding...' : 'Add Admin'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AddMemberDialog
+        open={showMemberDialog}
+        onOpenChange={setShowMemberDialog}
+        onAdd={handleAddMember}
+        isAdding={isAddingMember}
+      />
 
       {/* Edit Properties Dialog */}
-      <Dialog
-        open={!!editingTagsDoc}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingTagsDoc(null);
+      <EditPropertiesDialog
+        doc={editingTagsDoc}
+        roomId={roomId}
+        onClose={() => setEditingTagsDoc(null)}
+        onRefresh={fetchDocuments}
+        onSaveTags={(tags) => {
+          if (editingTagsDoc) {
+            handleSaveTags(editingTagsDoc, tags);
           }
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Properties</DialogTitle>
-            <DialogDescription>
-              Update tags and category for &quot;{editingTagsDoc?.name}&quot;.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Category</Label>
-              <Select
-                value={editingTagsDoc?.category ?? 'none'}
-                onValueChange={async (v) => {
-                  if (editingTagsDoc) {
-                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ category: v === 'none' ? null : v }),
-                    });
-                    fetchDocuments();
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No category</SelectItem>
-                  {CATEGORY_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Tags</Label>
-              <Input
-                placeholder="confidential, financial, q4-2026"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && editingTagsDoc) {
-                    const tags = tagInput
-                      .split(',')
-                      .map((t) => t.trim())
-                      .filter(Boolean);
-                    handleSaveTags(editingTagsDoc, tags);
-                  }
-                }}
-              />
-              <p className="text-xs text-neutral-600">Separate tags with commas</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Expiry Date</Label>
-              <Input
-                type="datetime-local"
-                value={
-                  editingTagsDoc?.expiresAt
-                    ? new Date(editingTagsDoc.expiresAt).toISOString().slice(0, 16)
-                    : ''
-                }
-                onChange={async (e) => {
-                  if (editingTagsDoc) {
-                    const val = e.target.value ? new Date(e.target.value).toISOString() : null;
-                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ expiresAt: val }),
-                    });
-                    fetchDocuments();
-                  }
-                }}
-              />
-              <p className="text-xs text-neutral-600">
-                Document will auto-archive or delete after this date
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Expiry Action</Label>
-              <Select
-                value={editingTagsDoc?.expiryAction ?? 'ARCHIVE'}
-                onValueChange={async (v) => {
-                  if (editingTagsDoc) {
-                    await fetch(`/api/rooms/${roomId}/documents/${editingTagsDoc.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ expiryAction: v }),
-                    });
-                    fetchDocuments();
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select action" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ARCHIVE">Archive</SelectItem>
-                  <SelectItem value="DELETE">Delete</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingTagsDoc(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (editingTagsDoc) {
-                  const tags = tagInput
-                    .split(',')
-                    .map((t) => t.trim())
-                    .filter(Boolean);
-                  handleSaveTags(editingTagsDoc, tags);
-                }
-              }}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
 
       {/* Create Link Dialog */}
-      <Dialog open={showLinkDialog} onOpenChange={setShowLinkDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Share Link</DialogTitle>
-            <DialogDescription>
-              Create a link to share this room with external users.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="linkName">Link Name</Label>
-              <Input
-                id="linkName"
-                placeholder="Investor Access"
-                value={newLinkName}
-                onChange={(e) => setNewLinkName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isCreatingLink) {
-                    handleCreateLink();
-                  }
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkPermission">Permission Level</Label>
-              <Select
-                value={newLinkPermission}
-                onValueChange={(value) => setNewLinkPermission(value as 'VIEW' | 'DOWNLOAD')}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="VIEW">View Only</SelectItem>
-                  <SelectItem value="DOWNLOAD">View & Download</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkPassword">Password Protection (optional)</Label>
-              <Input
-                id="linkPassword"
-                type="password"
-                placeholder="Leave blank for no password"
-                value={newLinkPassword}
-                onChange={(e) => setNewLinkPassword(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkExpiry">Expiration Date (optional)</Label>
-              <Input
-                id="linkExpiry"
-                type="datetime-local"
-                value={newLinkExpiry}
-                onChange={(e) => setNewLinkExpiry(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="linkSessionLimit">Session Time Limit in Minutes (optional)</Label>
-              <Input
-                id="linkSessionLimit"
-                type="number"
-                min="1"
-                placeholder="e.g. 60"
-                value={newLinkSessionLimit}
-                onChange={(e) => setNewLinkSessionLimit(e.target.value)}
-              />
-              <p className="text-xs text-neutral-500">
-                Maximum viewing time per session. Leave blank for unlimited.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowLinkDialog(false);
-                setNewLinkName('');
-                setNewLinkPermission('VIEW');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleCreateLink} disabled={isCreatingLink || !newLinkName.trim()}>
-              {isCreatingLink ? 'Creating...' : 'Create Link'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateLinkDialog
+        open={showLinkDialog}
+        onOpenChange={setShowLinkDialog}
+        onCreate={handleCreateLink}
+        isCreating={isCreatingLink}
+      />
 
       {/* Create Folder Dialog */}
-      <Dialog open={showFolderDialog} onOpenChange={setShowFolderDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Folder</DialogTitle>
-            <DialogDescription>
-              Create a folder to organize documents in this data room.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="folderName">Folder Name</Label>
-              <Input
-                id="folderName"
-                placeholder="Enter folder name"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isCreatingFolder) {
-                    handleCreateFolder();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowFolderDialog(false);
-                setNewFolderName('');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateFolder}
-              disabled={isCreatingFolder || !newFolderName.trim()}
-            >
-              {isCreatingFolder ? 'Creating...' : 'Create Folder'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateFolderDialog
+        open={showFolderDialog}
+        onOpenChange={setShowFolderDialog}
+        onCreate={handleCreateFolder}
+        isCreating={isCreatingFolder}
+      />
 
       {/* Delete Document Confirmation Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Document</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &quot;{selectedDocument?.name}&quot;? This document
-              will be moved to trash and can be restored later.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowDeleteDialog(false);
-                setSelectedDocument(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
-              {isDeleting ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteDocumentDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        documentName={selectedDocument?.name}
+        onCancel={() => {
+          setShowDeleteDialog(false);
+          setSelectedDocument(null);
+        }}
+        onConfirm={confirmDelete}
+        isDeleting={isDeleting}
+      />
 
       {/* Delete Folder Confirmation Dialog */}
-      <Dialog open={showFolderDeleteDialog} onOpenChange={setShowFolderDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Folder</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &quot;{selectedFolder?.name}&quot;? This will delete
-              all documents and subfolders inside it. Documents will be moved to trash.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowFolderDeleteDialog(false);
-                setSelectedFolder(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmFolderDelete} disabled={isDeletingFolder}>
-              {isDeletingFolder ? 'Deleting...' : 'Delete Folder'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteFolderDialog
+        open={showFolderDeleteDialog}
+        onOpenChange={setShowFolderDeleteDialog}
+        folderName={selectedFolder?.name}
+        onCancel={() => {
+          setShowFolderDeleteDialog(false);
+          setSelectedFolder(null);
+        }}
+        onConfirm={confirmFolderDelete}
+        isDeleting={isDeletingFolder}
+      />
 
       {/* Preview Dialog */}
       <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
@@ -3757,24 +3441,19 @@ export default function RoomDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
+      <DeleteLinkConfirmDialog
         open={deleteLinkTarget !== null}
-        onOpenChange={(open) => !open && setDeleteLinkTarget(null)}
-        title="Delete Share Link"
-        description={`Are you sure you want to delete the link "${deleteLinkTarget?.name}"? External users will no longer be able to access this room via this link.`}
-        confirmLabel="Delete"
-        variant="destructive"
+        linkName={deleteLinkTarget?.name}
+        onCancel={() => setDeleteLinkTarget(null)}
         onConfirm={handleDeleteLinkConfirm}
         loading={isDeletingLink}
       />
 
-      <ConfirmDialog
+      <RemoveMemberConfirmDialog
         open={removeMemberTarget !== null}
-        onOpenChange={(open) => !open && setRemoveMemberTarget(null)}
-        title="Remove Room Admin"
-        description={`Are you sure you want to remove ${removeMemberTarget?.firstName} ${removeMemberTarget?.lastName} as a room admin? They will lose access to manage this room.`}
-        confirmLabel="Remove"
-        variant="destructive"
+        firstName={removeMemberTarget?.firstName}
+        lastName={removeMemberTarget?.lastName}
+        onCancel={() => setRemoveMemberTarget(null)}
         onConfirm={handleRemoveMemberConfirm}
         loading={isRemovingMember}
       />
