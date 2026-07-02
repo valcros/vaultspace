@@ -15,7 +15,16 @@ export { EngagementWidget, EngagementOverviewCard } from './EngagementWidget';
 export { AnnouncementsWidget, FeaturedAnnouncement } from './AnnouncementsWidget';
 export { WelcomeBanner } from './WelcomeBanner';
 
-// V2 dashboard system (modern grid layout)
+// Rooms-first landing (2026-07 redesign)
+export { RoomOverviewCard } from './RoomOverviewCard';
+export type { RoomOverview } from './RoomOverviewCard';
+export { AttentionStrip } from './AttentionStrip';
+export type { AttentionChip } from './AttentionStrip';
+export { YourWorkStrip } from './YourWorkStrip';
+export type { YourWorkItem } from './YourWorkStrip';
+
+// V2 dashboard system (modern grid layout, retired from the landing page 2026-07;
+// kept for the mothball window pending dependency audit)
 export { DashboardWidgetV2, WidgetListItemV2 } from './DashboardWidgetV2';
 export {
   DashboardProvider,
