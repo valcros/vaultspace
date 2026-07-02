@@ -301,14 +301,10 @@ If stakeholders want to be more distinctive and are willing to invest in user on
 
 ## Sample Implementation Files
 
-The following prototype components are available in `src/components/ui-proposals/`:
-
-| File                | Description                         |
-| ------------------- | ----------------------------------- |
-| `floating-dock.tsx` | macOS-style dock with magnification |
-| `command-menu.tsx`  | Enhanced ⌘K command palette         |
-| `icon-rail.tsx`     | Thin icon rail with tooltips        |
-| `demo-layout.tsx`   | Full page demonstrating Option D    |
+The prototype components (`src/components/ui-proposals/`) and `/demo` routes were
+removed on 2026-07-02 after the floating dock + command palette direction shipped
+in production form as `src/components/layout/dock-shell.tsx`. The prototypes
+remain available in git history prior to that date.
 
 ---
 

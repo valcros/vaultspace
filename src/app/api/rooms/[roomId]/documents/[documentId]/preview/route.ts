@@ -129,20 +129,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return { error: 'Document version not found', status: 404 };
       }
 
-      // Record the view event
-      await tx.document.update({
-        where: { id: document.id },
-        data: {
-          viewCount: { increment: 1 },
-        },
-      });
-
       return { document, selectedVersion };
     });
 
     if ('error' in result) {
       return jsonResponse({ error: result.error }, result.status || 500);
     }
+
+    // Record the view count outside the read transaction: an UPDATE on a hot
+    // document row was serializing concurrent previews (audit finding 16).
+    // Fire-and-forget; a lost increment is acceptable, a held lock is not.
+    withOrgContext(session.organizationId, (tx) =>
+      tx.document.update({
+        where: { id: documentId },
+        data: { viewCount: { increment: 1 } },
+      })
+    ).catch(() => {});
 
     // Queue document view notification (non-blocking)
     try {
