@@ -1074,6 +1074,31 @@ export default function RoomDetailPage() {
     [roomId]
   );
 
+  // ?doc=<id> deep links (landing "Continue reading" / bookmarks) open the
+  // preview directly. Fetched by id because the document may live in a folder
+  // other than the one currently listed.
+  const requestedDocId = searchParams.get('doc');
+  const docDeepLinkHandled = React.useRef(false);
+  React.useEffect(() => {
+    if (!requestedDocId || docDeepLinkHandled.current || isLoading) {
+      return;
+    }
+    docDeepLinkHandled.current = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/rooms/${roomId}/documents/${requestedDocId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.document?.id) {
+            handlePreview(data.document);
+          }
+        }
+      } catch {
+        // Deep link is best-effort; the room itself has already rendered.
+      }
+    })();
+  }, [requestedDocId, isLoading, roomId, handlePreview]);
+
   // Handle version history
   const handleShowVersions = React.useCallback(
     async (doc: Document) => {
