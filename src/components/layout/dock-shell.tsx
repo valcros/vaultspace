@@ -327,7 +327,7 @@ export function DockShell({ children, user }: DockShellProps) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
+    <div className="flex h-screen overflow-hidden bg-canvas dark:bg-slate-950">
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         <DockHeader user={user} onSearchClick={() => setCommandOpen(true)} />

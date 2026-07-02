@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 import { clsx } from 'clsx';
 
+import { VaultRing } from './VaultRing';
+
 export interface RoomOverview {
   id: string;
   name: string;
@@ -58,7 +60,7 @@ export function RoomOverviewCard({ room, continueDocument }: RoomOverviewCardPro
         >
           {room.myRole === 'ADMIN' ? 'Admin' : 'Viewer'}
         </span>
-        {room.status !== 'ACTIVE' && (
+        {room.status !== 'ACTIVE' ? (
           <span
             className={clsx(
               'rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
@@ -67,6 +69,8 @@ export function RoomOverviewCard({ room, continueDocument }: RoomOverviewCardPro
           >
             {room.status}
           </span>
+        ) : (
+          <VaultRing />
         )}
       </div>
 
