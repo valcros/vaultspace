@@ -4,11 +4,8 @@ import * as React from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   FileText,
-  Users,
-  Link as LinkIcon,
   Settings,
   Upload,
-  Plus,
   FolderPlus,
   Folder,
   MoreHorizontal,
@@ -30,26 +27,13 @@ import {
   Tag,
   Square,
   CheckSquare,
-  RotateCcw,
-  Loader2,
-  AlertCircle,
-  MessageSquare,
-  ClipboardCheck,
-  CalendarDays,
   Star,
   Clock,
-  UserPlus,
-  Check,
-  X,
-  Mail,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { UserAvatar } from '@/components/ui/avatar';
 import {
   Dialog,
   DialogContent,
@@ -58,7 +42,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -88,41 +71,33 @@ import { RoomFolderTree, RoomFolderTreeNode } from '@/components/rooms/RoomFolde
 import { useRoomNavigationPreferences } from '@/components/rooms/useRoomNavigationPreferences';
 import { PanelLeftClose, PanelLeftOpen, PanelLeft, Info } from 'lucide-react';
 
-// Manage-drawer panes and the upload surface only render on user action;
-// ~2,000 lines of tab code stay out of the initial room chunk.
+// The upload surface only renders on user action; keep it out of the
+// initial room chunk.
 const paneLoading = () => (
   <div className="p-6 text-sm text-neutral-500 dark:text-neutral-400">Loading…</div>
-);
-const QATab = dynamic(() => import('@/components/rooms/QATab').then((m) => m.QATab), {
-  loading: paneLoading,
-  ssr: false,
-});
-const ChecklistTab = dynamic(
-  () => import('@/components/rooms/ChecklistTab').then((m) => m.ChecklistTab),
-  { loading: paneLoading, ssr: false }
-);
-const CalendarTab = dynamic(
-  () => import('@/components/rooms/CalendarTab').then((m) => m.CalendarTab),
-  { loading: paneLoading, ssr: false }
 );
 const UploadZone = dynamic(
   () => import('@/components/documents/UploadZone').then((m) => m.UploadZone),
   { loading: paneLoading, ssr: false }
 );
-import { TextPreviewRenderer } from '@/components/documents/TextPreviewRenderer';
+// The preview dialog only mounts on user action (row click / ?doc= deep
+// link); load it lazily client-side so it stays out of the initial chunk.
+const PreviewDialog = dynamic(
+  () => import('./_components/PreviewDialog').then((m) => m.PreviewDialog),
+  { loading: () => null, ssr: false }
+);
+const VersionHistoryDialog = dynamic(
+  () => import('./_components/VersionHistoryDialog').then((m) => m.VersionHistoryDialog),
+  { loading: () => null, ssr: false }
+);
 import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
-import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
-import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
-import { AddMemberDialog } from './_components/AddMemberDialog';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
-import { CreateLinkDialog, type CreateLinkValues } from './_components/CreateLinkDialog';
 import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
 import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
-import { DeleteLinkConfirmDialog } from './_components/DeleteLinkConfirmDialog';
 import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
-import { RemoveMemberConfirmDialog } from './_components/RemoveMemberConfirmDialog';
+import { ManageDrawer, isManagePane, type ManagePane } from './_components/ManageDrawer';
 
 interface Room {
   id: string;
@@ -166,75 +141,6 @@ interface BreadcrumbItem {
   name: string;
 }
 
-interface Admin {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  scope: 'organization' | 'room';
-}
-
-interface AccessRequest {
-  id: string;
-  requesterEmail: string;
-  requesterName: string | null;
-  reason: string | null;
-  status: 'PENDING' | 'APPROVED' | 'DENIED';
-  reviewedAt: string | null;
-  reviewNote: string | null;
-  createdAt: string;
-  reviewedBy: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-  } | null;
-}
-
-interface Viewer {
-  email: string;
-  name: string | null;
-  visits: number;
-  lastActive: string;
-  totalTimeSpent: number;
-  linkName: string | null;
-  linkId: string | null;
-  isActive: boolean;
-}
-
-interface ShareLink {
-  id: string;
-  name: string | null;
-  slug: string;
-  permission: 'VIEW' | 'DOWNLOAD';
-  requiresPassword: boolean;
-  requiresEmailVerification: boolean;
-  expiresAt: string | null;
-  isActive: boolean;
-  createdAt: string;
-  _count?: { visits: number };
-}
-
-interface DocumentVersionInfo {
-  id: string;
-  versionNumber: number;
-  fileName: string;
-  fileSize: string;
-  mimeType: string;
-  changeDescription: string | null;
-  scanStatus: string;
-  previewStatus: string;
-  createdAt: string;
-  uploadedByUser: { firstName: string; lastName: string; email: string } | null;
-}
-
-const MANAGE_PANES = ['members', 'links', 'qa', 'checklist', 'calendar'] as const;
-type ManagePane = (typeof MANAGE_PANES)[number];
-
-function isManagePane(value: string | null): value is ManagePane {
-  return value !== null && (MANAGE_PANES as readonly string[]).includes(value);
-}
-
 export default function RoomDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -248,8 +154,6 @@ export default function RoomDetailPage() {
   const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([
     { id: null, name: 'Root' },
   ]);
-  const [admins, setAdmins] = React.useState<Admin[]>([]);
-  const [links, setLinks] = React.useState<ShareLink[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   // Tracks whether documents AND folders have finished their initial fetch.
   // Without this, the room renders for a tick with empty arrays and the
@@ -308,58 +212,24 @@ export default function RoomDetailPage() {
 
   // Dialog states
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
-  const [showMemberDialog, setShowMemberDialog] = React.useState(false);
-  const [showLinkDialog, setShowLinkDialog] = React.useState(false);
   const [showFolderDialog, setShowFolderDialog] = React.useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = React.useState(false);
   const [selectedDocument, setSelectedDocument] = React.useState<Document | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
-  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
-  const [previewError, setPreviewError] = React.useState<string | null>(null);
 
   // Version history states
   const [showVersionDialog, setShowVersionDialog] = React.useState(false);
   const [versionDoc, setVersionDoc] = React.useState<Document | null>(null);
-  const [versions, setVersions] = React.useState<DocumentVersionInfo[]>([]);
-  const [isLoadingVersions, setIsLoadingVersions] = React.useState(false);
-  const [isRollingBack, setIsRollingBack] = React.useState(false);
-  const [isUploadingVersion, setIsUploadingVersion] = React.useState(false);
-  const [versionPreviewUrl, setVersionPreviewUrl] = React.useState<string | null>(null);
-  const [versionPreviewId, setVersionPreviewId] = React.useState<string | null>(null);
-  const versionFileRef = React.useRef<HTMLInputElement>(null);
 
   // Folder delete states
   const [showFolderDeleteDialog, setShowFolderDeleteDialog] = React.useState(false);
   const [selectedFolder, setSelectedFolder] = React.useState<FolderItem | null>(null);
   const [isDeletingFolder, setIsDeletingFolder] = React.useState(false);
 
-  // Link create states
-  const [isCreatingLink, setIsCreatingLink] = React.useState(false);
-
-  // Confirmation dialog states
-  const [deleteLinkTarget, setDeleteLinkTarget] = React.useState<ShareLink | null>(null);
-  const [isDeletingLink, setIsDeletingLink] = React.useState(false);
-  const [removeMemberTarget, setRemoveMemberTarget] = React.useState<Admin | null>(null);
-  const [isRemovingMember, setIsRemovingMember] = React.useState(false);
-
   // Tag editor states
   const [editingTagsDoc, setEditingTagsDoc] = React.useState<Document | null>(null);
-
-  // Access request states
-  const [accessRequests, setAccessRequests] = React.useState<AccessRequest[]>([]);
-  const [_isLoadingAccessRequests, setIsLoadingAccessRequests] = React.useState(false);
-  const [reviewingRequestId, setReviewingRequestId] = React.useState<string | null>(null);
-  const [viewers, setViewers] = React.useState<Viewer[]>([]);
-  const [isLoadingViewers, setIsLoadingViewers] = React.useState(false);
-  const [showInviteViewerDialog, setShowInviteViewerDialog] = React.useState(false);
-  const [inviteViewerEmails, setInviteViewerEmails] = React.useState('');
-  const [isInvitingViewers, setIsInvitingViewers] = React.useState(false);
-  const [revokingViewerEmail, setRevokingViewerEmail] = React.useState<string | null>(null);
-
-  // Member add states
-  const [isAddingMember, setIsAddingMember] = React.useState(false);
 
   // Manage drawer (Access / Share Links / Q&A / Checklist / Calendar) open
   // state. Closed by default so the room canvas leads with documents, unless
@@ -647,179 +517,6 @@ export default function RoomDetailPage() {
 
   const showListModeHint = viewMode === 'grid' && listModeHintEligible && !listModeHintDismissed;
 
-  const fetchAdmins = React.useCallback(async () => {
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/admins`);
-      if (response.ok) {
-        const data = await response.json();
-        setAdmins(data.admins || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch admins:', error);
-    }
-  }, [roomId]);
-
-  const fetchAccessRequests = React.useCallback(async () => {
-    setIsLoadingAccessRequests(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/access-requests?status=PENDING`);
-      if (response.ok) {
-        const data = await response.json();
-        setAccessRequests(data.accessRequests || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch access requests:', error);
-    } finally {
-      setIsLoadingAccessRequests(false);
-    }
-  }, [roomId]);
-
-  const fetchViewers = React.useCallback(async () => {
-    setIsLoadingViewers(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/viewers`);
-      if (response.ok) {
-        const data = await response.json();
-        setViewers(data.viewers || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch viewers:', error);
-    } finally {
-      setIsLoadingViewers(false);
-    }
-  }, [roomId]);
-
-  const handleInviteViewers = React.useCallback(async () => {
-    const emails = inviteViewerEmails
-      .split('\n')
-      .map((e) => e.trim())
-      .filter((e) => e.length > 0 && e.includes('@'));
-
-    if (emails.length === 0) {
-      toast({
-        title: 'Error',
-        description: 'Please enter at least one valid email',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setIsInvitingViewers(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/viewers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emails }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        toast({
-          title: 'Success',
-          description: `Invited ${data.invited} viewer(s)`,
-          variant: 'success',
-        });
-        setShowInviteViewerDialog(false);
-        setInviteViewerEmails('');
-        fetchViewers();
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to invite viewers',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      console.error('Invite viewers error:', error);
-      toast({ title: 'Error', description: 'Failed to invite viewers', variant: 'destructive' });
-    } finally {
-      setIsInvitingViewers(false);
-    }
-  }, [roomId, inviteViewerEmails, fetchViewers]);
-
-  const handleRevokeViewer = React.useCallback(
-    async (email: string) => {
-      setRevokingViewerEmail(email);
-      try {
-        const response = await fetch(`/api/rooms/${roomId}/viewers`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ emails: [email] }),
-        });
-
-        if (response.ok) {
-          toast({ title: 'Success', description: 'Viewer access revoked', variant: 'success' });
-          fetchViewers();
-        } else {
-          const error = await response.json();
-          toast({
-            title: 'Error',
-            description: error.error || 'Failed to revoke access',
-            variant: 'destructive',
-          });
-        }
-      } catch (error) {
-        console.error('Revoke viewer error:', error);
-        toast({ title: 'Error', description: 'Failed to revoke access', variant: 'destructive' });
-      } finally {
-        setRevokingViewerEmail(null);
-      }
-    },
-    [roomId, fetchViewers]
-  );
-
-  const handleReviewAccessRequest = React.useCallback(
-    async (requestId: string, status: 'APPROVED' | 'DENIED') => {
-      setReviewingRequestId(requestId);
-      try {
-        const response = await fetch(`/api/rooms/${roomId}/access-requests/${requestId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status }),
-        });
-
-        if (response.ok) {
-          toast({
-            title: 'Success',
-            description: `Access request ${status.toLowerCase()}`,
-            variant: 'success',
-          });
-          fetchAccessRequests();
-        } else {
-          const error = await response.json();
-          toast({
-            title: 'Error',
-            description: error.error || 'Failed to review access request',
-            variant: 'destructive',
-          });
-        }
-      } catch (error) {
-        console.error('Review access request error:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to review access request',
-          variant: 'destructive',
-        });
-      } finally {
-        setReviewingRequestId(null);
-      }
-    },
-    [roomId, fetchAccessRequests]
-  );
-
-  const fetchLinks = React.useCallback(async () => {
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/links`);
-      if (response.ok) {
-        const data = await response.json();
-        setLinks(data.links || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch links:', error);
-    }
-  }, [roomId]);
-
   const fetchBookmarks = React.useCallback(async () => {
     try {
       const response = await fetch('/api/bookmarks');
@@ -910,22 +607,6 @@ export default function RoomDetailPage() {
       fetchBookmarks();
     }
   }, [room, fetchBookmarks]);
-
-  // Lazy-load the manage drawer's pane data only when it opens or the user
-  // switches panes. Q&A / Checklist / Calendar sub-components own their own
-  // data fetching; the page only fetches the panes whose state lives here.
-  React.useEffect(() => {
-    if (!manageOpen || !room) {
-      return;
-    }
-    if (managePane === 'members') {
-      fetchAdmins();
-      fetchAccessRequests();
-      fetchViewers();
-    } else if (managePane === 'links') {
-      fetchLinks();
-    }
-  }, [manageOpen, managePane, room, fetchAdmins, fetchAccessRequests, fetchViewers, fetchLinks]);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) {
@@ -1044,59 +725,13 @@ export default function RoomDetailPage() {
     [roomId]
   );
 
-  // Handle document preview
-  const handlePreview = React.useCallback(
-    async (doc: Document) => {
-      setSelectedDocument(doc);
-      setPreviewUrl(null);
-      setPreviewError(null);
-      setShowPreviewDialog(true);
-
-      // Types that can be previewed (inline or via client-side renderer)
-      // All types we can preview — inline, via Gotenberg conversion, or client-side rendering
-      const previewableTypes = [
-        // Inline (served directly)
-        'application/pdf',
-        'image/jpeg',
-        'image/png',
-        'image/gif',
-        'image/webp',
-        'image/tiff',
-        'image/svg+xml',
-        // Client-side rendered
-        'text/plain',
-        'text/csv',
-        'text/markdown',
-        'text/html',
-        'text/yaml',
-        'text/xml',
-        'application/json',
-        'application/xml',
-        // Gotenberg conversion (office formats → PDF)
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
-        'application/msword', // DOC
-        'application/vnd.ms-excel', // XLS
-        'application/vnd.ms-powerpoint', // PPT
-        'application/vnd.oasis.opendocument.text', // ODT
-        'application/vnd.oasis.opendocument.spreadsheet', // ODS
-        'application/vnd.oasis.opendocument.presentation', // ODP
-        'application/vnd.oasis.opendocument.graphics', // ODG
-        'application/vnd.ms-visio.drawing.main+xml', // VSDX
-        'application/vnd.visio', // VSD
-        'application/rtf',
-        'application/epub+zip',
-      ];
-
-      if (previewableTypes.includes(doc.mimeType)) {
-        setPreviewUrl(`/api/rooms/${roomId}/documents/${doc.id}/preview`);
-      } else {
-        setPreviewError('Preview not available for this file type. Use download instead.');
-      }
-    },
-    [roomId]
-  );
+  // Handle document preview. PreviewDialog derives the preview URL (or the
+  // not-previewable error) from the document itself; the page only tracks
+  // which document is open.
+  const handlePreview = React.useCallback((doc: Document) => {
+    setSelectedDocument(doc);
+    setShowPreviewDialog(true);
+  }, []);
 
   // ?doc=<id> deep links (landing "Continue reading" / bookmarks) open the
   // preview directly. Fetched by id because the document may live in a folder
@@ -1123,102 +758,13 @@ export default function RoomDetailPage() {
     })();
   }, [requestedDocId, isLoading, roomId, handlePreview]);
 
-  // Handle version history
-  const handleShowVersions = React.useCallback(
-    async (doc: Document) => {
-      setVersionDoc(doc);
-      setShowVersionDialog(true);
-      setIsLoadingVersions(true);
-      setVersionPreviewUrl(null);
-      setVersionPreviewId(null);
-      try {
-        const res = await fetch(`/api/rooms/${roomId}/documents/${doc.id}/versions`);
-        if (res.ok) {
-          const data = await res.json();
-          setVersions(data.versions || []);
-        }
-      } catch {
-        toast({ title: 'Error', description: 'Failed to load versions', variant: 'destructive' });
-      } finally {
-        setIsLoadingVersions(false);
-      }
-    },
-    [roomId]
-  );
-
-  const handleRollback = React.useCallback(
-    async (versionId: string, versionNumber: number) => {
-      if (!versionDoc) {
-        return;
-      }
-      setIsRollingBack(true);
-      try {
-        const res = await fetch(
-          `/api/rooms/${roomId}/documents/${versionDoc.id}/versions/${versionId}/rollback`,
-          { method: 'POST' }
-        );
-        if (res.ok) {
-          toast({ title: 'Rolled back', description: `Restored to version ${versionNumber}` });
-          fetchDocuments();
-          handleShowVersions(versionDoc);
-        } else {
-          const data = await res.json();
-          toast({
-            title: 'Rollback failed',
-            description: data.error?.message || 'Could not rollback',
-            variant: 'destructive',
-          });
-        }
-      } catch {
-        toast({
-          title: 'Error',
-          description: 'Failed to rollback version',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsRollingBack(false);
-      }
-    },
-    [roomId, versionDoc, fetchDocuments, handleShowVersions]
-  );
-
-  const handleUploadNewVersion = React.useCallback(
-    async (file: File) => {
-      if (!versionDoc) {
-        return;
-      }
-      setIsUploadingVersion(true);
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch(`/api/rooms/${roomId}/documents/${versionDoc.id}/versions`, {
-          method: 'POST',
-          body: formData,
-        });
-        if (res.ok) {
-          toast({ title: 'Version uploaded', description: 'New version uploaded successfully' });
-          fetchDocuments();
-          handleShowVersions(versionDoc);
-        } else {
-          const data = await res.json();
-          toast({
-            title: 'Upload failed',
-            description: data.error?.message || 'Could not upload version',
-            variant: 'destructive',
-          });
-        }
-      } catch {
-        toast({
-          title: 'Error',
-          description: 'Failed to upload new version',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsUploadingVersion(false);
-      }
-    },
-    [roomId, versionDoc, fetchDocuments, handleShowVersions]
-  );
+  // Handle version history. VersionHistoryDialog fetches the versions and
+  // owns rollback / upload-new-version; the page only tracks which document
+  // is open.
+  const handleShowVersions = React.useCallback((doc: Document) => {
+    setVersionDoc(doc);
+    setShowVersionDialog(true);
+  }, []);
 
   // Handle document delete
   const handleDelete = React.useCallback(async (doc: Document) => {
@@ -1297,188 +843,6 @@ export default function RoomDetailPage() {
       setIsDeletingFolder(false);
     }
   }, [roomId, selectedFolder, fetchFolders, fetchDocuments, fetchFolderTree]);
-
-  // Handle share link creation
-  const handleCreateLink = React.useCallback(
-    async (values: CreateLinkValues) => {
-      if (!values.name.trim()) {
-        toast({ title: 'Required', description: 'Please enter a link name' });
-        return false;
-      }
-
-      setIsCreatingLink(true);
-      let created = false;
-      try {
-        const response = await fetch(`/api/rooms/${roomId}/links`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: values.name.trim(),
-            permission: values.permission,
-            scope: 'ENTIRE_ROOM',
-            ...(values.password && { password: values.password }),
-            ...(values.expiry && { expiresAt: new Date(values.expiry).toISOString() }),
-            ...(values.sessionLimit && { maxSessionMinutes: parseInt(values.sessionLimit, 10) }),
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          created = true;
-          setShowLinkDialog(false);
-          fetchLinks();
-          // Copy link URL to clipboard
-          if (data.link?.url) {
-            await navigator.clipboard.writeText(data.link.url);
-            toast({
-              title: 'Success',
-              description: 'Link created and copied to clipboard!',
-              variant: 'success',
-            });
-          }
-        } else {
-          const error = await response.json();
-          toast({
-            title: 'Error',
-            description: error.error || 'Failed to create link',
-            variant: 'destructive',
-          });
-        }
-      } catch (error) {
-        console.error('Create link error:', error);
-        toast({ title: 'Error', description: 'Failed to create link', variant: 'destructive' });
-      } finally {
-        setIsCreatingLink(false);
-      }
-      return created;
-    },
-    [roomId, fetchLinks]
-  );
-
-  // Handle copy link
-  const handleCopyLink = React.useCallback(async (link: ShareLink) => {
-    const baseUrl = window.location.origin;
-    const linkUrl = `${baseUrl}/r/${link.slug}`;
-    try {
-      await navigator.clipboard.writeText(linkUrl);
-      toast({ title: 'Copied', description: 'Link copied to clipboard!', variant: 'success' });
-    } catch (error) {
-      console.error('Copy error:', error);
-      toast({ title: 'Error', description: 'Failed to copy link', variant: 'destructive' });
-    }
-  }, []);
-
-  // Handle delete link
-  const handleDeleteLinkClick = React.useCallback((link: ShareLink) => {
-    setDeleteLinkTarget(link);
-  }, []);
-
-  const handleDeleteLinkConfirm = React.useCallback(async () => {
-    if (!deleteLinkTarget) {
-      return;
-    }
-
-    setIsDeletingLink(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/links/${deleteLinkTarget.id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        fetchLinks();
-        setDeleteLinkTarget(null);
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to delete link',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      console.error('Delete link error:', error);
-      toast({ title: 'Error', description: 'Failed to delete link', variant: 'destructive' });
-    } finally {
-      setIsDeletingLink(false);
-    }
-  }, [roomId, fetchLinks, deleteLinkTarget]);
-
-  // Handle add member (room admin)
-  const handleAddMember = React.useCallback(
-    async (email: string) => {
-      if (!email.trim()) {
-        toast({ title: 'Required', description: 'Please enter an email address' });
-        return false;
-      }
-
-      setIsAddingMember(true);
-      try {
-        const response = await fetch(`/api/rooms/${roomId}/admins`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: email.trim(),
-          }),
-        });
-
-        if (response.ok) {
-          setShowMemberDialog(false);
-          fetchAdmins();
-          toast({ title: 'Success', description: 'Admin added successfully!', variant: 'success' });
-          return true;
-        } else {
-          const error = await response.json();
-          toast({
-            title: 'Error',
-            description: error.error || 'Failed to add admin',
-            variant: 'destructive',
-          });
-        }
-      } catch (error) {
-        console.error('Add member error:', error);
-        toast({ title: 'Error', description: 'Failed to add admin', variant: 'destructive' });
-      } finally {
-        setIsAddingMember(false);
-      }
-      return false;
-    },
-    [roomId, fetchAdmins]
-  );
-
-  // Handle remove member
-  const handleRemoveMemberClick = React.useCallback((admin: Admin) => {
-    setRemoveMemberTarget(admin);
-  }, []);
-
-  const handleRemoveMemberConfirm = React.useCallback(async () => {
-    if (!removeMemberTarget) {
-      return;
-    }
-
-    setIsRemovingMember(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/admins/${removeMemberTarget.id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        fetchAdmins();
-        setRemoveMemberTarget(null);
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to remove admin',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      console.error('Remove member error:', error);
-      toast({ title: 'Error', description: 'Failed to remove admin', variant: 'destructive' });
-    } finally {
-      setIsRemovingMember(false);
-    }
-  }, [roomId, fetchAdmins, removeMemberTarget]);
 
   const handleDuplicateRoom = React.useCallback(async () => {
     try {
@@ -2389,536 +1753,17 @@ export default function RoomDetailPage() {
         </div>
       )}
 
-      {/* Manage Room drawer. Holds the secondary room surfaces (Access,
-          Share Links, Q&A, Checklist, Calendar) so the page canvas can stay
-          documents-first. Heavier admin surfaces (Settings, Audit,
-          Analytics, Trash) remain dedicated routes accessible from the
-          PageHeader More menu, not crammed into the drawer. */}
-      <Sheet open={manageOpen} onOpenChange={setManageOpen}>
-        <SheetContent className="p-0">
-          <SheetHeader className="pr-12">
-            <SheetTitle>Manage room</SheetTitle>
-            <SheetDescription>
-              Control who has access, generate share links, and run room workflows without leaving
-              the document workspace.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetBody>
-            <Tabs
-              value={managePane}
-              onValueChange={(v) => setManagePane(v as typeof managePane)}
-              className="flex h-full"
-            >
-              {/* Vertical pane nav. Reads as a distinct rail layer (slightly
-                  darker tint than the content pane on the right) so the
-                  drawer feels like a tool panel, not a flat modal. The
-                  active section uses the same primary accent that anchors
-                  the room canvas — keeping the entire room on a single
-                  controlled accent system. */}
-              <TabsList
-                aria-label="Room management sections"
-                className="flex h-full w-48 shrink-0 flex-col items-stretch justify-start gap-1 rounded-none border-r border-slate-200 bg-slate-100/80 p-2 dark:border-slate-800 dark:bg-slate-900/60"
-              >
-                {[
-                  { value: 'members', icon: Users, label: 'Access' },
-                  { value: 'links', icon: LinkIcon, label: 'Share Links' },
-                  { value: 'qa', icon: MessageSquare, label: 'Q&A' },
-                  { value: 'checklist', icon: ClipboardCheck, label: 'Checklist' },
-                  { value: 'calendar', icon: CalendarDays, label: 'Calendar' },
-                ].map(({ value, icon: Icon, label }) => (
-                  <TabsTrigger
-                    key={value}
-                    value={value}
-                    className="justify-start gap-2 rounded-md bg-transparent px-3 py-2 text-sm font-medium text-slate-600 shadow-none transition-colors hover:bg-white/70 hover:text-slate-900 data-[state=active]:bg-primary-50 data-[state=active]:text-primary-800 data-[state=active]:shadow-none data-[state=active]:ring-1 data-[state=active]:ring-inset data-[state=active]:ring-primary-200 dark:text-slate-400 dark:hover:bg-slate-800/70 dark:hover:text-slate-100 dark:data-[state=active]:bg-primary-900/30 dark:data-[state=active]:text-primary-100 dark:data-[state=active]:ring-primary-800"
-                  >
-                    <Icon aria-hidden="true" className="h-4 w-4" />
-                    {label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-
-              <div className="min-w-0 flex-1 overflow-y-auto bg-white p-5 dark:bg-slate-950">
-                {/* Members pane */}
-                <TabsContent value="members" className="mt-0">
-                  {/* Access Requests Section */}
-                  {accessRequests.length > 0 && (
-                    <Card className="mb-6 border-amber-200 bg-amber-50/50">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center gap-2">
-                          <UserPlus className="h-5 w-5 text-amber-600" />
-                          <CardTitle className="text-base">
-                            Pending Access Requests
-                            <Badge variant="warning" className="ml-2">
-                              {accessRequests.length}
-                            </Badge>
-                          </CardTitle>
-                        </div>
-                        <CardDescription>
-                          People requesting access to this room. Approve to create a share link.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {accessRequests.map((req) => (
-                          <div
-                            key={req.id}
-                            className="flex items-center justify-between rounded-lg border bg-white p-3"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <Mail className="h-4 w-4 text-neutral-400" />
-                                <span className="font-medium text-neutral-900">
-                                  {req.requesterName || req.requesterEmail}
-                                </span>
-                                {req.requesterName && (
-                                  <span className="text-sm text-neutral-500">
-                                    {req.requesterEmail}
-                                  </span>
-                                )}
-                              </div>
-                              {req.reason && (
-                                <p className="mt-1 line-clamp-2 text-sm text-neutral-600">
-                                  {req.reason}
-                                </p>
-                              )}
-                              <p className="mt-1 flex items-center gap-1 text-xs text-neutral-600">
-                                <Clock className="h-3 w-3" />
-                                {new Date(req.createdAt).toLocaleDateString()} at{' '}
-                                {new Date(req.createdAt).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </p>
-                            </div>
-                            <div className="ml-4 flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-red-200 text-red-600 hover:bg-red-50"
-                                disabled={reviewingRequestId === req.id}
-                                onClick={() => handleReviewAccessRequest(req.id, 'DENIED')}
-                              >
-                                <X className="mr-1 h-3.5 w-3.5" />
-                                Deny
-                              </Button>
-                              <Button
-                                size="sm"
-                                disabled={reviewingRequestId === req.id}
-                                onClick={() => handleReviewAccessRequest(req.id, 'APPROVED')}
-                              >
-                                <Check className="mr-1 h-3.5 w-3.5" />
-                                Approve
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Slim section header — drawer width is precious; the
-                      drawer title already names this surface, so we don't
-                      need a second descriptive paragraph here. */}
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Admins
-                    </h3>
-                    <Button size="sm" onClick={() => setShowMemberDialog(true)}>
-                      <Plus className="mr-1.5 h-3.5 w-3.5" />
-                      Add Admin
-                    </Button>
-                  </div>
-
-                  {admins.length === 0 ? (
-                    <AdminEmptyState
-                      icon={<Users className="h-6 w-6" />}
-                      title="No admins yet"
-                      description="Add room-specific admins when you need collaborators to manage content, access, and links without giving org-wide privileges."
-                      action={
-                        <Button onClick={() => setShowMemberDialog(true)}>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add Admin
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <AdminSurface className="overflow-hidden p-0">
-                      <table className="w-full">
-                        <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
-                          <tr>
-                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                              Admin
-                            </th>
-                            <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                              Scope
-                            </th>
-                            <th className="w-10"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {admins.map((admin) => (
-                            <tr
-                              key={admin.id}
-                              className="border-b last:border-0 hover:bg-neutral-50"
-                            >
-                              <td className="px-4 py-2">
-                                <div className="flex items-center gap-3">
-                                  <UserAvatar
-                                    name={`${admin.firstName} ${admin.lastName}`}
-                                    size="sm"
-                                  />
-                                  <div>
-                                    <div className="font-medium">
-                                      {admin.firstName} {admin.lastName}
-                                    </div>
-                                    <div className="text-sm text-neutral-500">{admin.email}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-4 py-2">
-                                <Badge
-                                  variant={admin.scope === 'organization' ? 'default' : 'secondary'}
-                                >
-                                  {admin.scope === 'organization' ? 'Org Admin' : 'Room Admin'}
-                                </Badge>
-                              </td>
-                              <td className="px-4 py-2">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 w-8 p-0"
-                                      aria-label={`Actions for ${admin.firstName} ${admin.lastName}`}
-                                    >
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    {admin.scope === 'room' && (
-                                      <DropdownMenuItem
-                                        onClick={() => handleRemoveMemberClick(admin)}
-                                        className="text-danger-600"
-                                      >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        Remove
-                                      </DropdownMenuItem>
-                                    )}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </AdminSurface>
-                  )}
-
-                  {/* Viewers Section */}
-                  <Card className="bg-white/88 mt-6 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Eye className="h-5 w-5 text-neutral-500" />
-                          <CardTitle className="text-base">Viewers</CardTitle>
-                          {viewers.length > 0 && (
-                            <Badge variant="secondary">{viewers.length}</Badge>
-                          )}
-                        </div>
-                        <Button size="sm" onClick={() => setShowInviteViewerDialog(true)}>
-                          <UserPlus className="mr-2 h-4 w-4" />
-                          Invite Viewers
-                        </Button>
-                      </div>
-                      <CardDescription>
-                        External viewers who have accessed this room via share links.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {isLoadingViewers ? (
-                        <div className="space-y-2">
-                          <Skeleton className="h-10 w-full" />
-                          <Skeleton className="h-10 w-full" />
-                        </div>
-                      ) : viewers.length === 0 ? (
-                        <p className="py-4 text-center text-sm text-neutral-500">
-                          No viewers have accessed this room yet.
-                        </p>
-                      ) : (
-                        <div className="overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800">
-                          <table className="w-full">
-                            <thead className="border-b bg-neutral-50">
-                              <tr>
-                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                                  Email
-                                </th>
-                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                                  Name
-                                </th>
-                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                                  Visits
-                                </th>
-                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                                  Last Active
-                                </th>
-                                <th className="px-4 py-2.5 text-left text-sm font-medium text-neutral-500">
-                                  Time Spent
-                                </th>
-                                <th className="w-10"></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {viewers.map((viewer) => (
-                                <tr
-                                  key={viewer.email}
-                                  className="border-b last:border-0 hover:bg-neutral-50"
-                                >
-                                  <td className="px-4 py-2 text-sm font-medium text-neutral-900">
-                                    {viewer.email}
-                                  </td>
-                                  <td className="px-4 py-2 text-sm text-neutral-600">
-                                    {viewer.name || '\u2014'}
-                                  </td>
-                                  <td className="px-4 py-2 text-sm text-neutral-600">
-                                    {viewer.visits}
-                                  </td>
-                                  <td className="px-4 py-2 text-sm text-neutral-600">
-                                    {new Date(viewer.lastActive).toLocaleDateString()}
-                                  </td>
-                                  <td className="px-4 py-2 text-sm text-neutral-600">
-                                    {viewer.totalTimeSpent < 60
-                                      ? `${viewer.totalTimeSpent}s`
-                                      : viewer.totalTimeSpent < 3600
-                                        ? `${Math.round(viewer.totalTimeSpent / 60)}m`
-                                        : `${Math.round(viewer.totalTimeSpent / 3600)}h`}
-                                  </td>
-                                  <td className="px-4 py-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 text-danger-600 hover:bg-danger-50 hover:text-danger-700"
-                                      disabled={revokingViewerEmail === viewer.email}
-                                      onClick={() => handleRevokeViewer(viewer.email)}
-                                    >
-                                      {revokingViewerEmail === viewer.email ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <Trash2 className="h-4 w-4" />
-                                      )}
-                                    </Button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Invite Viewers Dialog */}
-                  <Dialog open={showInviteViewerDialog} onOpenChange={setShowInviteViewerDialog}>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Invite Viewers</DialogTitle>
-                        <DialogDescription>
-                          Enter email addresses to invite as viewers (one per line). A view-only
-                          share link will be created for each.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="py-4">
-                        <Label htmlFor="viewer-emails">Email Addresses</Label>
-                        <Textarea
-                          id="viewer-emails"
-                          placeholder={'viewer1@example.com\nviewer2@example.com'}
-                          value={inviteViewerEmails}
-                          onChange={(e) => setInviteViewerEmails(e.target.value)}
-                          className="mt-1.5"
-                          rows={6}
-                        />
-                      </div>
-                      <DialogFooter>
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setShowInviteViewerDialog(false);
-                            setInviteViewerEmails('');
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={handleInviteViewers}
-                          disabled={isInvitingViewers || !inviteViewerEmails.trim()}
-                        >
-                          {isInvitingViewers ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Inviting...
-                            </>
-                          ) : (
-                            'Invite'
-                          )}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </TabsContent>
-
-                {/* Links Tab */}
-                <TabsContent value="links" className="mt-0">
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Share links
-                    </h3>
-                    <Button size="sm" onClick={() => setShowLinkDialog(true)}>
-                      <Plus className="mr-1.5 h-3.5 w-3.5" />
-                      Create Link
-                    </Button>
-                  </div>
-
-                  {links.length === 0 ? (
-                    <AdminEmptyState
-                      icon={<LinkIcon className="h-6 w-6" />}
-                      title="No share links yet"
-                      description="Create share links to give external reviewers secure access to this room with the right view and download permissions."
-                      action={
-                        <Button onClick={() => setShowLinkDialog(true)}>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Create Link
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <div className="space-y-4">
-                      {links.map((link) => (
-                        <Card
-                          key={link.id}
-                          className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
-                        >
-                          <CardHeader className="pb-2">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <CardTitle className="text-base">
-                                  {link.name || 'Unnamed Link'}
-                                </CardTitle>
-                                <CardDescription className="mt-1 flex items-center gap-2">
-                                  <Badge
-                                    variant={
-                                      link.permission === 'DOWNLOAD' ? 'default' : 'secondary'
-                                    }
-                                  >
-                                    {link.permission === 'DOWNLOAD'
-                                      ? 'View & Download'
-                                      : 'View Only'}
-                                  </Badge>
-                                  {link.requiresPassword && (
-                                    <Badge variant="warning">Password</Badge>
-                                  )}
-                                  {link.requiresEmailVerification && (
-                                    <Badge variant="secondary">Email Required</Badge>
-                                  )}
-                                  {!link.isActive && <Badge variant="danger">Disabled</Badge>}
-                                </CardDescription>
-                              </div>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => handleCopyLink(link)}>
-                                    <Copy className="mr-2 h-4 w-4" />
-                                    Copy Link
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() => handleDeleteLinkClick(link)}
-                                    className="text-danger-600"
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="flex items-center gap-6 text-sm text-neutral-500">
-                              <div>
-                                <span className="font-medium text-neutral-900">
-                                  {link._count?.visits || 0}
-                                </span>{' '}
-                                visits
-                              </div>
-                              <div>Created {formatDate(link.createdAt)}</div>
-                              {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-
-                {/* Q&A Tab */}
-                <TabsContent value="qa" className="mt-4">
-                  <QATab roomId={roomId} />
-                </TabsContent>
-
-                {/* Checklist Tab */}
-                <TabsContent value="checklist" className="mt-4">
-                  <ChecklistTab roomId={roomId} />
-                </TabsContent>
-
-                {/* Calendar Tab */}
-                <TabsContent value="calendar" className="mt-0">
-                  <CalendarTab roomId={roomId} />
-                </TabsContent>
-              </div>
-            </Tabs>
-          </SheetBody>
-          {/* Footer: pointers to the dedicated full-page admin surfaces.
-              These are too heavy to live in the drawer (per the IA: settings,
-              audit, analytics, trash get their own routes), but the drawer
-              is the natural launching point. */}
-          <div className="border-t border-slate-200 px-5 py-3 text-sm dark:border-slate-800">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Open as full page
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(`/rooms/${roomId}/settings`)}
-              >
-                <Settings className="mr-1.5 h-4 w-4" aria-hidden="true" /> Settings
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(`/rooms/${roomId}/audit`)}
-              >
-                <History className="mr-1.5 h-4 w-4" aria-hidden="true" /> Audit
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(`/rooms/${roomId}/analytics`)}
-              >
-                <BarChart3 className="mr-1.5 h-4 w-4" aria-hidden="true" /> Analytics
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(`/rooms/${roomId}/trash`)}
-              >
-                <Trash2 className="mr-1.5 h-4 w-4" aria-hidden="true" /> Trash
-              </Button>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* Manage Room drawer (Access / Share Links / Q&A / Checklist /
+          Calendar). Owns its own pane data; the page only holds the
+          open/pane state so the ?manage= deep link can initialize it. */}
+      <ManageDrawer
+        roomId={roomId}
+        room={room}
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        pane={managePane}
+        onPaneChange={setManagePane}
+      />
 
       {/* Bulk Actions Bar */}
       {selectedDocs.size > 0 && (
@@ -3106,14 +1951,6 @@ export default function RoomDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Member Dialog */}
-      <AddMemberDialog
-        open={showMemberDialog}
-        onOpenChange={setShowMemberDialog}
-        onAdd={handleAddMember}
-        isAdding={isAddingMember}
-      />
-
       {/* Edit Properties Dialog */}
       <EditPropertiesDialog
         doc={editingTagsDoc}
@@ -3125,14 +1962,6 @@ export default function RoomDetailPage() {
             handleSaveTags(editingTagsDoc, tags);
           }
         }}
-      />
-
-      {/* Create Link Dialog */}
-      <CreateLinkDialog
-        open={showLinkDialog}
-        onOpenChange={setShowLinkDialog}
-        onCreate={handleCreateLink}
-        isCreating={isCreatingLink}
       />
 
       {/* Create Folder Dialog */}
@@ -3170,292 +1999,29 @@ export default function RoomDetailPage() {
       />
 
       {/* Preview Dialog */}
-      <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
-        <DialogContent className="max-h-[92vh] w-[95vw] max-w-6xl overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>{selectedDocument?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="relative h-[78vh] overflow-auto">
-            {room?.enableWatermark && (
-              <WatermarkOverlay
-                template={room.watermarkTemplate || undefined}
-                viewerEmail={undefined}
-                viewerName="Admin Preview"
-                roomName={room.name}
-              />
-            )}
-            {previewError ? (
-              <div className="flex h-full flex-col items-center justify-center text-center">
-                <FileText className="mb-4 h-16 w-16 text-neutral-300" />
-                <p className="mb-4 text-neutral-500">{previewError}</p>
-                {selectedDocument && (
-                  <Button onClick={() => handleDownload(selectedDocument)}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Download Instead
-                  </Button>
-                )}
-              </div>
-            ) : previewUrl ? (
-              selectedDocument?.mimeType === 'application/pdf' ? (
-                <iframe
-                  src={previewUrl}
-                  className="h-full w-full border-0"
-                  title={selectedDocument?.name}
-                />
-              ) : selectedDocument?.mimeType.startsWith('image/') &&
-                selectedDocument?.mimeType !== 'image/svg+xml' ? (
-                <div className="flex h-full items-center justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={previewUrl}
-                    alt={selectedDocument?.name}
-                    className="max-h-full max-w-full object-contain"
-                  />
-                </div>
-              ) : selectedDocument?.mimeType.startsWith('text/') ||
-                selectedDocument?.mimeType === 'application/json' ||
-                selectedDocument?.mimeType === 'application/xml' ||
-                selectedDocument?.mimeType === 'image/svg+xml' ? (
-                <TextPreviewFetcher
-                  url={previewUrl}
-                  mimeType={selectedDocument?.mimeType ?? 'text/plain'}
-                  fileName={selectedDocument?.name ?? 'file'}
-                />
-              ) : (
-                <ConvertedPreview
-                  url={previewUrl}
-                  name={selectedDocument?.name ?? 'file'}
-                  onDownload={() => selectedDocument && handleDownload(selectedDocument)}
-                />
-              )
-            ) : (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center">
-                  <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
-                  <p className="text-neutral-500">Loading preview...</p>
-                </div>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            {selectedDocument && (
-              <Button variant="outline" onClick={() => handleDownload(selectedDocument)}>
-                <Download className="mr-2 h-4 w-4" />
-                Download
-              </Button>
-            )}
-            <Button onClick={() => setShowPreviewDialog(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Version History Dialog */}
-      <Dialog
-        open={showVersionDialog}
-        onOpenChange={(open) => {
-          if (!open) {
-            setShowVersionDialog(false);
-            setVersionDoc(null);
-            setVersions([]);
-            setVersionPreviewUrl(null);
-            setVersionPreviewId(null);
+      <PreviewDialog
+        open={showPreviewDialog}
+        onOpenChange={setShowPreviewDialog}
+        roomId={roomId}
+        doc={selectedDocument}
+        room={room}
+        onDownload={() => {
+          if (selectedDocument) {
+            handleDownload(selectedDocument);
           }
         }}
-      >
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <History className="h-5 w-5" />
-              Version History
-            </DialogTitle>
-            <DialogDescription>
-              {versionDoc?.name} — {versions.length} version{versions.length !== 1 ? 's' : ''}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="max-h-[55vh] overflow-y-auto">
-            {isLoadingVersions ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
-                <span className="ml-2 text-neutral-500">Loading versions...</span>
-              </div>
-            ) : versions.length === 0 ? (
-              <div className="py-8 text-center text-neutral-500">No versions found</div>
-            ) : (
-              <div className="space-y-2">
-                {versions.map((v, i) => {
-                  const isCurrent = i === 0;
-                  const isClean = v.scanStatus === 'CLEAN';
-                  const fileSizeKb = Number(v.fileSize) / 1024;
-                  const fileSizeDisplay =
-                    fileSizeKb > 1024
-                      ? `${(fileSizeKb / 1024).toFixed(1)} MB`
-                      : `${fileSizeKb.toFixed(0)} KB`;
-
-                  return (
-                    <div
-                      key={v.id}
-                      className={`rounded-lg border p-3 ${isCurrent ? 'border-primary-200 bg-primary-50/50' : 'bg-white'}`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold">v{v.versionNumber}</span>
-                            {isCurrent && (
-                              <Badge variant="default" className="text-xs">
-                                Current
-                              </Badge>
-                            )}
-                            {v.scanStatus === 'INFECTED' && (
-                              <Badge variant="danger" className="text-xs">
-                                <AlertCircle className="mr-1 h-3 w-3" />
-                                Infected
-                              </Badge>
-                            )}
-                            {v.scanStatus === 'PENDING' && (
-                              <Badge variant="secondary" className="text-xs">
-                                Scanning...
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="mt-0.5 text-xs text-neutral-500">
-                            {v.uploadedByUser
-                              ? `${v.uploadedByUser.firstName} ${v.uploadedByUser.lastName}`
-                              : 'Unknown'}{' '}
-                            — {new Date(v.createdAt).toLocaleString()}
-                          </p>
-                          <p className="text-xs text-neutral-400">
-                            {v.fileName} · {fileSizeDisplay}
-                          </p>
-                          {v.changeDescription && (
-                            <p className="mt-1 text-xs italic text-neutral-600">
-                              {v.changeDescription}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          {isClean && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => {
-                                if (versionPreviewId === v.id) {
-                                  setVersionPreviewUrl(null);
-                                  setVersionPreviewId(null);
-                                } else {
-                                  setVersionPreviewUrl(
-                                    `/api/rooms/${roomId}/documents/${versionDoc!.id}/preview?versionId=${v.id}`
-                                  );
-                                  setVersionPreviewId(v.id);
-                                }
-                              }}
-                            >
-                              <Eye className="mr-1 h-3 w-3" />
-                              {versionPreviewId === v.id ? 'Hide' : 'Preview'}
-                            </Button>
-                          )}
-                          {!isCurrent && isClean && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              disabled={isRollingBack}
-                              onClick={() => handleRollback(v.id, v.versionNumber)}
-                            >
-                              {isRollingBack ? (
-                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                              ) : (
-                                <RotateCcw className="mr-1 h-3 w-3" />
-                              )}
-                              Restore
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Inline preview for selected version */}
-                      {versionPreviewId === v.id && versionPreviewUrl && (
-                        <div className="mt-3 overflow-hidden rounded-lg border bg-neutral-50">
-                          <div className="h-64">
-                            {v.mimeType === 'application/pdf' ? (
-                              <iframe
-                                src={versionPreviewUrl}
-                                className="h-full w-full border-0"
-                                title={`v${v.versionNumber} preview`}
-                              />
-                            ) : v.mimeType.startsWith('image/') ? (
-                              <div className="flex h-full items-center justify-center">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={versionPreviewUrl}
-                                  alt={`v${v.versionNumber}`}
-                                  className="max-h-full max-w-full object-contain"
-                                />
-                              </div>
-                            ) : (
-                              <div className="flex h-full items-center justify-center text-neutral-400">
-                                <FileText className="mr-2 h-5 w-5" />
-                                Preview loaded in new format
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="flex-row justify-between gap-2 sm:justify-between">
-            <div>
-              <input
-                ref={versionFileRef}
-                type="file"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    handleUploadNewVersion(file);
-                  }
-                  e.target.value = '';
-                }}
-              />
-              <Button
-                variant="outline"
-                onClick={() => versionFileRef.current?.click()}
-                disabled={isUploadingVersion}
-              >
-                {isUploadingVersion ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-2 h-4 w-4" />
-                )}
-                Upload New Version
-              </Button>
-            </div>
-            <Button onClick={() => setShowVersionDialog(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <DeleteLinkConfirmDialog
-        open={deleteLinkTarget !== null}
-        linkName={deleteLinkTarget?.name}
-        onCancel={() => setDeleteLinkTarget(null)}
-        onConfirm={handleDeleteLinkConfirm}
-        loading={isDeletingLink}
       />
 
-      <RemoveMemberConfirmDialog
-        open={removeMemberTarget !== null}
-        firstName={removeMemberTarget?.firstName}
-        lastName={removeMemberTarget?.lastName}
-        onCancel={() => setRemoveMemberTarget(null)}
-        onConfirm={handleRemoveMemberConfirm}
-        loading={isRemovingMember}
+      {/* Version History Dialog */}
+      <VersionHistoryDialog
+        open={showVersionDialog}
+        roomId={roomId}
+        doc={versionDoc}
+        onClose={() => {
+          setShowVersionDialog(false);
+          setVersionDoc(null);
+        }}
+        onDocumentsRefresh={fetchDocuments}
       />
     </>
   );
@@ -3503,123 +2069,4 @@ function DocumentThumbnail({
       )}
     </div>
   );
-}
-
-/**
- * Fetches a converted preview (e.g. PDF from Gotenberg) via blob URL.
- * Shows error UI if the server returns 404 or a JSON error response.
- */
-function ConvertedPreview({
-  url,
-  name,
-  onDownload,
-}: {
-  url: string;
-  name: string;
-  onDownload: () => void;
-}) {
-  const [blobUrl, setBlobUrl] = React.useState<string | null>(null);
-  const [error, setError] = React.useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    fetch(url)
-      .then(async (res) => {
-        if (cancelled) {
-          return;
-        }
-        const ct = res.headers.get('content-type') || '';
-        if (!res.ok || ct.startsWith('application/json')) {
-          setError(true);
-          return;
-        }
-        const blob = await res.blob();
-        if (!cancelled) {
-          objectUrl = URL.createObjectURL(blob);
-          setBlobUrl(objectUrl);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [url]);
-
-  if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center text-center">
-        <FileText className="mb-4 h-16 w-16 text-neutral-300" />
-        <p className="mb-4 text-neutral-500">Preview not available for this file type</p>
-        <Button onClick={onDownload}>
-          <Download className="mr-2 h-4 w-4" />
-          Download Instead
-        </Button>
-      </div>
-    );
-  }
-
-  if (!blobUrl) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
-      </div>
-    );
-  }
-
-  return <iframe src={blobUrl} className="h-full w-full border-0" title={name} />;
-}
-
-/**
- * Fetches text content from a URL then renders via TextPreviewRenderer
- */
-function TextPreviewFetcher({
-  url,
-  mimeType,
-  fileName,
-}: {
-  url: string;
-  mimeType: string;
-  fileName: string;
-}) {
-  const [content, setContent] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    fetch(url)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error('Failed to load');
-        }
-        // Belt-and-suspenders: if server returns JSON but we expected a text file, treat as error
-        const ct = res.headers.get('content-type') || '';
-        if (ct.startsWith('application/json') && mimeType !== 'application/json') {
-          throw new Error('Preview not available');
-        }
-        return res.text();
-      })
-      .then(setContent)
-      .catch((err) => setError(err.message));
-  }, [url, mimeType]);
-
-  if (error) {
-    return <div className="flex h-full items-center justify-center text-neutral-500">{error}</div>;
-  }
-
-  if (content === null) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
-      </div>
-    );
-  }
-
-  return <TextPreviewRenderer content={content} mimeType={mimeType} fileName={fileName} />;
 }
