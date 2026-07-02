@@ -67,7 +67,7 @@ import {
   SheetBody,
 } from '@/components/ui/sheet';
 import dynamic from 'next/dynamic';
-import { RoomFolderTree, RoomFolderTreeNode } from '@/components/rooms/RoomFolderTree';
+import { RoomFolderTree } from '@/components/rooms/RoomFolderTree';
 import { useRoomNavigationPreferences } from '@/components/rooms/useRoomNavigationPreferences';
 import { PanelLeftClose, PanelLeftOpen, PanelLeft, Info } from 'lucide-react';
 
@@ -98,48 +98,7 @@ import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
 import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
 import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
 import { ManageDrawer, isManagePane, type ManagePane } from './_components/ManageDrawer';
-
-interface Room {
-  id: string;
-  name: string;
-  description: string | null;
-  status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
-  enableWatermark: boolean;
-  watermarkTemplate: string | null;
-  downloadEnabled: boolean;
-  allDocumentsConfidential: boolean;
-  createdAt: string;
-}
-
-interface Document {
-  id: string;
-  name: string;
-  mimeType: string;
-  size: number;
-  tags: string[];
-  category: string | null;
-  confidential: boolean;
-  uploadedBy: { firstName: string; lastName: string };
-  expiresAt: string | null;
-  expiryAction: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface FolderItem {
-  id: string;
-  name: string;
-  path: string;
-  parentId: string | null;
-  childCount: number;
-  documentCount: number;
-  createdAt: string;
-}
-
-interface BreadcrumbItem {
-  id: string | null;
-  name: string;
-}
+import { useRoomContents, type Document, type FolderItem } from './_hooks/useRoomContents';
 
 export default function RoomDetailPage() {
   const params = useParams();
@@ -147,18 +106,6 @@ export default function RoomDetailPage() {
   const searchParams = useSearchParams();
   const roomId = params['roomId'] as string;
 
-  const [room, setRoom] = React.useState<Room | null>(null);
-  const [documents, setDocuments] = React.useState<Document[]>([]);
-  const [folders, setFolders] = React.useState<FolderItem[]>([]);
-  const [currentFolderId, setCurrentFolderId] = React.useState<string | null>(null);
-  const [breadcrumbs, setBreadcrumbs] = React.useState<BreadcrumbItem[]>([
-    { id: null, name: 'Root' },
-  ]);
-  const [isLoading, setIsLoading] = React.useState(true);
-  // Tracks whether documents AND folders have finished their initial fetch.
-  // Without this, the room renders for a tick with empty arrays and the
-  // empty-state branch flashes "No documents yet" before the data arrives.
-  const [contentLoaded, setContentLoaded] = React.useState(false);
   // Drawer-internal pane state. Documents are the page body now, not a tab,
   // so this only chooses which secondary surface (Access / Share Links /
   // Q&A / Checklist / Calendar) is visible inside the Manage Room drawer.
@@ -175,12 +122,33 @@ export default function RoomDetailPage() {
     listModeHintDismissed,
     dismissListModeHint,
   } = useRoomNavigationPreferences({ roomId });
-  const [folderTree, setFolderTree] = React.useState<RoomFolderTreeNode[]>([]);
-  const [expandedFolderIds, setExpandedFolderIds] = React.useState<Set<string>>(new Set());
-  const [folderDrawerOpen, setFolderDrawerOpen] = React.useState(false);
   const folderDrawerTriggerRef = React.useRef<HTMLButtonElement>(null);
 
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
+
+  const {
+    room,
+    documents,
+    folders,
+    currentFolderId,
+    breadcrumbs,
+    isLoading,
+    contentLoaded,
+    folderTree,
+    expandedFolderIds,
+    folderDrawerOpen,
+    setFolderDrawerOpen,
+    bookmarkedDocs,
+    showListModeHint,
+    fetchDocuments,
+    fetchFolders,
+    fetchFolderTree,
+    toggleBookmark,
+    handleTreeSelect,
+    handleToggleExpand,
+    handleFolderClick,
+    handleBreadcrumbClick,
+  } = useRoomContents({ roomId, categoryFilter, viewMode, listModeHintDismissed });
   const [compact, setCompact] = React.useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('vaultspace-compact') === 'true';
@@ -206,9 +174,6 @@ export default function RoomDetailPage() {
     y: number;
     doc: Document;
   } | null>(null);
-
-  // Bookmarks
-  const [bookmarkedDocs, setBookmarkedDocs] = React.useState<Set<string>>(new Set());
 
   // Dialog states
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
@@ -237,22 +202,6 @@ export default function RoomDetailPage() {
   const [manageOpen, setManageOpen] = React.useState(() =>
     isManagePane(searchParams.get('manage'))
   );
-
-  const fetchRoom = React.useCallback(async () => {
-    try {
-      const response = await fetch(`/api/rooms/${roomId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setRoom(data.room);
-      } else if (response.status === 404) {
-        router.push('/rooms');
-      }
-    } catch (error) {
-      console.error('Failed to fetch room:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [roomId, router]);
 
   const sortedDocuments = React.useMemo(() => {
     return [...documents].sort((a, b) => {
@@ -299,26 +248,6 @@ export default function RoomDetailPage() {
       setSelectedDocs(new Set(documents.map((d) => d.id)));
     }
   }, [documents, selectedDocs.size]);
-
-  const fetchDocuments = React.useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      if (currentFolderId) {
-        params.set('folderId', currentFolderId);
-      }
-      if (categoryFilter) {
-        params.set('category', categoryFilter);
-      }
-      const url = `/api/rooms/${roomId}/documents${params.toString() ? `?${params}` : ''}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setDocuments(data.documents || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch documents:', error);
-    }
-  }, [roomId, currentFolderId, categoryFilter]);
 
   const handleBulkCategory = React.useCallback(
     async (category: string | null) => {
@@ -374,239 +303,6 @@ export default function RoomDetailPage() {
     },
     [roomId, fetchDocuments]
   );
-
-  const fetchFolders = React.useCallback(async () => {
-    try {
-      const url = currentFolderId
-        ? `/api/rooms/${roomId}/folders?parentId=${currentFolderId}`
-        : `/api/rooms/${roomId}/folders`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setFolders(data.folders || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch folders:', error);
-    }
-  }, [roomId, currentFolderId]);
-
-  const fetchFolderTree = React.useCallback(async () => {
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/folders?tree=1`);
-      if (!response.ok) {
-        return;
-      }
-      const data = await response.json();
-      const nodes: RoomFolderTreeNode[] = (data.folders || []).map(
-        (f: {
-          id: string;
-          name: string;
-          parentId: string | null;
-          path: string;
-          depth?: number;
-          childCount?: number;
-        }) => ({
-          id: f.id,
-          name: f.name,
-          parentId: f.parentId,
-          path: f.path,
-          depth: f.depth ?? f.path.split('/').filter(Boolean).length,
-          childCount: f.childCount ?? 0,
-        })
-      );
-      setFolderTree(nodes);
-    } catch (error) {
-      console.error('Failed to fetch folder tree:', error);
-    }
-  }, [roomId]);
-
-  // The whole-room folder tree is only needed by the list-mode rail, the
-  // mobile folder drawer, and (once) the grid-mode discoverability hint.
-  // Returning grid-mode users who dismissed the hint skip the fetch entirely
-  // instead of paying for the full hierarchy on every room open.
-  const needsFolderTree = viewMode === 'list' || folderDrawerOpen || !listModeHintDismissed;
-  React.useEffect(() => {
-    if (needsFolderTree) {
-      fetchFolderTree();
-    }
-  }, [needsFolderTree, fetchFolderTree]);
-
-  const folderById = React.useMemo(() => {
-    const map = new Map<string, RoomFolderTreeNode>();
-    for (const f of folderTree) {
-      map.set(f.id, f);
-    }
-    return map;
-  }, [folderTree]);
-
-  // Auto-expand ancestors of the currently selected folder so the tree always
-  // reveals the active branch.
-  React.useEffect(() => {
-    if (!currentFolderId) {
-      return;
-    }
-    setExpandedFolderIds((prev) => {
-      const next = new Set(prev);
-      let cursor: string | null | undefined = currentFolderId;
-      while (cursor) {
-        const node: RoomFolderTreeNode | undefined = folderById.get(cursor);
-        if (!node || !node.parentId) {
-          break;
-        }
-        next.add(node.parentId);
-        cursor = node.parentId;
-      }
-      return next;
-    });
-  }, [currentFolderId, folderById]);
-
-  const handleTreeSelect = React.useCallback(
-    (folderId: string | null) => {
-      if (folderId === null) {
-        setCurrentFolderId(null);
-        setBreadcrumbs([{ id: null, name: 'Root' }]);
-        setFolderDrawerOpen(false);
-        return;
-      }
-      const node = folderById.get(folderId);
-      if (!node) {
-        return;
-      }
-      const trail: BreadcrumbItem[] = [{ id: null, name: 'Root' }];
-      const segments = node.path.split('/').filter(Boolean);
-      let pathSoFar = '';
-      for (const segment of segments) {
-        pathSoFar = `${pathSoFar}/${segment}`;
-        const match = folderTree.find((f) => f.path === pathSoFar);
-        if (match) {
-          trail.push({ id: match.id, name: match.name });
-        }
-      }
-      setCurrentFolderId(folderId);
-      setBreadcrumbs(trail);
-      setFolderDrawerOpen(false);
-    },
-    [folderById, folderTree]
-  );
-
-  const handleToggleExpand = React.useCallback((folderId: string) => {
-    setExpandedFolderIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(folderId)) {
-        next.delete(folderId);
-      } else {
-        next.add(folderId);
-      }
-      return next;
-    });
-  }, []);
-
-  // Determine whether the folder-heavy hint is worth showing on this room.
-  // Spec threshold: at room root with >=4 root folders, or any root folder
-  // with childCount > 0.
-  const listModeHintEligible = React.useMemo(() => {
-    if (currentFolderId !== null) {
-      return false;
-    }
-    const roots = folderTree.filter((f) => f.parentId === null);
-    if (roots.length >= 4) {
-      return true;
-    }
-    return roots.some((f) => f.childCount > 0);
-  }, [folderTree, currentFolderId]);
-
-  const showListModeHint = viewMode === 'grid' && listModeHintEligible && !listModeHintDismissed;
-
-  const fetchBookmarks = React.useCallback(async () => {
-    try {
-      const response = await fetch('/api/bookmarks');
-      if (response.ok) {
-        const data = await response.json();
-        const ids = new Set<string>(
-          (data.bookmarks || []).map((b: { documentId: string }) => b.documentId)
-        );
-        setBookmarkedDocs(ids);
-      }
-    } catch (error) {
-      console.error('Failed to fetch bookmarks:', error);
-    }
-  }, []);
-
-  const toggleBookmark = React.useCallback(
-    async (doc: Document) => {
-      const isBookmarked = bookmarkedDocs.has(doc.id);
-      // Optimistic update
-      setBookmarkedDocs((prev) => {
-        const next = new Set(prev);
-        if (isBookmarked) {
-          next.delete(doc.id);
-        } else {
-          next.add(doc.id);
-        }
-        return next;
-      });
-      try {
-        if (isBookmarked) {
-          await fetch('/api/bookmarks', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ documentId: doc.id }),
-          });
-        } else {
-          await fetch('/api/bookmarks', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ documentId: doc.id, roomId }),
-          });
-        }
-      } catch (error) {
-        console.error('Failed to toggle bookmark:', error);
-        // Revert on failure
-        setBookmarkedDocs((prev) => {
-          const next = new Set(prev);
-          if (isBookmarked) {
-            next.add(doc.id);
-          } else {
-            next.delete(doc.id);
-          }
-          return next;
-        });
-      }
-    },
-    [bookmarkedDocs, roomId]
-  );
-
-  React.useEffect(() => {
-    fetchRoom();
-  }, [fetchRoom]);
-
-  // Documents are the always-on page body. One effect covers both the initial
-  // load and folder navigation: fetchDocuments/fetchFolders are recreated when
-  // currentFolderId changes, so this fires exactly once per (room, folder)
-  // transition — previously two overlapping effects double-fetched on every
-  // room open. contentLoaded flips after the first resolution so the
-  // empty-state branch cannot flash on initial render.
-  React.useEffect(() => {
-    if (!room) {
-      return;
-    }
-    let cancelled = false;
-    Promise.all([fetchDocuments(), fetchFolders()]).finally(() => {
-      if (!cancelled) {
-        setContentLoaded(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [room, fetchDocuments, fetchFolders]);
-
-  // Bookmarks are folder-independent; fetch once per room.
-  React.useEffect(() => {
-    if (room) {
-      fetchBookmarks();
-    }
-  }, [room, fetchBookmarks]);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) {
@@ -676,24 +372,6 @@ export default function RoomDetailPage() {
       return false;
     },
     [roomId, currentFolderId, fetchFolders, fetchFolderTree]
-  );
-
-  // Navigate into a folder
-  const handleFolderClick = React.useCallback((folder: FolderItem) => {
-    setCurrentFolderId(folder.id);
-    setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
-  }, []);
-
-  // Navigate via breadcrumb
-  const handleBreadcrumbClick = React.useCallback(
-    (index: number) => {
-      const item = breadcrumbs[index];
-      if (item) {
-        setCurrentFolderId(item.id);
-        setBreadcrumbs((prev) => prev.slice(0, index + 1));
-      }
-    },
-    [breadcrumbs]
   );
 
   // Handle document download
