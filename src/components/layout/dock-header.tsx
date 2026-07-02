@@ -52,8 +52,8 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
 
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between bg-slate-950 px-4 lg:px-6">
-      {/* Logo */}
-      <Link href="/rooms" className="flex items-center gap-2">
+      {/* Logo — home is the post-auth landing */}
+      <Link href="/dashboard" className="flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
           V
         </div>
