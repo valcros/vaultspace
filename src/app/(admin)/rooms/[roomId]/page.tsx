@@ -117,6 +117,7 @@ import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
+import { AddMemberDialog } from './_components/AddMemberDialog';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
 
 interface Room {
@@ -360,7 +361,6 @@ export default function RoomDetailPage() {
   const [revokingViewerEmail, setRevokingViewerEmail] = React.useState<string | null>(null);
 
   // Member add states
-  const [newMemberEmail, setNewMemberEmail] = React.useState('');
   const [isAddingMember, setIsAddingMember] = React.useState(false);
 
   // Manage drawer (Access / Share Links / Q&A / Checklist / Calendar) open
@@ -1413,42 +1413,46 @@ export default function RoomDetailPage() {
   }, [roomId, fetchLinks, deleteLinkTarget]);
 
   // Handle add member (room admin)
-  const handleAddMember = React.useCallback(async () => {
-    if (!newMemberEmail.trim()) {
-      toast({ title: 'Required', description: 'Please enter an email address' });
-      return;
-    }
-
-    setIsAddingMember(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/admins`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: newMemberEmail.trim(),
-        }),
-      });
-
-      if (response.ok) {
-        setShowMemberDialog(false);
-        setNewMemberEmail('');
-        fetchAdmins();
-        toast({ title: 'Success', description: 'Admin added successfully!', variant: 'success' });
-      } else {
-        const error = await response.json();
-        toast({
-          title: 'Error',
-          description: error.error || 'Failed to add admin',
-          variant: 'destructive',
-        });
+  const handleAddMember = React.useCallback(
+    async (email: string) => {
+      if (!email.trim()) {
+        toast({ title: 'Required', description: 'Please enter an email address' });
+        return false;
       }
-    } catch (error) {
-      console.error('Add member error:', error);
-      toast({ title: 'Error', description: 'Failed to add admin', variant: 'destructive' });
-    } finally {
-      setIsAddingMember(false);
-    }
-  }, [roomId, newMemberEmail, fetchAdmins]);
+
+      setIsAddingMember(true);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/admins`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email.trim(),
+          }),
+        });
+
+        if (response.ok) {
+          setShowMemberDialog(false);
+          fetchAdmins();
+          toast({ title: 'Success', description: 'Admin added successfully!', variant: 'success' });
+          return true;
+        } else {
+          const error = await response.json();
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to add admin',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Add member error:', error);
+        toast({ title: 'Error', description: 'Failed to add admin', variant: 'destructive' });
+      } finally {
+        setIsAddingMember(false);
+      }
+      return false;
+    },
+    [roomId, fetchAdmins]
+  );
 
   // Handle remove member
   const handleRemoveMemberClick = React.useCallback((admin: Admin) => {
@@ -3123,47 +3127,12 @@ export default function RoomDetailPage() {
       </Dialog>
 
       {/* Add Member Dialog */}
-      <Dialog open={showMemberDialog} onOpenChange={setShowMemberDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Room Admin</DialogTitle>
-            <DialogDescription>
-              Add a team member as an admin of this data room. They must have an existing account.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="memberEmail">Email Address</Label>
-              <Input
-                id="memberEmail"
-                type="email"
-                placeholder="member@example.com"
-                value={newMemberEmail}
-                onChange={(e) => setNewMemberEmail(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isAddingMember) {
-                    handleAddMember();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowMemberDialog(false);
-                setNewMemberEmail('');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleAddMember} disabled={isAddingMember || !newMemberEmail.trim()}>
-              {isAddingMember ? 'Adding...' : 'Add Admin'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AddMemberDialog
+        open={showMemberDialog}
+        onOpenChange={setShowMemberDialog}
+        onAdd={handleAddMember}
+        isAdding={isAddingMember}
+      />
 
       {/* Edit Properties Dialog */}
       <Dialog
