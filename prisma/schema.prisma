@@ -532,6 +532,7 @@ model Room {
   @@index([status])
   @@index([createdAt])
   @@index([archivedAt])
+  @@index([organizationId, status, updatedAt])
   @@map("rooms")
 }
 
@@ -646,6 +647,8 @@ model Document {
   @@index([batesNumber])
   @@index([deletedAt])
   @@index([expiresAt])
+  @@index([organizationId, status, createdAt])
+  @@index([roomId, status, folderId])
   @@map("documents")
 }
 
@@ -1156,6 +1159,8 @@ model Event {
   @@index([createdAt])
   @@index([requestId])
   @@index([sessionId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, eventType, createdAt])
   @@map("events")
 }
 
@@ -1371,6 +1376,8 @@ model Question {
   @@index([roomId, status])
   @@index([askedByEmail])
   @@index([createdAt])
+  @@index([organizationId, askedByUserId])
+  @@index([organizationId, status])
   @@map("questions")
 }
 
@@ -1563,6 +1570,7 @@ model AccessRequest {
   @@index([roomId])
   @@index([roomId, status])
   @@index([requesterEmail])
+  @@index([organizationId, status, createdAt])
   @@map("access_requests")
 }
 
@@ -1636,6 +1644,8 @@ model Message {
   @@index([recipientUserId])
   @@index([senderUserId])
   @@index([createdAt])
+  @@index([organizationId, recipientUserId, isRead])
+  @@index([organizationId, isAnnouncement, createdAt])
   @@map("messages")
 }
 
@@ -1668,6 +1678,7 @@ model PageView {
   @@index([roomId])
   @@index([viewerEmail])
   @@index([createdAt])
+  @@index([organizationId, userId, createdAt])
   @@map("page_views")
 }
 
