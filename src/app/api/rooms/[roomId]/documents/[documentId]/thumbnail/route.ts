@@ -46,7 +46,7 @@ interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const session = await requireAuth();
     const { roomId, documentId } = await context.params;
@@ -106,20 +106,30 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     // Path 1: Serve stored THUMBNAIL for ALL types (no PDF skip)
     const thumbnailAsset = latestVersion.previewAssets?.[0];
     if (thumbnailAsset) {
+      // Storage keys are version-scoped, so the asset is immutable: a long
+      // cache plus ETag/304 replaces re-downloading every grid revisit.
+      const etag = `"${Buffer.from(thumbnailAsset.storageKey).toString('base64url')}"`;
+      if (request.headers.get('if-none-match') === etag) {
+        return new NextResponse(null, {
+          status: 304,
+          headers: {
+            ETag: etag,
+            'Cache-Control': 'private, max-age=86400, immutable',
+          },
+        });
+      }
       try {
-        const exists = await storage.exists('previews', thumbnailAsset.storageKey);
-        if (exists) {
-          const data = await storage.get('previews', thumbnailAsset.storageKey);
-          if (data.length > 1000) {
-            return new NextResponse(new Uint8Array(data), {
-              status: 200,
-              headers: {
-                'Content-Type': 'image/png',
-                'Content-Length': data.length.toString(),
-                'Cache-Control': 'private, max-age=300',
-              },
-            });
-          }
+        const data = await storage.get('previews', thumbnailAsset.storageKey);
+        if (data.length > 1000) {
+          return new NextResponse(new Uint8Array(data), {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/png',
+              'Content-Length': data.length.toString(),
+              'Cache-Control': 'private, max-age=86400, immutable',
+              ETag: etag,
+            },
+          });
         }
       } catch (err) {
         console.error('[ThumbnailAPI] Failed to serve stored thumbnail:', err);
@@ -130,19 +140,30 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     // then enqueue a preview.generate job (fire-and-forget) which generates
     // the thumbnail inline from original file bytes.
     // Only enqueue if async preview capability is available (Redis + Gotenberg configured)
-    if (latestVersion.fileBlob && hasCapability('canGenerateAsyncPreviews')) {
-      // Fire-and-forget: enqueue full preview generation which includes inline thumbnail
+    if (
+      latestVersion.fileBlob &&
+      hasCapability('canGenerateAsyncPreviews') &&
+      latestVersion.previewStatus !== 'PROCESSING'
+    ) {
+      // Fire-and-forget: enqueue full preview generation which includes the
+      // inline thumbnail. Deterministic jobId dedupes the stampede when a
+      // grid of un-thumbnailed documents fires one miss per card per load.
       providers.job
-        .addJob('high', 'preview.generate', {
-          documentId,
-          versionId: latestVersion.id,
-          organizationId: session.organizationId,
-          storageKey: latestVersion.fileBlob.storageKey,
-          contentType: document.mimeType || 'application/octet-stream',
-          fileName: document.name,
-          fileSizeBytes: 0,
-          isScanned: false,
-        })
+        .addJob(
+          'high',
+          'preview.generate',
+          {
+            documentId,
+            versionId: latestVersion.id,
+            organizationId: session.organizationId,
+            storageKey: latestVersion.fileBlob.storageKey,
+            contentType: document.mimeType || 'application/octet-stream',
+            fileName: document.name,
+            fileSizeBytes: 0,
+            isScanned: false,
+          },
+          { jobId: `preview:${latestVersion.id}` }
+        )
         .catch((err: unknown) => {
           console.error('[ThumbnailAPI] Failed to enqueue preview job:', err);
         });
@@ -169,7 +190,25 @@ export async function GET(_request: NextRequest, context: RouteContext) {
  * Generate a branded placeholder card via Sharp SVG (no Gotenberg dependency).
  * Fast and reliable — no network calls needed.
  */
-async function generateBrandedPlaceholder(fileName: string): Promise<Buffer> {
+// The placeholder varies by extension AND file name, but sharp rasterization
+// dominates its cost; memoize per (ext, truncatedName) — bounded in practice
+// by the documents actually rendered — so repeat misses skip sharp entirely.
+const placeholderCache = new Map<string, Promise<Buffer>>();
+
+function generateBrandedPlaceholder(fileName: string): Promise<Buffer> {
+  const key = fileName.length > 30 ? fileName.slice(0, 27) : fileName;
+  const cached = placeholderCache.get(key);
+  if (cached) {
+    return cached;
+  }
+  const promise = renderBrandedPlaceholder(fileName);
+  if (placeholderCache.size < 500) {
+    placeholderCache.set(key, promise);
+  }
+  return promise;
+}
+
+async function renderBrandedPlaceholder(fileName: string): Promise<Buffer> {
   const ext = fileName.split('.').pop()?.toUpperCase() || 'FILE';
   const color = EXTENSION_COLORS[ext] || { bg: '#f9fafb', text: '#6b7280' };
   const truncatedName = fileName.length > 30 ? fileName.slice(0, 27) + '...' : fileName;
