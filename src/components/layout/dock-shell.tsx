@@ -327,31 +327,37 @@ export function DockShell({ children, user }: DockShellProps) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-canvas dark:bg-slate-950">
+    // Vault frame: dark ink chrome in both color modes; the app content sits
+    // on an inset, rounded light sheet so the eye stays contained in the page.
+    <div className="flex h-screen overflow-hidden bg-slate-950">
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         <DockHeader user={user} onSearchClick={() => setCommandOpen(true)} />
-        <main
-          ref={mainRef}
-          // tabIndex=0 satisfies WCAG 2.1.1/2.1.3: the scrollable region must
-          // be reachable via keyboard so users can use arrow keys to scroll
-          // when the content has no focusable children of its own (e.g. on the
-          // Activity and Settings pages). focus:outline-none keeps the visual
-          // unchanged for non-keyboard users; the focus-visible ring elsewhere
-          // continues to highlight intentional focus targets.
-          tabIndex={0}
-          aria-label="Main content"
-          className={clsx(
-            'flex-1 overflow-y-auto p-4 focus:outline-none lg:p-6',
-            // Reserve space for the full dock only when it can actually be
-            // rendered. In compact mode the dock is replaced by a small puck
-            // that floats above content, so the gutter would be a phantom
-            // reservation that wastes screen space on the room canvas.
-            !compact && contentPadding[position]
-          )}
-        >
-          {children}
-        </main>
+        <div className="flex flex-1 flex-col overflow-hidden p-1.5 pt-0 sm:p-3 sm:pt-0">
+          <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-canvas shadow-2xl dark:bg-slate-900">
+            <main
+              ref={mainRef}
+              // tabIndex=0 satisfies WCAG 2.1.1/2.1.3: the scrollable region must
+              // be reachable via keyboard so users can use arrow keys to scroll
+              // when the content has no focusable children of its own (e.g. on the
+              // Activity and Settings pages). focus:outline-none keeps the visual
+              // unchanged for non-keyboard users; the focus-visible ring elsewhere
+              // continues to highlight intentional focus targets.
+              tabIndex={0}
+              aria-label="Main content"
+              className={clsx(
+                'flex-1 overflow-y-auto p-4 focus:outline-none lg:p-6',
+                // Reserve space for the full dock only when it can actually be
+                // rendered. In compact mode the dock is replaced by a small puck
+                // that floats above content, so the gutter would be a phantom
+                // reservation that wastes screen space on the room canvas.
+                !compact && contentPadding[position]
+              )}
+            >
+              {children}
+            </main>
+          </div>
+        </div>
       </div>
 
       {/* Compact-mode puck — visible only inside immersive routes (e.g. room
