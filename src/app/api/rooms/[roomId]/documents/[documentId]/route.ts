@@ -80,7 +80,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ document: result.document });
+    // Document rows carry BigInt columns (fileSize, versions[].fileSizeBytes);
+    // JSON.stringify throws on BigInt, which made this route 500 and silently
+    // broke ?doc= deep links. Serialize BigInts as numbers.
+    const document = JSON.parse(
+      JSON.stringify(result.document, (_key, value) =>
+        typeof value === 'bigint' ? Number(value) : value
+      )
+    );
+
+    return NextResponse.json({ document });
   } catch (error) {
     console.error('[DocumentAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to get document' }, { status: 500 });
