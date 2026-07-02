@@ -58,8 +58,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -120,7 +118,11 @@ import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/docu
 import { AddMemberDialog } from './_components/AddMemberDialog';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
 import { CreateLinkDialog, type CreateLinkValues } from './_components/CreateLinkDialog';
+import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
+import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
+import { DeleteLinkConfirmDialog } from './_components/DeleteLinkConfirmDialog';
 import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
+import { RemoveMemberConfirmDialog } from './_components/RemoveMemberConfirmDialog';
 
 interface Room {
   id: string;
@@ -3142,58 +3144,30 @@ export default function RoomDetailPage() {
       />
 
       {/* Delete Document Confirmation Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Document</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &quot;{selectedDocument?.name}&quot;? This document
-              will be moved to trash and can be restored later.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowDeleteDialog(false);
-                setSelectedDocument(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
-              {isDeleting ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteDocumentDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        documentName={selectedDocument?.name}
+        onCancel={() => {
+          setShowDeleteDialog(false);
+          setSelectedDocument(null);
+        }}
+        onConfirm={confirmDelete}
+        isDeleting={isDeleting}
+      />
 
       {/* Delete Folder Confirmation Dialog */}
-      <Dialog open={showFolderDeleteDialog} onOpenChange={setShowFolderDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Folder</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &quot;{selectedFolder?.name}&quot;? This will delete
-              all documents and subfolders inside it. Documents will be moved to trash.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowFolderDeleteDialog(false);
-                setSelectedFolder(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmFolderDelete} disabled={isDeletingFolder}>
-              {isDeletingFolder ? 'Deleting...' : 'Delete Folder'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteFolderDialog
+        open={showFolderDeleteDialog}
+        onOpenChange={setShowFolderDeleteDialog}
+        folderName={selectedFolder?.name}
+        onCancel={() => {
+          setShowFolderDeleteDialog(false);
+          setSelectedFolder(null);
+        }}
+        onConfirm={confirmFolderDelete}
+        isDeleting={isDeletingFolder}
+      />
 
       {/* Preview Dialog */}
       <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
@@ -3467,24 +3441,19 @@ export default function RoomDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
+      <DeleteLinkConfirmDialog
         open={deleteLinkTarget !== null}
-        onOpenChange={(open) => !open && setDeleteLinkTarget(null)}
-        title="Delete Share Link"
-        description={`Are you sure you want to delete the link "${deleteLinkTarget?.name}"? External users will no longer be able to access this room via this link.`}
-        confirmLabel="Delete"
-        variant="destructive"
+        linkName={deleteLinkTarget?.name}
+        onCancel={() => setDeleteLinkTarget(null)}
         onConfirm={handleDeleteLinkConfirm}
         loading={isDeletingLink}
       />
 
-      <ConfirmDialog
+      <RemoveMemberConfirmDialog
         open={removeMemberTarget !== null}
-        onOpenChange={(open) => !open && setRemoveMemberTarget(null)}
-        title="Remove Room Admin"
-        description={`Are you sure you want to remove ${removeMemberTarget?.firstName} ${removeMemberTarget?.lastName} as a room admin? They will lose access to manage this room.`}
-        confirmLabel="Remove"
-        variant="destructive"
+        firstName={removeMemberTarget?.firstName}
+        lastName={removeMemberTarget?.lastName}
+        onCancel={() => setRemoveMemberTarget(null)}
         onConfirm={handleRemoveMemberConfirm}
         loading={isRemovingMember}
       />
