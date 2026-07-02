@@ -400,8 +400,8 @@ jobs:
         run: npx playwright install chromium firefox --with-deps
 
       - name: Run E2E tests
-        run: npx playwright test tests/e2e/a11y.test.ts tests/e2e/security.test.ts
-        timeout-minutes: 10
+        run: npx playwright test tests/e2e/a11y.test.ts tests/e2e/security.test.ts tests/e2e/room-interactions.test.ts
+        timeout-minutes: 12
 
       - name: Upload Playwright report on failure
         uses: actions/upload-artifact@v4
