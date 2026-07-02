@@ -51,10 +51,15 @@ interface MessagePreview {
 interface RoomSummary {
   id: string;
   name: string;
+  description: string | null;
   status: string;
+  /** The caller's effective role in this room (org role plus room-scoped elevation). */
+  myRole: 'ADMIN' | 'VIEWER';
   documentCount: number;
   viewerCount: number;
   questionCount: number;
+  /** Documents added since the caller's previous login. */
+  newDocumentCount: number;
   lastActivity?: string;
 }
 
@@ -96,6 +101,7 @@ interface QuestionSummary {
   id: string;
   question: string;
   status: 'OPEN' | 'ANSWERED' | 'CLOSED';
+  roomId: string;
   roomName: string;
   documentName?: string;
   createdAt: string;
@@ -157,6 +163,8 @@ interface DashboardV2Response {
     totalCount: number;
     unansweredQuestions: number;
     pendingAccessRequests: number;
+    /** Room to open for reviewing access requests (most recent pending). */
+    latestAccessRequestRoomId?: string;
     items: ActionItem[];
   };
 
@@ -305,11 +313,14 @@ export async function GET() {
         // Action items (admin only)
         unansweredQuestions,
         pendingAccessRequests,
+        latestAccessRequest,
         // Messages
         unreadMessages,
         recentMessages,
         // Rooms
         userRooms,
+        roomAdminElevations,
+        newDocCountsByRoom,
         // Activity
         recentEvents,
         // Bookmarks
@@ -351,6 +362,15 @@ export async function GET() {
             })
           : Promise.resolve(0),
 
+        // Most recent pending access request (destination for review actions)
+        isAdmin
+          ? tx.accessRequest.findFirst({
+              where: { organizationId: orgId, status: 'PENDING' },
+              select: { roomId: true },
+              orderBy: { createdAt: 'desc' },
+            })
+          : Promise.resolve(null),
+
         // Unread messages count
         tx.message.count({
           where: {
@@ -374,11 +394,12 @@ export async function GET() {
           take: 5,
         }),
 
-        // User's rooms (all users see all non-closed rooms in their org)
+        // User's rooms. Same visibility rule as GET /api/rooms: admins see all
+        // non-closed rooms, non-admins see ACTIVE rooms only.
         tx.room.findMany({
           where: {
             organizationId: orgId,
-            status: { not: 'CLOSED' },
+            ...(isAdmin ? { status: { not: 'CLOSED' as const } } : { status: 'ACTIVE' as const }),
           },
           include: {
             _count: {
@@ -390,8 +411,33 @@ export async function GET() {
             },
           },
           orderBy: { updatedAt: 'desc' },
-          take: 10,
+          take: 50,
         }),
+
+        // Room-scoped admin elevations for the caller (CANONICAL_CONTRACTS §2)
+        tx.roleAssignment.findMany({
+          where: {
+            organizationId: orgId,
+            userId,
+            scopeType: 'ROOM',
+            role: 'ADMIN',
+            roomId: { not: null },
+          },
+          select: { roomId: true },
+        }),
+
+        // Per-room count of documents added since the caller's previous login
+        lastLoginAt
+          ? tx.document.groupBy({
+              by: ['roomId'],
+              where: {
+                organizationId: orgId,
+                status: 'ACTIVE',
+                createdAt: { gt: lastLoginAt },
+              },
+              _count: { _all: true },
+            })
+          : Promise.resolve([]),
 
         // Recent activity events
         tx.event.findMany({
@@ -431,7 +477,7 @@ export async function GET() {
             askedByUserId: userId,
           },
           include: {
-            room: { select: { name: true } },
+            room: { select: { id: true, name: true } },
             document: { select: { name: true } },
             answers: { select: { createdAt: true }, take: 1, orderBy: { createdAt: 'desc' } },
           },
@@ -594,6 +640,7 @@ export async function GET() {
           totalCount: unansweredQuestions.length + pendingAccessRequests,
           unansweredQuestions: unansweredQuestions.length,
           pendingAccessRequests,
+          latestAccessRequestRoomId: latestAccessRequest?.roomId ?? undefined,
           items: actionItems.slice(0, 10),
         };
       }
@@ -613,13 +660,20 @@ export async function GET() {
       };
 
       // My Rooms
+      const elevatedRoomIds = new Set(roomAdminElevations.map((a) => a.roomId));
+      const newDocCountByRoomId = new Map(
+        newDocCountsByRoom.map((g) => [g.roomId, g._count._all])
+      );
       response.myRooms = userRooms.map((r) => ({
         id: r.id,
         name: r.name,
+        description: r.description,
         status: r.status,
+        myRole: isAdmin || elevatedRoomIds.has(r.id) ? ('ADMIN' as const) : ('VIEWER' as const),
         documentCount: r._count.documents,
         viewerCount: r._count.links, // Active links as proxy for viewer access
         questionCount: r._count.questions,
+        newDocumentCount: newDocCountByRoomId.get(r.id) ?? 0,
         lastActivity: r.updatedAt.toISOString(),
       }));
 
@@ -736,6 +790,7 @@ export async function GET() {
         id: q.id,
         question: q.subject,
         status: q.status as 'OPEN' | 'ANSWERED' | 'CLOSED',
+        roomId: q.room.id,
         roomName: q.room.name,
         documentName: q.document?.name,
         createdAt: q.createdAt.toISOString(),
