@@ -6,7 +6,6 @@ import {
   FileText,
   Settings,
   Upload,
-  Folder,
   MoreHorizontal,
   Download,
   Eye,
@@ -15,15 +14,9 @@ import {
   BarChart3,
   History,
   ChevronRight,
-  ArrowUpDown,
-  ChevronUp,
-  ChevronDown,
   Lock,
   Tag,
-  Square,
-  CheckSquare,
   Star,
-  Clock,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -78,15 +71,15 @@ const VersionHistoryDialog = dynamic(
   () => import('./_components/VersionHistoryDialog').then((m) => m.VersionHistoryDialog),
   { loading: () => null, ssr: false }
 );
-import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
 import { toast } from '@/components/ui/use-toast';
-import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
+import { CATEGORY_OPTIONS } from '@/lib/documentCategories';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
 import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
 import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
 import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
 import { ManageDrawer, isManagePane, type ManagePane } from './_components/ManageDrawer';
 import { DocumentToolbar } from './_components/DocumentToolbar';
+import { DocumentsTable } from './_components/DocumentsTable';
 import { useRoomContents, type Document, type FolderItem } from './_hooks/useRoomContents';
 
 export default function RoomDetailPage() {
@@ -247,6 +240,26 @@ export default function RoomDetailPage() {
     localStorage.setItem('vaultspace-columns', JSON.stringify(next));
   }, []);
 
+  // Toggle a single document's confidential flag. Shared by the table rows,
+  // grid cards, and the right-click context menu.
+  const handleToggleConfidential = React.useCallback(
+    async (doc: Document) => {
+      const next = !doc.confidential;
+      await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confidential: next }),
+      });
+      fetchDocuments();
+    },
+    [roomId, fetchDocuments]
+  );
+
+  const handleDocContextMenu = React.useCallback((e: React.MouseEvent, doc: Document) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, doc });
+  }, []);
+
   const toggleDocSelection = React.useCallback((docId: string) => {
     setSelectedDocs((prev) => {
       const next = new Set(prev);
@@ -321,24 +334,6 @@ export default function RoomDetailPage() {
     },
     [roomId, fetchDocuments]
   );
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) {
-      return `${bytes} B`;
-    }
-    if (bytes < 1024 * 1024) {
-      return `${(bytes / 1024).toFixed(1)} KB`;
-    }
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
 
   // Handle upload completion - refresh document list
   const handleUploadComplete = React.useCallback(
@@ -575,6 +570,35 @@ export default function RoomDetailPage() {
     return null;
   }
 
+  // Shared props for the list-table / grid renderings of the room contents.
+  // Every callback here is referentially stable (see useCallback sites) so
+  // the memoized rows / tiles / cards inside DocumentsTable stay memoized.
+  const documentsTableProps = {
+    roomId,
+    allDocumentsConfidential: room.allDocumentsConfidential,
+    folders,
+    documents: sortedDocuments,
+    compact,
+    visibleColumns,
+    sortField,
+    sortDir,
+    onSort: handleSort,
+    selectedDocs,
+    onToggleSelectAll: toggleSelectAll,
+    onToggleDocSelection: toggleDocSelection,
+    bookmarkedDocs,
+    onFolderClick: handleFolderClick,
+    onFolderDelete: handleFolderDelete,
+    onPreview: handlePreview,
+    onDownload: handleDownload,
+    onEditProperties: setEditingTagsDoc,
+    onToggleBookmark: toggleBookmark,
+    onShowVersions: handleShowVersions,
+    onToggleConfidential: handleToggleConfidential,
+    onDelete: handleDelete,
+    onContextMenu: handleDocContextMenu,
+  };
+
   return (
     <>
       {/*
@@ -740,443 +764,12 @@ export default function RoomDetailPage() {
             </aside>
           )}
           <div className="min-w-0">
-            <AdminSurface className="overflow-hidden p-0">
-              <table className="w-full" aria-label="Room contents">
-                <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
-                  <tr>
-                    <th className="w-8 px-2 py-2">
-                      <button
-                        onClick={toggleSelectAll}
-                        aria-label={
-                          selectedDocs.size > 0 && selectedDocs.size === documents.length
-                            ? 'Deselect all'
-                            : 'Select all'
-                        }
-                        className="flex items-center text-neutral-500 hover:text-neutral-600"
-                      >
-                        {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
-                          <CheckSquare className="h-4 w-4 text-primary-500" />
-                        ) : (
-                          <Square className="h-4 w-4" />
-                        )}
-                      </button>
-                    </th>
-                    <th
-                      className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
-                      onClick={() => handleSort('name')}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        Name
-                        {sortField === 'name' ? (
-                          sortDir === 'asc' ? (
-                            <ChevronUp className="h-3 w-3" />
-                          ) : (
-                            <ChevronDown className="h-3 w-3" />
-                          )
-                        ) : (
-                          <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
-                        )}
-                      </span>
-                    </th>
-                    {visibleColumns['size'] && (
-                      <th
-                        className="hidden cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700 sm:table-cell"
-                        onClick={() => handleSort('size')}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          Size
-                          {sortField === 'size' ? (
-                            sortDir === 'asc' ? (
-                              <ChevronUp className="h-3 w-3" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3" />
-                            )
-                          ) : null}
-                        </span>
-                      </th>
-                    )}
-                    {visibleColumns['uploaded'] && (
-                      <th
-                        className="hidden cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700 sm:table-cell"
-                        onClick={() => handleSort('createdAt')}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          Uploaded
-                          {sortField === 'createdAt' ? (
-                            sortDir === 'asc' ? (
-                              <ChevronUp className="h-3 w-3" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3" />
-                            )
-                          ) : null}
-                        </span>
-                      </th>
-                    )}
-                    <th className="w-8"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Render folders first */}
-                  {folders.map((folder) => (
-                    <tr
-                      key={folder.id}
-                      className="cursor-pointer border-b last:border-0 hover:bg-neutral-50"
-                      onClick={() => handleFolderClick(folder)}
-                    >
-                      <td className="w-8 px-2" />
-                      <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                        <div className="flex items-center gap-2">
-                          <Folder
-                            className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`}
-                          />
-                          <span className={`font-medium ${compact ? 'text-sm' : ''}`}>
-                            {folder.name}
-                          </span>
-                        </div>
-                      </td>
-                      {visibleColumns['size'] && (
-                        <td
-                          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                        >
-                          {folder.documentCount} files, {folder.childCount} folders
-                        </td>
-                      )}
-                      {visibleColumns['uploaded'] && (
-                        <td
-                          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                        >
-                          {formatDate(folder.createdAt)}
-                        </td>
-                      )}
-                      <td
-                        className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              aria-label={`Actions for folder ${folder.name}`}
-                              className={`${compact ? 'h-6 w-6' : 'h-9 w-9 sm:h-7 sm:w-7'} p-0`}
-                            >
-                              <MoreHorizontal
-                                aria-hidden="true"
-                                className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}
-                              />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleFolderClick(folder)}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Open
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleFolderDelete(folder)}
-                              className="text-danger-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </tr>
-                  ))}
-                  {/* Render documents */}
-                  {sortedDocuments.map((doc) => (
-                    <tr
-                      key={doc.id}
-                      className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selectedDocs.has(doc.id) ? 'bg-primary-50' : ''}`}
-                      onClick={() => handlePreview(doc)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setContextMenu({ x: e.clientX, y: e.clientY, doc });
-                      }}
-                    >
-                      <td
-                        className="w-8 px-2"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleDocSelection(doc.id);
-                        }}
-                      >
-                        {selectedDocs.has(doc.id) ? (
-                          <CheckSquare className="h-4 w-4 text-primary-500" />
-                        ) : (
-                          <Square className="h-4 w-4 text-neutral-300" />
-                        )}
-                      </td>
-                      <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
-                        <div className="flex items-center gap-2">
-                          <FileTypeIcon
-                            mimeType={doc.mimeType}
-                            className={compact ? 'h-4 w-4' : undefined}
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`truncate font-medium ${compact ? 'text-sm' : ''}`}>
-                                {doc.name}
-                              </span>
-                              {(doc.confidential || room?.allDocumentsConfidential) && (
-                                <Lock className="h-3 w-3 shrink-0 text-amber-500" />
-                              )}
-                            </div>
-                            {!compact && (
-                              <div className="mt-0.5 flex flex-wrap gap-1">
-                                {doc.category && (
-                                  <span
-                                    className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${getCategoryColor(doc.category)}`}
-                                  >
-                                    {getCategoryLabel(doc.category)}
-                                  </span>
-                                )}
-                                {doc.tags?.map((tag) => (
-                                  <Badge
-                                    key={tag}
-                                    variant="outline"
-                                    className="px-1 py-0 text-[10px]"
-                                  >
-                                    {tag}
-                                  </Badge>
-                                ))}
-                                {doc.expiresAt && (
-                                  <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
-                                    <Clock className="h-2.5 w-2.5" />
-                                    Expires {new Date(doc.expiresAt).toLocaleDateString()}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      {visibleColumns['size'] && (
-                        <td
-                          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                        >
-                          {formatFileSize(doc.size)}
-                        </td>
-                      )}
-                      {visibleColumns['uploaded'] && (
-                        <td
-                          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
-                        >
-                          {formatDate(doc.createdAt)}
-                        </td>
-                      )}
-                      <td
-                        className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              aria-label={`Actions for ${doc.name}`}
-                              className={`${compact ? 'h-6 w-6' : 'h-9 w-9 sm:h-7 sm:w-7'} p-0`}
-                            >
-                              <MoreHorizontal
-                                aria-hidden="true"
-                                className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}
-                              />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handlePreview(doc)}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Preview
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                              <Download className="mr-2 h-4 w-4" />
-                              Download
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setEditingTagsDoc(doc)}>
-                              <Tag className="mr-2 h-4 w-4" />
-                              Edit Properties
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
-                              <Star
-                                className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
-                              />
-                              {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
-                              <History className="mr-2 h-4 w-4" />
-                              Version History
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={async () => {
-                                const next = !doc.confidential;
-                                await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
-                                  method: 'PATCH',
-                                  headers: {
-                                    'Content-Type': 'application/json',
-                                  },
-                                  body: JSON.stringify({
-                                    confidential: next,
-                                  }),
-                                });
-                                fetchDocuments();
-                              }}
-                            >
-                              <Lock className="mr-2 h-4 w-4" />
-                              {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(doc)}
-                              className="text-danger-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </AdminSurface>
+            <DocumentsTable view="list" {...documentsTableProps} />
           </div>
         </div>
       ) : (
         /* Grid / Thumbnail View */
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {/* Folders — compact name-first tiles (Drive convention): the name
-              is the significant information, the icon just types the tile.
-              Documents keep the tall preview cards; the height difference is
-              the visual distinction between containers and content. */}
-          {folders.map((folder) => (
-            <button
-              key={folder.id}
-              type="button"
-              title={folder.name}
-              onClick={() => handleFolderClick(folder)}
-              className="group flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-3 text-left transition-all hover:border-amber-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-amber-700"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-900/20">
-                <Folder className="h-5 w-5 text-amber-500" aria-hidden="true" />
-              </span>
-              <span className="min-w-0">
-                <span className="line-clamp-2 block text-sm font-semibold leading-snug text-neutral-900 dark:text-neutral-100">
-                  {folder.name}
-                </span>
-                <span className="block text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                  {folder.documentCount} {folder.documentCount === 1 ? 'file' : 'files'}
-                </span>
-              </span>
-            </button>
-          ))}
-          {/* Documents — render the same sorted view the list mode uses
-                  so the grid and list stay coherent regardless of how the
-                  user sorted via the toolbar. */}
-          {sortedDocuments.map((doc) => (
-            <div
-              key={doc.id}
-              className="group relative cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-primary-700"
-              onClick={() => handlePreview(doc)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContextMenu({ x: e.clientX, y: e.clientY, doc });
-              }}
-            >
-              <DocumentThumbnail
-                docId={doc.id}
-                roomId={roomId}
-                mimeType={doc.mimeType}
-                confidential={doc.confidential || room?.allDocumentsConfidential || false}
-                updatedAt={doc.updatedAt}
-              />
-              <div className="mt-2 flex items-center gap-1">
-                <p className="truncate text-sm font-medium">{doc.name}</p>
-                {(doc.confidential || room?.allDocumentsConfidential) && (
-                  <Lock className="h-3 w-3 shrink-0 text-amber-500" />
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-1">
-                <p className="text-xs text-neutral-600">{formatFileSize(doc.size)}</p>
-                {doc.category && (
-                  <span
-                    className={`rounded-full border px-1.5 text-[9px] font-medium ${getCategoryColor(doc.category)}`}
-                  >
-                    {getCategoryLabel(doc.category)}
-                  </span>
-                )}
-                {doc.expiresAt && (
-                  <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
-                    <Clock className="h-2.5 w-2.5" />
-                    {new Date(doc.expiresAt).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-              {/* Action menu */}
-              <div
-                className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="h-7 w-7 p-0 shadow-sm"
-                      aria-label={`Actions for ${doc.name}`}
-                    >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handlePreview(doc)}>
-                      <Eye className="mr-2 h-4 w-4" />
-                      Preview
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Download
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setEditingTagsDoc(doc)}>
-                      <Tag className="mr-2 h-4 w-4" />
-                      Edit Properties
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => toggleBookmark(doc)}>
-                      <Star
-                        className={`mr-2 h-4 w-4 ${bookmarkedDocs.has(doc.id) ? 'fill-amber-400 text-amber-400' : ''}`}
-                      />
-                      {bookmarkedDocs.has(doc.id) ? 'Remove Bookmark' : 'Bookmark'}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleShowVersions(doc)}>
-                      <History className="mr-2 h-4 w-4" />
-                      Version History
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        const next = !doc.confidential;
-                        await fetch(`/api/rooms/${roomId}/documents/${doc.id}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ confidential: next }),
-                        });
-                        fetchDocuments();
-                      }}
-                    >
-                      <Lock className="mr-2 h-4 w-4" />
-                      {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => handleDelete(doc)} className="text-danger-600">
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          ))}
-        </div>
+        <DocumentsTable view="grid" {...documentsTableProps} />
       )}
 
       {/* Mobile folder drawer for list mode. Below lg, the folder tree opens
@@ -1397,13 +990,7 @@ export default function RoomDetailPage() {
             <button
               className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50"
               onClick={async () => {
-                const next = !contextMenu.doc.confidential;
-                await fetch(`/api/rooms/${roomId}/documents/${contextMenu.doc.id}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ confidential: next }),
-                });
-                fetchDocuments();
+                await handleToggleConfidential(contextMenu.doc);
                 setContextMenu(null);
               }}
             >
@@ -1522,49 +1109,5 @@ export default function RoomDetailPage() {
         onDocumentsRefresh={fetchDocuments}
       />
     </>
-  );
-}
-
-/**
- * Thumbnail for grid view — tries to load preview image, falls back to file type icon.
- */
-function DocumentThumbnail({
-  docId,
-  roomId,
-  mimeType,
-  confidential = false,
-  updatedAt,
-}: {
-  docId: string;
-  roomId: string;
-  mimeType: string;
-  confidential?: boolean;
-  updatedAt?: string;
-}) {
-  const [failed, setFailed] = React.useState(false);
-
-  if (confidential) {
-    return (
-      <div className="flex aspect-[4/3] flex-col items-center justify-center rounded-lg bg-amber-50">
-        <Lock className="mb-1 h-8 w-8 text-amber-400" />
-        <span className="text-[10px] font-medium text-amber-500">Confidential</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-neutral-50">
-      {!failed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={`/api/rooms/${roomId}/documents/${docId}/thumbnail?v=${updatedAt || '1'}`}
-          alt=""
-          className="h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <FileTypeIcon mimeType={mimeType} className="h-12 w-12" />
-      )}
-    </div>
   );
 }
