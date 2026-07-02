@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   FileText,
   Users,
@@ -203,9 +203,17 @@ interface DocumentVersionInfo {
   uploadedByUser: { firstName: string; lastName: string; email: string } | null;
 }
 
+const MANAGE_PANES = ['members', 'links', 'qa', 'checklist', 'calendar'] as const;
+type ManagePane = (typeof MANAGE_PANES)[number];
+
+function isManagePane(value: string | null): value is ManagePane {
+  return value !== null && (MANAGE_PANES as readonly string[]).includes(value);
+}
+
 export default function RoomDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const roomId = params['roomId'] as string;
 
   const [room, setRoom] = React.useState<Room | null>(null);
@@ -225,9 +233,10 @@ export default function RoomDetailPage() {
   // Drawer-internal pane state. Documents are the page body now, not a tab,
   // so this only chooses which secondary surface (Access / Share Links /
   // Q&A / Checklist / Calendar) is visible inside the Manage Room drawer.
-  const [managePane, setManagePane] = React.useState<
-    'members' | 'links' | 'qa' | 'checklist' | 'calendar'
-  >('members');
+  const [managePane, setManagePane] = React.useState<ManagePane>(() => {
+    const requested = searchParams.get('manage');
+    return isManagePane(requested) ? requested : 'members';
+  });
   const {
     viewMode,
     setViewMode,
@@ -336,8 +345,11 @@ export default function RoomDetailPage() {
   const [isAddingMember, setIsAddingMember] = React.useState(false);
 
   // Manage drawer (Access / Share Links / Q&A / Checklist / Calendar) open
-  // state. Closed by default so the room canvas leads with documents.
-  const [manageOpen, setManageOpen] = React.useState(false);
+  // state. Closed by default so the room canvas leads with documents, unless
+  // a ?manage=<pane> deep link (e.g. from landing attention chips) requests one.
+  const [manageOpen, setManageOpen] = React.useState(() =>
+    isManagePane(searchParams.get('manage'))
+  );
 
   const fetchRoom = React.useCallback(async () => {
     try {
