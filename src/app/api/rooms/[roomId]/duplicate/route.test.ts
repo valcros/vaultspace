@@ -21,7 +21,7 @@ vi.mock('@/lib/middleware', () => ({
 // Mock DB transaction
 const mockTx = {
   room: { findFirst: vi.fn(), create: vi.fn() },
-  folder: { findMany: vi.fn(), create: vi.fn() },
+  folder: { findMany: vi.fn(), create: vi.fn(), createMany: vi.fn() },
 };
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
@@ -89,18 +89,27 @@ describe('POST /api/rooms/:roomId/duplicate', () => {
         confidential: true,
       },
     ];
-    mockTx.folder.findMany.mockResolvedValue(folders);
+    mockTx.folder.findMany.mockResolvedValueOnce(folders).mockResolvedValueOnce([
+      { id: 'f-new-1', path: '/Legal' },
+      { id: 'f-new-2', path: '/Finance' },
+    ]);
     mockTx.room.create.mockResolvedValue({ id: 'room-new', name: 'Copy of Series A Room' });
-    mockTx.folder.create
-      .mockResolvedValueOnce({ id: 'f-new-1' })
-      .mockResolvedValueOnce({ id: 'f-new-2' });
+    mockTx.folder.createMany.mockResolvedValue({ count: 2 });
 
     const req = new NextRequest('http://localhost:3000/api/rooms/room-1/duplicate', {
       method: 'POST',
     });
     await POST(req, makeContext());
 
-    expect(mockTx.folder.create).toHaveBeenCalledTimes(2);
+    expect(mockTx.folder.createMany).toHaveBeenCalledTimes(1);
+    expect(mockTx.folder.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ name: 'Legal', confidential: false }),
+          expect.objectContaining({ name: 'Finance', confidential: true }),
+        ]),
+      })
+    );
   });
 
   it('returns 404 for non-existent room', async () => {

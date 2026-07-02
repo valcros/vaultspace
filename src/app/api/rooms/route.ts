@@ -37,12 +37,23 @@ export async function GET(request: NextRequest) {
     // Use RLS context for org-scoped queries
     const [rooms, total] = await withOrgContext(session.organizationId, async (tx) => {
       return Promise.all([
+        // Select only list-view fields: the previous full-model include
+        // serialized passwordHash, NDA content, and watermark config into a
+        // list response no client screen reads.
         tx.room.findMany({
           where,
           orderBy: { updatedAt: 'desc' },
           take: limit,
           skip: offset,
-          include: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            description: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            archivedAt: true,
             _count: {
               select: {
                 documents: true,
@@ -140,15 +151,16 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Create template folders if any
-      for (const folder of templateFolders) {
-        await tx.folder.create({
-          data: {
+      // Create template folders in one round trip (template folders are flat;
+      // parent relationships are not part of template definitions).
+      if (templateFolders.length > 0) {
+        await tx.folder.createMany({
+          data: templateFolders.map((folder) => ({
             organizationId: session.organizationId,
             roomId: newRoom.id,
             name: folder.name,
             path: folder.path,
-          },
+          })),
         });
       }
 
