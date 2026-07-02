@@ -1508,10 +1508,10 @@ export default function RoomDetailPage() {
         the Manage drawer all share the same primary palette so the page
         reads as a single product rather than a stack of widgets.
 
-        The plane is intentionally soft (gradient fades to white toward the
-        document grid) so it provides identity without becoming a hero band.
+        The plane is intentionally soft (a flat low tint against the white
+        document surfaces) so it provides identity without becoming a hero band.
       */}
-      <div className="mb-5 rounded-2xl border border-primary-200 bg-gradient-to-b from-primary-100 via-primary-50 to-white p-4 shadow-sm dark:border-primary-800/60 dark:from-primary-950/60 dark:via-primary-950/20 dark:to-slate-950 lg:p-5">
+      <div className="mb-5 rounded-xl border border-primary-100 bg-primary-50/40 p-4 shadow-sm dark:border-primary-800/60 dark:bg-primary-950/30 lg:p-5">
         <PageHeader
           variant="work"
           className="mb-3"

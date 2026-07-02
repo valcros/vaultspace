@@ -38,7 +38,7 @@ export function PageHeader({
         )}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-3xl">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
+            <h1 className="font-display text-xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
               {title}
             </h1>
             {description && (
