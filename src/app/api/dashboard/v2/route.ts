@@ -403,7 +403,12 @@ export async function GET() {
             organizationId: orgId,
             ...(isAdmin ? { status: { not: 'CLOSED' as const } } : { status: 'ACTIVE' as const }),
           },
-          include: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            status: true,
+            updatedAt: true,
             _count: {
               select: {
                 documents: { where: { status: 'ACTIVE' } },
