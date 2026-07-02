@@ -661,9 +661,7 @@ export async function GET() {
 
       // My Rooms
       const elevatedRoomIds = new Set(roomAdminElevations.map((a) => a.roomId));
-      const newDocCountByRoomId = new Map(
-        newDocCountsByRoom.map((g) => [g.roomId, g._count._all])
-      );
+      const newDocCountByRoomId = new Map(newDocCountsByRoom.map((g) => [g.roomId, g._count._all]));
       response.myRooms = userRooms.map((r) => ({
         id: r.id,
         name: r.name,
