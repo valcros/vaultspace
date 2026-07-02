@@ -120,7 +120,7 @@ function buildYourWorkItems(data: DashboardV2Data): YourWorkItem[] {
       key: 'continue',
       label: 'Continue reading',
       detail: continueItem.documentName,
-      href: `/rooms/${continueItem.roomId}`,
+      href: `/rooms/${continueItem.roomId}?doc=${continueItem.documentId}`,
       icon: 'continue',
     });
   }
@@ -130,7 +130,7 @@ function buildYourWorkItems(data: DashboardV2Data): YourWorkItem[] {
     items.push({
       key: 'bookmarks',
       label: `${bookmarks.length} ${bookmarks.length === 1 ? 'bookmark' : 'bookmarks'}`,
-      href: `/rooms/${bookmarks[0]!.roomId}`,
+      href: `/rooms/${bookmarks[0]!.roomId}?doc=${bookmarks[0]!.documentId}`,
       icon: 'bookmark',
     });
   }
