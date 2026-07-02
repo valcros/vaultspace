@@ -65,11 +65,12 @@ export async function GET(request: NextRequest) {
       // Exclude soft-deleted documents
       conditions.push(Prisma.sql`d."status" != 'DELETED'`);
 
-      // Full-text OR ILIKE fallback condition
+      // Full-text match on the GIN-indexed generated tsv column; the ILIKE
+      // fallback covers partial tokens but is limited to the two short
+      // columns (title, file name), never the extracted text.
       conditions.push(
         Prisma.sql`(
-          to_tsvector('english', coalesce(si."extractedText", '') || ' ' || coalesce(si."documentTitle", '') || ' ' || coalesce(si."fileName", ''))
-          @@ plainto_tsquery('english', ${q})
+          si."tsv" @@ plainto_tsquery('english', ${q})
           OR si."documentTitle" ILIKE '%' || ${q} || '%'
           OR si."fileName" ILIKE '%' || ${q} || '%'
         )`
@@ -93,23 +94,9 @@ export async function GET(request: NextRequest) {
 
       const whereClause = Prisma.join(conditions, ' AND ');
 
-      // Count query
-      const countResult = await tx.$queryRaw<[{ count: bigint }]>`
-        SELECT COUNT(*) as count
-        FROM search_indexes si
-        JOIN documents d ON d.id = si."documentId"
-        JOIN rooms r ON r.id = d."roomId"
-        WHERE ${whereClause}
-      `;
-
-      const total = Number(countResult[0]?.count ?? 0);
-
-      if (total === 0) {
-        return { results: [], total: 0, took: Date.now() - startTime };
-      }
-
-      // Main search query with ranking and snippets
-      const results = await tx.$queryRaw<SearchResult[]>`
+      // Single query: window count replaces the separate COUNT pass that ran
+      // the whole match twice (audit finding 6).
+      const rows = await tx.$queryRaw<(SearchResult & { totalCount: bigint })[]>`
         SELECT
           si."documentId" AS "documentId",
           si."versionId" AS "versionId",
@@ -121,15 +108,13 @@ export async function GET(request: NextRequest) {
             plainto_tsquery('english', ${q}),
             'MaxWords=35, MinWords=15, MaxFragments=1'
           ) AS "snippet",
-          ts_rank(
-            to_tsvector('english', coalesce(si."extractedText", '') || ' ' || coalesce(si."documentTitle", '') || ' ' || coalesce(si."fileName", '')),
-            plainto_tsquery('english', ${q})
-          )::float AS "score",
+          ts_rank(si."tsv", plainto_tsquery('english', ${q}))::float AS "score",
           si."mimeType" AS "mimeType",
           si."tags" AS "tags",
           si."uploadedAt" AS "uploadedAt",
           d."roomId" AS "roomId",
-          r."name" AS "roomName"
+          r."name" AS "roomName",
+          count(*) OVER () AS "totalCount"
         FROM search_indexes si
         JOIN documents d ON d.id = si."documentId"
         JOIN rooms r ON r.id = d."roomId"
@@ -138,6 +123,9 @@ export async function GET(request: NextRequest) {
         LIMIT ${limit}
         OFFSET ${offset}
       `;
+
+      const total = Number(rows[0]?.totalCount ?? 0);
+      const results = rows.map(({ totalCount: _totalCount, ...rest }) => rest);
 
       return { results, total, took: Date.now() - startTime };
     });
