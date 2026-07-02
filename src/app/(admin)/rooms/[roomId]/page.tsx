@@ -863,9 +863,11 @@ export default function RoomDetailPage() {
     fetchRoom();
   }, [fetchRoom]);
 
-  // Documents are the always-on page body — fetch them as soon as the room
-  // loads, regardless of whether the manage drawer is open. Wait for both
-  // documents and folders to resolve before flipping `contentLoaded`, so the
+  // Documents are the always-on page body. One effect covers both the initial
+  // load and folder navigation: fetchDocuments/fetchFolders are recreated when
+  // currentFolderId changes, so this fires exactly once per (room, folder)
+  // transition — previously two overlapping effects double-fetched on every
+  // room open. contentLoaded flips after the first resolution so the
   // empty-state branch cannot flash on initial render.
   React.useEffect(() => {
     if (!room) {
@@ -877,19 +879,17 @@ export default function RoomDetailPage() {
         setContentLoaded(true);
       }
     });
-    fetchBookmarks();
     return () => {
       cancelled = true;
     };
-  }, [room, fetchDocuments, fetchFolders, fetchBookmarks]);
+  }, [room, fetchDocuments, fetchFolders]);
 
-  // Refetch documents when navigating folders.
+  // Bookmarks are folder-independent; fetch once per room.
   React.useEffect(() => {
     if (room) {
-      fetchDocuments();
-      fetchFolders();
+      fetchBookmarks();
     }
-  }, [currentFolderId, room, fetchDocuments, fetchFolders]);
+  }, [room, fetchBookmarks]);
 
   // Lazy-load the manage drawer's pane data only when it opens or the user
   // switches panes. Q&A / Checklist / Calendar sub-components own their own
