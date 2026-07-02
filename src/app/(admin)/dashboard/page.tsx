@@ -13,6 +13,7 @@ import {
   YourWorkStrip,
   RoomOverviewCard,
   FeaturedAnnouncement,
+  VaultTombstone,
 } from '@/components/dashboard';
 import type { AttentionChip, YourWorkItem, RoomOverview } from '@/components/dashboard';
 
@@ -235,9 +236,16 @@ export default function DashboardPage() {
       />
 
       <div className="space-y-6">
+        {/* Actionable signals stay above the static identity plaque; the
+            tombstone must never outrank live work (Advisor pre-mortem). */}
         <AttentionStrip chips={chips} />
         <YourWorkStrip items={workItems} />
         <FeaturedAnnouncement announcement={featuredAnnouncement} />
+        <VaultTombstone
+          roomCount={rooms.length}
+          documentCount={rooms.reduce((sum, r) => sum + r.documentCount, 0)}
+          linkCount={rooms.reduce((sum, r) => sum + r.viewerCount, 0)}
+        />
 
         {rooms.length > 0 ? (
           <section aria-label="Your rooms">
