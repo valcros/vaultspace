@@ -838,13 +838,9 @@ export async function GET() {
       return response;
     });
 
-    // Update last login timestamp
-    await withOrgContext(orgId, async (tx) => {
-      await tx.user.update({
-        where: { id: userId },
-        data: { lastLoginAt: new Date() },
-      });
-    });
+    // lastLoginAt is stamped by the login and 2FA-validate routes only.
+    // Mutating it here made every dashboard refresh wipe the "new since your
+    // last visit" freshness counts computed against it.
 
     return NextResponse.json(data);
   } catch (error) {
