@@ -3429,11 +3429,11 @@ export default function RoomDetailPage() {
 
       {/* Preview Dialog */}
       <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden">
+        <DialogContent className="max-h-[92vh] w-[95vw] max-w-6xl overflow-hidden">
           <DialogHeader>
             <DialogTitle>{selectedDocument?.name}</DialogTitle>
           </DialogHeader>
-          <div className="relative h-[70vh] overflow-auto">
+          <div className="relative h-[78vh] overflow-auto">
             {room?.enableWatermark && (
               <WatermarkOverlay
                 template={room.watermarkTemplate || undefined}
