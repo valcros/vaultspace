@@ -117,6 +117,7 @@ import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS, getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
+import { CreateFolderDialog } from './_components/CreateFolderDialog';
 
 interface Room {
   id: string;
@@ -308,7 +309,6 @@ export default function RoomDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = React.useState(false);
   const [selectedDocument, setSelectedDocument] = React.useState<Document | null>(null);
-  const [newFolderName, setNewFolderName] = React.useState('');
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
@@ -957,43 +957,47 @@ export default function RoomDetailPage() {
   );
 
   // Handle folder creation
-  const handleCreateFolder = React.useCallback(async () => {
-    if (!newFolderName.trim()) {
-      return;
-    }
-
-    setIsCreatingFolder(true);
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/folders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newFolderName.trim(),
-          parentId: currentFolderId,
-        }),
-      });
-
-      if (response.ok) {
-        setShowFolderDialog(false);
-        setNewFolderName('');
-        fetchFolders(); // Refresh current folder listing
-        fetchFolderTree(); // Keep the split-pane rail in sync
-      } else {
-        const error = await response.json();
-        console.error('Failed to create folder:', error);
-        toast({
-          title: 'Error',
-          description: error.error?.message || 'Failed to create folder',
-          variant: 'destructive',
-        });
+  const handleCreateFolder = React.useCallback(
+    async (name: string) => {
+      if (!name.trim()) {
+        return false;
       }
-    } catch (error) {
-      console.error('Failed to create folder:', error);
-      toast({ title: 'Error', description: 'Failed to create folder', variant: 'destructive' });
-    } finally {
-      setIsCreatingFolder(false);
-    }
-  }, [roomId, newFolderName, currentFolderId, fetchFolders, fetchFolderTree]);
+
+      setIsCreatingFolder(true);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/folders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            parentId: currentFolderId,
+          }),
+        });
+
+        if (response.ok) {
+          setShowFolderDialog(false);
+          fetchFolders(); // Refresh current folder listing
+          fetchFolderTree(); // Keep the split-pane rail in sync
+          return true;
+        } else {
+          const error = await response.json();
+          console.error('Failed to create folder:', error);
+          toast({
+            title: 'Error',
+            description: error.error?.message || 'Failed to create folder',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Failed to create folder:', error);
+        toast({ title: 'Error', description: 'Failed to create folder', variant: 'destructive' });
+      } finally {
+        setIsCreatingFolder(false);
+      }
+      return false;
+    },
+    [roomId, currentFolderId, fetchFolders, fetchFolderTree]
+  );
 
   // Navigate into a folder
   const handleFolderClick = React.useCallback((folder: FolderItem) => {
@@ -3387,49 +3391,12 @@ export default function RoomDetailPage() {
       </Dialog>
 
       {/* Create Folder Dialog */}
-      <Dialog open={showFolderDialog} onOpenChange={setShowFolderDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Folder</DialogTitle>
-            <DialogDescription>
-              Create a folder to organize documents in this data room.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="folderName">Folder Name</Label>
-              <Input
-                id="folderName"
-                placeholder="Enter folder name"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isCreatingFolder) {
-                    handleCreateFolder();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowFolderDialog(false);
-                setNewFolderName('');
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateFolder}
-              disabled={isCreatingFolder || !newFolderName.trim()}
-            >
-              {isCreatingFolder ? 'Creating...' : 'Create Folder'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateFolderDialog
+        open={showFolderDialog}
+        onOpenChange={setShowFolderDialog}
+        onCreate={handleCreateFolder}
+        isCreating={isCreatingFolder}
+      />
 
       {/* Delete Document Confirmation Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
