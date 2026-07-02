@@ -38,16 +38,6 @@ interface ActionItem {
   priority: 'high' | 'normal';
 }
 
-interface MessagePreview {
-  id: string;
-  senderName: string;
-  subject: string;
-  preview: string;
-  createdAt: string;
-  isRead: boolean;
-  roomName?: string;
-}
-
 interface RoomSummary {
   id: string;
   name: string;
@@ -63,30 +53,6 @@ interface RoomSummary {
   /** Root folders (up to 4) as a contents peek for the landing card. */
   topFolders: { id: string; name: string; documentCount: number }[];
   lastActivity?: string;
-}
-
-interface ActivityItem {
-  id: string;
-  eventType: string;
-  actorName: string;
-  actorEmail?: string;
-  description: string;
-  roomId?: string;
-  roomName?: string;
-  documentId?: string;
-  documentName?: string;
-  createdAt: string;
-}
-
-interface DocumentSummary {
-  id: string;
-  name: string;
-  roomId: string;
-  roomName: string;
-  folderPath?: string;
-  createdAt: string;
-  updatedAt?: string;
-  isNew: boolean;
 }
 
 interface BookmarkItem {
@@ -121,25 +87,6 @@ interface ContinueReadingItem {
   thumbnailUrl?: string;
 }
 
-interface ChecklistProgress {
-  id: string;
-  name: string;
-  roomId: string;
-  roomName: string;
-  completedCount: number;
-  totalCount: number;
-  missingItems: string[];
-}
-
-interface EngagementData {
-  period: '7d' | '30d';
-  totalViews: number;
-  uniqueViewers: number;
-  downloads: number;
-  dailyActivity: { date: string; views: number }[];
-  topDocuments: { id: string; name: string; roomName: string; views: number }[];
-}
-
 interface Announcement {
   id: string;
   content: string;
@@ -172,26 +119,14 @@ interface DashboardV2Response {
 
   messages?: {
     unreadCount: number;
-    recent: MessagePreview[];
   };
 
   myRooms?: RoomSummary[];
-
-  recentActivity?: ActivityItem[];
-
-  engagementInsights?: EngagementData;
-
-  checklistProgress?: ChecklistProgress[];
 
   // Viewer-focused widgets (also useful for admins)
   continueReading?: ContinueReadingItem[];
 
   bookmarks?: BookmarkItem[];
-
-  newSinceLastVisit?: {
-    newDocuments: DocumentSummary[];
-    updatedDocuments: DocumentSummary[];
-  };
 
   myQuestions?: QuestionSummary[];
 
@@ -318,26 +253,16 @@ export async function GET() {
         latestAccessRequest,
         // Messages
         unreadMessages,
-        recentMessages,
         // Rooms
         userRooms,
         roomAdminElevations,
         newDocCountsByRoom,
-        // Activity
-        recentEvents,
         // Bookmarks
         userBookmarks,
         // Questions (user's own)
         userQuestions,
         // Continue reading
         recentPageViews,
-        // Engagement (last 7 days)
-        viewsLast7Days,
-        // Checklists
-        checklists,
-        // New documents since last login
-        newDocs,
-        updatedDocs,
         // Announcements
         announcements,
       ] = await Promise.all([
@@ -380,20 +305,6 @@ export async function GET() {
             recipientUserId: userId,
             isRead: false,
           },
-        }),
-
-        // Recent messages
-        tx.message.findMany({
-          where: {
-            organizationId: orgId,
-            recipientUserId: userId,
-          },
-          include: {
-            sender: { select: { firstName: true, lastName: true, email: true } },
-            room: { select: { name: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 5,
         }),
 
         // User's rooms. Same visibility rule as GET /api/rooms: admins see all
@@ -445,17 +356,6 @@ export async function GET() {
               _count: { _all: true },
             })
           : Promise.resolve([]),
-
-        // Recent activity events
-        tx.event.findMany({
-          where: { organizationId: orgId },
-          include: {
-            actor: { select: { firstName: true, lastName: true, email: true } },
-            room: { select: { id: true, name: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 15,
-        }),
 
         // User's bookmarks
         tx.bookmark.findMany({
@@ -512,70 +412,6 @@ export async function GET() {
           distinct: ['documentId'],
         }),
 
-        // Views in last 7 days for engagement chart
-        tx.event.groupBy({
-          by: ['createdAt'],
-          where: {
-            organizationId: orgId,
-            eventType: { in: ['DOCUMENT_VIEWED', 'DOCUMENT_DOWNLOADED', 'PAGE_VIEWED'] },
-            createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-          },
-          _count: true,
-        }),
-
-        // Checklist progress (for rooms in the org)
-        tx.checklist.findMany({
-          where: {
-            organizationId: orgId,
-          },
-          include: {
-            room: { select: { id: true, name: true } },
-            items: {
-              select: {
-                id: true,
-                name: true,
-                status: true,
-              },
-            },
-          },
-          take: 5,
-        }),
-
-        // New documents since last login
-        lastLoginAt
-          ? tx.document.findMany({
-              where: {
-                organizationId: orgId,
-                status: 'ACTIVE',
-                createdAt: { gt: lastLoginAt },
-              },
-              include: {
-                room: { select: { id: true, name: true } },
-                folder: { select: { name: true } },
-              },
-              orderBy: { createdAt: 'desc' },
-              take: 10,
-            })
-          : Promise.resolve([]),
-
-        // Updated documents since last login
-        lastLoginAt
-          ? tx.document.findMany({
-              where: {
-                organizationId: orgId,
-                status: 'ACTIVE',
-                updatedAt: { gt: lastLoginAt },
-                createdAt: { lte: lastLoginAt }, // Not new, just updated
-              },
-              include: {
-                room: { select: { id: true, name: true } },
-                folder: { select: { name: true } },
-              },
-              orderBy: { updatedAt: 'desc' },
-              take: 10,
-            })
-          : Promise.resolve([]),
-
         // Room announcements (messages marked as announcements)
         tx.message.findMany({
           where: {
@@ -607,40 +443,6 @@ export async function GET() {
         orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
       });
 
-      // Get top viewed documents
-      const topDocuments = await tx.document.findMany({
-        where: {
-          organizationId: orgId,
-          status: 'ACTIVE',
-          viewCount: { gt: 0 },
-        },
-        include: {
-          room: { select: { name: true } },
-        },
-        orderBy: { viewCount: 'desc' },
-        take: 5,
-      });
-
-      // Get unique viewer count
-      const uniqueViewers = await tx.event.groupBy({
-        by: ['actorId'],
-        where: {
-          organizationId: orgId,
-          eventType: { in: ['DOCUMENT_VIEWED', 'PAGE_VIEWED'] },
-          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-          actorId: { not: null },
-        },
-      });
-
-      // Get download count
-      const downloadCount = await tx.event.count({
-        where: {
-          organizationId: orgId,
-          eventType: 'DOCUMENT_DOWNLOADED',
-          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-        },
-      });
-
       // Build action required (admins only)
       if (isAdmin) {
         const actionItems: ActionItem[] = [];
@@ -668,19 +470,8 @@ export async function GET() {
         };
       }
 
-      // Messages
-      response.messages = {
-        unreadCount: unreadMessages,
-        recent: recentMessages.map((m) => ({
-          id: m.id,
-          senderName: getActorName(m.sender),
-          subject: m.subject,
-          preview: m.body.slice(0, 100) + (m.body.length > 100 ? '...' : ''),
-          createdAt: m.createdAt.toISOString(),
-          isRead: m.isRead,
-          roomName: m.room?.name,
-        })),
-      };
+      // Messages: the landing consumes the unread count only.
+      response.messages = { unreadCount: unreadMessages };
 
       // My Rooms
       const elevatedRoomIds = new Set(roomAdminElevations.map((a) => a.roomId));
@@ -711,69 +502,6 @@ export async function GET() {
         lastActivity: r.updatedAt.toISOString(),
       }));
 
-      // Recent Activity
-      response.recentActivity = recentEvents.map((e) => ({
-        id: e.id,
-        eventType: e.eventType,
-        actorName: getActorName(e.actor, e.actorEmail),
-        actorEmail: e.actorEmail || undefined,
-        description: e.description || e.eventType.replace(/_/g, ' ').toLowerCase(),
-        roomId: e.room?.id,
-        roomName: e.room?.name,
-        documentId: e.documentId || undefined,
-        documentName: undefined, // Document name not loaded for performance
-        createdAt: e.createdAt.toISOString(),
-      }));
-
-      // Engagement Insights
-      const dailyViewCounts = new Map<string, number>();
-      const now = new Date();
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(now);
-        date.setDate(date.getDate() - i);
-        const dateKey = date.toISOString().split('T')[0] as string;
-        dailyViewCounts.set(dateKey, 0);
-      }
-
-      for (const view of viewsLast7Days) {
-        const dateKey = new Date(view.createdAt).toISOString().split('T')[0] as string;
-        const currentCount = dailyViewCounts.get(dateKey);
-        if (currentCount !== undefined) {
-          dailyViewCounts.set(dateKey, currentCount + view._count);
-        }
-      }
-
-      response.engagementInsights = {
-        period: '7d',
-        totalViews: viewsLast7Days.reduce((sum, v) => sum + v._count, 0),
-        uniqueViewers: uniqueViewers.length,
-        downloads: downloadCount,
-        dailyActivity: Array.from(dailyViewCounts.entries()).map(([date, views]) => ({
-          date,
-          views,
-        })),
-        topDocuments: topDocuments.map((d) => ({
-          id: d.id,
-          name: d.name,
-          roomName: d.room.name,
-          views: d.viewCount,
-        })),
-      };
-
-      // Checklist Progress
-      response.checklistProgress = checklists.map((c) => ({
-        id: c.id,
-        name: c.name,
-        roomId: c.room.id,
-        roomName: c.room.name,
-        completedCount: c.items.filter((i) => i.status === 'COMPLETE').length,
-        totalCount: c.items.length,
-        missingItems: c.items
-          .filter((i) => i.status !== 'COMPLETE' && i.status !== 'NOT_APPLICABLE')
-          .map((i) => i.name)
-          .slice(0, 5),
-      }));
-
       // Continue Reading
       response.continueReading = recentPageViews.map((pv) => ({
         documentId: pv.document.id,
@@ -795,29 +523,6 @@ export async function GET() {
         folderPath: b.document.folder?.name,
         createdAt: b.createdAt.toISOString(),
       }));
-
-      // New Since Last Visit
-      response.newSinceLastVisit = {
-        newDocuments: newDocs.map((d) => ({
-          id: d.id,
-          name: d.name,
-          roomId: d.room.id,
-          roomName: d.room.name,
-          folderPath: d.folder?.name,
-          createdAt: d.createdAt.toISOString(),
-          isNew: true,
-        })),
-        updatedDocuments: updatedDocs.map((d) => ({
-          id: d.id,
-          name: d.name,
-          roomId: d.room.id,
-          roomName: d.room.name,
-          folderPath: d.folder?.name,
-          createdAt: d.createdAt.toISOString(),
-          updatedAt: d.updatedAt.toISOString(),
-          isNew: false,
-        })),
-      };
 
       // My Questions
       response.myQuestions = userQuestions.map((q) => ({
