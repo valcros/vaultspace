@@ -8,7 +8,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { SIGNED_URL_CONFIG } from '@/lib/constants';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
@@ -46,34 +45,15 @@ function jsonResponse(data: object, status: number) {
   return NextResponse.json(data, { status, headers: FRAME_HEADERS });
 }
 
-/**
- * Binary previews (PDF and raster images) are served via a 302 redirect to a
- * short-lived signed storage URL so bytes stream directly from storage instead
- * of buffering through the app tier.
- *
- * Text-like previews (text/*, application/json, application/xml) and SVG stay
- * app-served: they need content-type control and sanitization (e.g. text/html
- * is rewritten to text/plain), and the client TextPreviewFetcher uses fetch(),
- * where a cross-origin redirect would break CORS.
- */
-function isBinaryRedirectMime(mimeType: string): boolean {
-  return (
-    mimeType === 'application/pdf' ||
-    (mimeType.startsWith('image/') && mimeType !== 'image/svg+xml')
-  );
-}
-
-function signedUrlRedirect(location: string): NextResponse {
-  return new NextResponse(null, {
-    status: 302,
-    headers: {
-      Location: location,
-      // The signed URL expires in 5 minutes; never cache the redirect.
-      'Cache-Control': 'private, no-store',
-      ...FRAME_HEADERS,
-    },
-  });
-}
+// NOTE (2026-07-02, QA regression): a previous change served binary previews
+// via 302 redirects to cross-origin signed storage URLs. That broke previews
+// in production use: ConvertedPreview loads converted office-document assets
+// with fetch(), which CORS-blocks after a cross-origin redirect, and PDF
+// iframes depend on inline Content-Type/Content-Disposition headers that the
+// raw storage URL does not guarantee. ALL previews are app-served again.
+// The signed-URL offload returns to the backlog with hard requirements:
+// SAS/presign content-type + disposition overrides, and img/iframe-only
+// consumers (never fetch()-consumed assets).
 
 /**
  * GET /api/rooms/:roomId/documents/:documentId/preview
@@ -202,17 +182,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return jsonResponse({ error: 'File not found in storage' }, 404);
       }
 
-      // Binary types: redirect to a signed URL (5-minute expiry per the
-      // signed-URL contract) instead of buffering bytes through the app tier.
-      if (isBinaryRedirectMime(mimeType)) {
-        const signedUrl = await storage.getSignedUrl(
-          bucket,
-          key,
-          SIGNED_URL_CONFIG.PREVIEW_EXPIRY_SECONDS
-        );
-        return signedUrlRedirect(signedUrl);
-      }
-
       // Get file content
       const data = await storage.get(bucket, key);
 
@@ -242,17 +211,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       const exists = await storage.exists(bucket, key);
       if (exists) {
-        // Converted preview assets (e.g. office formats rendered to PDF/PNG)
-        // follow the same binary rule for their actual stored mime type.
-        if (isBinaryRedirectMime(contentType)) {
-          const signedUrl = await storage.getSignedUrl(
-            bucket,
-            key,
-            SIGNED_URL_CONFIG.PREVIEW_EXPIRY_SECONDS
-          );
-          return signedUrlRedirect(signedUrl);
-        }
-
         const data = await storage.get(bucket, key);
         return new NextResponse(new Uint8Array(data), {
           status: 200,
