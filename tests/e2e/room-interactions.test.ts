@@ -41,11 +41,13 @@ test.describe('Room interactions', () => {
   test('folder tiles navigate and update the breadcrumb', async ({ page }) => {
     const roomId = await findRoomId(page);
     await page.goto(`/rooms/${roomId}`);
-    await expect(page.getByRole('button', { name: /Financials/ })).toBeVisible({
-      timeout: 15000,
-    });
+    // The folder rail (visible in grid view too since the QA request) has
+    // its own 'Financials' tree button; target the grid tile by its full
+    // accessible name (folder + file count).
+    const tile = page.getByRole('button', { name: /Financials \d+ files/ });
+    await expect(tile).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: /Financials/ }).click();
+    await tile.click();
     await expect(page.getByText('Capitalization Table.xlsx')).toBeVisible({ timeout: 10000 });
     // Folder breadcrumb marks the current folder
     await expect(page.getByRole('navigation', { name: 'Folder path' })).toContainText('Financials');
