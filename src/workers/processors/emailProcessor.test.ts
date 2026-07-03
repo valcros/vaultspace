@@ -9,6 +9,18 @@ vi.mock('@/providers', () => ({
   }),
 }));
 
+// ------ DB mocks --------------------------------------------------------------
+const mockDocumentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+const mockWithOrgContext = vi.fn(
+  async (_organizationId: string, operation: (tx: unknown) => Promise<unknown>) =>
+    operation({ document: { updateMany: mockDocumentUpdateMany } })
+);
+
+vi.mock('@/lib/db', () => ({
+  withOrgContext: (organizationId: string, operation: (tx: unknown) => Promise<unknown>) =>
+    mockWithOrgContext(organizationId, operation),
+}));
+
 // ------ EmailNotificationService mock ---------------------------------------
 const mockNotifyDocumentUploaded = vi.fn().mockResolvedValue(undefined);
 const mockNotifyDocumentViewed = vi.fn().mockResolvedValue(undefined);
@@ -280,6 +292,7 @@ describe('processDocumentViewedNotification', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockNotifyDocumentViewed.mockResolvedValue(undefined);
+    mockDocumentUpdateMany.mockResolvedValue({ count: 1 });
     process.env['APP_URL'] = 'https://app.example.com';
   });
 
@@ -300,5 +313,39 @@ describe('processDocumentViewedNotification', () => {
     await expect(processDocumentViewedNotification(makeNotificationJob())).rejects.toThrow(
       'APP_URL'
     );
+  });
+
+  it('increments viewCount with org scoping when incrementViewCount is set', async () => {
+    await processDocumentViewedNotification(makeNotificationJob({ incrementViewCount: true }));
+    expect(mockWithOrgContext).toHaveBeenCalledWith('org-1', expect.any(Function));
+    expect(mockDocumentUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'doc-1', organizationId: 'org-1' },
+      data: { viewCount: { increment: 1 } },
+    });
+  });
+
+  it('still sends the view notification email when incrementing', async () => {
+    await processDocumentViewedNotification(
+      makeNotificationJob({ incrementViewCount: true, viewerEmail: 'viewer@example.com' })
+    );
+    expect(mockNotifyDocumentViewed).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: 'doc-1', viewerEmail: 'viewer@example.com' })
+    );
+  });
+
+  it('does not touch viewCount when incrementViewCount is absent (link-based views)', async () => {
+    await processDocumentViewedNotification(
+      makeNotificationJob({ viewerEmail: 'viewer@example.com' })
+    );
+    expect(mockDocumentUpdateMany).not.toHaveBeenCalled();
+    expect(mockNotifyDocumentViewed).toHaveBeenCalled();
+  });
+
+  it('rethrows increment failures so BullMQ can retry', async () => {
+    mockDocumentUpdateMany.mockRejectedValue(new Error('DB down'));
+    await expect(
+      processDocumentViewedNotification(makeNotificationJob({ incrementViewCount: true }))
+    ).rejects.toThrow('DB down');
+    expect(mockNotifyDocumentViewed).not.toHaveBeenCalled();
   });
 });
