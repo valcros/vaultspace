@@ -1,16 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ------ archiver mock -------------------------------------------------------
-let _capturedStream: { push: (chunk: Buffer | null) => void } | null = null;
+// The processor streams the archive to a temp file and waits for 'entry'
+// events between appends, so the mock emulates pipe/entry/finalize behavior.
+type EntryHandler = (entry: { name?: string }) => void;
+let _capturedStream: { write: (chunk: Buffer) => void; end: () => void } | null = null;
+let _entryHandlers: EntryHandler[] = [];
 const _archiverPipe = vi.fn();
 const _archiverAppend = vi.fn();
 const _archiverFinalize = vi.fn();
 const _archiverOn = vi.fn();
+const _archiverOff = vi.fn();
+const _archiverAbort = vi.fn();
 const _archiverInstance = {
   pipe: _archiverPipe,
   append: _archiverAppend,
   finalize: _archiverFinalize,
   on: _archiverOn,
+  off: _archiverOff,
+  abort: _archiverAbort,
 };
 vi.mock('archiver', () => ({ default: vi.fn(() => _archiverInstance) }));
 
@@ -93,17 +101,37 @@ const MOCK_DOCUMENTS = [
 
 function setupArchiverMock() {
   _capturedStream = null;
+  _entryHandlers = [];
   mockStorageGet.mockResolvedValue(Buffer.from('file-content'));
   mockEmailSendEmail.mockResolvedValue({ messageId: 'msg-1' });
   _archiverPipe.mockImplementation((s: typeof _capturedStream) => {
     _capturedStream = s;
   });
+  _archiverOn.mockImplementation((event: string, handler: EntryHandler) => {
+    if (event === 'entry') {
+      _entryHandlers.push(handler);
+    }
+  });
+  _archiverOff.mockImplementation((event: string, handler: EntryHandler) => {
+    if (event === 'entry') {
+      _entryHandlers = _entryHandlers.filter((h) => h !== handler);
+    }
+  });
+  _archiverAppend.mockImplementation((_data: unknown, opts: { name: string }) => {
+    const handlers = [..._entryHandlers];
+    setImmediate(() => handlers.forEach((h) => h({ name: opts.name })));
+  });
   _archiverFinalize.mockImplementation(async () => {
     setImmediate(() => {
-      _capturedStream?.push(Buffer.from('mock-zip-content'));
-      _capturedStream?.push(null);
+      _capturedStream?.write(Buffer.from('mock-zip-content'));
+      _capturedStream?.end();
     });
   });
+}
+
+function fakeBufferOfLength(length: number): Buffer {
+  // The processor only reads .length before append; avoid allocating GBs.
+  return { length } as unknown as Buffer;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +298,106 @@ describe('processRoomExportJob — metadata included', () => {
         typeof c[1] === 'object' && (c[1] as { name: string }).name === '_metadata.json'
     );
     expect(metaCall).toBeDefined();
+  });
+});
+
+describe('processRoomExportJob — multi-file sequential export', () => {
+  const TWO_DOCUMENTS = [
+    MOCK_DOCUMENTS[0],
+    {
+      id: 'doc-2',
+      name: 'Financials',
+      folder: null,
+      versions: [
+        {
+          id: 'ver-2',
+          versionNumber: 1,
+          mimeType: 'text/csv',
+          createdAt: new Date('2024-01-02'),
+          fileBlob: { storageKey: 'documents/org-1/file.csv', storageBucket: 'documents' },
+        },
+      ],
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupArchiverMock();
+    mockRoomFindFirst.mockResolvedValue(MOCK_ROOM);
+    mockDocumentFindMany.mockResolvedValue(TWO_DOCUMENTS);
+    mockEventCreate.mockResolvedValue({});
+    mockUserFindUnique.mockResolvedValue({ email: 'alice@example.com', firstName: 'Alice' });
+  });
+
+  it('appends all files and completes (entry waits do not hang)', async () => {
+    await processRoomExportJob(createMockJob());
+    expect(_archiverAppend).toHaveBeenCalledTimes(2);
+    expect(_archiverAppend).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'Deck.pdf' })
+    );
+    expect(_archiverAppend).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: 'Financials.csv' })
+    );
+    expect(mockStoragePut).toHaveBeenCalled();
+  });
+});
+
+describe('processRoomExportJob — 2GB size guard', () => {
+  const TWO_LARGE_DOCUMENTS = [
+    MOCK_DOCUMENTS[0],
+    {
+      id: 'doc-2',
+      name: 'Big File',
+      folder: null,
+      versions: [
+        {
+          id: 'ver-2',
+          versionNumber: 1,
+          mimeType: 'application/pdf',
+          createdAt: new Date('2024-01-02'),
+          fileBlob: { storageKey: 'documents/org-1/big.pdf', storageBucket: 'documents' },
+        },
+      ],
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupArchiverMock();
+    mockRoomFindFirst.mockResolvedValue(MOCK_ROOM);
+    mockDocumentFindMany.mockResolvedValue(MOCK_DOCUMENTS);
+    mockEventCreate.mockResolvedValue({});
+    mockUserFindUnique.mockResolvedValue({ email: 'alice@example.com', firstName: 'Alice' });
+  });
+
+  it('fails the job with a clear message when a single file exceeds 2GB', async () => {
+    mockStorageGet.mockResolvedValue(fakeBufferOfLength(2 * 1024 * 1024 * 1024 + 1));
+    await expect(processRoomExportJob(createMockJob())).rejects.toThrow(
+      'Export exceeds 2GB limit; export folders individually'
+    );
+    expect(_archiverAbort).toHaveBeenCalled();
+    expect(mockStoragePut).not.toHaveBeenCalled();
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+  });
+
+  it('fails when cumulative source bytes across files exceed 2GB', async () => {
+    mockDocumentFindMany.mockResolvedValue(TWO_LARGE_DOCUMENTS);
+    mockStorageGet.mockResolvedValue(fakeBufferOfLength(1.5 * 1024 * 1024 * 1024));
+    await expect(processRoomExportJob(createMockJob())).rejects.toThrow(
+      'Export exceeds 2GB limit; export folders individually'
+    );
+    // First file fit under the limit and was appended; second tripped the guard
+    expect(_archiverAppend).toHaveBeenCalledTimes(1);
+    expect(mockStoragePut).not.toHaveBeenCalled();
+  });
+
+  it('completes normally when total size stays under the limit', async () => {
+    mockStorageGet.mockResolvedValue(fakeBufferOfLength(1024));
+    await expect(processRoomExportJob(createMockJob())).resolves.not.toThrow();
+    expect(_archiverAbort).not.toHaveBeenCalled();
+    expect(mockStoragePut).toHaveBeenCalled();
   });
 });
 
