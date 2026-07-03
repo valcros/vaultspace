@@ -217,39 +217,40 @@ export function DocumentToolbar({
             <Minus className="h-4 w-4" />
           </button>
         )}
+        {/* Accessibility: file/folder name text size + hover magnifier.
+            Available in BOTH views — names render everywhere. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className={`rounded-md border p-1.5 transition-colors ${nameTextSize !== 'default' || magnifyNames ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-500 hover:text-neutral-600'}`}
+              title="Name text size"
+              aria-label="Adjust file and folder name text size"
+            >
+              <Type className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {NAME_TEXT_SIZES.map((opt) => (
+              <DropdownMenuItem key={opt.value} onClick={() => onNameTextSizeChange(opt.value)}>
+                <span
+                  className={`mr-2 inline-block h-3 w-3 rounded-full border ${nameTextSize === opt.value ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
+                />
+                {opt.label}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onMagnifyNamesChange(!magnifyNames)}>
+              <span
+                className={`mr-2 inline-block h-3 w-3 rounded-sm border ${magnifyNames ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
+              />
+              Magnify names on hover
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {/* Column picker (list view only; hidden on mobile — columns are
             auto-hidden below sm anyway) */}
         {viewMode === 'list' && (
           <div className="hidden sm:block">
-            {/* Accessibility: file/folder name text size + hover magnifier */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className={`rounded-md border p-1.5 transition-colors ${nameTextSize !== 'default' || magnifyNames ? 'border-primary-200 bg-primary-50 text-primary-600' : 'border-transparent text-neutral-500 hover:text-neutral-600'}`}
-                  title="Name text size"
-                  aria-label="Adjust file and folder name text size"
-                >
-                  <Type className="h-4 w-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {NAME_TEXT_SIZES.map((opt) => (
-                  <DropdownMenuItem key={opt.value} onClick={() => onNameTextSizeChange(opt.value)}>
-                    <span
-                      className={`mr-2 inline-block h-3 w-3 rounded-full border ${nameTextSize === opt.value ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
-                    />
-                    {opt.label}
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onMagnifyNamesChange(!magnifyNames)}>
-                  <span
-                    className={`mr-2 inline-block h-3 w-3 rounded-sm border ${magnifyNames ? 'border-primary-500 bg-primary-500' : 'border-neutral-300'}`}
-                  />
-                  Magnify names on hover
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
