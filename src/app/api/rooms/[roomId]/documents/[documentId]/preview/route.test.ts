@@ -108,24 +108,24 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
     });
   });
 
-  describe('binary types redirect to signed storage URLs', () => {
-    it('redirects PDF to a 5-minute signed URL', async () => {
+  describe('all previews are app-served (QA regression: cross-origin redirects broke viewers)', () => {
+    it('serves PDF inline with content headers', async () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
       mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('application/pdf'));
       const res = await GET(makeRequest(), makeContext());
-      expect(res.status).toBe(302);
-      expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
-      expect(mockStorage.getSignedUrl).toHaveBeenCalledWith('documents', 'files/test.bin', 300);
-      expect(mockStorage.get).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('application/pdf');
+      expect(res.headers.get('Content-Disposition')).toContain('inline');
+      expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
     });
 
-    it('redirects image/png to a signed URL', async () => {
+    it('serves image/png inline', async () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument('image/png'));
       mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('image/png'));
       const res = await GET(makeRequest(), makeContext());
-      expect(res.status).toBe(302);
-      expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
-      expect(mockStorage.get).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('image/png');
+      expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
     });
 
     it('keeps image/svg+xml app-served (no redirect)', async () => {
@@ -159,7 +159,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       expect(body.document.canPreview).toBe(false);
     });
 
-    it('redirects binary preview asset (PNG render) to a signed URL', async () => {
+    it('serves converted PNG render app-side (ConvertedPreview consumes via fetch)', async () => {
       const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       const previewAsset = {
         assetType: 'RENDER',
@@ -170,12 +170,12 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument(xlsxType));
       mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion(xlsxType, [previewAsset]));
       const res = await GET(makeRequest(), makeContext());
-      expect(res.status).toBe(302);
-      expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
-      expect(mockStorage.getSignedUrl).toHaveBeenCalledWith('previews', 'previews/doc-1.png', 300);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('image/png');
+      expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
     });
 
-    it('redirects converted PDF preview asset to a signed URL', async () => {
+    it('serves converted PDF preview asset app-side', async () => {
       const docxType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       const previewAsset = {
         assetType: 'PDF',
@@ -186,9 +186,9 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument(docxType));
       mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion(docxType, [previewAsset]));
       const res = await GET(makeRequest(), makeContext());
-      expect(res.status).toBe(302);
-      expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
-      expect(mockStorage.getSignedUrl).toHaveBeenCalledWith('previews', 'previews/doc-1.pdf', 300);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('application/pdf');
+      expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
     });
   });
 
