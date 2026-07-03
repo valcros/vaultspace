@@ -89,38 +89,36 @@ export function DocumentToolbar({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-md ring-1 ring-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:ring-slate-800">
       <div className="flex flex-wrap items-center gap-2">
-        {viewMode === 'list' && (
-          <>
-            {/* Mobile/tablet: open folder tree as a drawer. */}
-            <Button
-              ref={folderDrawerTriggerRef}
-              size="sm"
-              variant="outline"
-              className="lg:hidden"
-              onClick={onOpenFolderDrawer}
-              aria-label="Open folder tree"
-            >
-              <PanelLeft className="h-4 w-4" />
-              <span className="ml-2">Folders</span>
-            </Button>
-            {/* Desktop: collapse / reopen the persistent folder pane. */}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="hidden lg:inline-flex"
-              onClick={toggleFolderPane}
-              aria-pressed={folderPaneOpen}
-              aria-label={folderPaneOpen ? 'Collapse folder pane' : 'Expand folder pane'}
-              title={folderPaneOpen ? 'Collapse folder pane' : 'Expand folder pane'}
-            >
-              {folderPaneOpen ? (
-                <PanelLeftClose className="h-4 w-4" />
-              ) : (
-                <PanelLeftOpen className="h-4 w-4" />
-              )}
-            </Button>
-          </>
-        )}
+        {/* Folder navigation is available in BOTH views (QA request):
+            the rail toggle and mobile drawer are no longer list-only. */}
+        {/* Mobile/tablet: open folder tree as a drawer. */}
+        <Button
+          ref={folderDrawerTriggerRef}
+          size="sm"
+          variant="outline"
+          className="lg:hidden"
+          onClick={onOpenFolderDrawer}
+          aria-label="Open folder tree"
+        >
+          <PanelLeft className="h-4 w-4" />
+          <span className="ml-2">Folders</span>
+        </Button>
+        {/* Desktop: collapse / reopen the persistent folder pane. */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="hidden lg:inline-flex"
+          onClick={toggleFolderPane}
+          aria-pressed={folderPaneOpen}
+          aria-label={folderPaneOpen ? 'Collapse folder pane' : 'Expand folder pane'}
+          title={folderPaneOpen ? 'Collapse folder pane' : 'Expand folder pane'}
+        >
+          {folderPaneOpen ? (
+            <PanelLeftClose className="h-4 w-4" />
+          ) : (
+            <PanelLeftOpen className="h-4 w-4" />
+          )}
+        </Button>
         <Button size="sm" onClick={onUploadClick}>
           <Upload className="mr-2 h-4 w-4" />
           Upload Files
