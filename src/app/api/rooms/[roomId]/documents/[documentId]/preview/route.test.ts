@@ -24,10 +24,11 @@ const mockStorage = {
 };
 
 // Mock providers
+const mockAddJob = vi.fn(() => Promise.resolve());
 vi.mock('@/providers', () => ({
   getProviders: () => ({
     storage: mockStorage,
-    job: { addJob: vi.fn(() => Promise.resolve()) },
+    job: { addJob: mockAddJob },
   }),
 }));
 
@@ -188,6 +189,32 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       expect(res.status).toBe(302);
       expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
       expect(mockStorage.getSignedUrl).toHaveBeenCalledWith('previews', 'previews/doc-1.pdf', 300);
+    });
+  });
+
+  describe('view counting moved to job path', () => {
+    it('does not increment viewCount in the request path', async () => {
+      mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('application/pdf'));
+      await GET(makeRequest(), makeContext());
+      expect(mockTx.document.update).not.toHaveBeenCalled();
+    });
+
+    it('queues notify-document-viewed with incrementViewCount flag', async () => {
+      mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('application/pdf'));
+      await GET(makeRequest(), makeContext());
+      expect(mockAddJob).toHaveBeenCalledWith(
+        'normal',
+        'notify-document-viewed',
+        expect.objectContaining({
+          organizationId: 'org-1',
+          roomId: 'room-1',
+          documentId: 'doc-1',
+          viewerId: 'user-1',
+          incrementViewCount: true,
+        })
+      );
     });
   });
 });
