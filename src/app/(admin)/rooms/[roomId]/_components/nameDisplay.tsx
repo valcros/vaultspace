@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
 /**
  * Accessibility: adjustable file/folder name typography (QA request from
@@ -63,7 +64,9 @@ export function NameText({ name, size, magnify, className, as = 'span' }: NameTe
   return (
     <>
       <Tag
-        className={clsx(className, SIZE_CLASSES[size])}
+        // twMerge so the size override reliably beats the surface's base
+        // font-size class (same conflict class as the preview-dialog width bug).
+        className={twMerge(clsx(className, SIZE_CLASSES[size]))}
         onMouseEnter={handleEnter}
         onMouseLeave={handleLeave}
       >
