@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { AdminSurface } from '@/components/layout/admin-page';
 import { FileTypeIcon } from '@/components/documents/FileTypeIcon';
+import { NameText, type NameTextSize } from './nameDisplay';
 import { getCategoryLabel, getCategoryColor } from '@/lib/documentCategories';
 
 import type { Document, FolderItem } from '../_hooks/useRoomContents';
@@ -66,6 +67,8 @@ interface DocumentActionHandlers {
 }
 
 interface FolderListRowProps {
+  nameTextSize: NameTextSize;
+  magnifyNames: boolean;
   folder: FolderItem;
   compact: boolean;
   showSize: boolean;
@@ -75,6 +78,8 @@ interface FolderListRowProps {
 }
 
 const FolderListRow = React.memo(function FolderListRow({
+  nameTextSize,
+  magnifyNames,
   folder,
   compact,
   showSize,
@@ -91,7 +96,12 @@ const FolderListRow = React.memo(function FolderListRow({
       <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
         <div className="flex items-center gap-2">
           <Folder className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-yellow-500`} />
-          <span className={`font-medium ${compact ? 'text-sm' : ''}`}>{folder.name}</span>
+          <NameText
+            name={folder.name}
+            size={nameTextSize}
+            magnify={magnifyNames}
+            className={`font-medium ${compact ? 'text-sm' : ''}`}
+          />
         </div>
       </td>
       {showSize && (
@@ -138,6 +148,8 @@ const FolderListRow = React.memo(function FolderListRow({
 });
 
 interface DocumentListRowProps extends DocumentActionHandlers {
+  nameTextSize: NameTextSize;
+  magnifyNames: boolean;
   doc: Document;
   compact: boolean;
   showSize: boolean;
@@ -149,6 +161,8 @@ interface DocumentListRowProps extends DocumentActionHandlers {
 }
 
 const DocumentListRow = React.memo(function DocumentListRow({
+  nameTextSize,
+  magnifyNames,
   doc,
   compact,
   showSize,
@@ -190,7 +204,12 @@ const DocumentListRow = React.memo(function DocumentListRow({
           <FileTypeIcon mimeType={doc.mimeType} className={compact ? 'h-4 w-4' : undefined} />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className={`truncate font-medium ${compact ? 'text-sm' : ''}`}>{doc.name}</span>
+              <NameText
+                name={doc.name}
+                size={nameTextSize}
+                magnify={magnifyNames}
+                className={`truncate font-medium ${compact ? 'text-sm' : ''}`}
+              />
               {(doc.confidential || allDocumentsConfidential) && (
                 <Lock className="h-3 w-3 shrink-0 text-amber-500" />
               )}
@@ -286,11 +305,18 @@ const DocumentListRow = React.memo(function DocumentListRow({
 });
 
 interface FolderGridTileProps {
+  nameTextSize: NameTextSize;
+  magnifyNames: boolean;
   folder: FolderItem;
   onOpen: (folder: FolderItem) => void;
 }
 
-const FolderGridTile = React.memo(function FolderGridTile({ folder, onOpen }: FolderGridTileProps) {
+const FolderGridTile = React.memo(function FolderGridTile({
+  nameTextSize,
+  magnifyNames,
+  folder,
+  onOpen,
+}: FolderGridTileProps) {
   return (
     <button
       type="button"
@@ -302,9 +328,12 @@ const FolderGridTile = React.memo(function FolderGridTile({ folder, onOpen }: Fo
         <Folder className="h-5 w-5 text-amber-500" aria-hidden="true" />
       </span>
       <span className="min-w-0">
-        <span className="line-clamp-2 block text-sm font-semibold leading-snug text-neutral-900 dark:text-neutral-100">
-          {folder.name}
-        </span>
+        <NameText
+          name={folder.name}
+          size={nameTextSize}
+          magnify={magnifyNames}
+          className="line-clamp-2 block text-sm font-semibold leading-snug text-neutral-900 dark:text-neutral-100"
+        />
         <span className="block text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
           {folder.documentCount} {folder.documentCount === 1 ? 'file' : 'files'}
         </span>
@@ -314,6 +343,8 @@ const FolderGridTile = React.memo(function FolderGridTile({ folder, onOpen }: Fo
 });
 
 interface DocumentGridCardProps extends DocumentActionHandlers {
+  nameTextSize: NameTextSize;
+  magnifyNames: boolean;
   doc: Document;
   roomId: string;
   bookmarked: boolean;
@@ -321,6 +352,8 @@ interface DocumentGridCardProps extends DocumentActionHandlers {
 }
 
 const DocumentGridCard = React.memo(function DocumentGridCard({
+  nameTextSize,
+  magnifyNames,
   doc,
   roomId,
   bookmarked,
@@ -348,7 +381,13 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
         updatedAt={doc.updatedAt}
       />
       <div className="mt-2 flex items-center gap-1">
-        <p className="truncate text-sm font-medium">{doc.name}</p>
+        <NameText
+          name={doc.name}
+          size={nameTextSize}
+          magnify={magnifyNames}
+          as="p"
+          className="truncate text-sm font-medium"
+        />
         {(doc.confidential || allDocumentsConfidential) && (
           <Lock className="h-3 w-3 shrink-0 text-amber-500" />
         )}
@@ -425,6 +464,8 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
 });
 
 export interface DocumentsTableProps extends DocumentActionHandlers {
+  nameTextSize: NameTextSize;
+  magnifyNames: boolean;
   /** Which layout to render; matches the page's persisted view mode. */
   view: 'list' | 'grid';
   roomId: string;
@@ -453,6 +494,8 @@ export interface DocumentsTableProps extends DocumentActionHandlers {
  * referentially stable callbacks so memoization holds.
  */
 export function DocumentsTable({
+  nameTextSize,
+  magnifyNames,
   view,
   roomId,
   allDocumentsConfidential,
@@ -570,6 +613,8 @@ export function DocumentsTable({
             {/* Render folders first */}
             {folders.map((folder) => (
               <FolderListRow
+                nameTextSize={nameTextSize}
+                magnifyNames={magnifyNames}
                 key={folder.id}
                 folder={folder}
                 compact={compact}
@@ -582,6 +627,8 @@ export function DocumentsTable({
             {/* Render documents */}
             {documents.map((doc) => (
               <DocumentListRow
+                nameTextSize={nameTextSize}
+                magnifyNames={magnifyNames}
                 key={doc.id}
                 doc={doc}
                 compact={compact}
@@ -608,13 +655,21 @@ export function DocumentsTable({
           Documents keep the tall preview cards; the height difference is
           the visual distinction between containers and content. */}
       {folders.map((folder) => (
-        <FolderGridTile key={folder.id} folder={folder} onOpen={onFolderClick} />
+        <FolderGridTile
+          key={folder.id}
+          folder={folder}
+          onOpen={onFolderClick}
+          nameTextSize={nameTextSize}
+          magnifyNames={magnifyNames}
+        />
       ))}
       {/* Documents — render the same sorted view the list mode uses
               so the grid and list stay coherent regardless of how the
               user sorted via the toolbar. */}
       {documents.map((doc) => (
         <DocumentGridCard
+          nameTextSize={nameTextSize}
+          magnifyNames={magnifyNames}
           key={doc.id}
           doc={doc}
           roomId={roomId}
