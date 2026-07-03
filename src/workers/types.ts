@@ -85,7 +85,15 @@ export interface NotificationJobPayload {
   roomId: string;
   documentId: string;
   uploaderId?: string;
+  viewerId?: string;
   viewerEmail?: string;
+  /**
+   * When true (set by the admin preview route), the notify-document-viewed
+   * processor increments document.viewCount. Link-based view jobs do not set
+   * this flag, preserving their existing semantics (they only count on the
+   * Link record).
+   */
+  incrementViewCount?: boolean;
 }
 
 // =============================================================================
