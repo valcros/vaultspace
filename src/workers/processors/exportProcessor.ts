@@ -4,12 +4,21 @@
  * Processes room export jobs - creates ZIP archives of room documents.
  */
 
+import { randomUUID } from 'crypto';
+import { createWriteStream } from 'fs';
+import { readFile, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
 import { Job } from 'bullmq';
 import archiver from 'archiver';
-import { PassThrough } from 'stream';
 
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+
+// Exports larger than this (cumulative source bytes) fail with a clear
+// message instead of exhausting worker disk/RAM.
+const EXPORT_SOURCE_BYTES_LIMIT = 2 * 1024 * 1024 * 1024; // 2GB
 
 export interface RoomExportJobPayload {
   roomId: string;
@@ -101,43 +110,61 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
 
     console.log(`[ExportProcessor] Exporting ${documents.length} documents`);
 
-    // Create ZIP archive
-    const archive = archiver('zip', {
-      zlib: { level: 6 }, // Compression level
-    });
+    // Stream the archive to a bounded temp file on disk instead of
+    // accumulating ZIP chunks in RAM (previous Buffer.concat pattern).
+    const tmpPath = join(tmpdir(), `vaultspace-export-${randomUUID()}.zip`);
+    let zipBuffer: Buffer;
 
-    // Create a passthrough stream to collect the ZIP
-    const chunks: Buffer[] = [];
-    const passthrough = new PassThrough();
+    try {
+      // Create ZIP archive
+      const archive = archiver('zip', {
+        zlib: { level: 6 }, // Compression level
+      });
 
-    passthrough.on('data', (chunk) => chunks.push(chunk));
+      const output = createWriteStream(tmpPath);
 
-    const archiveFinished = new Promise<void>((resolve, reject) => {
-      passthrough.on('end', resolve);
-      passthrough.on('error', reject);
-      archive.on('error', reject);
-    });
+      const archiveFinished = new Promise<void>((resolve, reject) => {
+        output.on('close', resolve);
+        output.on('error', reject);
+        archive.on('error', reject);
+      });
 
-    archive.pipe(passthrough);
+      archive.pipe(output);
 
-    // Add documents to archive
-    for (const doc of documents) {
-      const folderPath = doc.folder?.path
-        ? doc.folder.path.replace(/^\//, '').replace(/\//g, '/')
-        : '';
+      // Add documents to archive sequentially, releasing each source buffer
+      // before fetching the next so source files never accumulate in memory.
+      let totalSourceBytes = 0;
 
-      for (const version of doc.versions) {
-        if (!version.fileBlob) {
-          console.warn(`[ExportProcessor] No file blob for version ${version.id}`);
-          continue;
-        }
+      for (const doc of documents) {
+        const folderPath = doc.folder?.path
+          ? doc.folder.path.replace(/^\//, '').replace(/\//g, '/')
+          : '';
 
-        try {
-          // Get file from storage
-          const fileBuffer = await providers.storage.get(
-            version.fileBlob.storageBucket,
-            version.fileBlob.storageKey
-          );
+        for (const version of doc.versions) {
+          if (!version.fileBlob) {
+            console.warn(`[ExportProcessor] No file blob for version ${version.id}`);
+            continue;
+          }
+
+          let fileBuffer: Buffer;
+          try {
+            // Get file from storage
+            fileBuffer = await providers.storage.get(
+              version.fileBlob.storageBucket,
+              version.fileBlob.storageKey
+            );
+          } catch (fileError) {
+            console.error(`[ExportProcessor] Failed to add ${doc.name}:`, fileError);
+            // Continue with other files
+            continue;
+          }
+
+          // Size guard: fail clearly instead of exhausting disk/RAM
+          totalSourceBytes += fileBuffer.length;
+          if (totalSourceBytes > EXPORT_SOURCE_BYTES_LIMIT) {
+            archive.abort();
+            throw new Error('Export exceeds 2GB limit; export folders individually');
+          }
 
           // Determine filename
           const extension = getExtensionFromMimeType(version.mimeType);
@@ -147,49 +174,54 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
           // Full path in ZIP
           const zipPath = folderPath ? `${folderPath}/${fileName}` : fileName;
 
-          // Add file to archive
+          // Add file to archive and wait until archiver has consumed the
+          // entry before fetching the next file (sequential-with-release).
+          const entryConsumed = waitForEntry(archive, zipPath);
           archive.append(fileBuffer, {
             name: zipPath,
             date: version.createdAt,
           });
+          await entryConsumed;
 
           console.log(`[ExportProcessor] Added: ${zipPath}`);
-        } catch (fileError) {
-          console.error(`[ExportProcessor] Failed to add ${doc.name}:`, fileError);
-          // Continue with other files
         }
       }
-    }
 
-    // Add metadata JSON if requested
-    if (options.includeMetadata) {
-      const metadata = {
-        roomName: room.name,
-        exportedAt: new Date().toISOString(),
-        documentCount: documents.length,
-        documents: documents.map((doc) => ({
-          name: doc.name,
-          folder: doc.folder?.path ?? '/',
-          versions: doc.versions.map((v) => ({
-            version: v.versionNumber,
-            mimeType: v.mimeType,
-            size: Number(v.fileSize),
-            uploadedAt: v.createdAt.toISOString(),
+      // Add metadata JSON if requested
+      if (options.includeMetadata) {
+        const metadata = {
+          roomName: room.name,
+          exportedAt: new Date().toISOString(),
+          documentCount: documents.length,
+          documents: documents.map((doc) => ({
+            name: doc.name,
+            folder: doc.folder?.path ?? '/',
+            versions: doc.versions.map((v) => ({
+              version: v.versionNumber,
+              mimeType: v.mimeType,
+              size: Number(v.fileSize),
+              uploadedAt: v.createdAt.toISOString(),
+            })),
           })),
-        })),
-      };
+        };
 
-      archive.append(JSON.stringify(metadata, null, 2), { name: '_metadata.json' });
+        archive.append(JSON.stringify(metadata, null, 2), { name: '_metadata.json' });
+      }
+
+      // Finalize archive
+      await archive.finalize();
+
+      // Wait for the temp file to be fully written
+      await archiveFinished;
+
+      // Read the finished ZIP back once: the StorageProvider.put contract
+      // takes a Buffer, so one ZIP-sized buffer is unavoidable, but we no
+      // longer hold every source file plus all ZIP chunks simultaneously.
+      zipBuffer = await readFile(tmpPath);
+    } finally {
+      // Always clean up the temp file, including on size-guard failures
+      await rm(tmpPath, { force: true }).catch(() => {});
     }
-
-    // Finalize archive
-    await archive.finalize();
-
-    // Wait for stream to finish
-    await archiveFinished;
-
-    // Combine chunks into final buffer
-    const zipBuffer = Buffer.concat(chunks);
 
     console.log(`[ExportProcessor] ZIP created: ${zipBuffer.length} bytes`);
 
@@ -246,6 +278,25 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
     console.error(`[ExportProcessor] Export failed for room ${roomId}:`, error);
     throw error;
   }
+}
+
+/**
+ * Resolve when archiver has consumed the entry with the given name.
+ *
+ * The listener is registered before append and removed on match, and entries
+ * are appended strictly sequentially, so at most one listener is active at a
+ * time (duplicate names across iterations cannot cross-resolve).
+ */
+function waitForEntry(archive: archiver.Archiver, name: string): Promise<void> {
+  return new Promise((resolve) => {
+    const onEntry = (entry: { name?: string }) => {
+      if (entry?.name === name) {
+        archive.off('entry', onEntry);
+        resolve();
+      }
+    };
+    archive.on('entry', onEntry);
+  });
 }
 
 /**
