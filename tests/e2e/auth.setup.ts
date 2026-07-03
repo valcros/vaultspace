@@ -23,9 +23,13 @@ setup('authenticate as admin', async ({ page }) => {
   await page.fill('input[type="password"]', ADMIN_PASSWORD);
   await page.click('button[type="submit"]');
 
-  // Post-login lands on /dashboard
+  // Post-login lands on /dashboard. The landing is server-rendered now:
+  // there is no transient "Dashboard" loading header anymore, so assert the
+  // greeting heading the page actually renders.
   await page.waitForURL('**/dashboard', { timeout: 15000 });
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Good (morning|afternoon|evening)/ })).toBeVisible(
+    { timeout: 10000 }
+  );
 
   await page.context().storageState({ path: ADMIN_STORAGE_STATE });
 });
