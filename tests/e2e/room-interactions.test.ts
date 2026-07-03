@@ -162,6 +162,27 @@ test.describe('Room interactions', () => {
     await page.waitForURL('**/dashboard', { timeout: 10000 });
   });
 
+  test('name text size setting and hover magnifier work', async ({ page }) => {
+    const roomId = await findRoomId(page);
+    await page.goto(`/rooms/${roomId}`);
+    await expect(page.getByText(ROOT_DOCUMENT)).toBeVisible({ timeout: 15000 });
+
+    const nameEl = page.getByText(ROOT_DOCUMENT).first();
+    const beforePx = await nameEl.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+
+    await page.getByRole('button', { name: 'Adjust file and folder name text size' }).click();
+    await page.getByRole('menuitem', { name: 'Extra large' }).click();
+    await expect
+      .poll(async () => nameEl.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)))
+      .toBeGreaterThan(beforePx);
+
+    await page.getByRole('button', { name: 'Adjust file and folder name text size' }).click();
+    await page.getByRole('menuitem', { name: 'Magnify names on hover' }).click();
+    await nameEl.hover();
+    await expect(page.getByTestId('name-magnifier')).toBeVisible();
+    await expect(page.getByTestId('name-magnifier')).toContainText(ROOT_DOCUMENT);
+  });
+
   test('folder pane is available in grid view', async ({ page }) => {
     const roomId = await findRoomId(page);
     await page.goto(`/rooms/${roomId}`);

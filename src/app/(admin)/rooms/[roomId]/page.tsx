@@ -81,6 +81,7 @@ import { ManageDrawer, isManagePane, type ManagePane } from './_components/Manag
 import { DocumentToolbar } from './_components/DocumentToolbar';
 import { DocumentsTable } from './_components/DocumentsTable';
 import { useRoomContents, type Document, type FolderItem } from './_hooks/useRoomContents';
+import type { NameTextSize } from './_components/nameDisplay';
 
 export default function RoomDetailPage() {
   const params = useParams();
@@ -107,6 +108,40 @@ export default function RoomDetailPage() {
   const folderDrawerTriggerRef = React.useRef<HTMLButtonElement>(null);
 
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
+
+  // Accessibility: file/folder name text size + opt-in hover magnifier.
+  // Initialized to stable defaults and hydrated from localStorage after
+  // mount — render-time localStorage reads are hydration mismatches waiting
+  // to happen (see the greeting incident).
+  const [nameTextSize, setNameTextSize] = React.useState<NameTextSize>('default');
+  const [magnifyNames, setMagnifyNames] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      const size = localStorage.getItem('vaultspace-name-size');
+      if (size === 'large' || size === 'xl') {
+        setNameTextSize(size);
+      }
+      setMagnifyNames(localStorage.getItem('vaultspace-name-magnify') === 'true');
+    } catch {
+      // Storage unavailable: keep defaults.
+    }
+  }, []);
+  const handleNameTextSizeChange = React.useCallback((size: NameTextSize) => {
+    setNameTextSize(size);
+    try {
+      localStorage.setItem('vaultspace-name-size', size);
+    } catch {
+      // Preference simply won't persist.
+    }
+  }, []);
+  const handleMagnifyNamesChange = React.useCallback((enabled: boolean) => {
+    setMagnifyNames(enabled);
+    try {
+      localStorage.setItem('vaultspace-name-magnify', String(enabled));
+    } catch {
+      // Preference simply won't persist.
+    }
+  }, []);
 
   const {
     room,
@@ -574,6 +609,8 @@ export default function RoomDetailPage() {
   // Every callback here is referentially stable (see useCallback sites) so
   // the memoized rows / tiles / cards inside DocumentsTable stay memoized.
   const documentsTableProps = {
+    nameTextSize,
+    magnifyNames,
     roomId,
     allDocumentsConfidential: room.allDocumentsConfidential,
     folders,
@@ -702,6 +739,10 @@ export default function RoomDetailPage() {
         {/* Composed toolbar (Upload / New Folder, category filter, sort,
             density, columns, folder-pane + view-mode toggles). */}
         <DocumentToolbar
+          nameTextSize={nameTextSize}
+          onNameTextSizeChange={handleNameTextSizeChange}
+          magnifyNames={magnifyNames}
+          onMagnifyNamesChange={handleMagnifyNamesChange}
           viewMode={viewMode}
           setViewMode={setViewMode}
           showListModeHint={showListModeHint}
