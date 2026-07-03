@@ -20,6 +20,7 @@ vi.mock('@/lib/middleware', () => ({
 const mockStorage = {
   exists: vi.fn(),
   get: vi.fn(),
+  getSignedUrl: vi.fn(),
 };
 
 // Mock providers
@@ -77,6 +78,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
     mockTx.document.update.mockResolvedValue({});
     mockStorage.exists.mockResolvedValue(true);
     mockStorage.get.mockResolvedValue(Buffer.from('file content'));
+    mockStorage.getSignedUrl.mockResolvedValue('https://storage.example.com/signed?sig=abc');
   });
 
   describe('text-renderable MIME types served inline', () => {
@@ -105,13 +107,43 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
     });
   });
 
-  describe('existing previewable types still work', () => {
-    it('serves PDF inline', async () => {
+  describe('binary types redirect to signed storage URLs', () => {
+    it('redirects PDF to a 5-minute signed URL', async () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
       mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('application/pdf'));
       const res = await GET(makeRequest(), makeContext());
+      expect(res.status).toBe(302);
+      expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
+      expect(mockStorage.getSignedUrl).toHaveBeenCalledWith('documents', 'files/test.bin', 300);
+      expect(mockStorage.get).not.toHaveBeenCalled();
+    });
+
+    it('redirects image/png to a signed URL', async () => {
+      mockTx.document.findFirst.mockResolvedValue(makeDocument('image/png'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('image/png'));
+      const res = await GET(makeRequest(), makeContext());
+      expect(res.status).toBe(302);
+      expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
+      expect(mockStorage.get).not.toHaveBeenCalled();
+    });
+
+    it('keeps image/svg+xml app-served (no redirect)', async () => {
+      mockTx.document.findFirst.mockResolvedValue(makeDocument('image/svg+xml'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('image/svg+xml'));
+      const res = await GET(makeRequest(), makeContext());
       expect(res.status).toBe(200);
-      expect(res.headers.get('Content-Type')).toBe('application/pdf');
+      expect(res.headers.get('Content-Type')).toBe('image/svg+xml');
+      expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
+      expect(await res.text()).toBe('file content');
+    });
+
+    it('keeps text previews app-served with body intact', async () => {
+      mockTx.document.findFirst.mockResolvedValue(makeDocument('text/plain'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('text/plain'));
+      const res = await GET(makeRequest(), makeContext());
+      expect(res.status).toBe(200);
+      expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
+      expect(await res.text()).toBe('file content');
     });
   });
 
@@ -126,7 +158,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       expect(body.document.canPreview).toBe(false);
     });
 
-    it('serves preview asset when available for XLSX', async () => {
+    it('redirects binary preview asset (PNG render) to a signed URL', async () => {
       const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       const previewAsset = {
         assetType: 'RENDER',
@@ -137,8 +169,25 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument(xlsxType));
       mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion(xlsxType, [previewAsset]));
       const res = await GET(makeRequest(), makeContext());
-      expect(res.status).toBe(200);
-      expect(res.headers.get('Content-Type')).toBe('image/png');
+      expect(res.status).toBe(302);
+      expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
+      expect(mockStorage.getSignedUrl).toHaveBeenCalledWith('previews', 'previews/doc-1.png', 300);
+    });
+
+    it('redirects converted PDF preview asset to a signed URL', async () => {
+      const docxType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const previewAsset = {
+        assetType: 'PDF',
+        storageKey: 'previews/doc-1.pdf',
+        mimeType: 'application/pdf',
+        pageNumber: 1,
+      };
+      mockTx.document.findFirst.mockResolvedValue(makeDocument(docxType));
+      mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion(docxType, [previewAsset]));
+      const res = await GET(makeRequest(), makeContext());
+      expect(res.status).toBe(302);
+      expect(res.headers.get('Location')).toBe('https://storage.example.com/signed?sig=abc');
+      expect(mockStorage.getSignedUrl).toHaveBeenCalledWith('previews', 'previews/doc-1.pdf', 300);
     });
   });
 });
