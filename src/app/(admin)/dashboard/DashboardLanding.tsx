@@ -156,8 +156,16 @@ function buildYourWorkItems(data: DashboardV2Data): YourWorkItem[] {
 
 export function DashboardLanding({ data }: { data: DashboardV2Data }) {
   const isAdmin = data.user.role === 'ADMIN';
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  // The time-of-day greeting must not be computed during SSR: the server
+  // clock is UTC while the visitor's is local, so rendering it produced a
+  // guaranteed hydration text mismatch (React #418) for any non-UTC user —
+  // invisible in CI where both sides run UTC. Render a stable salutation on
+  // the server and first client paint, then upgrade after mount.
+  const [greeting, setGreeting] = React.useState('Welcome back');
+  React.useEffect(() => {
+    const hour = new Date().getHours();
+    setGreeting(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
+  }, []);
 
   const chips = buildAttentionChips(data);
   const workItems = buildYourWorkItems(data);
