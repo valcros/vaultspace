@@ -7,6 +7,7 @@
 
 import { Job } from 'bullmq';
 
+import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { EmailNotificationService } from '@/services/notifications';
 
@@ -276,8 +277,22 @@ export async function processDocumentUploadedNotification(
 export async function processDocumentViewedNotification(
   job: Job<NotificationJobPayload>
 ): Promise<void> {
-  const { organizationId, roomId, documentId, viewerEmail } = job.data;
+  const { organizationId, roomId, documentId, viewerEmail, incrementViewCount } = job.data;
   console.log(`[EmailProcessor] Processing document view notification for ${documentId}`);
+
+  // View counting lives in the job path so the request path never holds a
+  // hot-row UPDATE lock. Semantics: one increment per preview request (the
+  // preview route enqueues exactly one job per request with this flag set).
+  // This is idempotent-enough for an analytics counter: a BullMQ redelivery
+  // after a partial failure may double-count a view, which is acceptable.
+  if (incrementViewCount) {
+    await withOrgContext(organizationId, (tx) =>
+      tx.document.updateMany({
+        where: { id: documentId, organizationId },
+        data: { viewCount: { increment: 1 } },
+      })
+    );
+  }
 
   const notificationService = createNotificationService();
   await notificationService.notifyDocumentViewed({
