@@ -49,6 +49,8 @@ export interface BreadcrumbItem {
 }
 
 export interface UseRoomContentsOptions {
+  /** Desktop folder rail open state; the tree must load when it is shown. */
+  folderPaneOpen: boolean;
   roomId: string;
   /** Active category filter; documents refetch when it changes. */
   categoryFilter: string | null;
@@ -70,6 +72,7 @@ export function useRoomContents({
   categoryFilter,
   viewMode,
   listModeHintDismissed,
+  folderPaneOpen,
 }: UseRoomContentsOptions) {
   const router = useRouter();
 
@@ -173,11 +176,12 @@ export function useRoomContents({
     }
   }, [roomId]);
 
-  // The whole-room folder tree is only needed by the list-mode rail, the
-  // mobile folder drawer, and (once) the grid-mode discoverability hint.
-  // Returning grid-mode users who dismissed the hint skip the fetch entirely
-  // instead of paying for the full hierarchy on every room open.
-  const needsFolderTree = viewMode === 'list' || folderDrawerOpen || !listModeHintDismissed;
+  // The whole-room folder tree is needed by the folder rail (either view,
+  // when open), the mobile folder drawer, list mode's rail default, and
+  // (once) the grid-mode discoverability hint. Returning grid-mode users
+  // with the rail collapsed and the hint dismissed skip the fetch.
+  const needsFolderTree =
+    viewMode === 'list' || folderPaneOpen || folderDrawerOpen || !listModeHintDismissed;
   React.useEffect(() => {
     if (needsFolderTree) {
       fetchFolderTree();

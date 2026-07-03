@@ -140,4 +140,41 @@ test.describe('Room interactions', () => {
     await selectAll.click();
     await expect(page.getByRole('button', { name: 'Deselect all' })).toBeVisible();
   });
+
+  test('breadcrumb links navigate (regression: hidden dock swallowed clicks)', async ({ page }) => {
+    // QA-reported: the auto-hidden floating dock lost its anchor classes,
+    // re-anchored invisibly over the breadcrumb, and ate these clicks
+    // (Home appeared to open Messages; Rooms did nothing). Playwright's
+    // actionability checks time out if anything covers the link.
+    const roomId = await findRoomId(page);
+    await page.goto(`/rooms/${roomId}`);
+    const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(breadcrumb).toBeVisible({ timeout: 15000 });
+
+    await breadcrumb.getByRole('link', { name: 'Rooms' }).click();
+    await page.waitForURL('**/rooms', { timeout: 10000 });
+
+    await page.goto(`/rooms/${roomId}`);
+    await expect(breadcrumb).toBeVisible({ timeout: 15000 });
+    await breadcrumb.getByRole('link', { name: 'Home' }).click();
+    await page.waitForURL('**/dashboard', { timeout: 10000 });
+  });
+
+  test('folder pane is available in grid view', async ({ page }) => {
+    const roomId = await findRoomId(page);
+    await page.goto(`/rooms/${roomId}`);
+    // Grid is the first-visit default; the pane toggle must exist here too
+    // (QA request: the rail was list-only).
+    await expect(page.getByRole('button', { name: /folder pane/ })).toBeVisible({
+      timeout: 15000,
+    });
+
+    const expand = page.getByRole('button', { name: 'Expand folder pane' });
+    if (await expand.isVisible().catch(() => false)) {
+      await expand.click();
+    }
+    const rail = page.getByRole('complementary', { name: 'Folder navigation' });
+    await expect(rail).toBeVisible({ timeout: 10000 });
+    await expect(rail.getByText('Financials')).toBeVisible();
+  });
 });

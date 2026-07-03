@@ -406,11 +406,21 @@ export function DockShell({ children, user }: DockShellProps) {
           //     renders when !showFullDock) and the legacy restore chevron
           //     is suppressed in compact mode. Keep it visible until the
           //     user explicitly collapses it back to the puck.
-          (compact ? showFullDock : isVisible && !isCollapsed)
-            ? positionClasses[position]
-            : hideTransform[position],
+          //
+          // The anchor classes must apply in BOTH states: the old
+          // hidden-state class swap dropped `bottom-4 left-1/2`, so the
+          // "hidden" dock re-anchored to the viewport's top-left and sat
+          // invisibly over the room breadcrumb, swallowing clicks (QA-
+          // reported: Home landed on Messages, Rooms was dead). Hidden now
+          // also means invisible + pointer-events-none + aria-hidden.
+          positionClasses[position],
+          !(compact ? showFullDock : isVisible && !isCollapsed) && [
+            hideTransform[position],
+            'pointer-events-none invisible',
+          ],
           isDragging && 'shadow-3xl scale-105 cursor-grabbing'
         )}
+        aria-hidden={!(compact ? showFullDock : isVisible && !isCollapsed)}
       >
         {/* Drag Handle */}
         <div

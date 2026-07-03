@@ -130,7 +130,7 @@ export default function RoomDetailPage() {
     handleToggleExpand,
     handleFolderClick,
     handleBreadcrumbClick,
-  } = useRoomContents({ roomId, categoryFilter, viewMode, listModeHintDismissed });
+  } = useRoomContents({ roomId, categoryFilter, viewMode, listModeHintDismissed, folderPaneOpen });
   const [compact, setCompact] = React.useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('vaultspace-compact') === 'true';
@@ -744,7 +744,10 @@ export default function RoomDetailPage() {
             </Button>
           }
         />
-      ) : viewMode === 'list' ? (
+      ) : (
+        /* Both views share the split-pane wrapper: the folder rail is an
+           option in grid view too (QA tester request), not a list-only
+           feature. */
         <div
           className={
             folderPaneOpen ? 'lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-4' : undefined
@@ -764,12 +767,9 @@ export default function RoomDetailPage() {
             </aside>
           )}
           <div className="min-w-0">
-            <DocumentsTable view="list" {...documentsTableProps} />
+            <DocumentsTable view={viewMode} {...documentsTableProps} />
           </div>
         </div>
-      ) : (
-        /* Grid / Thumbnail View */
-        <DocumentsTable view="grid" {...documentsTableProps} />
       )}
 
       {/* Mobile folder drawer for list mode. Below lg, the folder tree opens
