@@ -22,6 +22,11 @@ vi.mock('@/lib/db', () => ({
       findFirst: (...args: unknown[]) => mockLinkFindFirst(...args),
     },
   },
+  bootstrapDb: {
+    link: {
+      findFirst: (...args: unknown[]) => mockLinkFindFirst(...args),
+    },
+  },
   withOrgContext: (...args: Parameters<typeof mockWithOrgContext>) => mockWithOrgContext(...args),
 }));
 

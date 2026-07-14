@@ -15,6 +15,11 @@ vi.mock('@/lib/db', () => ({
       findFirst: (...args: unknown[]) => mockFindFirst(...args),
     },
   },
+  bootstrapDb: {
+    link: {
+      findFirst: (...args: unknown[]) => mockFindFirst(...args),
+    },
+  },
 }));
 
 import { GET } from './route';
