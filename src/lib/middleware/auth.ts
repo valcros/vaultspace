@@ -151,10 +151,27 @@ export function getRequestContext(request: NextRequest): {
 
   const userAgent = request.headers.get('user-agent') ?? 'unknown';
 
-  // Extract custom domain headers set by middleware
+  // Resolve org context from the request. Prefer middleware-set headers, but
+  // fall back to parsing the Host header directly so resolution does not depend
+  // on middleware forwarding (which is not applied uniformly to API routes).
+  const hostHeader = request.headers.get('host') ?? '';
+  let derivedSlug: string | null = null;
+  const mainDomains = (
+    process.env['MAIN_DOMAINS'] || 'vaultspace.org,vaultspace.app,vaultspace.local'
+  ).split(',');
+  for (const domain of mainDomains) {
+    if (hostHeader.endsWith('.' + domain)) {
+      const sub = hostHeader.replace('.' + domain, '').split(':')[0];
+      if (sub && sub !== 'www') {
+        derivedSlug = sub;
+      }
+      break;
+    }
+  }
+
   const customDomain: CustomDomainContext = {
-    customHost: request.headers.get('x-custom-host'),
-    orgSlug: request.headers.get('x-org-slug'),
+    customHost: request.headers.get('x-custom-host') ?? (hostHeader || null),
+    orgSlug: request.headers.get('x-org-slug') ?? derivedSlug,
   };
 
   return { requestId, ipAddress, userAgent, customDomain };
