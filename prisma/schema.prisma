@@ -276,9 +276,11 @@ model Organization {
   slug String @unique @db.VarChar(100)
 
   // Branding
-  logoUrl      String? @db.VarChar(500)
+  // Text (not VarChar) because logos/favicons are stored as base64 data URLs,
+  // which exceed any small VarChar limit.
+  logoUrl      String? @db.Text
   primaryColor String  @default("#2563eb") @db.VarChar(7)
-  faviconUrl   String? @db.VarChar(500)
+  faviconUrl   String? @db.Text
 
   // Configuration
   isActive        Boolean @default(true)
@@ -483,8 +485,8 @@ model Room {
   allDocumentsConfidential Boolean @default(false)
 
   // Room-level branding - overrides org defaults when set
-  brandColor   String? @db.VarChar(7)   // Hex color for room accent (e.g. "#2563eb")
-  brandLogoUrl String? @db.VarChar(500) // Room-specific logo URL
+  brandColor   String? @db.VarChar(7) // Hex color for room accent (e.g. "#2563eb")
+  brandLogoUrl String? @db.Text // Room-specific logo (base64 data URL)
 
   // IP Allowlist - F018
   ipAllowlist String[] @default([]) // Array of allowed IP addresses/CIDRs

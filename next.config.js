@@ -8,11 +8,10 @@ const nextConfig = {
     },
     // Allow large document uploads. Next buffers the request body to a low
     // default (~10MB) for any route the middleware runs on, which truncates
-    // larger uploads and breaks multipart parsing. Both keys are set (the
-    // proxy* key is current; middleware* is its deprecated alias) so the limit
-    // holds across Next 16 point releases. Match MAX_FILE_SIZE_BYTES (500MB).
+    // larger uploads and breaks multipart parsing. Match MAX_FILE_SIZE_BYTES
+    // (500MB). Only proxyClientMaxBodySize may be set (its deprecated alias
+    // middlewareClientMaxBodySize cannot be set at the same time).
     proxyClientMaxBodySize: '500mb',
-    middlewareClientMaxBodySize: '500mb',
   },
   serverExternalPackages: ['bullmq', 'ioredis', 'nodemailer'],
   // Standalone output for Docker
