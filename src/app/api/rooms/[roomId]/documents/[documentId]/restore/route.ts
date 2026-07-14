@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { serializeBigInt } from '@/lib/serialization';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -82,7 +83,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ document: result.document });
+    return NextResponse.json({ document: serializeBigInt(result.document) });
   } catch (error) {
     console.error('[RestoreAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to restore document' }, { status: 500 });
