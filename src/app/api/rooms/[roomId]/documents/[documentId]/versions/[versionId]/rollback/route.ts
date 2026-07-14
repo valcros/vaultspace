@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { serializeBigInt } from '@/lib/serialization';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -131,9 +132,11 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
+    // document.fileSize and version.fileSize are BigInt; serialize to avoid a
+    // JSON.stringify throw that would 500 the response after a successful rollback.
     return NextResponse.json({
-      document: result.document,
-      version: result.version,
+      document: serializeBigInt(result.document),
+      version: serializeBigInt(result.version),
     });
   } catch (error) {
     console.error('[RollbackAPI] POST error:', error);
