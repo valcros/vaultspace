@@ -30,10 +30,13 @@ export const config = {
  * Main middleware function
  */
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next();
   const hostname = request.headers.get('host') || '';
-
   const pathname = request.nextUrl.pathname;
+
+  // Clone request headers so org context can be forwarded UPSTREAM to route
+  // handlers. Setting these on the response (as before) only exposed them to the
+  // client, so downstream handlers (e.g. /api/public/branding) never saw them.
+  const requestHeaders = new Headers(request.headers);
 
   // Skip for localhost and development
   if (
@@ -41,7 +44,10 @@ export async function middleware(request: NextRequest) {
     hostname.startsWith('127.') ||
     hostname.startsWith('192.168.')
   ) {
-    return addSecurityHeaders(response, pathname);
+    return addSecurityHeaders(
+      NextResponse.next({ request: { headers: requestHeaders } }),
+      pathname
+    );
   }
 
   // Setup wizard enforcement — redirect to /setup if no org exists
@@ -77,21 +83,21 @@ export async function middleware(request: NextRequest) {
 
   if (!isMainDomain) {
     // This could be a custom domain or subdomain (e.g., clientname.vaultspace.org)
-    // Set header for downstream handlers to resolve organization
-    response.headers.set('x-custom-host', hostname);
+    // Forward the host/slug upstream so downstream handlers resolve the organization
+    requestHeaders.set('x-custom-host', hostname);
 
     // Extract subdomain if applicable
     for (const mainDomain of mainDomains) {
       if (hostname.endsWith('.' + mainDomain)) {
         const subdomain = hostname.replace('.' + mainDomain, '').split(':')[0];
         if (subdomain && subdomain !== 'www') {
-          response.headers.set('x-org-slug', subdomain);
+          requestHeaders.set('x-org-slug', subdomain);
 
-          // For subdomain requests to the root, redirect to the org's public viewer
+          // For subdomain requests to the root, rewrite to the org's public viewer
           if (pathname === '/' || pathname === '') {
             const url = request.nextUrl.clone();
             url.pathname = `/org/${subdomain}`;
-            return NextResponse.rewrite(url);
+            return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
           }
         }
         break;
@@ -99,7 +105,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return addSecurityHeaders(response, pathname);
+  return addSecurityHeaders(NextResponse.next({ request: { headers: requestHeaders } }), pathname);
 }
 
 /**
