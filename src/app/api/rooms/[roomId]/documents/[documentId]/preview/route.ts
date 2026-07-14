@@ -64,6 +64,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const session = await requireAuth();
     const { roomId, documentId } = await context.params;
     const versionId = request.nextUrl.searchParams.get('versionId');
+    // Which rendered page to serve (Office docs / spreadsheets render to one PNG
+    // per page). Defaults to page 1.
+    const pageParam = Math.max(
+      1,
+      parseInt(request.nextUrl.searchParams.get('page') || '1', 10) || 1
+    );
 
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
@@ -102,7 +108,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
           },
         },
         previewAssets: {
-          where: { assetType: { in: ['RENDER' as const, 'PDF' as const] }, pageNumber: 1 },
+          where: {
+            assetType: { in: ['RENDER' as const, 'PDF' as const] },
+            pageNumber: pageParam,
+          },
           take: 1,
         },
       };
@@ -139,7 +148,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return { error: 'Document version not found', status: 404 };
       }
 
-      return { document, selectedVersion };
+      // Total rendered pages, so the viewer can paginate multi-page renders.
+      const totalRenderPages = await tx.previewAsset.count({
+        where: { versionId: selectedVersion.id, assetType: 'RENDER' },
+      });
+
+      return { document, selectedVersion, totalRenderPages };
     });
 
     if ('error' in result) {
@@ -164,7 +178,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Non-critical — don't block preview
     }
 
-    const { document, selectedVersion } = result;
+    const { document, selectedVersion, totalRenderPages } = result;
     const mimeType = document.mimeType || 'application/octet-stream';
 
     // Get storage provider
@@ -220,6 +234,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             'Content-Disposition': `inline; filename="${encodeURIComponent(document.name)}.${contentType === 'application/pdf' ? 'pdf' : 'png'}"`,
             'Cache-Control': 'private, max-age=300',
             'X-Frame-Options': 'SAMEORIGIN',
+            'X-Total-Pages': String(Math.max(totalRenderPages, 1)),
           },
         });
       }
