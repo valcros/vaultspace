@@ -683,7 +683,7 @@ body{width:${width * 2}px;height:${height * 2}px;display:flex;align-items:center
   private async convertViaGotenbergOffice(
     data: Buffer,
     mimeType: string,
-    _maxPages: number
+    maxPages: number
   ): Promise<PreviewResult> {
     const extension = MIME_TO_EXTENSION[mimeType] ?? '.bin';
     const filename = `document${extension}`;
@@ -706,55 +706,21 @@ body{width:${width * 2}px;height:${height * 2}px;display:flex;align-items:center
       throw new Error(`Gotenberg conversion failed (${response.status}): ${errorText}`);
     }
 
-    // Gotenberg returns a PDF. Render page 1 to PNG.
+    // Gotenberg (LibreOffice) returns a multi-page PDF. Render every page (up to
+    // maxPages) through the shared PDF renderer so multi-page documents and
+    // multi-sheet spreadsheets are not truncated to the first page.
     const pdfBuffer = Buffer.from(await response.arrayBuffer());
 
-    // Try Sharp first (uses libvips/poppler if available)
     try {
-      const pngBuffer = await sharp(pdfBuffer, { density: 150 }).png().toBuffer();
-      if (pngBuffer.length > 1000) {
-        const metadata = await sharp(pngBuffer).metadata();
-        return {
-          pages: [
-            {
-              pageNumber: 1,
-              data: pngBuffer,
-              width: metadata.width ?? 800,
-              height: metadata.height ?? 1100,
-              mimeType: 'image/png',
-            },
-          ],
-          totalPages: 1,
-          mimeType: 'image/png',
-        };
+      const result = await this.convertPdfToPages(pdfBuffer, maxPages);
+      if (result.pages.length > 0) {
+        return result;
       }
-    } catch {
-      // Sharp PDF rendering requires libvips with poppler support
+    } catch (error) {
+      console.error('[GotenbergProvider] Office PDF page rendering failed:', error);
     }
 
-    // Fallback: try pdftoppm via PdfRasterizer
-    try {
-      const result = await this.pdfRasterizer.rasterizePage(pdfBuffer, 1);
-      if (result.image.length > 1000) {
-        return {
-          pages: [
-            {
-              pageNumber: 1,
-              data: result.image,
-              width: result.width,
-              height: result.height,
-              mimeType: 'image/png',
-            },
-          ],
-          totalPages: 1,
-          mimeType: 'image/png',
-        };
-      }
-    } catch {
-      // pdftoppm failed or not available
-    }
-
-    // Last resort: return PDF directly
+    // Last resort: return the converted PDF directly (single asset)
     return {
       pages: [
         {
