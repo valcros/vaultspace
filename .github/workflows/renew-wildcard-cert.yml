@@ -1,0 +1,49 @@
+name: Renew Wildcard TLS Cert
+
+# Re-issues and rebinds the *.vaultspace.org wildcard certificate on a schedule.
+# Azure Container Apps cannot issue managed wildcard certs, so this keeps the
+# externally issued Let's Encrypt wildcard current. Runs monthly (cert lifetime
+# is ~90 days) and can be triggered manually. Uses the same Azure OIDC identity
+# as staging deploys (Contributor on the resource group).
+
+on:
+  schedule:
+    # 06:00 UTC on the 1st of every month
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+      WEB_CONTAINER_APP: ${{ vars.WEB_CONTAINER_APP }}
+      DOMAIN: vaultspace.org
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Renew and bind wildcard certificate
+        run: bash scripts/renew-wildcard-cert.sh
+
+      - name: Verify TLS on a wildcard subdomain
+        run: |
+          set -e
+          # Give the ingress a moment to pick up the new binding
+          sleep 30
+          code=$(curl -sS -o /dev/null -w '%{http_code}:%{ssl_verify_result}' \
+            --max-time 30 "https://renewcheck.${DOMAIN}/" || true)
+          echo "renewcheck.${DOMAIN} -> ${code} (want HTTP:0 for valid TLS)"
+          echo "${code}" | grep -q ':0$' || { echo 'TLS verification failed'; exit 1; }
