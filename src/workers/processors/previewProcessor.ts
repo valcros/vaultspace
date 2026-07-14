@@ -80,49 +80,56 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       storedPages.push({ page, assetType, renderKey });
     }
 
-    await withOrgContext(organizationId, async (tx) => {
-      // Upserts are idempotent — safe for BullMQ re-delivery.
-      for (const { page, assetType, renderKey } of storedPages) {
-        await tx.previewAsset.upsert({
-          where: {
-            versionId_assetType_pageNumber: {
+    // A large document produces one asset row per page; that many upserts across
+    // a (potentially cross-region) DB can exceed Prisma's 5s default transaction
+    // timeout, failing the whole preview. Give it generous headroom.
+    await withOrgContext(
+      organizationId,
+      async (tx) => {
+        // Upserts are idempotent — safe for BullMQ re-delivery.
+        for (const { page, assetType, renderKey } of storedPages) {
+          await tx.previewAsset.upsert({
+            where: {
+              versionId_assetType_pageNumber: {
+                versionId,
+                assetType,
+                pageNumber: page.pageNumber,
+              },
+            },
+            create: {
+              organizationId,
               versionId,
               assetType,
+              storageKey: renderKey,
               pageNumber: page.pageNumber,
+              mimeType: page.mimeType,
+              width: page.width,
+              height: page.height,
+              fileSizeBytes: BigInt(page.data.length),
             },
-          },
-          create: {
-            organizationId,
-            versionId,
-            assetType,
-            storageKey: renderKey,
-            pageNumber: page.pageNumber,
-            mimeType: page.mimeType,
-            width: page.width,
-            height: page.height,
-            fileSizeBytes: BigInt(page.data.length),
-          },
-          update: {
-            storageKey: renderKey,
-            mimeType: page.mimeType,
-            width: page.width,
-            height: page.height,
-            fileSizeBytes: BigInt(page.data.length),
+            update: {
+              storageKey: renderKey,
+              mimeType: page.mimeType,
+              width: page.width,
+              height: page.height,
+              fileSizeBytes: BigInt(page.data.length),
+            },
+          });
+        }
+
+        await tx.documentVersion.update({
+          where: { id: versionId },
+          data: {
+            previewStatus: 'READY',
+            previewGeneratedAt: new Date(),
           },
         });
-      }
-
-      await tx.documentVersion.update({
-        where: { id: versionId },
-        data: {
-          previewStatus: 'READY',
-          previewGeneratedAt: new Date(),
-        },
-      });
-      // The old increment-0 "touch" write made every preview run look like a
-      // document update, polluting the "new since last visit" freshness the
-      // landing now headlines. Preview readiness lives on the version row.
-    });
+        // The old increment-0 "touch" write made every preview run look like a
+        // document update, polluting the "new since last visit" freshness the
+        // landing now headlines. Preview readiness lives on the version row.
+      },
+      { timeout: 60_000, maxWait: 10_000 }
+    );
 
     console.log(
       `[PreviewProcessor] Preview generated: ${previewResult.totalPages} pages, created ${previewResult.pages.length} RENDER assets`

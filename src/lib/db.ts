@@ -78,7 +78,11 @@ if (process.env['NODE_ENV'] !== 'production') {
  */
 export async function withOrgContext<T>(
   organizationId: string,
-  operation: (tx: Prisma.TransactionClient) => Promise<T>
+  operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  // Optional Prisma interactive-transaction options. Use a longer `timeout` for
+  // operations that issue many round trips (e.g. writing a preview asset per page
+  // of a large document), which otherwise exceed Prisma's 5s default.
+  options?: { timeout?: number; maxWait?: number }
 ): Promise<T> {
   // Skip RLS in development unless explicitly enabled
   const enableRLS =
@@ -88,7 +92,7 @@ export async function withOrgContext<T>(
     // In development without RLS, just run the operation directly
     return db.$transaction(async (tx) => {
       return operation(tx);
-    });
+    }, options);
   }
 
   // In production, set the RLS context before running queries
@@ -96,7 +100,7 @@ export async function withOrgContext<T>(
     // SET LOCAL scopes the setting to this transaction only
     await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
     return operation(tx);
-  });
+  }, options);
 }
 
 /**
