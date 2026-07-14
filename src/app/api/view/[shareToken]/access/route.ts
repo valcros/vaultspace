@@ -9,7 +9,7 @@ import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
-import { db, withOrgContext } from '@/lib/db';
+import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { isIpAllowed, getClientIp } from '@/lib/utils/ip';
 
 interface RouteContext {
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     // PRE-RLS BOOTSTRAP: Narrowly scoped lookup to resolve organizationId from shareToken
     // This is the only raw db access allowed - specifically to bootstrap viewer context
-    const link = await db.link.findFirst({
+    const link = await bootstrapDb.link.findFirst({
       where: {
         slug: shareToken,
         isActive: true,
