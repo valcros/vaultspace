@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
@@ -13,6 +14,31 @@ import { withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
+
+/**
+ * Logos/favicons are stored inline as base64 data URLs and rendered in the admin
+ * chrome and the public viewer, so bound their size. Downscale and recompress any
+ * uploaded raster image; pass non-data URLs (and SVG) through unchanged.
+ */
+async function optimizeImageDataUrl(value: string, maxHeight: number): Promise<string> {
+  if (!value.startsWith('data:image/') || value.startsWith('data:image/svg')) {
+    return value;
+  }
+  try {
+    const match = value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/);
+    if (!match || !match[2]) {
+      return value;
+    }
+    const input = Buffer.from(match[2], 'base64');
+    const out = await sharp(input)
+      .resize({ height: maxHeight, withoutEnlargement: true })
+      .png({ compressionLevel: 9, quality: 82 })
+      .toBuffer();
+    return `data:image/png;base64,${out.toString('base64')}`;
+  } catch {
+    return value;
+  }
+}
 
 /**
  * GET /api/organization/branding
@@ -95,15 +121,23 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Bound inline image sizes before storing.
+    const optimizedLogo =
+      logoUrl !== undefined && logoUrl ? await optimizeImageDataUrl(logoUrl, 200) : logoUrl;
+    const optimizedFavicon =
+      faviconUrl !== undefined && faviconUrl
+        ? await optimizeImageDataUrl(faviconUrl, 64)
+        : faviconUrl;
+
     // Use RLS context for org-scoped queries
     const updatedOrg = await withOrgContext(session.organizationId, async (tx) => {
       return tx.organization.update({
         where: { id: session.organizationId },
         data: {
           ...(name !== undefined && { name: name.trim() }),
-          ...(logoUrl !== undefined && { logoUrl: logoUrl || null }),
+          ...(logoUrl !== undefined && { logoUrl: optimizedLogo || null }),
           ...(primaryColor !== undefined && { primaryColor }),
-          ...(faviconUrl !== undefined && { faviconUrl: faviconUrl || null }),
+          ...(faviconUrl !== undefined && { faviconUrl: optimizedFavicon || null }),
         },
         select: {
           id: true,

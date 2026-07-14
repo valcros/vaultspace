@@ -49,6 +49,10 @@ interface DockShellProps {
     email: string;
     imageUrl?: string | null;
   };
+  organization?: {
+    name: string;
+    logoUrl?: string | null;
+  };
 }
 
 interface DockItem {
@@ -285,7 +289,7 @@ function useDockCompactMode(pathname: string) {
 // Main Component
 // ============================================================================
 
-export function DockShell({ children, user }: DockShellProps) {
+export function DockShell({ children, user, organization }: DockShellProps) {
   const mainRef = React.useRef<HTMLElement>(null);
   const dockRef = React.useRef<HTMLDivElement>(null);
   const pathname = usePathname();
@@ -333,7 +337,11 @@ export function DockShell({ children, user }: DockShellProps) {
     <div className="flex h-screen overflow-hidden bg-slate-950">
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <DockHeader user={user} onSearchClick={() => setCommandOpen(true)} />
+        <DockHeader
+          user={user}
+          organization={organization}
+          onSearchClick={() => setCommandOpen(true)}
+        />
         <div className="flex flex-1 flex-col overflow-hidden p-1.5 pt-0 sm:p-3 sm:pt-0">
           <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-canvas shadow-2xl dark:bg-slate-900">
             <main

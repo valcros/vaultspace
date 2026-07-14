@@ -32,10 +32,14 @@ interface DockHeaderProps {
     email: string;
     imageUrl?: string | null;
   };
+  organization?: {
+    name: string;
+    logoUrl?: string | null;
+  };
   onSearchClick?: () => void;
 }
 
-export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
+export function DockHeader({ user, organization, onSearchClick }: DockHeaderProps) {
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -52,12 +56,24 @@ export function DockHeader({ user, onSearchClick }: DockHeaderProps) {
 
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between bg-slate-950 px-4 lg:px-6">
-      {/* Logo — home is the post-auth landing */}
+      {/* Org identity — the organization whose room you are viewing. Falls back
+          to the VaultSpace mark when no org branding is set. Home is the landing. */}
       <Link href="/dashboard" className="flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
-          V
-        </div>
-        <span className="hidden font-semibold text-slate-100 sm:inline">VaultSpace</span>
+        {organization?.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={organization.logoUrl}
+            alt={organization.name}
+            className="h-8 w-auto max-w-[140px] rounded object-contain"
+          />
+        ) : (
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 font-bold text-white">
+            {organization?.name?.charAt(0)?.toUpperCase() || 'V'}
+          </div>
+        )}
+        <span className="hidden font-semibold text-slate-100 sm:inline">
+          {organization?.name || 'VaultSpace'}
+        </span>
       </Link>
 
       {/* Center: Search Trigger */}
