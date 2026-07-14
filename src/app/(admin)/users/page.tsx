@@ -51,8 +51,17 @@ interface User {
   createdAt: string;
 }
 
+interface PendingInvite {
+  id: string;
+  email: string;
+  role: 'ADMIN' | 'VIEWER';
+  createdAt: string;
+  expiresAt: string;
+}
+
 export default function UsersPage() {
   const [users, setUsers] = React.useState<User[]>([]);
+  const [pendingInvites, setPendingInvites] = React.useState<PendingInvite[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showInviteDialog, setShowInviteDialog] = React.useState(false);
@@ -80,6 +89,7 @@ export default function UsersPage() {
       const data = await response.json();
       if (response.ok) {
         setUsers(data.users || []);
+        setPendingInvites(data.pendingInvitations || []);
       }
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -349,6 +359,49 @@ export default function UsersPage() {
                       </td>
                     </tr>
                   ))}
+                  {pendingInvites
+                    .filter((inv) => inv.email.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .map((inv) => (
+                      <tr
+                        key={`invite-${inv.id}`}
+                        className="border-b border-slate-200/70 last:border-0 dark:border-slate-800"
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <UserAvatar name={inv.email} size="sm" />
+                            <div>
+                              <div className="flex items-center gap-2 font-medium text-slate-950 dark:text-white">
+                                {inv.email}
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-300 text-xs text-amber-700 dark:border-amber-700 dark:text-amber-400"
+                                >
+                                  Pending Invite
+                                </Badge>
+                              </div>
+                              <div className="text-sm text-slate-500 dark:text-slate-400">
+                                Awaiting registration
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <Badge variant={inv.role === 'ADMIN' ? 'default' : 'secondary'}>
+                            {inv.role === 'ADMIN' ? (
+                              <Shield className="mr-1 h-3 w-3" />
+                            ) : (
+                              <Eye className="mr-1 h-3 w-3" />
+                            )}
+                            {inv.role.toLowerCase()}
+                          </Badge>
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-400 dark:text-slate-500">—</td>
+                        <td className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
+                          Invited {formatDate(inv.createdAt)}
+                        </td>
+                        <td className="px-5 py-4"></td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
