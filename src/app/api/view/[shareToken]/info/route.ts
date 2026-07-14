@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { db } from '@/lib/db';
+import { bootstrapDb } from '@/lib/db';
 
 interface RouteContext {
   params: Promise<{ shareToken: string }>;
@@ -19,7 +19,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     // PRE-RLS BOOTSTRAP: Public link info lookup by slug
     // This is intentionally unauthenticated - returns minimal public info
     // to display the access gate (password/email requirements, branding)
-    const link = await db.link.findFirst({
+    const link = await bootstrapDb.link.findFirst({
       where: {
         slug: shareToken,
         isActive: true,
