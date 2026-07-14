@@ -13,7 +13,7 @@ const nextConfig = {
     // middlewareClientMaxBodySize cannot be set at the same time).
     proxyClientMaxBodySize: '500mb',
   },
-  serverExternalPackages: ['bullmq', 'ioredis', 'nodemailer'],
+  serverExternalPackages: ['bullmq', 'ioredis', 'nodemailer', 'sharp'],
   // Standalone output for Docker
   output: 'standalone',
   // Security headers are set in middleware.ts instead of here
