@@ -188,11 +188,15 @@ function ConvertedPreview({
 }) {
   const [blobUrl, setBlobUrl] = React.useState<string | null>(null);
   const [error, setError] = React.useState(false);
+  const [page, setPage] = React.useState(1);
+  const [totalPages, setTotalPages] = React.useState(1);
 
   React.useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
-    fetch(url)
+    setBlobUrl(null);
+    const sep = url.includes('?') ? '&' : '?';
+    fetch(`${url}${sep}page=${page}`)
       .then(async (res) => {
         if (cancelled) {
           return;
@@ -201,6 +205,10 @@ function ConvertedPreview({
         if (!res.ok || ct.startsWith('application/json')) {
           setError(true);
           return;
+        }
+        const total = parseInt(res.headers.get('x-total-pages') || '1', 10);
+        if (!cancelled && Number.isFinite(total) && total > 0) {
+          setTotalPages(total);
         }
         const blob = await res.blob();
         if (!cancelled) {
@@ -219,7 +227,7 @@ function ConvertedPreview({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [url]);
+  }, [url, page]);
 
   if (error) {
     return (
@@ -234,15 +242,42 @@ function ConvertedPreview({
     );
   }
 
-  if (!blobUrl) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+  return (
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1">
+        {blobUrl ? (
+          <iframe src={blobUrl} className="h-full w-full border-0" title={name} />
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+          </div>
+        )}
       </div>
-    );
-  }
-
-  return <iframe src={blobUrl} className="h-full w-full border-0" title={name} />;
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 border-t border-neutral-200 bg-white/90 py-2 dark:border-neutral-800 dark:bg-neutral-900/90">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-neutral-500">
+            {page} / {totalPages}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
