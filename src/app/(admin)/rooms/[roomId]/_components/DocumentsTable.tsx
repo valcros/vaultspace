@@ -204,6 +204,14 @@ const DocumentListRow = React.memo(function DocumentListRow({
           <FileTypeIcon mimeType={doc.mimeType} className={compact ? 'h-4 w-4' : undefined} />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
+              {doc.accessionNumber && (
+                <span
+                  className="shrink-0 rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0 font-mono text-[10px] font-medium text-neutral-500"
+                  title="Document accession number"
+                >
+                  {doc.accessionNumber}
+                </span>
+              )}
               <NameText
                 name={doc.name}
                 size={nameTextSize}
@@ -393,6 +401,14 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1">
+        {doc.accessionNumber && (
+          <span
+            className="rounded border border-neutral-200 bg-neutral-50 px-1.5 font-mono text-[9px] font-medium text-neutral-500"
+            title="Document accession number"
+          >
+            {doc.accessionNumber}
+          </span>
+        )}
         <p className="text-xs text-neutral-600">{formatFileSize(doc.size)}</p>
         {doc.category && (
           <span
