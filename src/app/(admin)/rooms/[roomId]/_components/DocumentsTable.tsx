@@ -7,6 +7,7 @@ import {
   Download,
   Eye,
   Trash2,
+  Ban,
   History,
   ArrowUpDown,
   ChevronUp,
@@ -62,6 +63,7 @@ interface DocumentActionHandlers {
   onToggleBookmark: (doc: Document) => void;
   onShowVersions: (doc: Document) => void;
   onToggleConfidential: (doc: Document) => void;
+  onWithdraw: (doc: Document) => void;
   onDelete: (doc: Document) => void;
   onContextMenu: (e: React.MouseEvent, doc: Document) => void;
 }
@@ -177,6 +179,7 @@ const DocumentListRow = React.memo(function DocumentListRow({
   onToggleBookmark,
   onShowVersions,
   onToggleConfidential,
+  onWithdraw,
   onDelete,
   onContextMenu,
 }: DocumentListRowProps) {
@@ -221,6 +224,11 @@ const DocumentListRow = React.memo(function DocumentListRow({
               />
               {(doc.confidential || allDocumentsConfidential) && (
                 <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+              )}
+              {doc.withdrawnAt && (
+                <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-1.5 py-0 text-[10px] font-medium text-red-600">
+                  Withdrawn
+                </span>
               )}
             </div>
             {!compact && (
@@ -301,6 +309,10 @@ const DocumentListRow = React.memo(function DocumentListRow({
               <Lock className="mr-2 h-4 w-4" />
               {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onWithdraw(doc)}>
+              <Ban className="mr-2 h-4 w-4" />
+              {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onDelete(doc)} className="text-danger-600">
               <Trash2 className="mr-2 h-4 w-4" />
@@ -373,6 +385,7 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
   onToggleBookmark,
   onShowVersions,
   onToggleConfidential,
+  onWithdraw,
   onDelete,
   onContextMenu,
 }: DocumentGridCardProps) {
@@ -469,6 +482,10 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
               <Lock className="mr-2 h-4 w-4" />
               {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onWithdraw(doc)}>
+              <Ban className="mr-2 h-4 w-4" />
+              {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onDelete(doc)} className="text-danger-600">
               <Trash2 className="mr-2 h-4 w-4" />
@@ -536,6 +553,7 @@ export function DocumentsTable({
   onToggleBookmark,
   onShowVersions,
   onToggleConfidential,
+  onWithdraw,
   onDelete,
   onContextMenu,
 }: DocumentsTableProps) {
@@ -546,6 +564,7 @@ export function DocumentsTable({
     onToggleBookmark,
     onShowVersions,
     onToggleConfidential,
+    onWithdraw,
     onDelete,
     onContextMenu,
   };
