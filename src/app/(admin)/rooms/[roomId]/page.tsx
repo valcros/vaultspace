@@ -77,6 +77,7 @@ import { CreateFolderDialog } from './_components/CreateFolderDialog';
 import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
 import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
 import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
+import { MoveDocumentDialog } from './_components/MoveDocumentDialog';
 import { ManageDrawer, isManagePane, type ManagePane } from './_components/ManageDrawer';
 import { DocumentToolbar } from './_components/DocumentToolbar';
 import { DocumentsTable } from './_components/DocumentsTable';
@@ -212,6 +213,7 @@ export default function RoomDetailPage() {
 
   // Tag editor states
   const [editingTagsDoc, setEditingTagsDoc] = React.useState<Document | null>(null);
+  const [movingDoc, setMovingDoc] = React.useState<Document | null>(null);
 
   // Manage drawer (Access / Share Links / Q&A / Checklist / Calendar) open
   // state. Closed by default so the room canvas leads with documents, unless
@@ -665,6 +667,7 @@ export default function RoomDetailPage() {
     onShowVersions: handleShowVersions,
     onToggleConfidential: handleToggleConfidential,
     onWithdraw: handleWithdraw,
+    onMove: setMovingDoc,
     onDelete: handleDelete,
     onContextMenu: handleDocContextMenu,
   };
@@ -1121,6 +1124,14 @@ export default function RoomDetailPage() {
             handleSaveTags(editingTagsDoc, tags);
           }
         }}
+      />
+
+      {/* Move Document Dialog */}
+      <MoveDocumentDialog
+        doc={movingDoc}
+        roomId={roomId}
+        onClose={() => setMovingDoc(null)}
+        onMoved={fetchDocuments}
       />
 
       {/* Create Folder Dialog */}

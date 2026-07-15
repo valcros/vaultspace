@@ -8,6 +8,7 @@ import {
   Eye,
   Trash2,
   Ban,
+  FolderInput,
   History,
   ArrowUpDown,
   ChevronUp,
@@ -64,6 +65,7 @@ interface DocumentActionHandlers {
   onShowVersions: (doc: Document) => void;
   onToggleConfidential: (doc: Document) => void;
   onWithdraw: (doc: Document) => void;
+  onMove: (doc: Document) => void;
   onDelete: (doc: Document) => void;
   onContextMenu: (e: React.MouseEvent, doc: Document) => void;
 }
@@ -180,6 +182,7 @@ const DocumentListRow = React.memo(function DocumentListRow({
   onShowVersions,
   onToggleConfidential,
   onWithdraw,
+  onMove,
   onDelete,
   onContextMenu,
 }: DocumentListRowProps) {
@@ -309,6 +312,10 @@ const DocumentListRow = React.memo(function DocumentListRow({
               <Lock className="mr-2 h-4 w-4" />
               {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onMove(doc)}>
+              <FolderInput className="mr-2 h-4 w-4" />
+              Move to folder…
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onWithdraw(doc)}>
               <Ban className="mr-2 h-4 w-4" />
               {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
@@ -386,6 +393,7 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
   onShowVersions,
   onToggleConfidential,
   onWithdraw,
+  onMove,
   onDelete,
   onContextMenu,
 }: DocumentGridCardProps) {
@@ -482,6 +490,10 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
               <Lock className="mr-2 h-4 w-4" />
               {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onMove(doc)}>
+              <FolderInput className="mr-2 h-4 w-4" />
+              Move to folder…
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onWithdraw(doc)}>
               <Ban className="mr-2 h-4 w-4" />
               {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
@@ -554,6 +566,7 @@ export function DocumentsTable({
   onShowVersions,
   onToggleConfidential,
   onWithdraw,
+  onMove,
   onDelete,
   onContextMenu,
 }: DocumentsTableProps) {
@@ -565,6 +578,7 @@ export function DocumentsTable({
     onShowVersions,
     onToggleConfidential,
     onWithdraw,
+    onMove,
     onDelete,
     onContextMenu,
   };
