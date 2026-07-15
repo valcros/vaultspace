@@ -505,6 +505,13 @@ model Room {
   totalViews     Int @default(0)
   totalViewers   Int @default(0)
 
+  // Document accession numbering (opt-in per room). When enabled, every uploaded
+  // document is stamped with an immutable citation ID (e.g. "BSD-0007") from a
+  // monotonic per-room counter that never reuses a number once assigned.
+  accessionNumberingEnabled Boolean @default(false)
+  accessionPrefix           String? @db.VarChar(16)
+  lastAccessionSeq          Int     @default(0)
+
   // Creator tracking
   createdByUserId String?
   templateId      String?
@@ -587,6 +594,13 @@ model Document {
   displayOrder Int            @default(0)
   status       DocumentStatus @default(ACTIVE)
 
+  // Accession numbering - immutable citation ID assigned once at upload when the
+  // room has accessionNumberingEnabled. accessionSeq is the raw per-room counter
+  // value; accessionNumber is the display form (prefix + zero-padded seq). Never
+  // mutated or reused. Null on rooms that do not use numbering.
+  accessionNumber String? @db.VarChar(32)
+  accessionSeq    Int?
+
   // File information
   mimeType         String @db.VarChar(100)
   fileSize         BigInt
@@ -641,12 +655,16 @@ model Document {
   signatureRequests SignatureRequest[]
 
   @@unique([organizationId, id])
+  // Guarantees no accession number is ever reused within a room. Nullable seq is
+  // fine: Postgres allows multiple NULLs in a unique index (unnumbered rooms).
+  @@unique([roomId, accessionSeq])
   @@index([organizationId])
   @@index([roomId])
   @@index([folderId])
   @@index([status])
   @@index([category])
   @@index([batesNumber])
+  @@index([roomId, accessionNumber])
   @@index([deletedAt])
   @@index([expiresAt])
   @@index([organizationId, status, createdAt])

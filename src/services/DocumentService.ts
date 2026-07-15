@@ -211,6 +211,22 @@ export class DocumentService {
         }
       }
 
+      // Assign an immutable accession number when the room opts in. Incrementing
+      // lastAccessionSeq holds a row lock for the rest of this transaction, which
+      // serializes concurrent uploads so numbers are unique and never reused.
+      let accessionNumber: string | null = null;
+      let accessionSeq: number | null = null;
+      if (room.accessionNumberingEnabled) {
+        const counter = await tx.room.update({
+          where: { id: roomId },
+          data: { lastAccessionSeq: { increment: 1 } },
+          select: { lastAccessionSeq: true, accessionPrefix: true },
+        });
+        accessionSeq = counter.lastAccessionSeq;
+        const prefix = counter.accessionPrefix?.trim() || 'DOC';
+        accessionNumber = `${prefix}-${String(accessionSeq).padStart(4, '0')}`;
+      }
+
       // Create the document
       const document = await tx.document.create({
         data: {
@@ -224,6 +240,8 @@ export class DocumentService {
           status: 'ACTIVE',
           tags: tags ?? [],
           totalVersions: 1,
+          accessionNumber,
+          accessionSeq,
         },
       });
 
