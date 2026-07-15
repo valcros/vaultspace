@@ -12,6 +12,8 @@ import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getProviders } from '@/providers';
+import { buildInviteEmail } from '@/lib/email/inviteEmail';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -204,7 +206,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           id: roomId,
           organizationId: session.organizationId,
         },
-        select: { id: true },
+        select: { id: true, name: true },
       });
 
       if (!room) {
@@ -213,6 +215,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       const normalizedEmails = emails.map((e) => e.toLowerCase().trim());
       let invited = 0;
+      // Newly invited (email, link slug) to email after the transaction commits.
+      const created: { email: string; slug: string }[] = [];
 
       if (linkId) {
         // Add emails to existing link's allowedEmails
@@ -242,6 +246,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
             },
           });
           invited = newEmails.length;
+          for (const email of newEmails) {
+            created.push({ email, slug: link.slug });
+          }
         }
       } else {
         // Create individual VIEW-permission links for each email
@@ -265,6 +272,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               inviteMessage: message || null,
             },
           });
+          created.push({ email, slug });
           invited += 1;
         }
       }
@@ -286,14 +294,44 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
       });
 
-      return { invited };
+      return { invited, created, roomName: room.name };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ invited: result.invited }, { status: 201 });
+    // Send the invitation email to each newly invited address. Sending happens
+    // outside the transaction and never fails the invite: if the email provider
+    // is unconfigured (or errors), the link still exists and can be shared
+    // manually. Configure EMAIL_PROVIDER=acs + ACS_CONNECTION_STRING to deliver.
+    const inviterName =
+      `${session.user.firstName ?? ''} ${session.user.lastName ?? ''}`.trim() || session.user.email;
+    const baseUrl = new URL(request.url).origin;
+    let emailsSent = 0;
+    if (result.created.length > 0) {
+      const email = getProviders().email;
+      await Promise.all(
+        result.created.map(async ({ email: to, slug }) => {
+          try {
+            const { subject, html } = buildInviteEmail({
+              roomName: result.roomName,
+              inviterName,
+              inviteeName,
+              message,
+              link: `${baseUrl}/view/${slug}`,
+              expiresAt: inviteExpiresAt,
+            });
+            await email.sendEmail({ to, subject, html });
+            emailsSent += 1;
+          } catch (err) {
+            console.error(`[ViewersAPI] Failed to send invite email to ${to}:`, err);
+          }
+        })
+      );
+    }
+
+    return NextResponse.json({ invited: result.invited, emailsSent }, { status: 201 });
   } catch (error) {
     console.error('[ViewersAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to invite viewers' }, { status: 500 });
