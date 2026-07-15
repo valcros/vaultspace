@@ -641,6 +641,13 @@ model Document {
   // Soft delete tracking
   deletedAt DateTime?
 
+  // Withdrawal (tombstone). A withdrawn document stays in the room but is not
+  // viewable; it renders as a tombstone so its retired accession number still
+  // resolves to "withdrawn" rather than silently vanishing. Distinct from
+  // soft-delete (trash), which hides the document entirely.
+  withdrawnAt     DateTime?
+  withdrawnReason String?   @db.Text
+
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
