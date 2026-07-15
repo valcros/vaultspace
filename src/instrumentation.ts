@@ -7,6 +7,10 @@
  * Used to enforce deployment mode policy and log capabilities.
  */
 
+// Install the process-wide BigInt JSON serializer before any request is served
+// so no API response can 500 on an unserialized BigInt (byte counts etc.).
+import '@/lib/bigint-json';
+
 export async function register() {
   // Only run server-side
   if (process.env['NEXT_RUNTIME'] === 'nodejs') {

@@ -10,6 +10,9 @@
  * - All org-scoped queries will be filtered by RLS policies
  */
 
+// Ensure BigInt values (byte counts on Prisma models) can always be JSON
+// serialized, regardless of which module first touches the database.
+import '@/lib/bigint-json';
 import { PrismaClient, Prisma } from '@prisma/client';
 
 declare global {
