@@ -23,6 +23,12 @@ interface RouteContext {
 const bulkInviteSchema = z.object({
   emails: z.array(z.string().email()).min(1).max(100),
   linkId: z.string().optional(),
+  // Optional invitation context, stored on newly created per-invitee links.
+  inviteeName: z.string().trim().max(255).optional(),
+  inviteeCompany: z.string().trim().max(255).optional(),
+  message: z.string().trim().max(2000).optional(),
+  // Auto-expiry window (days). Defaults to 14 for the invitation flow.
+  expiresInDays: z.number().int().min(1).max(365).optional(),
 });
 
 const bulkRevokeSchema = z.object({
@@ -188,7 +194,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const { emails, linkId } = parsed.data;
+    const { emails, linkId, inviteeName, inviteeCompany, message, expiresInDays } = parsed.data;
+    const inviteExpiresAt = new Date(Date.now() + (expiresInDays ?? 14) * 24 * 60 * 60 * 1000);
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
       // Verify room access
@@ -247,11 +254,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
               roomId,
               createdByUserId: session.userId,
               slug,
-              name: `Viewer: ${email}`,
+              name: inviteeName ? `Viewer: ${inviteeName} (${email})` : `Viewer: ${email}`,
               permission: 'VIEW',
               requiresEmailVerification: true,
               allowedEmails: [email],
               scope: 'ENTIRE_ROOM',
+              expiresAt: inviteExpiresAt,
+              inviteeName: inviteeName || null,
+              inviteeCompany: inviteeCompany || null,
+              inviteMessage: message || null,
             },
           });
           invited += 1;
