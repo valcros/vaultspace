@@ -402,7 +402,9 @@ export class RoomService {
           docs.sort((a, b) => {
             const pa = a.folder?.path ?? '';
             const pb = b.folder?.path ?? '';
-            if (pa !== pb) return pa < pb ? -1 : 1;
+            if (pa !== pb) {
+              return pa < pb ? -1 : 1;
+            }
             return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
           });
 
