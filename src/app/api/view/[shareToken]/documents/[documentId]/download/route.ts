@@ -20,7 +20,7 @@ interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { shareToken, documentId } = await context.params;
     const session = await getViewerSession(shareToken, {
@@ -29,6 +29,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         select: {
           id: true,
           allowDownloads: true,
+          allowViewerVersionHistory: true,
         },
       },
     });
@@ -56,29 +57,25 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
+    // Downloading a specific prior version is only allowed when the room exposes
+    // version history to viewers; otherwise only the current version is served.
+    const versionId = request.nextUrl.searchParams.get('versionId');
+    if (versionId && !viewerSession.room.allowViewerVersionHistory) {
+      return NextResponse.json(
+        { error: 'Version history is not available for this room' },
+        { status: 403 }
+      );
+    }
+
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(viewerSession.organizationId, async (tx) => {
-      // Get document with its latest version and file blob
       const document = await tx.document.findFirst({
         where: {
           id: documentId,
           roomId: viewerSession.room.id,
           status: 'ACTIVE',
         },
-        include: {
-          versions: {
-            orderBy: { versionNumber: 'desc' },
-            take: 1,
-            include: {
-              fileBlob: {
-                select: {
-                  storageKey: true,
-                  storageBucket: true,
-                },
-              },
-            },
-          },
-        },
+        select: { id: true, name: true, mimeType: true, allowDownload: true },
       });
 
       if (!document) {
@@ -90,8 +87,22 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return { error: 'Downloads are not allowed for this document', status: 403 };
       }
 
-      const latestVersion = document.versions[0];
-      if (!latestVersion || !latestVersion.fileBlob) {
+      // The requested version (a specific prior version, or the latest), always
+      // scan-clean so an infected/unscanned blob is never served.
+      const targetVersion = await tx.documentVersion.findFirst({
+        where: {
+          documentId,
+          organizationId: viewerSession.organizationId,
+          scanStatus: 'CLEAN',
+          ...(versionId ? { id: versionId } : {}),
+        },
+        orderBy: { versionNumber: 'desc' },
+        include: {
+          fileBlob: { select: { storageKey: true, storageBucket: true } },
+        },
+      });
+
+      if (!targetVersion || !targetVersion.fileBlob) {
         return { error: 'Document version not found', status: 404 };
       }
 
@@ -103,21 +114,21 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         },
       });
 
-      return { document, latestVersion };
+      return { document, targetVersion };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const { document, latestVersion } = result;
+    const { document, targetVersion } = result;
 
     // Get storage provider
     const providers = getProviders();
     const storage = providers.storage;
 
-    const bucket = latestVersion.fileBlob!.storageBucket || 'documents';
-    const key = latestVersion.fileBlob!.storageKey;
+    const bucket = targetVersion.fileBlob!.storageBucket || 'documents';
+    const key = targetVersion.fileBlob!.storageKey;
 
     // Check if file exists
     const exists = await storage.exists(bucket, key);
