@@ -23,7 +23,7 @@ vi.mock('@/lib/permissions', () => ({
 
 // Mock transaction
 const mockTx = {
-  room: { findFirst: vi.fn() },
+  room: { findFirst: vi.fn(), update: vi.fn() },
   folder: { findFirst: vi.fn() },
   document: {
     findFirst: vi.fn(),
@@ -224,6 +224,59 @@ describe('DocumentService', () => {
             type: 'exponential',
             delay: 10000,
           },
+        })
+      );
+    });
+
+    it('assigns an immutable accession number when the room opts in', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        status: 'ACTIVE',
+        accessionNumberingEnabled: true,
+      });
+      mockTx.room.update.mockResolvedValue({ lastAccessionSeq: 7, accessionPrefix: 'BSD' });
+      mockTx.document.create.mockResolvedValue({ id: 'doc-1' });
+      mockTx.documentVersion.create.mockResolvedValue({ id: 'ver-1', fileName: 'test.pdf' });
+      mockTx.fileBlob.create.mockResolvedValue({});
+      mockTx.document.update.mockResolvedValue({});
+
+      await service.upload(ctx, { roomId: 'room-1', file: validFile });
+
+      // Counter is incremented atomically inside the transaction.
+      expect(mockTx.room.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'room-1' },
+          data: { lastAccessionSeq: { increment: 1 } },
+        })
+      );
+      // Document is stamped with prefix + zero-padded sequence.
+      expect(mockTx.document.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            accessionNumber: 'BSD-0007',
+            accessionSeq: 7,
+          }),
+        })
+      );
+    });
+
+    it('does not assign an accession number when the room has numbering off', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        status: 'ACTIVE',
+        accessionNumberingEnabled: false,
+      });
+      mockTx.document.create.mockResolvedValue({ id: 'doc-1' });
+      mockTx.documentVersion.create.mockResolvedValue({ id: 'ver-1', fileName: 'test.pdf' });
+      mockTx.fileBlob.create.mockResolvedValue({});
+      mockTx.document.update.mockResolvedValue({});
+
+      await service.upload(ctx, { roomId: 'room-1', file: validFile });
+
+      expect(mockTx.room.update).not.toHaveBeenCalled();
+      expect(mockTx.document.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ accessionNumber: null, accessionSeq: null }),
         })
       );
     });
