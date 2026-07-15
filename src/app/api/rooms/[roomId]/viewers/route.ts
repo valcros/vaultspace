@@ -12,6 +12,8 @@ import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getProviders } from '@/providers';
+import { buildInviteEmail } from '@/lib/email/inviteEmail';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -23,6 +25,12 @@ interface RouteContext {
 const bulkInviteSchema = z.object({
   emails: z.array(z.string().email()).min(1).max(100),
   linkId: z.string().optional(),
+  // Optional invitation context, stored on newly created per-invitee links.
+  inviteeName: z.string().trim().max(255).optional(),
+  inviteeCompany: z.string().trim().max(255).optional(),
+  message: z.string().trim().max(2000).optional(),
+  // Auto-expiry window (days). Defaults to 14 for the invitation flow.
+  expiresInDays: z.number().int().min(1).max(365).optional(),
 });
 
 const bulkRevokeSchema = z.object({
@@ -188,7 +196,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const { emails, linkId } = parsed.data;
+    const { emails, linkId, inviteeName, inviteeCompany, message, expiresInDays } = parsed.data;
+    const inviteExpiresAt = new Date(Date.now() + (expiresInDays ?? 14) * 24 * 60 * 60 * 1000);
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
       // Verify room access
@@ -197,7 +206,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           id: roomId,
           organizationId: session.organizationId,
         },
-        select: { id: true },
+        select: { id: true, name: true },
       });
 
       if (!room) {
@@ -206,6 +215,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
       const normalizedEmails = emails.map((e) => e.toLowerCase().trim());
       let invited = 0;
+      // Newly invited (email, link slug) to email after the transaction commits.
+      const created: { email: string; slug: string }[] = [];
 
       if (linkId) {
         // Add emails to existing link's allowedEmails
@@ -235,6 +246,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
             },
           });
           invited = newEmails.length;
+          for (const email of newEmails) {
+            created.push({ email, slug: link.slug });
+          }
         }
       } else {
         // Create individual VIEW-permission links for each email
@@ -247,13 +261,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
               roomId,
               createdByUserId: session.userId,
               slug,
-              name: `Viewer: ${email}`,
+              name: inviteeName ? `Viewer: ${inviteeName} (${email})` : `Viewer: ${email}`,
               permission: 'VIEW',
               requiresEmailVerification: true,
               allowedEmails: [email],
               scope: 'ENTIRE_ROOM',
+              expiresAt: inviteExpiresAt,
+              inviteeName: inviteeName || null,
+              inviteeCompany: inviteeCompany || null,
+              inviteMessage: message || null,
             },
           });
+          created.push({ email, slug });
           invited += 1;
         }
       }
@@ -275,14 +294,44 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
       });
 
-      return { invited };
+      return { invited, created, roomName: room.name };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ invited: result.invited }, { status: 201 });
+    // Send the invitation email to each newly invited address. Sending happens
+    // outside the transaction and never fails the invite: if the email provider
+    // is unconfigured (or errors), the link still exists and can be shared
+    // manually. Configure EMAIL_PROVIDER=acs + ACS_CONNECTION_STRING to deliver.
+    const inviterName =
+      `${session.user.firstName ?? ''} ${session.user.lastName ?? ''}`.trim() || session.user.email;
+    const baseUrl = new URL(request.url).origin;
+    let emailsSent = 0;
+    if (result.created.length > 0) {
+      const email = getProviders().email;
+      await Promise.all(
+        result.created.map(async ({ email: to, slug }) => {
+          try {
+            const { subject, html } = buildInviteEmail({
+              roomName: result.roomName,
+              inviterName,
+              inviteeName,
+              message,
+              link: `${baseUrl}/view/${slug}`,
+              expiresAt: inviteExpiresAt,
+            });
+            await email.sendEmail({ to, subject, html });
+            emailsSent += 1;
+          } catch (err) {
+            console.error(`[ViewersAPI] Failed to send invite email to ${to}:`, err);
+          }
+        })
+      );
+    }
+
+    return NextResponse.json({ invited: result.invited, emailsSent }, { status: 201 });
   } catch (error) {
     console.error('[ViewersAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to invite viewers' }, { status: 500 });
