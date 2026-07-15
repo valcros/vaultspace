@@ -106,6 +106,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           select: {
             id: true,
             name: true,
+            accessionNumber: true,
             mimeType: true,
             fileSize: true,
             folderId: true,
@@ -139,6 +140,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       documents: documents.map((d) => ({
         id: d.id,
         name: d.name,
+        accessionNumber: d.accessionNumber ?? null,
         mimeType: d.mimeType,
         size: Number(d.fileSize),
         folderId: d.folderId,
