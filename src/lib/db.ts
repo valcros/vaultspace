@@ -10,10 +10,14 @@
  * - All org-scoped queries will be filtered by RLS policies
  */
 
-// Ensure BigInt values (byte counts on Prisma models) can always be JSON
-// serialized, regardless of which module first touches the database.
-import '@/lib/bigint-json';
+import { installBigIntJsonSerializer } from '@/lib/bigint-json';
 import { PrismaClient, Prisma } from '@prisma/client';
+
+// Ensure BigInt values (byte counts on Prisma models) can always be JSON
+// serialized. Every DB-touching route imports this module for its exports, so
+// invoking here guarantees the serializer is installed before any Prisma result
+// is serialized. Must be a *call* (not a bare import) to survive tree-shaking.
+installBigIntJsonSerializer();
 
 declare global {
   // Allow global `var` declarations for singleton pattern

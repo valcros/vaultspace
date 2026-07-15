@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 
-import '@/lib/bigint-json';
+import { installBigIntJsonSerializer } from '@/lib/bigint-json';
+
+beforeAll(() => {
+  installBigIntJsonSerializer();
+});
 
 describe('global BigInt JSON serialization', () => {
   it('serializes a bare BigInt as a number', () => {

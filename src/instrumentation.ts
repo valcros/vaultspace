@@ -7,9 +7,12 @@
  * Used to enforce deployment mode policy and log capabilities.
  */
 
+import { installBigIntJsonSerializer } from '@/lib/bigint-json';
+
 // Install the process-wide BigInt JSON serializer before any request is served
 // so no API response can 500 on an unserialized BigInt (byte counts etc.).
-import '@/lib/bigint-json';
+// Called (not bare-imported) so it is not tree-shaken from the bundle.
+installBigIntJsonSerializer();
 
 export async function register() {
   // Only run server-side
