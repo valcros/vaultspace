@@ -255,6 +255,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       id: doc.id,
       name: doc.name,
       accessionNumber: doc.accessionNumber ?? null,
+      totalVersions: doc.totalVersions ?? 1,
       status: doc.status,
       scanStatus: doc.latestVersion?.scanStatus ?? null,
       previewStatus: doc.latestVersion?.previewStatus ?? null,

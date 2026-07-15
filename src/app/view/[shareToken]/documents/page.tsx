@@ -23,6 +23,7 @@ interface Document {
   id: string;
   name: string;
   accessionNumber: string | null;
+  totalVersions?: number;
   mimeType: string;
   size: number;
   folderId: string | null;
@@ -288,6 +289,9 @@ export default function ViewerDocumentsPage() {
                                   title="Document reference number"
                                 >
                                   {doc.accessionNumber}
+                                  {doc.totalVersions && doc.totalVersions > 1
+                                    ? ` · v${doc.totalVersions}`
+                                    : ''}
                                 </span>
                               )}
                               {formatFileSize(doc.size)}

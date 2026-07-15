@@ -22,6 +22,7 @@ export interface Document {
   id: string;
   name: string;
   accessionNumber: string | null;
+  totalVersions?: number;
   mimeType: string;
   size: number;
   tags: string[];
