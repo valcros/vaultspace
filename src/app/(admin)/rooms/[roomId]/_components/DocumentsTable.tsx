@@ -210,6 +210,7 @@ const DocumentListRow = React.memo(function DocumentListRow({
                   title="Document accession number"
                 >
                   {doc.accessionNumber}
+                  {doc.totalVersions && doc.totalVersions > 1 ? ` · v${doc.totalVersions}` : ''}
                 </span>
               )}
               <NameText
@@ -407,6 +408,7 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
             title="Document accession number"
           >
             {doc.accessionNumber}
+            {doc.totalVersions && doc.totalVersions > 1 ? ` · v${doc.totalVersions}` : ''}
           </span>
         )}
         <p className="text-xs text-neutral-600">{formatFileSize(doc.size)}</p>
