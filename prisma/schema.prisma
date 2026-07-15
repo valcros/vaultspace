@@ -897,6 +897,16 @@ model Link {
   viewCount         Int       @default(0)
   maxSessionMinutes Int? // Maximum viewing time per session in minutes
 
+  // Invitation metadata (F: viewer invitations). createdByUserId above is the
+  // inviter. inviteeName/inviteeCompany are captured for review/audit;
+  // inviteMessage is a short personal note placed in the invite email body.
+  // remindersSent/lastReminderAt drive the auto-reminder + expiry job.
+  inviteeName    String?   @db.VarChar(255)
+  inviteeCompany String?   @db.VarChar(255)
+  inviteMessage  String?   @db.Text
+  remindersSent  Int       @default(0)
+  lastReminderAt DateTime?
+
   // Scope: what documents are accessible via this link
   scope            LinkScope @default(ENTIRE_ROOM)
   scopedFolderId   String?

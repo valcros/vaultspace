@@ -328,6 +328,11 @@ describe('PermissionEngine', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       lastAccessedAt: null,
+      inviteeName: null,
+      inviteeCompany: null,
+      inviteMessage: null,
+      remindersSent: 0,
+      lastReminderAt: null,
     });
 
     const result = await engine.evaluate(actor, 'view', resource);
@@ -366,6 +371,11 @@ describe('PermissionEngine', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       lastAccessedAt: null,
+      inviteeName: null,
+      inviteeCompany: null,
+      inviteMessage: null,
+      remindersSent: 0,
+      lastReminderAt: null,
     });
 
     const result = await engine.evaluate(actor, 'view', resource);
