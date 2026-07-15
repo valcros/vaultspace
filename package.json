@@ -154,6 +154,8 @@
     }
   },
   "sideEffects": [
-    "*.css"
+    "*.css",
+    "**/bigint-json.ts",
+    "**/instrumentation.ts"
   ]
 }

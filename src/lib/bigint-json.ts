@@ -10,9 +10,10 @@
  * a plain number. Byte counts are far within Number.MAX_SAFE_INTEGER, matching
  * the behaviour of the existing serializeBigInt() helper.
  *
- * Importing this module for its side effect installs the serializer. It is
- * imported at server startup (instrumentation.ts) and from the DB module so it
- * is always active before any Prisma result is serialized.
+ * IMPORTANT: this must be *called*, not merely imported for its side effect.
+ * package.json declares the package side-effect-free (sideEffects: ["*.css"]),
+ * so a bare `import '@/lib/bigint-json'` is tree-shaken out of the server bundle
+ * and the patch never runs. Callers import and invoke installBigIntJsonSerializer().
  */
 
 declare global {
@@ -21,7 +22,13 @@ declare global {
   }
 }
 
-if (typeof BigInt.prototype.toJSON !== 'function') {
+let installed = false;
+
+export function installBigIntJsonSerializer(): void {
+  if (installed || typeof BigInt.prototype.toJSON === 'function') {
+    installed = true;
+    return;
+  }
   Object.defineProperty(BigInt.prototype, 'toJSON', {
     value: function toJSON(this: bigint): number {
       return Number(this);
@@ -29,6 +36,5 @@ if (typeof BigInt.prototype.toJSON !== 'function') {
     writable: true,
     configurable: true,
   });
+  installed = true;
 }
-
-export {};
