@@ -50,30 +50,64 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     const { searchParams } = new URL(request.url);
     const path = searchParams.get('path') || '';
+    // Folder paths are stored with a leading slash (e.g. "/1. Corporate"). The
+    // viewer builds a path by joining folder names with "/", which omits the
+    // leading slash, so normalize before matching. Navigation keyed on the
+    // display path is inherently fragile; resolving to a folder id here and
+    // querying by parentId/folderId is the robust behaviour.
+    const normalizedPath = path ? (path.startsWith('/') ? path : `/${path}`) : '';
 
-    // Build folder query based on link scope
-    const folderWhere: Record<string, unknown> = {
-      roomId: viewerSession.room.id,
+    const scope = viewerSession.link.scope;
+    const scopedFolderId = viewerSession.link.scopedFolderId;
+    const scopedDocumentId = viewerSession.link.scopedDocumentId;
+
+    const documentSelect = {
+      id: true,
+      name: true,
+      accessionNumber: true,
+      mimeType: true,
+      fileSize: true,
+      folderId: true,
+      createdAt: true,
+      folder: { select: { path: true } },
     };
-
-    if (path) {
-      folderWhere['path'] = path;
-    } else {
-      folderWhere['parentId'] = null;
-    }
-
-    // If link is scoped to a specific folder, only show that folder's contents
-    if (viewerSession.link.scope === 'FOLDER' && viewerSession.link.scopedFolderId) {
-      folderWhere['parentId'] = viewerSession.link.scopedFolderId;
-    }
 
     // Use RLS context for org-scoped queries
     const { folders, documents } = await withOrgContext(
       viewerSession.organizationId,
       async (tx) => {
-        // Get folders at current path
+        // A document-scoped link exposes exactly one document and no folder tree.
+        if (scope === 'DOCUMENT' && scopedDocumentId) {
+          const documentsResult = await tx.document.findMany({
+            where: {
+              roomId: viewerSession.room.id,
+              status: 'ACTIVE',
+              id: scopedDocumentId,
+            },
+            orderBy: { name: 'asc' },
+            select: documentSelect,
+          });
+          return { folders: [], documents: documentsResult };
+        }
+
+        // Resolve the folder the viewer is currently inside. At the root, a
+        // folder-scoped link uses its scoped folder as the base.
+        let currentFolderId: string | null =
+          scope === 'FOLDER' && scopedFolderId ? scopedFolderId : null;
+        if (normalizedPath) {
+          const current = await tx.folder.findFirst({
+            where: { roomId: viewerSession.room.id, path: normalizedPath },
+            select: { id: true },
+          });
+          if (!current) {
+            return { folders: [], documents: [] };
+          }
+          currentFolderId = current.id;
+        }
+
+        // Subfolders are the children of the current folder (top-level at root).
         const foldersResult = await tx.folder.findMany({
-          where: folderWhere,
+          where: { roomId: viewerSession.room.id, parentId: currentFolderId },
           orderBy: { name: 'asc' },
           include: {
             _count: {
@@ -82,39 +116,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
           },
         });
 
-        // Build document query based on link scope
-        const documentWhere: Record<string, unknown> = {
-          roomId: viewerSession.room.id,
-          status: 'ACTIVE',
-        };
-
-        if (path) {
-          documentWhere['folder'] = { path };
-        } else {
-          documentWhere['folderId'] = null;
-        }
-
-        // If link is scoped to a specific document, only show that document
-        if (viewerSession.link.scope === 'DOCUMENT' && viewerSession.link.scopedDocumentId) {
-          documentWhere['id'] = viewerSession.link.scopedDocumentId;
-        }
-
-        // Get documents at current path
+        // Documents are those directly in the current folder (root when null).
         const documentsResult = await tx.document.findMany({
-          where: documentWhere,
-          orderBy: { name: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            accessionNumber: true,
-            mimeType: true,
-            fileSize: true,
-            folderId: true,
-            createdAt: true,
-            folder: {
-              select: { path: true },
-            },
+          where: {
+            roomId: viewerSession.room.id,
+            status: 'ACTIVE',
+            folderId: currentFolderId,
           },
+          orderBy: { name: 'asc' },
+          select: documentSelect,
         });
 
         return { folders: foldersResult, documents: documentsResult };
