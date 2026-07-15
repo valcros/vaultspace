@@ -22,6 +22,7 @@ interface ViewerSession {
 interface Document {
   id: string;
   name: string;
+  accessionNumber: string | null;
   mimeType: string;
   size: number;
   folderId: string | null;
@@ -277,7 +278,15 @@ export default function ViewerDocumentsPage() {
                             >
                               {doc.name}
                             </p>
-                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                            <p className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+                              {doc.accessionNumber && (
+                                <span
+                                  className="rounded border border-slate-200 bg-slate-50 px-1.5 font-mono text-[10px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                  title="Document reference number"
+                                >
+                                  {doc.accessionNumber}
+                                </span>
+                              )}
                               {formatFileSize(doc.size)}
                             </p>
                           </div>
