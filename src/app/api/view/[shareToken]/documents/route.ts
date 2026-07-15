@@ -137,7 +137,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
         organizationName: viewerSession.organization.name,
         organizationLogo: viewerSession.room.brandLogoUrl || viewerSession.organization.logoUrl,
         brandColor: viewerSession.room.brandColor || viewerSession.organization.primaryColor,
-        downloadEnabled: viewerSession.room.allowDownloads,
+        // Download availability follows the link's permission, not the room.
+        downloadEnabled: viewerSession.link.permission === 'DOWNLOAD',
         watermarkEnabled: viewerSession.room.enableWatermark,
         watermarkTemplate: viewerSession.room.watermarkTemplate,
       },
