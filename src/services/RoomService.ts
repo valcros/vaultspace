@@ -340,6 +340,114 @@ export class RoomService {
   }
 
   /**
+   * Enable accession numbering for a room and optionally backfill existing
+   * documents with immutable citation IDs in curated display order.
+   *
+   * Idempotent: documents that already have an accession number are skipped, and
+   * the room counter only ever moves forward, so a number is never reused.
+   * @mutating
+   */
+  async enableAccessionNumbering(
+    ctx: ServiceContext,
+    roomId: string,
+    options: { prefix?: string; backfill?: boolean }
+  ): Promise<{ prefix: string; assigned: number; lastAccessionSeq: number }> {
+    const { session, eventBus } = ctx;
+
+    const result = await withOrgContext(
+      session.organizationId,
+      async (tx) => {
+        const room = await tx.room.findFirst({
+          where: { id: roomId, organizationId: session.organizationId },
+        });
+
+        if (!room) {
+          throw new NotFoundError('Room not found');
+        }
+
+        const permissionEngine = getPermissionEngine();
+        const canAdmin = await permissionEngine.can(
+          { userId: session.userId, role: session.organization.role },
+          'admin',
+          { type: 'ROOM', organizationId: session.organizationId, roomId },
+          tx
+        );
+
+        if (!canAdmin) {
+          throw new ConflictError('You do not have permission to update this room');
+        }
+
+        const prefix = (options.prefix?.trim() || room.accessionPrefix || 'DOC').toUpperCase();
+        if (!/^[A-Z0-9]{1,16}$/.test(prefix)) {
+          throw new ValidationError('Accession prefix must be 1-16 letters or digits');
+        }
+
+        let lastAccessionSeq = room.lastAccessionSeq;
+        let assigned = 0;
+
+        if (options.backfill) {
+          // Only number documents that do not already have one.
+          const docs = await tx.document.findMany({
+            where: {
+              roomId,
+              organizationId: session.organizationId,
+              status: 'ACTIVE',
+              accessionNumber: null,
+            },
+            select: { id: true, name: true, folder: { select: { path: true } } },
+          });
+
+          // Curated reading order: by folder path, then by document name. The
+          // number prefixes in both sort strings mirror the browse order.
+          docs.sort((a, b) => {
+            const pa = a.folder?.path ?? '';
+            const pb = b.folder?.path ?? '';
+            if (pa !== pb) return pa < pb ? -1 : 1;
+            return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+          });
+
+          for (const doc of docs) {
+            lastAccessionSeq += 1;
+            const accessionNumber = `${prefix}-${String(lastAccessionSeq).padStart(4, '0')}`;
+            await tx.document.update({
+              where: { id: doc.id },
+              data: { accessionNumber, accessionSeq: lastAccessionSeq },
+            });
+            assigned += 1;
+          }
+        }
+
+        await tx.room.update({
+          where: { id: roomId },
+          data: {
+            accessionNumberingEnabled: true,
+            accessionPrefix: prefix,
+            lastAccessionSeq,
+          },
+        });
+
+        return { prefix, assigned, lastAccessionSeq };
+      },
+      // Backfilling a large room performs many row updates in one transaction.
+      { timeout: 30_000, maxWait: 10_000 }
+    );
+
+    await eventBus.emit('ROOM_UPDATED', {
+      roomId,
+      description:
+        `Enabled accession numbering (prefix ${result.prefix})` +
+        (result.assigned ? `, backfilled ${result.assigned} documents` : ''),
+      metadata: {
+        accessionNumbering: true,
+        prefix: result.prefix,
+        backfilled: result.assigned,
+      },
+    });
+
+    return result;
+  }
+
+  /**
    * Change room status
    * @mutating
    */
