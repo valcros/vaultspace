@@ -28,6 +28,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           id: true,
           name: true,
           allowDownloads: true,
+          allowViewerVersionHistory: true,
           enableWatermark: true,
           watermarkTemplate: true,
           brandColor: true,
@@ -139,6 +140,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         brandColor: viewerSession.room.brandColor || viewerSession.organization.primaryColor,
         // Download availability follows the link's permission, not the room.
         downloadEnabled: viewerSession.link.permission === 'DOWNLOAD',
+        versionHistoryEnabled: viewerSession.room.allowViewerVersionHistory,
         watermarkEnabled: viewerSession.room.enableWatermark,
         watermarkTemplate: viewerSession.room.watermarkTemplate,
       },

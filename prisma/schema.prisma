@@ -295,38 +295,38 @@ model Organization {
   maxStorageBytes    BigInt?
 
   // Relations
-  users            UserOrganization[]
-  rooms            Room[]
-  roomTemplates    RoomTemplate[]
-  documents        Document[]
-  documentVersions DocumentVersion[]
-  events           Event[]
-  invitations      Invitation[]
-  permissions      Permission[]
-  groups           Group[]
-  links            Link[]
-  searchIndexes    SearchIndex[]
-  fileBlobs        FileBlob[]
-  previewAssets    PreviewAsset[]
-  extractedTexts   ExtractedText[]
-  linkVisits       LinkVisit[]
-  viewSessions     ViewSession[]
-  notifications    Notification[]
-  roleAssignments  RoleAssignment[]
-  folders          Folder[]
-  questions        Question[]
-  answers          Answer[]
-  checklists       Checklist[]
-  checklistItems   ChecklistItem[]
-  calendarEvents   CalendarEvent[]
-  bookmarks              Bookmark[]
-  accessRequests         AccessRequest[]
-  notificationTemplates  NotificationTemplate[]
-  messages               Message[]
-  pageViews              PageView[]
-  webhooks               Webhook[]
-  signatureRequests      SignatureRequest[]
-  dashboardLayouts       UserDashboardLayout[]
+  users                 UserOrganization[]
+  rooms                 Room[]
+  roomTemplates         RoomTemplate[]
+  documents             Document[]
+  documentVersions      DocumentVersion[]
+  events                Event[]
+  invitations           Invitation[]
+  permissions           Permission[]
+  groups                Group[]
+  links                 Link[]
+  searchIndexes         SearchIndex[]
+  fileBlobs             FileBlob[]
+  previewAssets         PreviewAsset[]
+  extractedTexts        ExtractedText[]
+  linkVisits            LinkVisit[]
+  viewSessions          ViewSession[]
+  notifications         Notification[]
+  roleAssignments       RoleAssignment[]
+  folders               Folder[]
+  questions             Question[]
+  answers               Answer[]
+  checklists            Checklist[]
+  checklistItems        ChecklistItem[]
+  calendarEvents        CalendarEvent[]
+  bookmarks             Bookmark[]
+  accessRequests        AccessRequest[]
+  notificationTemplates NotificationTemplate[]
+  messages              Message[]
+  pageViews             PageView[]
+  webhooks              Webhook[]
+  signatureRequests     SignatureRequest[]
+  dashboardLayouts      UserDashboardLayout[]
 
   @@index([slug])
   @@index([isActive])
@@ -354,8 +354,8 @@ model User {
   emailVerifiedAt DateTime?
 
   // Two-factor authentication
-  twoFactorEnabled    Boolean  @default(false)
-  twoFactorSecret     String?  @db.VarChar(255) // Encrypted TOTP secret
+  twoFactorEnabled     Boolean  @default(false)
+  twoFactorSecret      String?  @db.VarChar(255) // Encrypted TOTP secret
   twoFactorBackupCodes String[] @default([]) // Hashed backup codes
 
   // Account status
@@ -372,15 +372,15 @@ model User {
   linksCreated            Link[]
   documentVersions        DocumentVersion[]
   eventsTriggered         Event[]
-  permissionsGranted      Permission[]       @relation("GrantedBy")
+  permissionsGranted      Permission[]          @relation("GrantedBy")
   questionsAsked          Question[]
   answersGiven            Answer[]
   checklistItemsCompleted ChecklistItem[]
   calendarEvents          CalendarEvent[]
   bookmarks               Bookmark[]
   accessRequestsReviewed  AccessRequest[]
-  messagesSent            Message[]          @relation("MessagesSent")
-  messagesReceived        Message[]          @relation("MessagesReceived")
+  messagesSent            Message[]             @relation("MessagesSent")
+  messagesReceived        Message[]             @relation("MessagesReceived")
   signatureRequests       SignatureRequest[]
   dashboardLayouts        UserDashboardLayout[]
 
@@ -477,6 +477,11 @@ model Room {
   allowDownloads    Boolean @default(true)
   defaultExpiryDays Int?
 
+  // When enabled, viewers can see a document's prior versions (list + download,
+  // download still subject to the link's permission). Off by default: version
+  // history is internal unless a room opts in.
+  allowViewerVersionHistory Boolean @default(false)
+
   // NDA configuration - F130 (UI ready, F018 implements gate)
   requiresNda Boolean @default(false)
   ndaContent  String? @db.Text // Rich text NDA content
@@ -519,17 +524,17 @@ model Room {
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  folders        Folder[]
-  documents      Document[]
-  links          Link[]
-  permissions    Permission[]
-  events         Event[]
-  linkVisits     LinkVisit[]
-  viewSessions   ViewSession[]
-  questions      Question[]
-  checklists     Checklist[]
-  calendarEvents CalendarEvent[]
-  bookmarks      Bookmark[]
+  folders           Folder[]
+  documents         Document[]
+  links             Link[]
+  permissions       Permission[]
+  events            Event[]
+  linkVisits        LinkVisit[]
+  viewSessions      ViewSession[]
+  questions         Question[]
+  checklists        Checklist[]
+  calendarEvents    CalendarEvent[]
+  bookmarks         Bookmark[]
   accessRequests    AccessRequest[]
   messages          Message[]
   pageViews         PageView[]
@@ -641,15 +646,15 @@ model Document {
   room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
   folder       Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
-  versions       DocumentVersion[]
-  permissions    Permission[]
-  searchIndexes  SearchIndex[]
-  linkVisits     LinkVisit[]
-  viewSessions   ViewSession[]
-  questions      Question[]
-  checklistItems ChecklistItem[]
-  calendarEvents CalendarEvent[]
-  bookmarks      Bookmark[]
+  versions          DocumentVersion[]
+  permissions       Permission[]
+  searchIndexes     SearchIndex[]
+  linkVisits        LinkVisit[]
+  viewSessions      ViewSession[]
+  questions         Question[]
+  checklistItems    ChecklistItem[]
+  calendarEvents    CalendarEvent[]
+  bookmarks         Bookmark[]
   messages          Message[]
   pageViews         PageView[]
   signatureRequests SignatureRequest[]
@@ -880,10 +885,10 @@ model Link {
   allowedEmails             String[] @default([])
 
   // Expiry - F116
-  expiresAt          DateTime?
-  maxViews           Int?
-  viewCount          Int       @default(0)
-  maxSessionMinutes  Int? // Maximum viewing time per session in minutes
+  expiresAt         DateTime?
+  maxViews          Int?
+  viewCount         Int       @default(0)
+  maxSessionMinutes Int? // Maximum viewing time per session in minutes
 
   // Scope: what documents are accessible via this link
   scope            LinkScope @default(ENTIRE_ROOM)
@@ -1578,14 +1583,14 @@ model AccessRequest {
   organizationId String
   roomId         String
 
-  requesterEmail String @db.VarChar(255)
+  requesterEmail String  @db.VarChar(255)
   requesterName  String? @db.VarChar(255)
   reason         String? @db.Text
 
-  status         AccessRequestStatus @default(PENDING)
+  status           AccessRequestStatus @default(PENDING)
   reviewedByUserId String?
-  reviewedAt     DateTime?
-  reviewNote     String? @db.Text
+  reviewedAt       DateTime?
+  reviewNote       String?             @db.Text
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -1615,7 +1620,7 @@ model NotificationTemplate {
 
   // Content
   subject  String @db.VarChar(500) // Supports {placeholders}
-  bodyHtml String @db.Text         // HTML template with {placeholders}
+  bodyHtml String @db.Text // HTML template with {placeholders}
 
   // Status
   isActive Boolean @default(true)
@@ -1644,12 +1649,12 @@ model Message {
   senderUserId String
 
   // Recipient
-  recipientUserId  String?
-  recipientEmail   String  @db.VarChar(255)
+  recipientUserId String?
+  recipientEmail  String  @db.VarChar(255)
 
   // Content
-  subject String  @db.VarChar(500)
-  body    String  @db.Text
+  subject String @db.VarChar(500)
+  body    String @db.Text
 
   // Status
   isRead         Boolean   @default(false)
