@@ -49,13 +49,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const viewerSession = sessionResult.session;
 
     const { searchParams } = new URL(request.url);
-    const path = searchParams.get('path') || '';
-    // Folder paths are stored with a leading slash (e.g. "/1. Corporate"). The
-    // viewer builds a path by joining folder names with "/", which omits the
-    // leading slash, so normalize before matching. Navigation keyed on the
-    // display path is inherently fragile; resolving to a folder id here and
-    // querying by parentId/folderId is the robust behaviour.
-    const normalizedPath = path ? (path.startsWith('/') ? path : `/${path}`) : '';
+    // Navigate by immutable folder id, not a display-derived path string. The
+    // path-as-key approach previously caused every folder to open empty because
+    // the stored path ("/1. Corporate") and the viewer-built path ("1. Corporate")
+    // never matched.
+    const requestedFolderId = searchParams.get('folderId');
 
     const scope = viewerSession.link.scope;
     const scopedFolderId = viewerSession.link.scopedFolderId;
@@ -94,9 +92,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         // folder-scoped link uses its scoped folder as the base.
         let currentFolderId: string | null =
           scope === 'FOLDER' && scopedFolderId ? scopedFolderId : null;
-        if (normalizedPath) {
+        if (requestedFolderId) {
+          // Verify the requested folder exists in this room before using it.
           const current = await tx.folder.findFirst({
-            where: { roomId: viewerSession.room.id, path: normalizedPath },
+            where: { id: requestedFolderId, roomId: viewerSession.room.id },
             select: { id: true },
           });
           if (!current) {

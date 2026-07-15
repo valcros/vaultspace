@@ -45,18 +45,21 @@ export default function ViewerDocumentsPage() {
   const [session, setSession] = React.useState<ViewerSession | null>(null);
   const [documents, setDocuments] = React.useState<Document[]>([]);
   const [folders, setFolders] = React.useState<Folder[]>([]);
-  const [currentPath, setCurrentPath] = React.useState<string[]>([]);
+  // Breadcrumb trail from root to the current folder, tracked by immutable
+  // folder id (never a display-derived path string, which is what caused folders
+  // to open empty). Each entry keeps the name only for breadcrumb display.
+  const [trail, setTrail] = React.useState<{ id: string; name: string }[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
 
-  const pathKey = currentPath.join('/');
+  const currentFolderId = trail.at(-1)?.id ?? null;
+  const folderKey = trail.map((t) => t.id).join('/');
 
   const fetchDocuments = React.useCallback(async () => {
     setIsLoading(true);
     try {
-      const path =
-        currentPath.length > 0 ? `?path=${encodeURIComponent(currentPath.join('/'))}` : '';
-      const response = await fetch(`/api/view/${shareToken}/documents${path}`);
+      const query = currentFolderId ? `?folderId=${encodeURIComponent(currentFolderId)}` : '';
+      const response = await fetch(`/api/view/${shareToken}/documents${query}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -73,22 +76,22 @@ export default function ViewerDocumentsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [shareToken, currentPath, router]);
+  }, [shareToken, currentFolderId, router]);
 
   React.useEffect(() => {
     fetchDocuments();
-  }, [fetchDocuments, pathKey]);
+  }, [fetchDocuments, folderKey]);
 
-  const navigateToFolder = (folderName: string) => {
-    setCurrentPath([...currentPath, folderName]);
+  const navigateToFolder = (folder: { id: string; name: string }) => {
+    setTrail((prev) => [...prev, { id: folder.id, name: folder.name }]);
   };
 
   const navigateToRoot = () => {
-    setCurrentPath([]);
+    setTrail([]);
   };
 
   const navigateToPathIndex = (index: number) => {
-    setCurrentPath(currentPath.slice(0, index + 1));
+    setTrail((prev) => prev.slice(0, index + 1));
   };
 
   const formatFileSize = (bytes: number) => {
@@ -165,11 +168,11 @@ export default function ViewerDocumentsPage() {
             >
               <Home className="h-4 w-4" />
             </Button>
-            {currentPath.length > 0 && (
+            {trail.length > 0 && (
               <>
                 <ChevronRight className="h-4 w-4 flex-shrink-0 text-neutral-400" />
-                {currentPath.map((segment, index) => (
-                  <React.Fragment key={index}>
+                {trail.map((segment, index) => (
+                  <React.Fragment key={segment.id}>
                     {index > 0 && (
                       <ChevronRight className="h-4 w-4 flex-shrink-0 text-neutral-400" />
                     )}
@@ -177,7 +180,7 @@ export default function ViewerDocumentsPage() {
                       onClick={() => navigateToPathIndex(index)}
                       className="max-w-32 truncate rounded px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
                     >
-                      {segment}
+                      {segment.name}
                     </button>
                   </React.Fragment>
                 ))}
@@ -228,7 +231,7 @@ export default function ViewerDocumentsPage() {
                   <Card
                     key={folder.id}
                     className="cursor-pointer rounded-xl border border-neutral-200 bg-white shadow-sm transition-shadow hover:border-primary-200 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-primary-800"
-                    onClick={() => navigateToFolder(folder.name)}
+                    onClick={() => navigateToFolder({ id: folder.id, name: folder.name })}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-center gap-3">
