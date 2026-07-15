@@ -106,14 +106,14 @@ const FolderListRow = React.memo(function FolderListRow({
       </td>
       {showSize && (
         <td
-          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+          className={`hidden whitespace-nowrap px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
         >
           {folder.documentCount} files, {folder.childCount} folders
         </td>
       )}
       {showUploaded && (
         <td
-          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+          className={`hidden whitespace-nowrap px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
         >
           {formatDate(folder.createdAt)}
         </td>
@@ -249,14 +249,14 @@ const DocumentListRow = React.memo(function DocumentListRow({
       </td>
       {showSize && (
         <td
-          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+          className={`hidden whitespace-nowrap px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
         >
           {formatFileSize(doc.size)}
         </td>
       )}
       {showUploaded && (
         <td
-          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+          className={`hidden whitespace-nowrap px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
         >
           {formatDate(doc.createdAt)}
         </td>
