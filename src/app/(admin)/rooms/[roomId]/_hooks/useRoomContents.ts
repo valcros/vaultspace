@@ -24,6 +24,7 @@ export interface Document {
   accessionNumber: string | null;
   totalVersions?: number;
   withdrawnAt?: string | null;
+  folderId?: string | null;
   mimeType: string;
   size: number;
   tags: string[];
