@@ -21,6 +21,7 @@ export interface Room {
 export interface Document {
   id: string;
   name: string;
+  accessionNumber: string | null;
   mimeType: string;
   size: number;
   tags: string[];
