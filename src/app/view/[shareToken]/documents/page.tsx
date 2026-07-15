@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { FileText, Folder, Search, Download, Eye, ChevronRight, Home } from 'lucide-react';
+import { FileText, Folder, Search, Download, Eye, ChevronRight, Home, History } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,15 @@ interface ViewerSession {
   brandColor: string | null;
   downloadEnabled: boolean;
   watermarkEnabled: boolean;
+  versionHistoryEnabled: boolean;
+}
+
+interface DocumentVersionInfo {
+  id: string;
+  versionNumber: number;
+  size: number;
+  createdAt: string;
+  isCurrent: boolean;
 }
 
 interface Document {
@@ -122,8 +131,37 @@ export default function ViewerDocumentsPage() {
     router.push(`/view/${shareToken}/documents/${documentId}`);
   };
 
-  const handleDownloadDocument = async (documentId: string) => {
-    window.open(`/api/view/${shareToken}/documents/${documentId}/download`, '_blank');
+  const handleDownloadDocument = async (documentId: string, versionId?: string) => {
+    const q = versionId ? `?versionId=${encodeURIComponent(versionId)}` : '';
+    window.open(`/api/view/${shareToken}/documents/${documentId}/download${q}`, '_blank');
+  };
+
+  const [openVersionsDocId, setOpenVersionsDocId] = React.useState<string | null>(null);
+  const [versionsByDoc, setVersionsByDoc] = React.useState<Record<string, DocumentVersionInfo[]>>(
+    {}
+  );
+  const [versionsLoading, setVersionsLoading] = React.useState(false);
+
+  const toggleVersions = async (documentId: string) => {
+    if (openVersionsDocId === documentId) {
+      setOpenVersionsDocId(null);
+      return;
+    }
+    setOpenVersionsDocId(documentId);
+    if (!versionsByDoc[documentId]) {
+      setVersionsLoading(true);
+      try {
+        const res = await fetch(`/api/view/${shareToken}/documents/${documentId}/versions`);
+        if (res.ok) {
+          const data = await res.json();
+          setVersionsByDoc((prev) => ({ ...prev, [documentId]: data.versions || [] }));
+        }
+      } catch {
+        // Leave the panel empty on failure.
+      } finally {
+        setVersionsLoading(false);
+      }
+    }
   };
 
   const handleLogout = () => {
@@ -319,7 +357,54 @@ export default function ViewerDocumentsPage() {
                               Download
                             </Button>
                           )}
+                          {session?.versionHistoryEnabled &&
+                            doc.totalVersions !== undefined &&
+                            doc.totalVersions > 1 && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => toggleVersions(doc.id)}
+                                title="Version history"
+                              >
+                                <History className="mr-1 h-4 w-4" />v{doc.totalVersions}
+                              </Button>
+                            )}
                         </div>
+                        {session?.versionHistoryEnabled && openVersionsDocId === doc.id && (
+                          <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
+                            {versionsLoading && !versionsByDoc[doc.id] ? (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Loading version history…
+                              </p>
+                            ) : (versionsByDoc[doc.id]?.length ?? 0) === 0 ? (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                No version history available.
+                              </p>
+                            ) : (
+                              versionsByDoc[doc.id]?.map((v) => (
+                                <div
+                                  key={v.id}
+                                  className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300"
+                                >
+                                  <span className="truncate">
+                                    v{v.versionNumber}
+                                    {v.isCurrent ? ' · current' : ''} ·{' '}
+                                    {new Date(v.createdAt).toLocaleDateString()} ·{' '}
+                                    {formatFileSize(v.size)}
+                                  </span>
+                                  {session?.downloadEnabled && (
+                                    <button
+                                      onClick={() => handleDownloadDocument(doc.id, v.id)}
+                                      className="flex-shrink-0 rounded px-2 py-0.5 text-primary-600 hover:bg-primary-50 hover:underline dark:text-primary-400 dark:hover:bg-primary-950/30"
+                                    >
+                                      Download
+                                    </button>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   );
