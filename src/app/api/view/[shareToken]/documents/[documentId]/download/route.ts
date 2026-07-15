@@ -38,10 +38,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
     const viewerSession = sessionResult.session;
 
-    // Check if downloads are allowed at room level
-    if (!viewerSession.room.allowDownloads) {
+    // Download is gated on the LINK's permission, not the room. This lets an
+    // admin selectively grant download to one party (a DOWNLOAD link) without
+    // opening the room room-wide; a VIEW link is always view-only.
+    if (viewerSession.link.permission !== 'DOWNLOAD') {
       return NextResponse.json(
-        { error: 'Downloads are not allowed for this room' },
+        { error: 'This link is view-only; downloads are not permitted' },
         { status: 403 }
       );
     }
