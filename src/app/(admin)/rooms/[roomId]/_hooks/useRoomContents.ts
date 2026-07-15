@@ -23,6 +23,7 @@ export interface Document {
   name: string;
   accessionNumber: string | null;
   totalVersions?: number;
+  withdrawnAt?: string | null;
   mimeType: string;
   size: number;
   tags: string[];

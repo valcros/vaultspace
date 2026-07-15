@@ -498,6 +498,38 @@ export default function RoomDetailPage() {
     setShowDeleteDialog(true);
   }, []);
 
+  // Withdraw (or restore) a document. Reversible, so no confirmation dialog: a
+  // withdrawn document stays as a tombstone with its retired accession number.
+  const handleWithdraw = React.useCallback(
+    async (doc: Document) => {
+      const restore = !!doc.withdrawnAt;
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/documents/${doc.id}/withdraw`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(restore ? { restore: true } : {}),
+        });
+        if (response.ok) {
+          fetchDocuments();
+        } else {
+          const error = await response.json();
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to update withdrawal',
+            variant: 'destructive',
+          });
+        }
+      } catch {
+        toast({
+          title: 'Error',
+          description: 'Failed to update withdrawal',
+          variant: 'destructive',
+        });
+      }
+    },
+    [roomId, fetchDocuments, toast]
+  );
+
   // Confirm delete
   const confirmDelete = React.useCallback(async () => {
     if (!selectedDocument) {
@@ -632,6 +664,7 @@ export default function RoomDetailPage() {
     onToggleBookmark: toggleBookmark,
     onShowVersions: handleShowVersions,
     onToggleConfidential: handleToggleConfidential,
+    onWithdraw: handleWithdraw,
     onDelete: handleDelete,
     onContextMenu: handleDocContextMenu,
   };

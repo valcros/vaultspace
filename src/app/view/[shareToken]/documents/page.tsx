@@ -33,6 +33,7 @@ interface Document {
   name: string;
   accessionNumber: string | null;
   totalVersions?: number;
+  withdrawn?: boolean;
   mimeType: string;
   size: number;
   folderId: string | null;
@@ -336,75 +337,83 @@ export default function ViewerDocumentsPage() {
                             </p>
                           </div>
                         </div>
-                        <div className="mt-4 flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => handleViewDocument(doc.id)}
-                          >
-                            <Eye className="mr-1 h-4 w-4" />
-                            View
-                          </Button>
-                          {session?.downloadEnabled && (
+                        {doc.withdrawn ? (
+                          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
+                            Withdrawn — this document is no longer available.
+                          </div>
+                        ) : (
+                          <div className="mt-4 flex items-center gap-2">
                             <Button
                               variant="outline"
                               size="sm"
                               className="flex-1"
-                              onClick={() => handleDownloadDocument(doc.id)}
+                              onClick={() => handleViewDocument(doc.id)}
                             >
-                              <Download className="mr-1 h-4 w-4" />
-                              Download
+                              <Eye className="mr-1 h-4 w-4" />
+                              View
                             </Button>
-                          )}
-                          {session?.versionHistoryEnabled &&
-                            doc.totalVersions !== undefined &&
-                            doc.totalVersions > 1 && (
+                            {session?.downloadEnabled && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => toggleVersions(doc.id)}
-                                title="Version history"
+                                className="flex-1"
+                                onClick={() => handleDownloadDocument(doc.id)}
                               >
-                                <History className="mr-1 h-4 w-4" />v{doc.totalVersions}
+                                <Download className="mr-1 h-4 w-4" />
+                                Download
                               </Button>
                             )}
-                        </div>
-                        {session?.versionHistoryEnabled && openVersionsDocId === doc.id && (
-                          <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
-                            {versionsLoading && !versionsByDoc[doc.id] ? (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Loading version history…
-                              </p>
-                            ) : (versionsByDoc[doc.id]?.length ?? 0) === 0 ? (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                No version history available.
-                              </p>
-                            ) : (
-                              versionsByDoc[doc.id]?.map((v) => (
-                                <div
-                                  key={v.id}
-                                  className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300"
+                            {session?.versionHistoryEnabled &&
+                              doc.totalVersions !== undefined &&
+                              doc.totalVersions > 1 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleVersions(doc.id)}
+                                  title="Version history"
                                 >
-                                  <span className="truncate">
-                                    v{v.versionNumber}
-                                    {v.isCurrent ? ' · current' : ''} ·{' '}
-                                    {new Date(v.createdAt).toLocaleDateString()} ·{' '}
-                                    {formatFileSize(v.size)}
-                                  </span>
-                                  {session?.downloadEnabled && (
-                                    <button
-                                      onClick={() => handleDownloadDocument(doc.id, v.id)}
-                                      className="flex-shrink-0 rounded px-2 py-0.5 text-primary-600 hover:bg-primary-50 hover:underline dark:text-primary-400 dark:hover:bg-primary-950/30"
-                                    >
-                                      Download
-                                    </button>
-                                  )}
-                                </div>
-                              ))
-                            )}
+                                  <History className="mr-1 h-4 w-4" />v{doc.totalVersions}
+                                </Button>
+                              )}
                           </div>
                         )}
+                        {!doc.withdrawn &&
+                          session?.versionHistoryEnabled &&
+                          openVersionsDocId === doc.id && (
+                            <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
+                              {versionsLoading && !versionsByDoc[doc.id] ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  Loading version history…
+                                </p>
+                              ) : (versionsByDoc[doc.id]?.length ?? 0) === 0 ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  No version history available.
+                                </p>
+                              ) : (
+                                versionsByDoc[doc.id]?.map((v) => (
+                                  <div
+                                    key={v.id}
+                                    className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300"
+                                  >
+                                    <span className="truncate">
+                                      v{v.versionNumber}
+                                      {v.isCurrent ? ' · current' : ''} ·{' '}
+                                      {new Date(v.createdAt).toLocaleDateString()} ·{' '}
+                                      {formatFileSize(v.size)}
+                                    </span>
+                                    {session?.downloadEnabled && (
+                                      <button
+                                        onClick={() => handleDownloadDocument(doc.id, v.id)}
+                                        className="flex-shrink-0 rounded px-2 py-0.5 text-primary-600 hover:bg-primary-50 hover:underline dark:text-primary-400 dark:hover:bg-primary-950/30"
+                                      >
+                                        Download
+                                      </button>
+                                    )}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          )}
                       </CardContent>
                     </Card>
                   );

@@ -64,6 +64,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           id: documentId,
           roomId: viewerSession.room.id,
           status: 'ACTIVE',
+          withdrawnAt: null, // withdrawn documents are not viewable
         },
         include: {
           versions: {

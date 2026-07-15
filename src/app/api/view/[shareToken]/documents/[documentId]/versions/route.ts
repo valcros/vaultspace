@@ -59,7 +59,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     const result = await withOrgContext(viewerSession.organizationId, async (tx) => {
       const document = await tx.document.findFirst({
-        where: { id: documentId, roomId: viewerSession.room.id, status: 'ACTIVE' },
+        where: {
+          id: documentId,
+          roomId: viewerSession.room.id,
+          status: 'ACTIVE',
+          withdrawnAt: null,
+        },
         select: { id: true, currentVersionId: true },
       });
       if (!document) {
