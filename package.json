@@ -41,6 +41,8 @@
     "rls:audit": "tsx scripts/rls-audit.ts",
     "worker": "tsx src/workers/index.ts",
     "worker:wake-delayed": "tsx src/workers/wakeDelayedJobs.ts",
+    "worker:invitation-lifecycle": "tsx src/workers/invitationLifecycle.ts",
+    "worker:send-pending-invites": "tsx src/workers/sendPendingInvites.ts",
     "worker:standalone": "DEPLOYMENT_MODE=standalone tsx src/workers/index.ts",
     "postinstall": "prisma generate"
   },

@@ -311,6 +311,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     let emailsSent = 0;
     if (result.created.length > 0) {
       const email = getProviders().email;
+      // Slugs whose invite email was actually delivered. Stamping
+      // inviteEmailSentAt only for these makes the scheduled reminder job
+      // eligible to nudge them later; a link we never emailed is never reminded.
+      const sentSlugs: string[] = [];
       await Promise.all(
         result.created.map(async ({ email: to, slug }) => {
           try {
@@ -324,11 +328,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
             });
             await email.sendEmail({ to, subject, html });
             emailsSent += 1;
+            sentSlugs.push(slug);
           } catch (err) {
             console.error(`[ViewersAPI] Failed to send invite email to ${to}:`, err);
           }
         })
       );
+
+      if (sentSlugs.length > 0) {
+        await withOrgContext(session.organizationId, async (tx) => {
+          await tx.link.updateMany({
+            where: { slug: { in: sentSlugs }, organizationId: session.organizationId },
+            data: { inviteEmailSentAt: new Date() },
+          });
+        });
+      }
     }
 
     return NextResponse.json({ invited: result.invited, emailsSent }, { status: 201 });

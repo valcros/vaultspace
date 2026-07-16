@@ -906,6 +906,11 @@ model Link {
   inviteMessage  String?   @db.Text
   remindersSent  Int       @default(0)
   lastReminderAt DateTime?
+  // Set when an invitation email is actually sent (initial invite or resend).
+  // The scheduled lifecycle job only sends reminders for invites where this is
+  // non-null, so a link that was never emailed is never auto-reminded. Resending
+  // re-stamps this and resets remindersSent, restarting the reminder cadence.
+  inviteEmailSentAt DateTime?
 
   // Scope: what documents are accessible via this link
   scope            LinkScope @default(ENTIRE_ROOM)
@@ -932,6 +937,7 @@ model Link {
   @@index([expiresAt])
   @@index([viewCount])
   @@index([isActive])
+  @@index([inviteEmailSentAt])
   @@map("links")
 }
 
