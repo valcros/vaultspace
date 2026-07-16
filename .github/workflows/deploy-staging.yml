@@ -42,6 +42,7 @@ jobs:
       WORKER_CONTAINER_NAME: ${{ vars.WORKER_CONTAINER_NAME }}
       WAKER_JOB_APP: ${{ vars.WAKER_JOB_APP }}
       WAKER_CONTAINER_NAME: ${{ vars.WAKER_CONTAINER_NAME }}
+      LIFECYCLE_JOB_APP: ${{ vars.LIFECYCLE_JOB_APP }}
       APP_URL: ${{ vars.APP_URL }}
       # For workflow_run triggers, deploy the exact commit CI validated, not the
       # branch head at event time (they can differ if another push lands mid-run).
@@ -63,6 +64,7 @@ jobs:
             WORKER_CONTAINER_NAME
             WAKER_JOB_APP
             WAKER_CONTAINER_NAME
+            LIFECYCLE_JOB_APP
             APP_URL
           )
 
@@ -148,6 +150,13 @@ jobs:
             --resource-group $RESOURCE_GROUP \
             --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
 
+      - name: Update Container App Job - Invitation Lifecycle
+        run: |
+          az containerapp job update \
+            --name $LIFECYCLE_JOB_APP \
+            --resource-group $RESOURCE_GROUP \
+            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
+
       - name: Validate waker job template
         run: |
           JOB_JSON=$(az containerapp job show \
@@ -174,6 +183,31 @@ jobs:
             exit 1
           fi
           echo "✓ Waker job image, command, and trigger verified"
+
+      - name: Validate lifecycle job template
+        run: |
+          JOB_JSON=$(az containerapp job show \
+            --name $LIFECYCLE_JOB_APP \
+            --resource-group $RESOURCE_GROUP \
+            --output json)
+
+          IMAGE=$(echo "$JOB_JSON" | jq -r '.properties.template.containers[0].image')
+          ARGS=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].args // []) | join(" ")')
+          TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
+
+          if [ "$IMAGE" != "$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA" ]; then
+            echo "ERROR: lifecycle job image mismatch: $IMAGE"
+            exit 1
+          fi
+          if ! echo "$ARGS" | grep -q "worker:invitation-lifecycle"; then
+            echo "ERROR: lifecycle job no longer invokes worker:invitation-lifecycle (args: $ARGS)"
+            exit 1
+          fi
+          if [ "$TRIGGER" != "Schedule" ]; then
+            echo "ERROR: lifecycle job trigger type changed: $TRIGGER"
+            exit 1
+          fi
+          echo "✓ Lifecycle job image, command, and trigger verified"
 
       - name: Validate Container App env shape
         run: |

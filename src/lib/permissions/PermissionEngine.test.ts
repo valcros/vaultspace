@@ -333,6 +333,7 @@ describe('PermissionEngine', () => {
       inviteMessage: null,
       remindersSent: 0,
       lastReminderAt: null,
+      inviteEmailSentAt: null,
     });
 
     const result = await engine.evaluate(actor, 'view', resource);
@@ -376,6 +377,7 @@ describe('PermissionEngine', () => {
       inviteMessage: null,
       remindersSent: 0,
       lastReminderAt: null,
+      inviteEmailSentAt: null,
     });
 
     const result = await engine.evaluate(actor, 'view', resource);
