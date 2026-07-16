@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Search, MoreHorizontal, Mail, Shield, Eye, Trash2, UserPlus } from 'lucide-react';
+import { Search, MoreHorizontal, Mail, Shield, Eye, Trash2, UserPlus, Link2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -59,9 +59,24 @@ interface PendingInvite {
   expiresAt: string;
 }
 
+interface ViewerLinkInvite {
+  id: string;
+  email: string;
+  inviteeName: string | null;
+  inviteeCompany: string | null;
+  roomId: string | null;
+  roomName: string | null;
+  invitedBy: string | null;
+  status: 'pending' | 'opened';
+  emailSent: boolean;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
 export default function UsersPage() {
   const [users, setUsers] = React.useState<User[]>([]);
   const [pendingInvites, setPendingInvites] = React.useState<PendingInvite[]>([]);
+  const [viewerLinkInvites, setViewerLinkInvites] = React.useState<ViewerLinkInvite[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showInviteDialog, setShowInviteDialog] = React.useState(false);
@@ -90,6 +105,7 @@ export default function UsersPage() {
       if (response.ok) {
         setUsers(data.users || []);
         setPendingInvites(data.pendingInvitations || []);
+        setViewerLinkInvites(data.viewerLinkInvites || []);
       }
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -402,6 +418,76 @@ export default function UsersPage() {
                         <td className="px-5 py-4"></td>
                       </tr>
                     ))}
+                  {viewerLinkInvites
+                    .filter(
+                      (vl) =>
+                        vl.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (vl.inviteeName ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    .map((vl) => {
+                      const displayName = vl.inviteeName || vl.email;
+                      const subtitle = vl.roomName
+                        ? `${vl.inviteeCompany ? vl.inviteeCompany + ' · ' : ''}${vl.roomName}`
+                        : (vl.inviteeCompany ?? 'Data room viewer');
+                      return (
+                        <tr
+                          key={`viewer-link-${vl.id}`}
+                          className="border-b border-slate-200/70 last:border-0 dark:border-slate-800"
+                        >
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <UserAvatar name={displayName} size="sm" />
+                              <div>
+                                <div className="flex items-center gap-2 font-medium text-slate-950 dark:text-white">
+                                  {displayName}
+                                  <Badge
+                                    variant="outline"
+                                    className="border-blue-300 text-xs text-blue-700 dark:border-blue-700 dark:text-blue-400"
+                                  >
+                                    <Link2 className="mr-1 h-3 w-3" />
+                                    {vl.status === 'opened' ? 'Viewed' : 'Pending Viewer'}
+                                  </Badge>
+                                </div>
+                                <div className="text-sm text-slate-500 dark:text-slate-400">
+                                  {vl.email !== displayName && (
+                                    <span className="mr-2">{vl.email}</span>
+                                  )}
+                                  {subtitle}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <Badge variant="secondary">
+                              <Eye className="mr-1 h-3 w-3" />
+                              viewer link
+                            </Badge>
+                          </td>
+                          <td className="px-5 py-4 text-sm text-slate-400 dark:text-slate-500">
+                            —
+                          </td>
+                          <td className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
+                            Invited {formatDate(vl.createdAt)}
+                          </td>
+                          <td className="px-5 py-4">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              aria-label="Go to room"
+                              onClick={() => {
+                                if (vl.roomId) {
+                                  window.location.href = `/rooms/${vl.roomId}?manage=links`;
+                                }
+                              }}
+                              disabled={!vl.roomId}
+                            >
+                              <Link2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
