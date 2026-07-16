@@ -17,6 +17,8 @@ import {
   Lock,
   Tag,
   Star,
+  Link2,
+  Users,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -716,6 +718,25 @@ export default function RoomDetailPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setManageOpen(true);
+                      setManagePane('links');
+                    }}
+                  >
+                    <Link2 className="mr-2 h-4 w-4" />
+                    Share Links
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setManageOpen(true);
+                      setManagePane('members');
+                    }}
+                  >
+                    <Users className="mr-2 h-4 w-4" />
+                    Access
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/settings`)}>
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
