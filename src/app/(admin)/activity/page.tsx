@@ -262,11 +262,28 @@ export default function ActivityPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Users</SelectItem>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
-                      </SelectItem>
-                    ))}
+                    {(() => {
+                      const nameCounts: Record<string, number> = {};
+                      for (const u of users) {
+                        if (u.firstName && u.lastName) {
+                          const n = `${u.firstName} ${u.lastName}`;
+                          nameCounts[n] = (nameCounts[n] ?? 0) + 1;
+                        }
+                      }
+                      return users.map((u) => {
+                        const fullName =
+                          u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : null;
+                        const label =
+                          fullName && (nameCounts[fullName] ?? 0) > 1
+                            ? `${fullName} (${u.email})`
+                            : (fullName ?? u.email);
+                        return (
+                          <SelectItem key={u.id} value={u.id}>
+                            {label}
+                          </SelectItem>
+                        );
+                      });
+                    })()}
                   </SelectContent>
                 </Select>
               )}
