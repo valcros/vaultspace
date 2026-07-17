@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
+  Clock,
   Download,
   ZoomIn,
   ZoomOut,
@@ -31,6 +32,24 @@ interface DocumentInfo {
   viewerName: string | null;
 }
 
+interface DocumentVersion {
+  id: string;
+  versionNumber: number;
+  size: number;
+  createdAt: string;
+  isCurrent: boolean;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function ViewerDocumentPage() {
   const params = useParams();
   const router = useRouter();
@@ -43,6 +62,8 @@ export default function ViewerDocumentPage() {
   const [zoom, setZoom] = React.useState(100);
   const [rotation, setRotation] = React.useState(0);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
+  const [versions, setVersions] = React.useState<DocumentVersion[] | null>(null);
+  const [showVersionPanel, setShowVersionPanel] = React.useState(false);
   const viewerRef = React.useRef<HTMLDivElement>(null);
   const touchStartRef = React.useRef<{ x: number; y: number; dist: number } | null>(null);
 
@@ -68,6 +89,19 @@ export default function ViewerDocumentPage() {
   React.useEffect(() => {
     fetchDocument();
   }, [fetchDocument]);
+
+  // Silently probe version history -- shows the History button only when the
+  // room has allowViewerVersionHistory enabled (403 = feature off, no button).
+  React.useEffect(() => {
+    fetch(`/api/view/${shareToken}/documents/${documentId}/versions`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { versions?: DocumentVersion[] } | null) => {
+        if (data?.versions && data.versions.length > 1) {
+          setVersions(data.versions);
+        }
+      })
+      .catch(() => {});
+  }, [shareToken, documentId]);
 
   const handleZoomIn = () => {
     setZoom(Math.min(zoom + 25, 200));
@@ -322,6 +356,21 @@ export default function ViewerDocumentPage() {
                   </Button>
                 </>
               )}
+              {versions && (
+                <>
+                  <div className="mx-2 h-6 w-px bg-slate-700" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowVersionPanel((v) => !v)}
+                    className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
+                    aria-label="Version history"
+                  >
+                    <Clock className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">History</span>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -371,6 +420,56 @@ export default function ViewerDocumentPage() {
           Use arrow keys to navigate • Protected by VaultSpace
         </div>
       </div>
+
+      {/* Version History Panel */}
+      {showVersionPanel && versions && (
+        <div className="fixed inset-y-0 right-0 z-50 flex w-80 flex-col border-l border-slate-700 bg-slate-950 shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+            <h2 className="text-sm font-semibold text-white">Version History</h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowVersionPanel(false)}
+              className="rounded-xl text-slate-400 hover:text-white"
+              aria-label="Close version history"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex-1 space-y-2 overflow-y-auto p-4">
+            {versions.map((v) => (
+              <div key={v.id} className="space-y-1.5 rounded-xl border border-slate-800 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-white">v{v.versionNumber}</span>
+                  {v.isCurrent && (
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">
+                      Current
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400">
+                  {new Date(v.createdAt).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </p>
+                <p className="text-xs text-slate-500">{formatSize(v.size)}</p>
+                {document.downloadEnabled && (
+                  <a
+                    href={`/api/view/${shareToken}/documents/${documentId}/download?versionId=${v.id}`}
+                    className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                    download
+                  >
+                    <Download className="h-3 w-3" />
+                    Download v{v.versionNumber}
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
