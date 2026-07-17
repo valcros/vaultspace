@@ -162,7 +162,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             fileSizeBytes: 0,
             isScanned: false,
           },
-          { jobId: `preview:${latestVersion.id}` }
+          { jobId: `preview-${latestVersion.id}` }
         )
         .catch((err: unknown) => {
           console.error('[ThumbnailAPI] Failed to enqueue preview job:', err);

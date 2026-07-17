@@ -57,6 +57,11 @@ COPY --from=builder /app/src ./src
 # Create storage directory
 RUN mkdir -p storage && chown -R worker:nodejs storage
 
+# Pre-build fontconfig cache in a worker-owned dir so the non-root user
+# does not hit "No writable cache directories" at preview-generation time.
+RUN mkdir -p /app/fontcache && FC_CACHEDIR=/app/fontcache fc-cache -fv && chown -R worker:nodejs /app/fontcache
+ENV FC_CACHEDIR=/app/fontcache
+
 # Switch to non-root user
 USER worker
 
