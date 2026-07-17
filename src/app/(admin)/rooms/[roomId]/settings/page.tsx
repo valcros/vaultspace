@@ -56,6 +56,7 @@ export default function RoomSettingsPage() {
     watermarkEnabled: true,
     watermarkTemplate: '{viewer_email} | {timestamp}',
     downloadEnabled: false,
+    allowViewerVersionHistory: false,
     ndaRequired: false,
     ndaText: '',
     defaultExpiryDays: '',
@@ -80,6 +81,7 @@ export default function RoomSettingsPage() {
           watermarkEnabled: data.room.watermarkEnabled,
           watermarkTemplate: data.room.watermarkTemplate || '{viewer_email} | {timestamp}',
           downloadEnabled: data.room.allowDownloads,
+          allowViewerVersionHistory: data.room.allowViewerVersionHistory || false,
           ndaRequired: data.room.requiresNda || false,
           ndaText: data.room.ndaContent || '',
           defaultExpiryDays: data.room.defaultExpiryDays?.toString() || '',
@@ -117,6 +119,7 @@ export default function RoomSettingsPage() {
           enableWatermark: formData.watermarkEnabled,
           watermarkTemplate: formData.watermarkTemplate,
           allowDownloads: formData.downloadEnabled,
+          allowViewerVersionHistory: formData.allowViewerVersionHistory,
           requiresNda: formData.ndaRequired,
           ndaContent: formData.ndaText,
           defaultExpiryDays: formData.defaultExpiryDays
@@ -317,6 +320,24 @@ export default function RoomSettingsPage() {
                 checked={formData.downloadEnabled}
                 onCheckedChange={(checked) =>
                   setFormData({ ...formData, downloadEnabled: checked })
+                }
+              />
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="viewerVersionHistory">Viewer Version History</Label>
+                <p className="mt-1 text-sm text-neutral-500">
+                  Let viewers see and preview prior document versions
+                </p>
+              </div>
+              <Switch
+                id="viewerVersionHistory"
+                checked={formData.allowViewerVersionHistory}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, allowViewerVersionHistory: checked })
                 }
               />
             </div>
