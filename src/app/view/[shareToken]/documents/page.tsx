@@ -205,6 +205,7 @@ export default function ViewerDocumentsPage() {
               size="sm"
               onClick={navigateToRoot}
               className="flex-shrink-0 rounded-xl"
+              aria-label="Go to root folder"
             >
               <Home className="h-4 w-4" />
             </Button>
