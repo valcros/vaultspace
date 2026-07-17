@@ -307,6 +307,7 @@ export default function ViewerDocumentPage() {
                 onClick={handlePrevPage}
                 disabled={currentPage === 1}
                 className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50"
+                aria-label="Previous page"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -319,6 +320,7 @@ export default function ViewerDocumentPage() {
                 onClick={handleNextPage}
                 disabled={currentPage === effectivePageCount}
                 className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50"
+                aria-label="Next page"
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -365,6 +367,7 @@ export default function ViewerDocumentPage() {
                 size="sm"
                 onClick={handleFullscreen}
                 className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white"
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
               >
                 {isFullscreen ? <X className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </Button>
