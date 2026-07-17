@@ -10,6 +10,8 @@ import {
   Plus,
   MoreHorizontal,
   Eye,
+  EyeOff,
+  Download,
   Trash2,
   Copy,
   BarChart3,
@@ -205,6 +207,7 @@ export function ManageDrawer({
   const [isInvitingViewers, setIsInvitingViewers] = React.useState(false);
   const [revokingViewerEmail, setRevokingViewerEmail] = React.useState<string | null>(null);
   const [resendingLinkId, setResendingLinkId] = React.useState<string | null>(null);
+  const [togglingPermissionId, setTogglingPermissionId] = React.useState<string | null>(null);
 
   // Member add states
   const [isAddingMember, setIsAddingMember] = React.useState(false);
@@ -516,6 +519,45 @@ export function ManageDrawer({
       toast({ title: 'Error', description: 'Failed to copy link', variant: 'destructive' });
     }
   }, []);
+
+  // Handle permission toggle (VIEW <-> DOWNLOAD)
+  const handleTogglePermission = React.useCallback(
+    async (link: ShareLink) => {
+      const newPermission = link.permission === 'DOWNLOAD' ? 'VIEW' : 'DOWNLOAD';
+      setTogglingPermissionId(link.id);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/links/${link.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ permission: newPermission }),
+        });
+        if (response.ok) {
+          fetchLinks();
+          toast({
+            title: 'Updated',
+            description:
+              newPermission === 'DOWNLOAD'
+                ? 'Downloads enabled for this link'
+                : 'Link set to view-only',
+            variant: 'success',
+          });
+        } else {
+          const error = await response.json();
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to update link',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Toggle permission error:', error);
+        toast({ title: 'Error', description: 'Failed to update link', variant: 'destructive' });
+      } finally {
+        setTogglingPermissionId(null);
+      }
+    },
+    [roomId, fetchLinks]
+  );
 
   // Handle delete link
   const handleDeleteLinkClick = React.useCallback((link: ShareLink) => {
@@ -1131,6 +1173,21 @@ export function ManageDrawer({
                                     <DropdownMenuItem onClick={() => handleCopyLink(link)}>
                                       <Copy className="mr-2 h-4 w-4" />
                                       Copy Link
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleTogglePermission(link)}
+                                      disabled={togglingPermissionId === link.id}
+                                    >
+                                      {togglingPermissionId === link.id ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      ) : link.permission === 'DOWNLOAD' ? (
+                                        <EyeOff className="mr-2 h-4 w-4" />
+                                      ) : (
+                                        <Download className="mr-2 h-4 w-4" />
+                                      )}
+                                      {link.permission === 'DOWNLOAD'
+                                        ? 'Make view-only'
+                                        : 'Enable downloads'}
                                     </DropdownMenuItem>
                                     {isInvite && link.isActive && (
                                       <DropdownMenuItem

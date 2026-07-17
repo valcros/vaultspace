@@ -28,7 +28,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       room: {
         select: {
           id: true,
-          allowDownloads: true,
           enableWatermark: true,
           watermarkTemplate: true,
         },
@@ -120,7 +119,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         mimeType: document.mimeType,
         pageCount,
         previewUrl: `/api/view/${shareToken}/documents/${documentId}/preview`,
-        downloadEnabled: viewerSession.room.allowDownloads && document.allowDownload,
+        downloadEnabled: viewerSession.link.permission === 'DOWNLOAD' && document.allowDownload,
         watermarkText,
         viewerEmail: viewerSession.visitorEmail ?? null,
         viewerName: viewerSession.visitorName ?? null,
