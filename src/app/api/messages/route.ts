@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      return tx.message.create({
+      const createdMessage = await tx.message.create({
         data: {
           organizationId: session.organizationId,
           senderUserId: session.userId,
@@ -181,6 +181,25 @@ export async function POST(request: NextRequest) {
           },
         },
       });
+
+      await tx.event.create({
+        data: {
+          organizationId: session.organizationId,
+          eventType: 'ADMIN_MESSAGE_SENT',
+          actorType: 'ADMIN',
+          actorId: session.userId,
+          actorEmail: session.user.email,
+          roomId: roomId || null,
+          documentId: documentId || null,
+          description: `Sent message to ${recipientEmail.toLowerCase()}`,
+          metadata: {
+            subject: subject.trim(),
+            recipientEmail: recipientEmail.toLowerCase(),
+          },
+        },
+      });
+
+      return createdMessage;
     });
 
     return NextResponse.json(
