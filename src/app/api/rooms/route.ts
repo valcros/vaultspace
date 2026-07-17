@@ -164,6 +164,19 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      await tx.event.create({
+        data: {
+          organizationId: session.organizationId,
+          eventType: 'ROOM_CREATED',
+          actorType: 'ADMIN',
+          actorId: session.userId,
+          actorEmail: session.user.email,
+          roomId: newRoom.id,
+          description: `Created room "${newRoom.name}"`,
+          ...(templateId && { metadata: { templateId } }),
+        },
+      });
+
       return newRoom;
     });
 

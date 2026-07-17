@@ -129,9 +129,16 @@ export async function PATCH(request: NextRequest) {
         ? await optimizeImageDataUrl(faviconUrl, 64)
         : faviconUrl;
 
+    const changedFields = [
+      ...(name !== undefined ? ['name'] : []),
+      ...(logoUrl !== undefined ? ['logoUrl'] : []),
+      ...(primaryColor !== undefined ? ['primaryColor'] : []),
+      ...(faviconUrl !== undefined ? ['faviconUrl'] : []),
+    ];
+
     // Use RLS context for org-scoped queries
     const updatedOrg = await withOrgContext(session.organizationId, async (tx) => {
-      return tx.organization.update({
+      const org = await tx.organization.update({
         where: { id: session.organizationId },
         data: {
           ...(name !== undefined && { name: name.trim() }),
@@ -148,6 +155,20 @@ export async function PATCH(request: NextRequest) {
           faviconUrl: true,
         },
       });
+
+      await tx.event.create({
+        data: {
+          organizationId: session.organizationId,
+          eventType: 'ORGANIZATION_UPDATED',
+          actorType: 'ADMIN',
+          actorId: session.userId,
+          actorEmail: session.user.email,
+          description: 'Updated organization branding',
+          metadata: { fields: changedFields },
+        },
+      });
+
+      return org;
     });
 
     return NextResponse.json({ branding: updatedOrg });
