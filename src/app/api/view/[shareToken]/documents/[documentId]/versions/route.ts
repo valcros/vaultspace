@@ -73,7 +73,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       const versions = await tx.documentVersion.findMany({
         where: { documentId, organizationId: viewerSession.organizationId, scanStatus: 'CLEAN' },
         orderBy: { versionNumber: 'desc' },
-        select: { id: true, versionNumber: true, fileSize: true, createdAt: true },
+        select: {
+          id: true,
+          versionNumber: true,
+          fileSize: true,
+          createdAt: true,
+          previewAssets: {
+            where: { assetType: 'RENDER' },
+            select: { id: true },
+          },
+        },
       });
       return { document, versions };
     });
@@ -90,6 +99,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         size: Number(v.fileSize),
         createdAt: v.createdAt.toISOString(),
         isCurrent: v.id === result.document.currentVersionId,
+        pageCount: v.previewAssets.length,
       })),
     });
   } catch (error) {
