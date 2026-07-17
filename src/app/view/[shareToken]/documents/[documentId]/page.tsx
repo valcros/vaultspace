@@ -38,6 +38,7 @@ interface DocumentVersion {
   size: number;
   createdAt: string;
   isCurrent: boolean;
+  pageCount: number;
 }
 
 function formatSize(bytes: number): string {
@@ -64,6 +65,8 @@ export default function ViewerDocumentPage() {
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [versions, setVersions] = React.useState<DocumentVersion[] | null>(null);
   const [showVersionPanel, setShowVersionPanel] = React.useState(false);
+  const [activeVersionId, setActiveVersionId] = React.useState<string | null>(null);
+  const [activeTotalPages, setActiveTotalPages] = React.useState<number | null>(null);
   const viewerRef = React.useRef<HTMLDivElement>(null);
   const touchStartRef = React.useRef<{ x: number; y: number; dist: number } | null>(null);
 
@@ -115,15 +118,40 @@ export default function ViewerDocumentPage() {
     setRotation((rotation + 90) % 360);
   };
 
+  // Page count for the currently-displayed version (historical or current)
+  const effectivePageCount =
+    activeVersionId && activeTotalPages !== null ? activeTotalPages : (document?.pageCount ?? 1);
+
+  // Preview URL — pass versionId when viewing a historical version
+  const previewSrc = document
+    ? `${document.previewUrl}?page=${currentPage}${activeVersionId ? `&versionId=${activeVersionId}` : ''}`
+    : '';
+
+  const handleSwitchVersion = React.useCallback((version: DocumentVersion) => {
+    if (version.isCurrent) {
+      setActiveVersionId(null);
+      setActiveTotalPages(null);
+    } else {
+      setActiveVersionId(version.id);
+      setActiveTotalPages(version.pageCount > 0 ? version.pageCount : 1);
+    }
+    setCurrentPage(1);
+    setShowVersionPanel(false);
+  }, []);
+
+  const handleReturnToCurrent = React.useCallback(() => {
+    setActiveVersionId(null);
+    setActiveTotalPages(null);
+    setCurrentPage(1);
+  }, []);
+
   const handlePrevPage = React.useCallback(() => {
     setCurrentPage((page) => Math.max(page - 1, 1));
   }, []);
 
   const handleNextPage = React.useCallback(() => {
-    if (document) {
-      setCurrentPage((page) => Math.min(page + 1, document.pageCount));
-    }
-  }, [document]);
+    setCurrentPage((page) => Math.min(page + 1, effectivePageCount));
+  }, [effectivePageCount]);
 
   // Touch gesture handlers for mobile
   const handleTouchStart = React.useCallback((e: React.TouchEvent) => {
@@ -216,9 +244,7 @@ export default function ViewerDocumentPage() {
       if (e.key === 'ArrowLeft') {
         setCurrentPage((prev) => Math.max(prev - 1, 1));
       } else if (e.key === 'ArrowRight') {
-        if (document) {
-          setCurrentPage((prev) => Math.min(prev + 1, document.pageCount));
-        }
+        setCurrentPage((prev) => Math.min(prev + 1, effectivePageCount));
       } else if (e.key === 'Escape' && isFullscreen) {
         globalThis.document.exitFullscreen?.();
         setIsFullscreen(false);
@@ -227,7 +253,7 @@ export default function ViewerDocumentPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [document, isFullscreen]);
+  }, [document, isFullscreen, effectivePageCount]);
 
   if (isLoading) {
     return (
@@ -285,13 +311,13 @@ export default function ViewerDocumentPage() {
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="min-w-[80px] text-center text-sm text-slate-300">
-                {currentPage} / {document.pageCount}
+                {currentPage} / {effectivePageCount}
               </span>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleNextPage}
-                disabled={currentPage === document.pageCount}
+                disabled={currentPage === effectivePageCount}
                 className="rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -376,6 +402,22 @@ export default function ViewerDocumentPage() {
         </div>
       </div>
 
+      {/* Historical version banner */}
+      {activeVersionId && (
+        <div className="z-10 flex items-center justify-center gap-3 bg-amber-600/20 px-4 py-2 text-sm text-amber-300">
+          <span>
+            Viewing v{versions?.find((v) => v.id === activeVersionId)?.versionNumber} — this is not
+            the current version
+          </span>
+          <button
+            onClick={handleReturnToCurrent}
+            className="rounded-lg bg-amber-500/20 px-3 py-0.5 text-xs font-medium text-amber-200 hover:bg-amber-500/30"
+          >
+            Back to current
+          </button>
+        </div>
+      )}
+
       {/* Document Viewer */}
       <div
         className="flex flex-1 items-start justify-center overflow-auto p-4 sm:p-8"
@@ -395,7 +437,7 @@ export default function ViewerDocumentPage() {
             {/* Document Preview Image */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`${document.previewUrl}?page=${currentPage}`}
+              src={previewSrc}
               alt={`Page ${currentPage} of ${document.name}`}
               className="w-full max-w-[800px]"
               draggable={false}
@@ -437,36 +479,55 @@ export default function ViewerDocumentPage() {
             </Button>
           </div>
           <div className="flex-1 space-y-2 overflow-y-auto p-4">
-            {versions.map((v) => (
-              <div key={v.id} className="space-y-1.5 rounded-xl border border-slate-800 p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-white">v{v.versionNumber}</span>
-                  {v.isCurrent && (
-                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">
-                      Current
-                    </span>
+            {versions.map((v) => {
+              const isActive = activeVersionId === v.id || (v.isCurrent && !activeVersionId);
+              return (
+                <div
+                  key={v.id}
+                  className={`space-y-1.5 rounded-xl border p-3 ${isActive ? 'border-blue-600 bg-blue-950/40' : 'border-slate-800'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-white">v{v.versionNumber}</span>
+                    <div className="flex items-center gap-1.5">
+                      {v.isCurrent && (
+                        <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">
+                          Current
+                        </span>
+                      )}
+                      {!isActive && (
+                        <button
+                          onClick={() => handleSwitchVersion(v)}
+                          className="rounded-lg bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-200 hover:bg-slate-600"
+                        >
+                          View
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    {new Date(v.createdAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {formatSize(v.size)}
+                    {v.pageCount > 0 && ` · ${v.pageCount}p`}
+                  </p>
+                  {document.downloadEnabled && (
+                    <a
+                      href={`/api/view/${shareToken}/documents/${documentId}/download?versionId=${v.id}`}
+                      className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                      download
+                    >
+                      <Download className="h-3 w-3" />
+                      Download v{v.versionNumber}
+                    </a>
                   )}
                 </div>
-                <p className="text-xs text-slate-400">
-                  {new Date(v.createdAt).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </p>
-                <p className="text-xs text-slate-500">{formatSize(v.size)}</p>
-                {document.downloadEnabled && (
-                  <a
-                    href={`/api/view/${shareToken}/documents/${documentId}/download?versionId=${v.id}`}
-                    className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
-                    download
-                  >
-                    <Download className="h-3 w-3" />
-                    Download v{v.versionNumber}
-                  </a>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
