@@ -140,9 +140,17 @@ Some provider implementations ship as MVP infrastructure even though the user-fa
 
 **LocalStorageProvider implementation:** Generate HMAC-signed URLs with embedded expiry timestamp. The `/api/storage/[key]` endpoint verifies the HMAC and checks expiry before streaming the file. This is not optional -- security tests SEC-016 depend on it.
 
+**Current implementation note (as of commit 58f1f27):** Preview binary delivery is **app-served** — the Next.js
+preview route streams the asset from storage back to the client. It does NOT issue a storage-offloaded redirect
+(Azure SAS token / S3 presigned URL). `StorageProvider.getSignedUrl()` is retained in the interface for future
+re-implementation once CORS and content-type header issues are resolved, but it is not called by the current
+preview routes. The 5-minute expiry window is enforced through session authentication on the streaming endpoint,
+not as an embedded URL expiry parameter.
+
 **What to ignore in other docs:**
 
 - PROVIDER_DEFAULTS.md's comment "No expiry on signed URLs (assumption: local access is trusted)" is **wrong**. Local storage must enforce expiry.
+- ARCHITECTURE.md's pseudocode showing "Generate temporary signed URL for preview (5 minute expiry)" at the `/preview` step is **stale** post-58f1f27. The preview endpoint streams the binary directly; no signed URL is generated.
 
 ---
 
