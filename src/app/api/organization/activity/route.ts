@@ -10,6 +10,53 @@ import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 
+const EVENT_TYPE_GROUPS: Record<string, string[]> = {
+  document: [
+    'DOCUMENT_UPLOADED',
+    'DOCUMENT_VERSION_CREATED',
+    'DOCUMENT_UPDATED',
+    'DOCUMENT_METADATA_UPDATED',
+    'DOCUMENT_MOVED',
+    'DOCUMENT_TAGGED',
+    'DOCUMENT_ARCHIVED',
+    'DOCUMENT_DELETED',
+    'DOCUMENT_RESTORED',
+    'DOCUMENT_SCANNED',
+    'DOCUMENT_VIEWED',
+    'DOCUMENT_DOWNLOADED',
+    'DOCUMENT_PRINTED',
+    'PAGE_VIEWED',
+  ],
+  room: [
+    'ROOM_CREATED',
+    'ROOM_UPDATED',
+    'ROOM_STATUS_CHANGED',
+    'ROOM_ARCHIVED',
+    'ROOM_CLOSED',
+    'ROOM_DUPLICATED',
+    'ROOM_DELETED',
+  ],
+  member: [
+    'USER_CREATED',
+    'USER_INVITED',
+    'USER_ACCEPTED_INVITATION',
+    'USER_UPDATED',
+    'USER_DELETED',
+    'PERMISSION_GRANTED',
+    'PERMISSION_REVOKED',
+    'PERMISSION_UPDATED',
+  ],
+  link: ['LINK_CREATED', 'LINK_REVOKED', 'LINK_ACCESSED', 'LINK_PASSWORD_VERIFIED'],
+  auth: [
+    'USER_LOGIN',
+    'USER_LOGOUT',
+    'USER_2FA_ENABLED',
+    'USER_2FA_DISABLED',
+    'USER_PASSWORD_CHANGED',
+    'USER_PASSWORD_RESET',
+  ],
+};
+
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +93,8 @@ export async function GET(request: NextRequest) {
       where['actorId'] = userId;
     }
     if (eventType) {
-      where['eventType'] = eventType;
+      const group = EVENT_TYPE_GROUPS[eventType];
+      where['eventType'] = group ? { in: group } : eventType;
     }
     if (roomId) {
       where['roomId'] = roomId;
@@ -59,34 +107,51 @@ export async function GET(request: NextRequest) {
     }
 
     // Use RLS context for org-scoped queries
-    const { events, total } = await withOrgContext(session.organizationId, async (tx) => {
-      const [events, total] = await Promise.all([
-        tx.event.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          skip: (page - 1) * limit,
-          take: limit,
-          include: {
-            actor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
+    const { events, total, folderByDocId } = await withOrgContext(
+      session.organizationId,
+      async (tx) => {
+        const [events, total] = await Promise.all([
+          tx.event.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+            include: {
+              actor: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
+              },
+              room: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
-            room: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        }),
-        tx.event.count({ where }),
-      ]);
-      return { events, total };
-    });
+          }),
+          tx.event.count({ where }),
+        ]);
+
+        // Secondary lookup: resolve folder names for document events
+        const docIds = events.flatMap((e) => (e.documentId ? [e.documentId] : []));
+        const folderByDocId = new Map<string, string | null>();
+        if (docIds.length > 0) {
+          const docs = await tx.document.findMany({
+            where: { id: { in: docIds }, organizationId: session.organizationId },
+            select: { id: true, folder: { select: { name: true } } },
+          });
+          for (const doc of docs) {
+            folderByDocId.set(doc.id, doc.folder?.name ?? null);
+          }
+        }
+
+        return { events, total, folderByDocId };
+      }
+    );
 
     // Export as CSV if requested
     if (exportCsv) {
@@ -150,6 +215,7 @@ export async function GET(request: NextRequest) {
         description: event.description,
         ipAddress: event.ipAddress,
         createdAt: event.createdAt,
+        folderName: event.documentId ? (folderByDocId.get(event.documentId) ?? null) : null,
       })),
       pagination: {
         page,
