@@ -70,5 +70,25 @@ export async function register() {
           `Configure CLAMAV_HOST and REDIS_URL to enable scanning.`
       );
     }
+
+    // Verify runtime DB role does not bypass RLS
+    const { checkRlsRole } = await import('@/lib/rls-startup-guard');
+    const rlsResult = await checkRlsRole();
+    if (rlsResult.status === 'bypassing') {
+      const msg =
+        `[RLSGuard] Runtime database role '${rlsResult.roleName}' has BYPASSRLS — ` +
+        `tenant isolation is not enforced at the database layer. ` +
+        `Create a restricted role (NOCREATEDB NOCREATEROLE NOBYPASSRLS) for DATABASE_URL ` +
+        `and reserve DATABASE_URL_ADMIN for the privileged role.`;
+      if (mode === 'azure') {
+        throw new Error(msg);
+      } else {
+        console.warn(msg);
+      }
+    } else if (rlsResult.status === 'error') {
+      console.warn(`[RLSGuard] Could not verify database role: ${rlsResult.message}`);
+    } else {
+      console.log(`[RLSGuard] Runtime role '${rlsResult.roleName}' NOBYPASSRLS — OK`);
+    }
   }
 }
