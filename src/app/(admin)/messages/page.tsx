@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/layout/page-header';
+import { useRequireAdmin } from '@/components/layout/role-provider';
 import {
   AdminEmptyState,
   AdminPageContent,
@@ -62,6 +63,7 @@ type ViewMode = 'inbox' | 'sent';
 // ============================================================================
 
 export default function MessagesPage() {
+  useRequireAdmin();
   const [viewMode, setViewMode] = React.useState<ViewMode>('inbox');
   const [messages, setMessages] = React.useState<InboxMessage[]>([]);
   const [loading, setLoading] = React.useState(true);

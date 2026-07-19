@@ -62,7 +62,29 @@ export async function getServerComponentSession() {
     return null;
   }
 
+  // Resolve the caller's org role (ADMIN | VIEWER) so the admin shell and pages
+  // can gate admin-only UI. Uses bootstrapDb for the same pre-context reason as
+  // the lookups above; the membership must be active.
+  const membership = await bootstrapDb.userOrganization.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: session.organizationId,
+        userId: session.userId,
+      },
+    },
+    select: { role: true, isActive: true },
+  });
+
+  if (!membership || !membership.isActive) {
+    return null;
+  }
+
   // Re-state organizationId so the returned type carries the non-null
   // narrowing from the guard above.
-  return { ...session, organizationId: session.organizationId, organization };
+  return {
+    ...session,
+    organizationId: session.organizationId,
+    organization,
+    role: membership.role,
+  };
 }

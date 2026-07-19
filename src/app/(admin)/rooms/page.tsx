@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { useIsAdmin } from '@/components/layout/role-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyRooms } from '@/components/illustrations/EmptyState';
 
@@ -54,6 +55,7 @@ interface Room {
 
 export default function RoomsPage() {
   const router = useRouter();
+  const isAdmin = useIsAdmin();
   const [rooms, setRooms] = React.useState<Room[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -125,10 +127,12 @@ export default function RoomsPage() {
         variant="work"
         title="Data Rooms"
         actions={
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Room
-          </Button>
+          isAdmin ? (
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Room
+            </Button>
+          ) : null
         }
       />
 
@@ -172,14 +176,26 @@ export default function RoomsPage() {
         ) : rooms.length === 0 ? (
           <Card className="p-8 text-center">
             <EmptyRooms className="mx-auto mb-4" />
-            <h3 className="mb-2 text-lg font-semibold text-neutral-900">No data rooms yet</h3>
-            <p className="mx-auto mb-6 max-w-sm text-neutral-500">
-              Create your first data room to start securely sharing documents with stakeholders.
-            </p>
-            <Button onClick={() => setShowCreateDialog(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create your first room
-            </Button>
+            {isAdmin ? (
+              <>
+                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No data rooms yet</h3>
+                <p className="mx-auto mb-6 max-w-sm text-neutral-500">
+                  Create your first data room to start securely sharing documents with stakeholders.
+                </p>
+                <Button onClick={() => setShowCreateDialog(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create your first room
+                </Button>
+              </>
+            ) : (
+              <>
+                <h3 className="mb-2 text-lg font-semibold text-neutral-900">No rooms yet</h3>
+                <p className="mx-auto max-w-sm text-neutral-500">
+                  No data rooms have been shared with you yet. An administrator will grant you
+                  access.
+                </p>
+              </>
+            )}
           </Card>
         ) : (
           <>

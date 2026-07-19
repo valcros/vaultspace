@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
 import { AdminEmptyState, AdminSurface } from '@/components/layout/admin-page';
+import { useIsAdmin } from '@/components/layout/role-provider';
 import {
   Sheet,
   SheetContent,
@@ -90,6 +91,7 @@ export default function RoomDetailPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isAdmin = useIsAdmin();
   const roomId = params['roomId'] as string;
 
   // Drawer-internal pane state. Documents are the page body now, not a tab,
@@ -701,65 +703,69 @@ export default function RoomDetailPage() {
           actions={
             <div className="flex flex-wrap items-center justify-end gap-2">
               {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label="Manage room"
-                onClick={() => setManageOpen(true)}
-              >
-                <Settings className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Manage</span>
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" aria-label="More room actions">
-                    <MoreHorizontal className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">More</span>
+              {isAdmin && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Manage room"
+                    onClick={() => setManageOpen(true)}
+                  >
+                    <Settings className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Manage</span>
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setManageOpen(true);
-                      setManagePane('links');
-                    }}
-                  >
-                    <Link2 className="mr-2 h-4 w-4" />
-                    Share Links
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setManageOpen(true);
-                      setManagePane('members');
-                    }}
-                  >
-                    <Users className="mr-2 h-4 w-4" />
-                    Access
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/settings`)}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/analytics`)}>
-                    <BarChart3 className="mr-2 h-4 w-4" />
-                    Analytics
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/audit`)}>
-                    <History className="mr-2 h-4 w-4" />
-                    Audit Trail
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/trash`)}>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Trash
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleDuplicateRoom}>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Duplicate Room
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" aria-label="More room actions">
+                        <MoreHorizontal className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">More</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setManageOpen(true);
+                          setManagePane('links');
+                        }}
+                      >
+                        <Link2 className="mr-2 h-4 w-4" />
+                        Share Links
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setManageOpen(true);
+                          setManagePane('members');
+                        }}
+                      >
+                        <Users className="mr-2 h-4 w-4" />
+                        Access
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/settings`)}>
+                        <Settings className="mr-2 h-4 w-4" />
+                        Settings
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/analytics`)}>
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                        Analytics
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/audit`)}>
+                        <History className="mr-2 h-4 w-4" />
+                        Audit Trail
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/trash`)}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Trash
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleDuplicateRoom}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        Duplicate Room
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
             </div>
           }
         />
