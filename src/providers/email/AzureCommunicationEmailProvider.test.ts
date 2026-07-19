@@ -41,6 +41,27 @@ describe('AzureCommunicationEmailProvider', () => {
     );
   });
 
+  it('overrides the sender address with a per-org `from` when provided', async () => {
+    const provider = new AzureCommunicationEmailProvider({
+      connectionString:
+        'endpoint=https://acs-vaultspace-staging.unitedstates.communication.azure.com/;accesskey=test',
+      senderAddress: 'noreply@vaultspace.org',
+    });
+
+    await provider.sendEmail({
+      to: 'recipient@example.com',
+      subject: 'Subject',
+      html: '<p>Hello</p>',
+      from: 'brightside@vaultspace.org',
+    });
+
+    expect(mockBeginSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        senderAddress: 'brightside@vaultspace.org',
+      })
+    );
+  });
+
   it('throws when ACS returns a non-succeeded send status', async () => {
     mockPollUntilDone.mockResolvedValue({ status: 'Failed', id: 'message-2' });
     const provider = new AzureCommunicationEmailProvider({

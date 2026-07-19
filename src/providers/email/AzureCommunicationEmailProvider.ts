@@ -28,7 +28,9 @@ export class AzureCommunicationEmailProvider implements EmailProvider {
       : [{ address: options.to }];
 
     const message = {
-      senderAddress: this.senderAddress,
+      // Per-org sender override (a verified sender username on the ACS domain);
+      // its display name is configured in ACS. Falls back to the global sender.
+      senderAddress: options.from ?? this.senderAddress,
       content: {
         subject: options.subject,
         html: options.html,
