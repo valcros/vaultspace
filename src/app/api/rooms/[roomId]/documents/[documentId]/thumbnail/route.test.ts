@@ -150,7 +150,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
         documentId: 'doc-1',
         versionId: 'ver-1',
       }),
-      expect.objectContaining({ jobId: 'preview:ver-1' })
+      expect.objectContaining({ jobId: 'preview-ver-1' })
     );
 
     // Restore
