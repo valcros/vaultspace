@@ -12,6 +12,8 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
+
+import { useIsAdmin } from './role-provider';
 import { DockHeader } from './dock-header';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { clsx } from 'clsx';
@@ -61,6 +63,8 @@ interface DockItem {
   icon: LucideIcon;
   href: string;
   badge?: number;
+  /** Hidden from VIEWER org members (admin-only destination/action). */
+  adminOnly?: boolean;
 }
 
 type DockPosition = 'top' | 'bottom' | 'left' | 'right';
@@ -72,16 +76,16 @@ type DockPosition = 'top' | 'bottom' | 'left' | 'right';
 const navigationItems: DockItem[] = [
   { id: 'dashboard', label: 'Home', icon: Home, href: '/dashboard' },
   { id: 'rooms', label: 'Rooms', icon: FolderOpen, href: '/rooms' },
-  { id: 'users', label: 'Users', icon: Users, href: '/users' },
-  { id: 'groups', label: 'Groups', icon: UsersRound, href: '/groups' },
-  { id: 'activity', label: 'Activity', icon: Activity, href: '/activity' },
-  { id: 'messages', label: 'Messages', icon: Mail, href: '/messages' },
+  { id: 'users', label: 'Users', icon: Users, href: '/users', adminOnly: true },
+  { id: 'groups', label: 'Groups', icon: UsersRound, href: '/groups', adminOnly: true },
+  { id: 'activity', label: 'Activity', icon: Activity, href: '/activity', adminOnly: true },
+  { id: 'messages', label: 'Messages', icon: Mail, href: '/messages', adminOnly: true },
   { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
 ];
 
 const quickActions: DockItem[] = [
   { id: 'search', label: 'Search', icon: Search, href: '#search' },
-  { id: 'create', label: 'Create Room', icon: Plus, href: '#create' },
+  { id: 'create', label: 'Create Room', icon: Plus, href: '#create', adminOnly: true },
 ];
 
 // ============================================================================
@@ -292,6 +296,10 @@ function useDockCompactMode(pathname: string) {
 export function DockShell({ children, user, organization }: DockShellProps) {
   const mainRef = React.useRef<HTMLElement>(null);
   const dockRef = React.useRef<HTMLDivElement>(null);
+  const isAdmin = useIsAdmin();
+  // VIEWERs see only non-admin destinations/actions in the dock.
+  const visibleNav = navigationItems.filter((item) => isAdmin || !item.adminOnly);
+  const visibleQuickActions = quickActions.filter((item) => isAdmin || !item.adminOnly);
   const pathname = usePathname();
   const isTouch = useIsTouchDevice();
   const { isVisible, forceShow } = useScrollDirection(true, mainRef);
@@ -446,7 +454,7 @@ export function DockShell({ children, user, organization }: DockShellProps) {
         </div>
 
         {/* Navigation Items */}
-        {navigationItems.map((item) => (
+        {visibleNav.map((item) => (
           <DockIcon
             key={item.id}
             item={item}
@@ -467,7 +475,7 @@ export function DockShell({ children, user, organization }: DockShellProps) {
         />
 
         {/* Quick Actions */}
-        {quickActions.map((item) => (
+        {visibleQuickActions.map((item) => (
           <DockIcon
             key={item.id}
             item={item}
@@ -705,25 +713,29 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
   const inputRef = React.useRef<HTMLInputElement>(null);
   const abortRef = React.useRef<AbortController | null>(null);
 
+  const isAdmin = useIsAdmin();
+
   const navigationItems = [
     { id: 'rooms', label: 'All Rooms', icon: FolderOpen, shortcut: '⌘R', href: '/rooms' },
-    { id: 'users', label: 'Users', icon: Users, shortcut: '⌘U', href: '/users' },
-    { id: 'groups', label: 'Groups', icon: UsersRound, href: '/groups' },
-    { id: 'activity', label: 'Activity Log', icon: Activity, href: '/activity' },
+    { id: 'users', label: 'Users', icon: Users, shortcut: '⌘U', href: '/users', adminOnly: true },
+    { id: 'groups', label: 'Groups', icon: UsersRound, href: '/groups', adminOnly: true },
+    { id: 'activity', label: 'Activity Log', icon: Activity, href: '/activity', adminOnly: true },
     { id: 'settings', label: 'Settings', icon: Settings, shortcut: '⌘,', href: '/settings' },
   ];
 
   const actionItems = [
-    { id: 'create-room', label: 'Create New Room', icon: Plus, shortcut: '⌘N' },
-    { id: 'upload', label: 'Upload Documents', icon: Upload },
-    { id: 'invite-user', label: 'Invite User', icon: UserPlus },
+    { id: 'create-room', label: 'Create New Room', icon: Plus, shortcut: '⌘N', adminOnly: true },
+    { id: 'upload', label: 'Upload Documents', icon: Upload, adminOnly: true },
+    { id: 'invite-user', label: 'Invite User', icon: UserPlus, adminOnly: true },
   ];
 
-  const filteredNav = navigationItems.filter((item) =>
-    item.label.toLowerCase().includes(search.toLowerCase())
+  const filteredNav = navigationItems.filter(
+    (item) =>
+      (isAdmin || !item.adminOnly) && item.label.toLowerCase().includes(search.toLowerCase())
   );
-  const filteredActions = actionItems.filter((item) =>
-    item.label.toLowerCase().includes(search.toLowerCase())
+  const filteredActions = actionItems.filter(
+    (item) =>
+      (isAdmin || !item.adminOnly) && item.label.toLowerCase().includes(search.toLowerCase())
   );
   const filteredRecent = recentRooms.filter((room) =>
     room.name.toLowerCase().includes(search.toLowerCase())
