@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { useRequireAdmin } from '@/components/layout/role-provider';
 import {
   AdminEmptyState,
   AdminPageContent,
@@ -74,6 +75,7 @@ interface ViewerLinkInvite {
 }
 
 export default function UsersPage() {
+  useRequireAdmin();
   const [users, setUsers] = React.useState<User[]>([]);
   const [pendingInvites, setPendingInvites] = React.useState<PendingInvite[]>([]);
   const [viewerLinkInvites, setViewerLinkInvites] = React.useState<ViewerLinkInvite[]>([]);

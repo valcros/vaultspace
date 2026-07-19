@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { useRequireAdmin } from '@/components/layout/role-provider';
 import {
   AdminEmptyState,
   AdminPageContent,
@@ -76,6 +77,7 @@ const eventLabels: Record<string, string> = {
 };
 
 export default function ActivityPage() {
+  useRequireAdmin();
   const [events, setEvents] = React.useState<ActivityEvent[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
