@@ -59,6 +59,8 @@ export async function GET() {
           logoUrl: true,
           primaryColor: true,
           faviconUrl: true,
+          emailSenderName: true,
+          emailSenderAddress: true,
         },
       });
     });
@@ -91,7 +93,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, logoUrl, primaryColor, faviconUrl } = body;
+    const { name, logoUrl, primaryColor, faviconUrl, emailSenderName, emailSenderAddress } = body;
 
     // Validate name if provided
     if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
@@ -121,6 +123,16 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Validate the per-org email sender address if provided.
+    if (
+      emailSenderAddress !== undefined &&
+      emailSenderAddress !== null &&
+      emailSenderAddress !== '' &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailSenderAddress)
+    ) {
+      return NextResponse.json({ error: 'Invalid email sender address' }, { status: 400 });
+    }
+
     // Bound inline image sizes before storing.
     const optimizedLogo =
       logoUrl !== undefined && logoUrl ? await optimizeImageDataUrl(logoUrl, 200) : logoUrl;
@@ -134,6 +146,8 @@ export async function PATCH(request: NextRequest) {
       ...(logoUrl !== undefined ? ['logoUrl'] : []),
       ...(primaryColor !== undefined ? ['primaryColor'] : []),
       ...(faviconUrl !== undefined ? ['faviconUrl'] : []),
+      ...(emailSenderName !== undefined ? ['emailSenderName'] : []),
+      ...(emailSenderAddress !== undefined ? ['emailSenderAddress'] : []),
     ];
 
     // Use RLS context for org-scoped queries
@@ -145,6 +159,12 @@ export async function PATCH(request: NextRequest) {
           ...(logoUrl !== undefined && { logoUrl: optimizedLogo || null }),
           ...(primaryColor !== undefined && { primaryColor }),
           ...(faviconUrl !== undefined && { faviconUrl: optimizedFavicon || null }),
+          ...(emailSenderName !== undefined && {
+            emailSenderName: (emailSenderName || '').trim() || null,
+          }),
+          ...(emailSenderAddress !== undefined && {
+            emailSenderAddress: (emailSenderAddress || '').trim().toLowerCase() || null,
+          }),
         },
         select: {
           id: true,
@@ -153,6 +173,8 @@ export async function PATCH(request: NextRequest) {
           logoUrl: true,
           primaryColor: true,
           faviconUrl: true,
+          emailSenderName: true,
+          emailSenderAddress: true,
         },
       });
 

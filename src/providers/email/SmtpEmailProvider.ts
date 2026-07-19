@@ -39,8 +39,11 @@ export class SmtpEmailProvider implements EmailProvider {
   }
 
   async sendEmail(options: EmailOptions): Promise<{ messageId: string }> {
+    // Per-org sender override; combine an optional display name into the header.
+    const fromAddress = options.from ?? this.from;
+    const from = options.fromName ? `${options.fromName} <${fromAddress}>` : fromAddress;
     const result = await this.transporter.sendMail({
-      from: this.from,
+      from,
       to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
       subject: options.subject,
       html: options.html,

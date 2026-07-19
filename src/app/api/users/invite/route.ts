@@ -118,30 +118,39 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Get organization name for the email
+      // Get organization name + sender identity for the email
       const organization = await tx.organization.findUnique({
         where: { id: session.organizationId },
-        select: { name: true },
+        select: { name: true, emailSenderName: true, emailSenderAddress: true },
       });
 
-      return { invitation, organizationName: organization?.name };
+      return {
+        invitation,
+        organizationName: organization?.name,
+        emailSenderName: organization?.emailSenderName ?? null,
+        emailSenderAddress: organization?.emailSenderAddress ?? null,
+      };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const { invitation, organizationName } = result;
+    const { invitation, organizationName, emailSenderName, emailSenderAddress } = result;
 
     // Send invitation email (outside RLS context - email is external)
     try {
       const providers = getProviders();
-      const senderAddress =
+      const globalSender =
         process.env['ACS_SENDER_ADDRESS'] || process.env['SMTP_FROM'] || 'noreply@vaultspace.org';
 
       const notificationService = new EmailNotificationService({
         emailProvider: providers.email,
-        fromAddress: senderAddress,
+        // Per-org sender identity when configured, else the global default. The
+        // per-org address must be a verified ACS sender username (with its
+        // display name configured in ACS) to actually deliver.
+        fromAddress: emailSenderAddress || globalSender,
+        fromName: emailSenderName || organizationName || undefined,
         appUrl: baseUrl,
       });
 
