@@ -54,7 +54,7 @@ Optional variant: a non-production-only, secret-gated endpoint `POST /api/testin
 
 Invite accept, password reset, and 2FA need a token that normally arrives by email. For automated tests:
 
-- **Preferred (staging):** the harness reads the token directly from the database (`invitations.invitationToken`, `password_reset_tokens.token`) using the operator DB connection, exactly as done during the 2026-07-19 incident. No real email needed.
+- **Preferred (staging):** the harness retrieves the token through a QA-scoped path, never the operator/admin DB connection. Handing an AI harness the admin connection (which is BYPASSRLS) would let a misbehaving test read every tenant's rows, including real invitation and password-reset tokens, defeating the isolation guarantee this plan is built on. Use one of: a dedicated read-only role whose grants and RLS policies confine it to the `qa-automation` org; a narrow view or SECURITY DEFINER function that returns only the current QA token; or the same secret-gated, non-production broker endpoint used for session minting, returning only tokens for allowlisted QA emails. No real email needed. (Reading tokens via the admin connection, as done manually during the 2026-07-19 incident, is acceptable for one-off operator debugging but must not be wired into an automated harness.)
 - **Alternative:** point QA account email at a mailbox the harness can read (the Gmail or Microsoft 365 integrations already available), or an ACS catch-all inbox, then parse the link. Use this only when validating real email delivery is the point of the test.
 - **2FA:** keep QA accounts 2FA off by default. Add one `qa-2fa@vaultspace.test` persona with a known TOTP secret so the harness can compute codes when 2FA coverage is needed.
 
