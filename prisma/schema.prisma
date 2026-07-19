@@ -283,6 +283,12 @@ model Organization {
   primaryColor String  @default("#2563eb") @db.VarChar(7)
   faviconUrl   String? @db.Text
 
+  // Email sender identity (per-org). Optional; falls back to the global
+  // ACS_SENDER_ADDRESS when unset. emailSenderAddress must be provisioned as a
+  // verified sender username (with its display name) on the ACS domain before use.
+  emailSenderName    String? @db.VarChar(255)
+  emailSenderAddress String? @db.VarChar(255)
+
   // Configuration
   isActive        Boolean @default(true)
   allowSelfSignup Boolean @default(false)
@@ -902,11 +908,11 @@ model Link {
   // inviter. inviteeName/inviteeCompany are captured for review/audit;
   // inviteMessage is a short personal note placed in the invite email body.
   // remindersSent/lastReminderAt drive the auto-reminder + expiry job.
-  inviteeName    String?   @db.VarChar(255)
-  inviteeCompany String?   @db.VarChar(255)
-  inviteMessage  String?   @db.Text
-  remindersSent  Int       @default(0)
-  lastReminderAt DateTime?
+  inviteeName       String?   @db.VarChar(255)
+  inviteeCompany    String?   @db.VarChar(255)
+  inviteMessage     String?   @db.Text
+  remindersSent     Int       @default(0)
+  lastReminderAt    DateTime?
   // Set when an invitation email is actually sent (initial invite or resend).
   // The scheduled lifecycle job only sends reminders for invites where this is
   // non-null, so a link that was never emailed is never auto-reminded. Resending

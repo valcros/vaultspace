@@ -19,6 +19,8 @@ type DbClient = typeof db | Prisma.TransactionClient;
 export interface NotificationConfig {
   emailProvider: EmailProvider;
   fromAddress: string;
+  /** Optional sender display name (per-org). */
+  fromName?: string;
   appUrl: string;
 }
 
@@ -367,6 +369,10 @@ export class EmailNotificationService {
       to: options.to,
       subject: options.subject,
       html: options.html,
+      // Per-org sender identity; both fall back to the provider default when the
+      // configured address equals the global sender / no name is set.
+      from: this.config.fromAddress,
+      fromName: this.config.fromName,
     });
   }
 
