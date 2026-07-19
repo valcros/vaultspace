@@ -105,6 +105,28 @@ check_app() {
 check_app "${WEB_APP}" "${SHARED_REQUIRED[@]}" "${WEB_ONLY_REQUIRED[@]}"
 check_app "${WORKER_APP}" "${SHARED_REQUIRED[@]}" "${WORKER_ONLY_REQUIRED[@]}"
 
+# The worker runs the same entrypoint as the web image but connects as the
+# low-privilege runtime role (no DATABASE_URL_ADMIN). It therefore MUST set
+# ENABLE_RLS=false so the entrypoint skips the RLS/migration DDL step; otherwise
+# "ALTER TABLE ... ENABLE ROW LEVEL SECURITY" fails with "must be owner of table"
+# and the worker crash-loops while the app-level status still reads Running.
+# (Runtime RLS enforcement is unaffected: isRLSEnabled() stays true under
+# NODE_ENV=production regardless of ENABLE_RLS.) This guard catches the 2026-07-17
+# regression that took the async queue down for ~29h.
+echo ""
+echo "=== Validating ${WORKER_APP} ENABLE_RLS ==="
+worker_enable_rls=$(az containerapp show \
+  --name "${WORKER_APP}" \
+  --resource-group "${RG}" \
+  --query "properties.template.containers[?name=='${WORKER_CONTAINER_NAME}'] | [0].env[?name=='ENABLE_RLS'].value | [0]" \
+  -o tsv 2>/dev/null || echo "")
+if [ "${worker_enable_rls}" != "false" ]; then
+  echo "  ERROR: ${WORKER_APP} must set ENABLE_RLS=false (found: '${worker_enable_rls:-<unset>}')"
+  errors=$((errors + 1))
+else
+  echo "  OK: ENABLE_RLS=false"
+fi
+
 # Probes: the worker has no HTTP ingress, so the only signal that distinguishes
 # a healthy worker from a crash-looping one is the TCP socket on port 3000.
 # Require at least one probe on that port.

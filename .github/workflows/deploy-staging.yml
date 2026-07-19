@@ -136,12 +136,20 @@ jobs:
             --image $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
 
       - name: Update Container App - Worker
+        # ENABLE_RLS=false is asserted on every deploy: the worker connects as the
+        # low-privilege runtime role, so the shared entrypoint's RLS/migration DDL
+        # step ("ALTER TABLE ... ENABLE ROW LEVEL SECURITY") would fail with
+        # "must be owner of table" and crash-loop the worker. The web app remains
+        # the sole applier of RLS. --set-env-vars merges this key without touching
+        # the worker's other env vars. See scripts/validate-container-env.sh, which
+        # fails the deploy if this drifts.
         run: |
           az containerapp update \
             --name $WORKER_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
             --container-name $WORKER_CONTAINER_NAME \
-            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
+            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA \
+            --set-env-vars ENABLE_RLS=false
 
       - name: Update Container App Job - Delayed Waker
         run: |
