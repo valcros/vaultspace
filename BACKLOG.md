@@ -19,6 +19,30 @@ Current active work before MVP launch readiness:
 - Create release notes, changelog entry, and an agreed release tag.
 - Smoke Docker Compose self-hosting before any public beta release.
 
+### Full User Profiles & NDA-on-File (Stakeholder Request)
+
+**Status:** Proposed
+**Requested:** 2026-07-18
+**Requested by:** Lead (Brightside investor onboarding)
+
+Add an admin flow to create a complete user profile in one step, beyond the current email-plus-role invite. Captured fields:
+
+- Name (first, last)
+- Email
+- Company
+- Phone
+- NDA on file (boolean)
+- Type: Founder, Investor, Partner, Investor Rep, Employee, Consultant
+
+**NDA-on-file behavior:** When "NDA on file" is set, the user bypasses the NDA click-through gate on room and share-link access. Instead of blocking entry until they accept, show a non-blocking reminder that an executed NDA is already on record. When the flag is unset, the existing NDA acceptance gate (F130) applies unchanged.
+
+**Notes / open questions:**
+
+- New profile fields (company, phone, type) require a schema addition on `users` (or a related profile table) plus migration and RLS coverage.
+- "Type" is a new enum; confirm whether it drives permissions/UX or is metadata only.
+- NDA-on-file needs an audit trail (who marked it, when, optional reference to the signed document) so the bypass is defensible.
+- Reconcile with the existing invitation flow (`/api/users/invite`) and the viewer share-link NDA gate (F130) so both honor the flag.
+
 ### Dashboard UX Redesign (Stakeholder Feedback) ✅ IMPLEMENTED
 
 **Status:** Complete
@@ -92,7 +116,7 @@ Implemented via two-tier architecture (see DOCUMENT_PREVIEW_PLAN.md):
 - ~~Replace remaining `window.confirm()` calls with proper confirmation dialogs~~ ✅ Done (webhooks, share links, remove member)
 - ~~Accessibility audit (WCAG 2.1 AA)~~ ✅ Updated 2026-04-27 — full automated pass against staging covers 4 public + 8 authenticated pages, all 13 tests green. Login fixture lives at `tests/e2e/auth.setup.ts`. Per-resource pages (room detail, document viewer, public viewer link landing) and the manual screen-reader pass remain on the punch list before MVP launch. Full audit trail in `docs/A11Y_AUDIT.md`.
 - Production deployment workflow (tag-based)
-- Durable QA account and smoke-secret handling for staging
+- Durable QA account and smoke-secret handling for staging (see `docs/AI_TEST_CREDENTIALS_PLAN.md` for the proposed method: isolated QA tenant, Key Vault-sourced passwords, and AI-safe session minting)
 
 ## Low Priority
 
