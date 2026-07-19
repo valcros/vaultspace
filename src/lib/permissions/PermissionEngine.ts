@@ -87,14 +87,14 @@ export class PermissionEngine {
       };
     }
 
+    // Fetch org membership once; used by the admin check (Layer 1) and the
+    // organization VIEWER baseline (Layer 15).
+    const orgMembership = actor.userId
+      ? await this.getOrgMembership(resource.organizationId, actor.userId, dbClient)
+      : null;
+
     // Layer 1: Organization admin has full access
     if (actor.userId) {
-      const orgMembership = await this.getOrgMembership(
-        resource.organizationId,
-        actor.userId,
-        dbClient
-      );
-
       if (orgMembership?.role === 'ADMIN') {
         return {
           allowed: true,
@@ -144,10 +144,23 @@ export class PermissionEngine {
       }
     }
 
-    // Layer 8-14: Inheritance and defaults
+    // Layer 8-14: Inheritance and defaults. getInheritedPermission probes parent
+    // resources with the 'view' action, so re-apply the requested action against
+    // the inherited LEVEL — otherwise an inherited VIEW would wrongly authorize a
+    // DOWNLOAD/EDIT. The inherited reason is preserved for auditability.
     const inheritedPermission = await this.getInheritedPermission(actor, resource, dbClient);
     if (inheritedPermission) {
-      return inheritedPermission;
+      const applied = this.evaluatePermissionLevel(inheritedPermission.level, action);
+      return { ...applied, reason: inheritedPermission.reason };
+    }
+
+    // Layer 15: Organization VIEWER baseline. An org VIEWER can VIEW all of their
+    // organization's room content (an invited viewer sees the entire room). Scoped
+    // to the user's own org via orgMembership (RLS enforces the same at the DB
+    // layer); grants VIEW only, so DOWNLOAD/EDIT/ADMIN still require an explicit
+    // grant, group, or link. A future restricted role can narrow this.
+    if (orgMembership?.role === 'VIEWER' && orgMembership.isActive) {
+      return this.evaluatePermissionLevel('VIEW', action);
     }
 
     // Default: deny access
@@ -202,14 +215,14 @@ export class PermissionEngine {
     }
     reasoning.push('Layer 0: Not a system actor → continue evaluation');
 
+    // Fetch org membership once; used by the admin check (Layer 1) and the
+    // organization VIEWER baseline (Layer 15).
+    const orgMembership = actor.userId
+      ? await this.getOrgMembership(resource.organizationId, actor.userId, dbClient)
+      : null;
+
     // Layer 1: Organization admin check
     if (actor.userId) {
-      const orgMembership = await this.getOrgMembership(
-        resource.organizationId,
-        actor.userId,
-        dbClient
-      );
-
       if (orgMembership?.role === 'ADMIN') {
         reasoning.push(`Layer 1: User is organization admin → ADMIN access granted`);
         return {
@@ -344,6 +357,29 @@ export class PermissionEngine {
       };
     }
     reasoning.push('Layer 8-14: No inherited permissions found');
+
+    // Layer 15: Organization VIEWER baseline. An org VIEWER can VIEW all of their
+    // organization's room content (an invited viewer sees the entire room). This
+    // is scoped to the user's own org via orgMembership (and RLS enforces the same
+    // at the DB layer), and it grants VIEW only — DOWNLOAD/EDIT/ADMIN still require
+    // an explicit grant, group, or link. A future restricted role/level can carve
+    // out narrower access without changing this default.
+    if (orgMembership?.role === 'VIEWER' && orgMembership.isActive) {
+      const result = this.evaluatePermissionLevel('VIEW', action);
+      reasoning.push('Layer 15: Org VIEWER baseline grants VIEW on org resources');
+      reasoning.push(
+        `Permission level VIEW ${result.allowed ? 'allows' : 'does not allow'} ${action}`
+      );
+      return {
+        allowed: result.allowed,
+        action,
+        resource,
+        reasoning,
+        summary: result.allowed
+          ? 'Allowed: organization VIEWER baseline grants VIEW access'
+          : `Denied: VIEWER baseline (VIEW) insufficient for ${action}`,
+      };
+    }
 
     // Default deny
     reasoning.push('Default: No permission found → DENIED');
