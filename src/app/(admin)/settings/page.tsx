@@ -11,6 +11,7 @@ import {
   Webhook,
   Code2,
   Keyboard,
+  Info,
   ChevronRight,
 } from 'lucide-react';
 
@@ -82,6 +83,13 @@ const settingsSections: SettingsSection[] = [
     description: 'Learn keyboard shortcuts for faster navigation',
     icon: Keyboard,
     href: '/settings/shortcuts',
+  },
+  {
+    id: 'about',
+    title: 'About',
+    description: 'Product information, attribution, and license',
+    icon: Info,
+    href: '/settings/about',
   },
 ];
 
