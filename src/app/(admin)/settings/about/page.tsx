@@ -10,7 +10,6 @@ import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 const APP_VERSION = '0.1.0';
 const CREATOR = 'Mark W Munger';
 const COPYRIGHT_YEAR = '2026';
-const PRESENTED_BY = 'Brightside';
 
 export default function AboutPage() {
   return (
@@ -33,9 +32,6 @@ export default function AboutPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="text-sm text-slate-500 dark:text-slate-400">Version {APP_VERSION}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                VaultSpace presented by {PRESENTED_BY}.
-              </p>
             </CardContent>
           </Card>
 
