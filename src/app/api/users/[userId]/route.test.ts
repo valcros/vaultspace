@@ -498,6 +498,9 @@ describe('PATCH /api/users/:userId', () => {
     expect(response.status).toBe(200);
     expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.anything(), 'user-2');
     expect(mockDeactivateUserOrgSessionsInTx).not.toHaveBeenCalled();
+    // The tokens from the GLOBAL helper (not the org-scoped one) must reach the
+    // cache — a discarded result would leave stale cached sessions valid.
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
   });
 
   it('invalidates ALL sessions on a two-factor reset (global identity)', async () => {
@@ -506,6 +509,19 @@ describe('PATCH /api/users/:userId', () => {
     expect(response.status).toBe(200);
     expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.anything(), 'user-2');
     expect(mockDeactivateUserOrgSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
+  });
+
+  it('a global identity change takes precedence over a membership change (email + role -> global)', async () => {
+    useTx(memberTx());
+    const response = await PATCH(patchReq({ email: 'moved@example.com', role: 'ADMIN' }), ctx);
+    expect(response.status).toBe(200);
+    // Even though role also changed, the email change forces GLOBAL invalidation
+    // and the org-scoped helper must not be used (it would leave other-org
+    // sessions on the old login identity alive).
+    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.anything(), 'user-2');
+    expect(mockDeactivateUserOrgSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
   });
 
   it('does not invalidate sessions on a name-only change', async () => {
