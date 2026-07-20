@@ -5,12 +5,29 @@ name: Renew Wildcard TLS Cert
 # externally issued Let's Encrypt wildcard current. Runs monthly (cert lifetime
 # is ~90 days) and can be triggered manually. Uses the same Azure OIDC identity
 # as staging deploys (Contributor on the resource group).
+#
+# The renewal + verification logic lives in scripts/renew-wildcard-cert.sh: it
+# only issues within RENEW_THRESHOLD_DAYS of expiry (unless forced), uploads each
+# cert under a unique name, and verifies the ingress serves the newly issued leaf
+# by fingerprint before reporting success.
 
 on:
   schedule:
     # 06:00 UTC on the 1st of every month
     - cron: '0 6 1 * *'
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Reissue even if the current cert is not near expiry (use for the first supervised run)'
+        type: boolean
+        default: true
+
+# Never let a manual run and the monthly cron (or two manual runs) issue and
+# rebind concurrently -- they would race the binding and burn the Let's Encrypt
+# rate limit. Do NOT cancel in progress: a run may be mid-issuance or mid-bind.
+concurrency:
+  group: renew-wildcard-cert
+  cancel-in-progress: false
 
 permissions:
   id-token: write
@@ -24,6 +41,9 @@ jobs:
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
       WEB_CONTAINER_APP: ${{ vars.WEB_CONTAINER_APP }}
       DOMAIN: vaultspace.org
+      # Scheduled runs leave inputs.force empty -> expiry-gated. Manual dispatch
+      # defaults to true so a supervised run proves the full path end to end.
+      FORCE_RENEW: ${{ github.event.inputs.force || 'false' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,15 +55,10 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Renew and bind wildcard certificate
+      # The script issues, uploads, binds, and then verifies the new leaf is
+      # actually served (fingerprint match with retry/backoff). It exits non-zero
+      # if the ingress is not serving the new cert, so no extra verify step is
+      # needed here -- a successful TLS handshake alone must not be treated as a
+      # pass while the old cert is still valid.
+      - name: Renew, bind, and verify wildcard certificate
         run: bash scripts/renew-wildcard-cert.sh
-
-      - name: Verify TLS on a wildcard subdomain
-        run: |
-          set -e
-          # Give the ingress a moment to pick up the new binding
-          sleep 30
-          code=$(curl -sS -o /dev/null -w '%{http_code}:%{ssl_verify_result}' \
-            --max-time 30 "https://renewcheck.${DOMAIN}/" || true)
-          echo "renewcheck.${DOMAIN} -> ${code} (want HTTP:0 for valid TLS)"
-          echo "${code}" | grep -q ':0$' || { echo 'TLS verification failed'; exit 1; }
