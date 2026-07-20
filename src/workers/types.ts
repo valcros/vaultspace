@@ -78,6 +78,9 @@ export interface EmailSendJobPayload {
   template: string;
   data: Record<string, unknown>;
   organizationId?: string;
+  /** Per-org sender override (see EmailOptions). Falls back to the global sender. */
+  from?: string;
+  fromName?: string;
 }
 
 export interface NotificationJobPayload {
