@@ -23,7 +23,7 @@ deferred "Full User Profiles & NDA-on-File" schema work first).
 - Session-invalidation contract (from `src/lib/auth/session.ts`): "any endpoint
   that mutates membership, role, or user active state MUST deactivate sessions
   and call clearSessionCache." Helpers: `deactivateAllUserSessionsInTx(tx, userId)`
-  + `clearSessionCache(tokens)` (see `reset-password/route.ts` for the pattern).
+  - `clearSessionCache(tokens)` (see `reset-password/route.ts` for the pattern).
 
 ## Feature 1 — Admin edit user (`PATCH /api/users/[userId]`)
 
