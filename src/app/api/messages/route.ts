@@ -9,6 +9,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuthFromRequest } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getProviders } from '@/providers';
+import { hasCapability } from '@/lib/deployment-capabilities';
+import { JOB_NAMES, QUEUE_NAMES } from '@/workers/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -201,6 +204,48 @@ export async function POST(request: NextRequest) {
 
       return createdMessage;
     });
+
+    // Also deliver the message as a real email from the org's sender identity
+    // (best-effort; the in-app message above is the source of truth).
+    try {
+      const org = await withOrgContext(session.organizationId, (tx) =>
+        tx.organization.findUnique({
+          where: { id: session.organizationId },
+          select: { name: true, emailSenderName: true, emailSenderAddress: true },
+        })
+      );
+      const senderFrom = org?.emailSenderAddress || undefined;
+      const senderName = org?.emailSenderName || org?.name || undefined;
+      const safeBody = messageBody
+        .trim()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+      const html = `<div><p>${safeBody}</p></div>`;
+      const providers = getProviders();
+      if (hasCapability('canSendAsyncEmail')) {
+        await providers.job.addJob(QUEUE_NAMES.NORMAL, JOB_NAMES.EMAIL_SEND, {
+          to: recipientEmail.toLowerCase(),
+          subject: subject.trim(),
+          template: '',
+          from: senderFrom,
+          fromName: senderName,
+          data: { html, text: messageBody.trim() },
+        });
+      } else if (hasCapability('canSendSyncEmail')) {
+        await providers.email.sendEmail({
+          to: recipientEmail.toLowerCase(),
+          subject: subject.trim(),
+          html,
+          text: messageBody.trim(),
+          from: senderFrom,
+          fromName: senderName,
+        });
+      }
+    } catch (emailErr) {
+      console.error('[MessagesAPI] message email delivery failed:', emailErr);
+    }
 
     return NextResponse.json(
       {
