@@ -28,6 +28,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           id: true,
           name: true,
           allowDownloads: true,
+          allowViewerVersionHistory: true,
           enableWatermark: true,
           watermarkTemplate: true,
           brandColor: true,
@@ -49,31 +50,66 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const viewerSession = sessionResult.session;
 
     const { searchParams } = new URL(request.url);
-    const path = searchParams.get('path') || '';
+    // Navigate by immutable folder id, not a display-derived path string. The
+    // path-as-key approach previously caused every folder to open empty because
+    // the stored path ("/1. Corporate") and the viewer-built path ("1. Corporate")
+    // never matched.
+    const requestedFolderId = searchParams.get('folderId');
 
-    // Build folder query based on link scope
-    const folderWhere: Record<string, unknown> = {
-      roomId: viewerSession.room.id,
+    const scope = viewerSession.link.scope;
+    const scopedFolderId = viewerSession.link.scopedFolderId;
+    const scopedDocumentId = viewerSession.link.scopedDocumentId;
+
+    const documentSelect = {
+      id: true,
+      name: true,
+      accessionNumber: true,
+      totalVersions: true,
+      withdrawnAt: true,
+      mimeType: true,
+      fileSize: true,
+      folderId: true,
+      createdAt: true,
+      folder: { select: { path: true } },
     };
-
-    if (path) {
-      folderWhere['path'] = path;
-    } else {
-      folderWhere['parentId'] = null;
-    }
-
-    // If link is scoped to a specific folder, only show that folder's contents
-    if (viewerSession.link.scope === 'FOLDER' && viewerSession.link.scopedFolderId) {
-      folderWhere['parentId'] = viewerSession.link.scopedFolderId;
-    }
 
     // Use RLS context for org-scoped queries
     const { folders, documents } = await withOrgContext(
       viewerSession.organizationId,
       async (tx) => {
-        // Get folders at current path
+        // A document-scoped link exposes exactly one document and no folder tree.
+        if (scope === 'DOCUMENT' && scopedDocumentId) {
+          const documentsResult = await tx.document.findMany({
+            where: {
+              roomId: viewerSession.room.id,
+              status: 'ACTIVE',
+              id: scopedDocumentId,
+            },
+            orderBy: { name: 'asc' },
+            select: documentSelect,
+          });
+          return { folders: [], documents: documentsResult };
+        }
+
+        // Resolve the folder the viewer is currently inside. At the root, a
+        // folder-scoped link uses its scoped folder as the base.
+        let currentFolderId: string | null =
+          scope === 'FOLDER' && scopedFolderId ? scopedFolderId : null;
+        if (requestedFolderId) {
+          // Verify the requested folder exists in this room before using it.
+          const current = await tx.folder.findFirst({
+            where: { id: requestedFolderId, roomId: viewerSession.room.id },
+            select: { id: true },
+          });
+          if (!current) {
+            return { folders: [], documents: [] };
+          }
+          currentFolderId = current.id;
+        }
+
+        // Subfolders are the children of the current folder (top-level at root).
         const foldersResult = await tx.folder.findMany({
-          where: folderWhere,
+          where: { roomId: viewerSession.room.id, parentId: currentFolderId },
           orderBy: { name: 'asc' },
           include: {
             _count: {
@@ -82,38 +118,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
           },
         });
 
-        // Build document query based on link scope
-        const documentWhere: Record<string, unknown> = {
-          roomId: viewerSession.room.id,
-          status: 'ACTIVE',
-        };
-
-        if (path) {
-          documentWhere['folder'] = { path };
-        } else {
-          documentWhere['folderId'] = null;
-        }
-
-        // If link is scoped to a specific document, only show that document
-        if (viewerSession.link.scope === 'DOCUMENT' && viewerSession.link.scopedDocumentId) {
-          documentWhere['id'] = viewerSession.link.scopedDocumentId;
-        }
-
-        // Get documents at current path
+        // Documents are those directly in the current folder (root when null).
         const documentsResult = await tx.document.findMany({
-          where: documentWhere,
-          orderBy: { name: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            mimeType: true,
-            fileSize: true,
-            folderId: true,
-            createdAt: true,
-            folder: {
-              select: { path: true },
-            },
+          where: {
+            roomId: viewerSession.room.id,
+            status: 'ACTIVE',
+            folderId: currentFolderId,
           },
+          orderBy: { name: 'asc' },
+          select: documentSelect,
         });
 
         return { folders: foldersResult, documents: documentsResult };
@@ -126,7 +139,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
         organizationName: viewerSession.organization.name,
         organizationLogo: viewerSession.room.brandLogoUrl || viewerSession.organization.logoUrl,
         brandColor: viewerSession.room.brandColor || viewerSession.organization.primaryColor,
-        downloadEnabled: viewerSession.room.allowDownloads,
+        // Download availability follows the link's permission, not the room.
+        downloadEnabled: viewerSession.link.permission === 'DOWNLOAD',
+        versionHistoryEnabled: viewerSession.room.allowViewerVersionHistory,
         watermarkEnabled: viewerSession.room.enableWatermark,
         watermarkTemplate: viewerSession.room.watermarkTemplate,
       },
@@ -139,6 +154,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       documents: documents.map((d) => ({
         id: d.id,
         name: d.name,
+        accessionNumber: d.accessionNumber ?? null,
+        totalVersions: d.totalVersions ?? 1,
+        withdrawn: d.withdrawnAt !== null,
         mimeType: d.mimeType,
         size: Number(d.fileSize),
         folderId: d.folderId,

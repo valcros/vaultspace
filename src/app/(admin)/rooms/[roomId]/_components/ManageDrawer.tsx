@@ -10,12 +10,15 @@ import {
   Plus,
   MoreHorizontal,
   Eye,
+  EyeOff,
+  Download,
   Trash2,
   Copy,
   BarChart3,
   History,
   Loader2,
   MessageSquare,
+  Send,
   ClipboardCheck,
   CalendarDays,
   Clock,
@@ -39,6 +42,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   DropdownMenu,
@@ -127,6 +131,14 @@ interface ShareLink {
   expiresAt: string | null;
   isActive: boolean;
   createdAt: string;
+  // Invitation metadata (present on links created via the Invite Viewers flow).
+  allowedEmails?: string[];
+  inviteeName?: string | null;
+  inviteeCompany?: string | null;
+  inviteEmailSentAt?: string | null;
+  lastAccessedAt?: string | null;
+  remindersSent?: number;
+  createdByUser?: { firstName: string | null; lastName: string | null; email: string } | null;
   _count?: { visits: number };
 }
 
@@ -189,8 +201,13 @@ export function ManageDrawer({
   const [isLoadingViewers, setIsLoadingViewers] = React.useState(false);
   const [showInviteViewerDialog, setShowInviteViewerDialog] = React.useState(false);
   const [inviteViewerEmails, setInviteViewerEmails] = React.useState('');
+  const [inviteeName, setInviteeName] = React.useState('');
+  const [inviteeCompany, setInviteeCompany] = React.useState('');
+  const [inviteMessage, setInviteMessage] = React.useState('');
   const [isInvitingViewers, setIsInvitingViewers] = React.useState(false);
   const [revokingViewerEmail, setRevokingViewerEmail] = React.useState<string | null>(null);
+  const [resendingLinkId, setResendingLinkId] = React.useState<string | null>(null);
+  const [togglingPermissionId, setTogglingPermissionId] = React.useState<string | null>(null);
 
   // Member add states
   const [isAddingMember, setIsAddingMember] = React.useState(false);
@@ -257,18 +274,30 @@ export function ManageDrawer({
       const response = await fetch(`/api/rooms/${roomId}/viewers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emails }),
+        body: JSON.stringify({
+          emails,
+          inviteeName: inviteeName.trim() || undefined,
+          inviteeCompany: inviteeCompany.trim() || undefined,
+          message: inviteMessage.trim() || undefined,
+        }),
       });
 
       if (response.ok) {
         const data = await response.json();
+        const sent = typeof data.emailsSent === 'number' ? data.emailsSent : null;
         toast({
           title: 'Success',
-          description: `Invited ${data.invited} viewer(s)`,
+          description:
+            sent !== null
+              ? `Invited ${data.invited} viewer(s); ${sent} email(s) sent`
+              : `Invited ${data.invited} viewer(s)`,
           variant: 'success',
         });
         setShowInviteViewerDialog(false);
         setInviteViewerEmails('');
+        setInviteeName('');
+        setInviteeCompany('');
+        setInviteMessage('');
         fetchViewers();
       } else {
         const error = await response.json();
@@ -284,7 +313,7 @@ export function ManageDrawer({
     } finally {
       setIsInvitingViewers(false);
     }
-  }, [roomId, inviteViewerEmails, fetchViewers]);
+  }, [roomId, inviteViewerEmails, inviteeName, inviteeCompany, inviteMessage, fetchViewers]);
 
   const handleRevokeViewer = React.useCallback(
     async (email: string) => {
@@ -367,6 +396,43 @@ export function ManageDrawer({
       console.error('Failed to fetch links:', error);
     }
   }, [roomId]);
+
+  const handleResendInvite = React.useCallback(
+    async (link: ShareLink) => {
+      setResendingLinkId(link.id);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/links/${link.id}/resend`, {
+          method: 'POST',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          toast({
+            title: 'Invitation resent',
+            description: `Sent to ${data.email}. Reminder schedule restarted.`,
+            variant: 'success',
+          });
+          fetchLinks();
+        } else {
+          const error = await response.json().catch(() => ({}));
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to resend invitation',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Resend invite error:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to resend invitation',
+          variant: 'destructive',
+        });
+      } finally {
+        setResendingLinkId(null);
+      }
+    },
+    [roomId, fetchLinks]
+  );
 
   // Lazy-load the manage drawer's pane data only when it opens or the user
   // switches panes. Q&A / Checklist / Calendar sub-components own their own
@@ -453,6 +519,45 @@ export function ManageDrawer({
       toast({ title: 'Error', description: 'Failed to copy link', variant: 'destructive' });
     }
   }, []);
+
+  // Handle permission toggle (VIEW <-> DOWNLOAD)
+  const handleTogglePermission = React.useCallback(
+    async (link: ShareLink) => {
+      const newPermission = link.permission === 'DOWNLOAD' ? 'VIEW' : 'DOWNLOAD';
+      setTogglingPermissionId(link.id);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/links/${link.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ permission: newPermission }),
+        });
+        if (response.ok) {
+          fetchLinks();
+          toast({
+            title: 'Updated',
+            description:
+              newPermission === 'DOWNLOAD'
+                ? 'Downloads enabled for this link'
+                : 'Link set to view-only',
+            variant: 'success',
+          });
+        } else {
+          const error = await response.json();
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to update link',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('Toggle permission error:', error);
+        toast({ title: 'Error', description: 'Failed to update link', variant: 'destructive' });
+      } finally {
+        setTogglingPermissionId(null);
+      }
+    },
+    [roomId, fetchLinks]
+  );
 
   // Handle delete link
   const handleDeleteLinkClick = React.useCallback((link: ShareLink) => {
@@ -904,16 +1009,56 @@ export function ManageDrawer({
                           share link will be created for each.
                         </DialogDescription>
                       </DialogHeader>
-                      <div className="py-4">
-                        <Label htmlFor="viewer-emails">Email Addresses</Label>
-                        <Textarea
-                          id="viewer-emails"
-                          placeholder={'viewer1@example.com\nviewer2@example.com'}
-                          value={inviteViewerEmails}
-                          onChange={(e) => setInviteViewerEmails(e.target.value)}
-                          className="mt-1.5"
-                          rows={6}
-                        />
+                      <div className="space-y-4 py-4">
+                        <div>
+                          <Label htmlFor="viewer-emails">Email Addresses</Label>
+                          <Textarea
+                            id="viewer-emails"
+                            placeholder={'viewer1@example.com\nviewer2@example.com'}
+                            value={inviteViewerEmails}
+                            onChange={(e) => setInviteViewerEmails(e.target.value)}
+                            className="mt-1.5"
+                            rows={4}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor="invitee-name">Invitee name (optional)</Label>
+                            <Input
+                              id="invitee-name"
+                              placeholder="Jane Investor"
+                              value={inviteeName}
+                              onChange={(e) => setInviteeName(e.target.value)}
+                              className="mt-1.5"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="invitee-company">Company (optional)</Label>
+                            <Input
+                              id="invitee-company"
+                              placeholder="Acme Capital"
+                              value={inviteeCompany}
+                              onChange={(e) => setInviteeCompany(e.target.value)}
+                              className="mt-1.5"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="invite-message">Message to invitee (optional)</Label>
+                          <Textarea
+                            id="invite-message"
+                            placeholder="A short note included in the invitation email for context."
+                            value={inviteMessage}
+                            onChange={(e) => setInviteMessage(e.target.value)}
+                            className="mt-1.5"
+                            rows={3}
+                          />
+                        </div>
+                        <p className="text-xs text-neutral-500">
+                          Name and company are recorded for review and audit. Invitations expire in
+                          14 days; unopened invitations get an automatic reminder at 48 hours and
+                          again after a week.
+                        </p>
                       </div>
                       <DialogFooter>
                         <Button
@@ -921,6 +1066,9 @@ export function ManageDrawer({
                           onClick={() => {
                             setShowInviteViewerDialog(false);
                             setInviteViewerEmails('');
+                            setInviteeName('');
+                            setInviteeCompany('');
+                            setInviteMessage('');
                           }}
                         >
                           Cancel
@@ -969,73 +1117,147 @@ export function ManageDrawer({
                     />
                   ) : (
                     <div className="space-y-4">
-                      {links.map((link) => (
-                        <Card
-                          key={link.id}
-                          className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
-                        >
-                          <CardHeader className="pb-2">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <CardTitle className="text-base">
-                                  {link.name || 'Unnamed Link'}
-                                </CardTitle>
-                                <CardDescription className="mt-1 flex items-center gap-2">
-                                  <Badge
-                                    variant={
-                                      link.permission === 'DOWNLOAD' ? 'default' : 'secondary'
-                                    }
-                                  >
-                                    {link.permission === 'DOWNLOAD'
-                                      ? 'View & Download'
-                                      : 'View Only'}
-                                  </Badge>
-                                  {link.requiresPassword && (
-                                    <Badge variant="warning">Password</Badge>
-                                  )}
-                                  {link.requiresEmailVerification && (
-                                    <Badge variant="secondary">Email Required</Badge>
-                                  )}
-                                  {!link.isActive && <Badge variant="danger">Disabled</Badge>}
-                                </CardDescription>
+                      {links.map((link) => {
+                        // Links created via the Invite Viewers flow carry an
+                        // allowed email; those get invitation-specific UI.
+                        const isInvite = (link.allowedEmails?.length ?? 0) > 0;
+                        const inviteEmail = link.allowedEmails?.[0] ?? null;
+                        const opened = Boolean(link.lastAccessedAt);
+                        const inviterName = link.createdByUser
+                          ? `${link.createdByUser.firstName ?? ''} ${
+                              link.createdByUser.lastName ?? ''
+                            }`.trim() || link.createdByUser.email
+                          : null;
+                        return (
+                          <Card
+                            key={link.id}
+                            className="bg-white/88 rounded-[1.5rem] border-slate-200/80 shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/50 dark:border-slate-800 dark:bg-slate-950/75 dark:ring-white/5"
+                          >
+                            <CardHeader className="pb-2">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <CardTitle className="text-base">
+                                    {link.name || 'Unnamed Link'}
+                                  </CardTitle>
+                                  <CardDescription className="mt-1 flex items-center gap-2">
+                                    <Badge
+                                      variant={
+                                        link.permission === 'DOWNLOAD' ? 'default' : 'secondary'
+                                      }
+                                    >
+                                      {link.permission === 'DOWNLOAD'
+                                        ? 'View & Download'
+                                        : 'View Only'}
+                                    </Badge>
+                                    {link.requiresPassword && (
+                                      <Badge variant="warning">Password</Badge>
+                                    )}
+                                    {link.requiresEmailVerification && (
+                                      <Badge variant="secondary">Email Required</Badge>
+                                    )}
+                                    {!link.isActive && <Badge variant="danger">Disabled</Badge>}
+                                    {isInvite && link.isActive && (
+                                      <Badge variant={opened ? 'success' : 'warning'}>
+                                        {opened ? 'Opened' : 'Pending'}
+                                      </Badge>
+                                    )}
+                                  </CardDescription>
+                                </div>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleCopyLink(link)}>
+                                      <Copy className="mr-2 h-4 w-4" />
+                                      Copy Link
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleTogglePermission(link)}
+                                      disabled={togglingPermissionId === link.id}
+                                    >
+                                      {togglingPermissionId === link.id ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      ) : link.permission === 'DOWNLOAD' ? (
+                                        <EyeOff className="mr-2 h-4 w-4" />
+                                      ) : (
+                                        <Download className="mr-2 h-4 w-4" />
+                                      )}
+                                      {link.permission === 'DOWNLOAD'
+                                        ? 'Make view-only'
+                                        : 'Enable downloads'}
+                                    </DropdownMenuItem>
+                                    {isInvite && link.isActive && (
+                                      <DropdownMenuItem
+                                        onClick={() => handleResendInvite(link)}
+                                        disabled={resendingLinkId === link.id}
+                                      >
+                                        {resendingLinkId === link.id ? (
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <Send className="mr-2 h-4 w-4" />
+                                        )}
+                                        {link.inviteEmailSentAt
+                                          ? 'Resend invitation'
+                                          : 'Send invitation'}
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() => handleDeleteLinkClick(link)}
+                                      className="text-danger-600"
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => handleCopyLink(link)}>
-                                    <Copy className="mr-2 h-4 w-4" />
-                                    Copy Link
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() => handleDeleteLinkClick(link)}
-                                    className="text-danger-600"
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="flex items-center gap-6 text-sm text-neutral-500">
-                              <div>
-                                <span className="font-medium text-neutral-900">
-                                  {link._count?.visits || 0}
-                                </span>{' '}
-                                visits
+                            </CardHeader>
+                            <CardContent>
+                              {isInvite && (
+                                <div className="mb-2 space-y-0.5 text-sm text-neutral-600">
+                                  <div>
+                                    <span className="font-medium text-neutral-900">
+                                      {link.inviteeName || inviteEmail}
+                                    </span>
+                                    {link.inviteeCompany && (
+                                      <span className="text-neutral-500">
+                                        {' '}
+                                        · {link.inviteeCompany}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {link.inviteeName && inviteEmail && (
+                                    <div className="text-xs text-neutral-500">{inviteEmail}</div>
+                                  )}
+                                  <div className="text-xs text-neutral-500">
+                                    {inviterName && <>Invited by {inviterName}</>}
+                                    {(link.remindersSent ?? 0) > 0 && (
+                                      <> · {link.remindersSent} reminder(s) sent</>
+                                    )}
+                                    {!link.inviteEmailSentAt && (
+                                      <> · invitation email not yet sent</>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-6 text-sm text-neutral-500">
+                                <div>
+                                  <span className="font-medium text-neutral-900">
+                                    {link._count?.visits || 0}
+                                  </span>{' '}
+                                  visits
+                                </div>
+                                <div>Created {formatDate(link.createdAt)}</div>
+                                {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
                               </div>
-                              <div>Created {formatDate(link.createdAt)}</div>
-                              {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </div>
                   )}
                 </TabsContent>

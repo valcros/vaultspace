@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Search, Filter, Download, Activity } from 'lucide-react';
+import { Search, Filter, Download, Activity, Users } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { useRequireAdmin } from '@/components/layout/role-provider';
 import {
   AdminEmptyState,
   AdminPageContent,
@@ -39,6 +40,14 @@ interface ActivityEvent {
   description: string | null;
   ipAddress: string | null;
   createdAt: string;
+  folderName: string | null;
+}
+
+interface UserOption {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
 }
 
 const eventLabels: Record<string, string> = {
@@ -46,21 +55,43 @@ const eventLabels: Record<string, string> = {
   document_viewed: 'viewed a document',
   document_downloaded: 'downloaded a document',
   document_deleted: 'deleted a document',
+  document_moved: 'moved a document',
+  document_updated: 'updated a document',
+  document_archived: 'archived a document',
   room_created: 'created a room',
   room_updated: 'updated room settings',
+  room_status_changed: 'changed room status',
   member_added: 'added a member',
   member_removed: 'removed a member',
+  permission_granted: 'granted permission',
+  permission_revoked: 'revoked permission',
   link_created: 'created a share link',
   link_accessed: 'accessed via share link',
+  link_revoked: 'revoked a share link',
+  user_created: 'created a user',
+  user_invited: 'invited a user',
+  user_accepted_invitation: 'accepted invitation',
   user_login: 'signed in',
   user_logout: 'signed out',
+  user_updated: 'updated profile',
 };
 
 export default function ActivityPage() {
+  useRequireAdmin();
   const [events, setEvents] = React.useState<ActivityEvent[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [eventType, setEventType] = React.useState('all');
+  const [actorId, setActorId] = React.useState('all');
+  const [users, setUsers] = React.useState<UserOption[]>([]);
+
+  // Load org members for the user filter dropdown
+  React.useEffect(() => {
+    fetch('/api/users')
+      .then((r) => r.json())
+      .then((data) => setUsers(data.users || []))
+      .catch(() => {});
+  }, []);
 
   const fetchActivity = React.useCallback(async () => {
     setIsLoading(true);
@@ -68,6 +99,9 @@ export default function ActivityPage() {
       const params = new URLSearchParams();
       if (eventType !== 'all') {
         params.set('eventType', eventType);
+      }
+      if (actorId !== 'all') {
+        params.set('userId', actorId);
       }
       const response = await fetch(`/api/organization/activity?${params}`);
       const data = await response.json();
@@ -79,7 +113,7 @@ export default function ActivityPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [eventType]);
+  }, [eventType, actorId]);
 
   React.useEffect(() => {
     fetchActivity();
@@ -94,7 +128,8 @@ export default function ActivityPage() {
       event.actor?.name?.toLowerCase().includes(query) ||
       event.actor?.email?.toLowerCase().includes(query) ||
       event.description?.toLowerCase().includes(query) ||
-      event.room?.name?.toLowerCase().includes(query)
+      event.room?.name?.toLowerCase().includes(query) ||
+      event.folderName?.toLowerCase().includes(query)
     );
   });
 
@@ -127,13 +162,23 @@ export default function ActivityPage() {
   };
 
   const handleExport = () => {
-    const headers = ['Date', 'User', 'Email', 'Action', 'Description', 'Room', 'IP Address'];
+    const headers = [
+      'Date',
+      'User',
+      'Email',
+      'Action',
+      'Description',
+      'Folder',
+      'Room',
+      'IP Address',
+    ];
     const rows = filteredEvents.map((event) => [
       new Date(event.createdAt).toISOString(),
       event.actor?.name || 'System',
       event.actor?.email || '',
       event.eventType.replace(/_/g, ' '),
       event.description || '',
+      event.folderName || '',
       event.room?.name || '',
       event.ipAddress || '',
     ]);
@@ -151,6 +196,8 @@ export default function ActivityPage() {
     URL.revokeObjectURL(url);
   };
 
+  const hasActiveFilters = eventType !== 'all' || actorId !== 'all';
+
   return (
     <>
       <PageHeader
@@ -167,40 +214,96 @@ export default function ActivityPage() {
       <AdminPageContent>
         <AdminToolbar
           title="Event stream"
-          description="Search who did what, narrow by event family, and export the audit trail when you need to share it."
+          description="Search who did what, narrow by event type or user, and export the audit trail when you need to share it."
           actions={
             <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
               {filteredEvents.length} events
             </div>
           }
         >
-          <div className="flex flex-col gap-4 sm:flex-row">
-            <div className="relative max-w-md flex-1">
+          <div className="space-y-3">
+            {/* Search -- full width, prominent */}
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
-                placeholder="Search by user or target..."
+                placeholder="Search by name, email, document, or room..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+                className="h-11 rounded-xl border-slate-200 bg-white pl-10 text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               />
             </div>
-            <Select value={eventType} onValueChange={setEventType}>
-              <SelectTrigger
-                aria-label="Filter activity by event type"
-                className="h-11 w-[220px] rounded-xl border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-950"
-              >
-                <Filter className="mr-2 h-4 w-4" aria-hidden="true" />
-                <SelectValue placeholder="Filter by type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Events</SelectItem>
-                <SelectItem value="document">Documents</SelectItem>
-                <SelectItem value="room">Rooms</SelectItem>
-                <SelectItem value="member">Members</SelectItem>
-                <SelectItem value="link">Share Links</SelectItem>
-                <SelectItem value="auth">Authentication</SelectItem>
-              </SelectContent>
-            </Select>
+
+            {/* Filter row */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={eventType} onValueChange={setEventType}>
+                <SelectTrigger
+                  aria-label="Filter by event type"
+                  className="h-9 w-[170px] rounded-lg border-slate-200 bg-white text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <Filter className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                  <SelectValue placeholder="Event type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Events</SelectItem>
+                  <SelectItem value="document">Documents</SelectItem>
+                  <SelectItem value="room">Rooms</SelectItem>
+                  <SelectItem value="member">Members</SelectItem>
+                  <SelectItem value="link">Share Links</SelectItem>
+                  <SelectItem value="auth">Authentication</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {users.length > 0 && (
+                <Select value={actorId} onValueChange={setActorId}>
+                  <SelectTrigger
+                    aria-label="Filter by user"
+                    className="h-9 w-[190px] rounded-lg border-slate-200 bg-white text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                  >
+                    <Users className="mr-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                    <SelectValue placeholder="All users" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Users</SelectItem>
+                    {(() => {
+                      const nameCounts: Record<string, number> = {};
+                      for (const u of users) {
+                        if (u.firstName && u.lastName) {
+                          const n = `${u.firstName} ${u.lastName}`;
+                          nameCounts[n] = (nameCounts[n] ?? 0) + 1;
+                        }
+                      }
+                      return users.map((u) => {
+                        const fullName =
+                          u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : null;
+                        const label =
+                          fullName && (nameCounts[fullName] ?? 0) > 1
+                            ? `${fullName} (${u.email})`
+                            : (fullName ?? u.email);
+                        return (
+                          <SelectItem key={u.id} value={u.id}>
+                            {label}
+                          </SelectItem>
+                        );
+                      });
+                    })()}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 rounded-lg px-3 text-xs text-slate-500"
+                  onClick={() => {
+                    setEventType('all');
+                    setActorId('all');
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
+            </div>
           </div>
         </AdminToolbar>
 
@@ -238,7 +341,8 @@ export default function ActivityPage() {
                     const style = getEventStyle(event.eventType);
                     const EventIcon = style.icon;
                     const label =
-                      eventLabels[event.eventType] || event.eventType.replace(/_/g, ' ');
+                      eventLabels[event.eventType.toLowerCase()] ??
+                      event.eventType.toLowerCase().replace(/_/g, ' ');
 
                     return (
                       <div
@@ -266,6 +370,14 @@ export default function ActivityPage() {
                               <>
                                 <span className="text-neutral-500">: </span>
                                 <span className="font-medium">{event.description}</span>
+                              </>
+                            )}
+                            {event.folderName && (
+                              <>
+                                <span className="text-neutral-400"> in </span>
+                                <span className="font-medium text-slate-600 dark:text-slate-300">
+                                  {event.folderName}
+                                </span>
                               </>
                             )}
                           </p>

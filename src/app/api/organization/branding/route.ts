@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
@@ -13,6 +14,31 @@ import { withOrgContext } from '@/lib/db';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
+
+/**
+ * Logos/favicons are stored inline as base64 data URLs and rendered in the admin
+ * chrome and the public viewer, so bound their size. Downscale and recompress any
+ * uploaded raster image; pass non-data URLs (and SVG) through unchanged.
+ */
+async function optimizeImageDataUrl(value: string, maxHeight: number): Promise<string> {
+  if (!value.startsWith('data:image/') || value.startsWith('data:image/svg')) {
+    return value;
+  }
+  try {
+    const match = value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/);
+    if (!match || !match[2]) {
+      return value;
+    }
+    const input = Buffer.from(match[2], 'base64');
+    const out = await sharp(input)
+      .resize({ height: maxHeight, withoutEnlargement: true })
+      .png({ compressionLevel: 9, quality: 82 })
+      .toBuffer();
+    return `data:image/png;base64,${out.toString('base64')}`;
+  } catch {
+    return value;
+  }
+}
 
 /**
  * GET /api/organization/branding
@@ -33,6 +59,8 @@ export async function GET() {
           logoUrl: true,
           primaryColor: true,
           faviconUrl: true,
+          emailSenderName: true,
+          emailSenderAddress: true,
         },
       });
     });
@@ -65,7 +93,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, logoUrl, primaryColor, faviconUrl } = body;
+    const { name, logoUrl, primaryColor, faviconUrl, emailSenderName, emailSenderAddress } = body;
 
     // Validate name if provided
     if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
@@ -95,15 +123,48 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Validate the per-org email sender address if provided.
+    if (
+      emailSenderAddress !== undefined &&
+      emailSenderAddress !== null &&
+      emailSenderAddress !== '' &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailSenderAddress)
+    ) {
+      return NextResponse.json({ error: 'Invalid email sender address' }, { status: 400 });
+    }
+
+    // Bound inline image sizes before storing.
+    const optimizedLogo =
+      logoUrl !== undefined && logoUrl ? await optimizeImageDataUrl(logoUrl, 200) : logoUrl;
+    const optimizedFavicon =
+      faviconUrl !== undefined && faviconUrl
+        ? await optimizeImageDataUrl(faviconUrl, 64)
+        : faviconUrl;
+
+    const changedFields = [
+      ...(name !== undefined ? ['name'] : []),
+      ...(logoUrl !== undefined ? ['logoUrl'] : []),
+      ...(primaryColor !== undefined ? ['primaryColor'] : []),
+      ...(faviconUrl !== undefined ? ['faviconUrl'] : []),
+      ...(emailSenderName !== undefined ? ['emailSenderName'] : []),
+      ...(emailSenderAddress !== undefined ? ['emailSenderAddress'] : []),
+    ];
+
     // Use RLS context for org-scoped queries
     const updatedOrg = await withOrgContext(session.organizationId, async (tx) => {
-      return tx.organization.update({
+      const org = await tx.organization.update({
         where: { id: session.organizationId },
         data: {
           ...(name !== undefined && { name: name.trim() }),
-          ...(logoUrl !== undefined && { logoUrl: logoUrl || null }),
+          ...(logoUrl !== undefined && { logoUrl: optimizedLogo || null }),
           ...(primaryColor !== undefined && { primaryColor }),
-          ...(faviconUrl !== undefined && { faviconUrl: faviconUrl || null }),
+          ...(faviconUrl !== undefined && { faviconUrl: optimizedFavicon || null }),
+          ...(emailSenderName !== undefined && {
+            emailSenderName: (emailSenderName || '').trim() || null,
+          }),
+          ...(emailSenderAddress !== undefined && {
+            emailSenderAddress: (emailSenderAddress || '').trim().toLowerCase() || null,
+          }),
         },
         select: {
           id: true,
@@ -112,8 +173,24 @@ export async function PATCH(request: NextRequest) {
           logoUrl: true,
           primaryColor: true,
           faviconUrl: true,
+          emailSenderName: true,
+          emailSenderAddress: true,
         },
       });
+
+      await tx.event.create({
+        data: {
+          organizationId: session.organizationId,
+          eventType: 'ORGANIZATION_UPDATED',
+          actorType: 'ADMIN',
+          actorId: session.userId,
+          actorEmail: session.user.email,
+          description: 'Updated organization branding',
+          metadata: { fields: changedFields },
+        },
+      });
+
+      return org;
     });
 
     return NextResponse.json({ branding: updatedOrg });

@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
           where: { isActive: true },
           include: {
             organization: {
-              select: { name: true },
+              select: { name: true, emailSenderName: true, emailSenderAddress: true },
             },
           },
           take: 1,
@@ -60,7 +60,11 @@ export async function POST(request: NextRequest) {
 
     // Send reset email via job queue (fallback to sync if async unavailable)
     const providers = getProviders();
-    const orgName = user.organizations[0]?.organization.name || 'VaultSpace';
+    const org = user.organizations[0]?.organization;
+    const orgName = org?.name || 'VaultSpace';
+    // Per-org sender identity (falls back to the global sender when unset).
+    const senderFrom = org?.emailSenderAddress || undefined;
+    const senderName = org?.emailSenderName || org?.name || undefined;
     const baseUrl = process.env['APP_URL'];
     if (!baseUrl) {
       console.error('[ForgotPasswordAPI] APP_URL must be configured');
@@ -74,6 +78,8 @@ export async function POST(request: NextRequest) {
         to: user.email,
         subject: `Reset your ${orgName} password`,
         template: 'password-reset',
+        from: senderFrom,
+        fromName: senderName,
         data: {
           userName: user.firstName || 'User',
           organizationName: orgName,
@@ -90,6 +96,8 @@ export async function POST(request: NextRequest) {
           subject: `Reset your ${orgName} password`,
           html: `<p>Hi ${user.firstName || 'User'},</p><p>Click <a href="${resetUrl}">here</a> to reset your password.</p><p>This link expires in 1 hour.</p><p>If you didn't request this, please ignore this email.</p>`,
           text: textBody,
+          from: senderFrom,
+          fromName: senderName,
         });
       } catch (emailErr) {
         console.error('[ForgotPasswordAPI] Sync email failed:', emailErr);

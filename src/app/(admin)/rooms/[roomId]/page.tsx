@@ -17,6 +17,8 @@ import {
   Lock,
   Tag,
   Star,
+  Link2,
+  Users,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -39,6 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/layout/page-header';
 import { AdminEmptyState, AdminSurface } from '@/components/layout/admin-page';
+import { useIsAdmin } from '@/components/layout/role-provider';
 import {
   Sheet,
   SheetContent,
@@ -77,6 +80,7 @@ import { CreateFolderDialog } from './_components/CreateFolderDialog';
 import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
 import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
 import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
+import { MoveDocumentDialog } from './_components/MoveDocumentDialog';
 import { ManageDrawer, isManagePane, type ManagePane } from './_components/ManageDrawer';
 import { DocumentToolbar } from './_components/DocumentToolbar';
 import { DocumentsTable } from './_components/DocumentsTable';
@@ -87,6 +91,7 @@ export default function RoomDetailPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isAdmin = useIsAdmin();
   const roomId = params['roomId'] as string;
 
   // Drawer-internal pane state. Documents are the page body now, not a tab,
@@ -212,6 +217,7 @@ export default function RoomDetailPage() {
 
   // Tag editor states
   const [editingTagsDoc, setEditingTagsDoc] = React.useState<Document | null>(null);
+  const [movingDoc, setMovingDoc] = React.useState<Document | null>(null);
 
   // Manage drawer (Access / Share Links / Q&A / Checklist / Calendar) open
   // state. Closed by default so the room canvas leads with documents, unless
@@ -498,6 +504,38 @@ export default function RoomDetailPage() {
     setShowDeleteDialog(true);
   }, []);
 
+  // Withdraw (or restore) a document. Reversible, so no confirmation dialog: a
+  // withdrawn document stays as a tombstone with its retired accession number.
+  const handleWithdraw = React.useCallback(
+    async (doc: Document) => {
+      const restore = !!doc.withdrawnAt;
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/documents/${doc.id}/withdraw`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(restore ? { restore: true } : {}),
+        });
+        if (response.ok) {
+          fetchDocuments();
+        } else {
+          const error = await response.json();
+          toast({
+            title: 'Error',
+            description: error.error || 'Failed to update withdrawal',
+            variant: 'destructive',
+          });
+        }
+      } catch {
+        toast({
+          title: 'Error',
+          description: 'Failed to update withdrawal',
+          variant: 'destructive',
+        });
+      }
+    },
+    [roomId, fetchDocuments, toast]
+  );
+
   // Confirm delete
   const confirmDelete = React.useCallback(async () => {
     if (!selectedDocument) {
@@ -632,6 +670,8 @@ export default function RoomDetailPage() {
     onToggleBookmark: toggleBookmark,
     onShowVersions: handleShowVersions,
     onToggleConfidential: handleToggleConfidential,
+    onWithdraw: handleWithdraw,
+    onMove: setMovingDoc,
     onDelete: handleDelete,
     onContextMenu: handleDocContextMenu,
   };
@@ -663,46 +703,69 @@ export default function RoomDetailPage() {
           actions={
             <div className="flex flex-wrap items-center justify-end gap-2">
               {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label="Manage room"
-                onClick={() => setManageOpen(true)}
-              >
-                <Settings className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Manage</span>
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" aria-label="More room actions">
-                    <MoreHorizontal className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">More</span>
+              {isAdmin && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Manage room"
+                    onClick={() => setManageOpen(true)}
+                  >
+                    <Settings className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Manage</span>
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/settings`)}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/analytics`)}>
-                    <BarChart3 className="mr-2 h-4 w-4" />
-                    Analytics
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/audit`)}>
-                    <History className="mr-2 h-4 w-4" />
-                    Audit Trail
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/trash`)}>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Trash
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleDuplicateRoom}>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Duplicate Room
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" aria-label="More room actions">
+                        <MoreHorizontal className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">More</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setManageOpen(true);
+                          setManagePane('links');
+                        }}
+                      >
+                        <Link2 className="mr-2 h-4 w-4" />
+                        Share Links
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setManageOpen(true);
+                          setManagePane('members');
+                        }}
+                      >
+                        <Users className="mr-2 h-4 w-4" />
+                        Access
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/settings`)}>
+                        <Settings className="mr-2 h-4 w-4" />
+                        Settings
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/analytics`)}>
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                        Analytics
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/audit`)}>
+                        <History className="mr-2 h-4 w-4" />
+                        Audit Trail
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push(`/rooms/${roomId}/trash`)}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Trash
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleDuplicateRoom}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        Duplicate Room
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
             </div>
           }
         />
@@ -1088,6 +1151,14 @@ export default function RoomDetailPage() {
             handleSaveTags(editingTagsDoc, tags);
           }
         }}
+      />
+
+      {/* Move Document Dialog */}
+      <MoveDocumentDialog
+        doc={movingDoc}
+        roomId={roomId}
+        onClose={() => setMovingDoc(null)}
+        onMoved={fetchDocuments}
       />
 
       {/* Create Folder Dialog */}

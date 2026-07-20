@@ -30,6 +30,10 @@ const mockTx = {
     update: vi.fn(),
     count: vi.fn(),
   },
+  document: {
+    findMany: vi.fn(),
+    update: vi.fn(),
+  },
 };
 
 // Mock event bus
@@ -273,6 +277,60 @@ describe('RoomService', () => {
           }),
         })
       );
+    });
+  });
+
+  describe('enableAccessionNumbering', () => {
+    it('enables numbering and backfills documents in curated order', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        accessionPrefix: null,
+        lastAccessionSeq: 0,
+      });
+      // Intentionally out of order to prove the service sorts before numbering.
+      mockTx.document.findMany.mockResolvedValue([
+        { id: 'd-corp', name: '1.01 Corporate.pdf', folder: { path: '/1. Corporate' } },
+        { id: 'd-start', name: '00.00 Index.pdf', folder: { path: '/00. Start Here' } },
+      ]);
+      mockTx.document.update.mockResolvedValue({});
+      mockTx.room.update.mockResolvedValue({});
+
+      const result = await service.enableAccessionNumbering(ctx, 'room-1', {
+        prefix: 'bsd',
+        backfill: true,
+      });
+
+      expect(result).toEqual({ prefix: 'BSD', assigned: 2, lastAccessionSeq: 2 });
+      // Start Here sorts first, so it gets BSD-0001.
+      expect(mockTx.document.update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'd-start' },
+        data: { accessionNumber: 'BSD-0001', accessionSeq: 1 },
+      });
+      expect(mockTx.document.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'd-corp' },
+        data: { accessionNumber: 'BSD-0002', accessionSeq: 2 },
+      });
+      expect(mockTx.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: { accessionNumberingEnabled: true, accessionPrefix: 'BSD', lastAccessionSeq: 2 },
+      });
+    });
+
+    it('enables without backfill when backfill is false', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        accessionPrefix: 'BSD',
+        lastAccessionSeq: 5,
+      });
+      mockTx.room.update.mockResolvedValue({});
+
+      const result = await service.enableAccessionNumbering(ctx, 'room-1', { backfill: false });
+
+      expect(result).toEqual({ prefix: 'BSD', assigned: 0, lastAccessionSeq: 5 });
+      expect(mockTx.document.findMany).not.toHaveBeenCalled();
+      expect(mockTx.document.update).not.toHaveBeenCalled();
     });
   });
 });

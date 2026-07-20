@@ -10,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PageHeader } from '@/components/layout/page-header';
 import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
+import { ChangePasswordCard } from '@/components/settings/ChangePasswordCard';
 
 type SetupStep = 'idle' | 'setup' | 'verify' | 'backup' | 'disable';
 
@@ -408,6 +409,8 @@ export default function SecuritySettingsPage() {
               </CardContent>
             </Card>
           )}
+
+          <ChangePasswordCard />
         </div>
       </AdminPageContent>
     </>

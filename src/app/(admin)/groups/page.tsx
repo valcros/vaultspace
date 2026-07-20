@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
+import { useRequireAdmin } from '@/components/layout/role-provider';
 import {
   AdminEmptyState,
   AdminPageContent,
@@ -42,6 +43,7 @@ interface Group {
 }
 
 export default function GroupsPage() {
+  useRequireAdmin();
   const [groups, setGroups] = React.useState<Group[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');

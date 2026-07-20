@@ -105,6 +105,48 @@ check_app() {
 check_app "${WEB_APP}" "${SHARED_REQUIRED[@]}" "${WEB_ONLY_REQUIRED[@]}"
 check_app "${WORKER_APP}" "${SHARED_REQUIRED[@]}" "${WORKER_ONLY_REQUIRED[@]}"
 
+# The worker Container App MUST run the worker image (vaultspace-worker), not the
+# web image. On 2026-07-17 the worker was repointed to vaultspace-web, which boots
+# the Next.js server (node server.js) instead of the BullMQ consumer
+# (npm run worker). The async queue silently stopped draining while probes still
+# passed, because port 3000 is open either way. This is the primary guard for that
+# failure mode.
+echo ""
+echo "=== Validating ${WORKER_APP} image repository ==="
+worker_image=$(az containerapp show \
+  --name "${WORKER_APP}" \
+  --resource-group "${RG}" \
+  --query "properties.template.containers[?name=='${WORKER_CONTAINER_NAME}'] | [0].image" \
+  -o tsv 2>/dev/null || echo "")
+worker_repo=$(printf '%s' "${worker_image}" | sed -E 's#.*/([^/:]+):.*#\1#')
+if [ "${worker_repo}" != "vaultspace-worker" ]; then
+  echo "  ERROR: ${WORKER_APP} runs image '${worker_image}' (repo '${worker_repo:-<none>}'); expected the 'vaultspace-worker' image."
+  echo "         The web image boots node server.js, not the BullMQ worker, so the queue would not drain."
+  errors=$((errors + 1))
+else
+  echo "  OK: image repo is vaultspace-worker"
+fi
+
+# Defense in depth: if the worker is ever (mis)pointed at the web image again, the
+# web entrypoint runs migration/RLS DDL as the low-privilege runtime role and
+# crash-loops on "must be owner of table". ENABLE_RLS=false makes that entrypoint
+# skip the DDL step. It is a harmless no-op for the correct worker image (which
+# does not run docker-entrypoint.sh) and does not affect runtime RLS enforcement
+# (isRLSEnabled() stays true under NODE_ENV=production).
+echo ""
+echo "=== Validating ${WORKER_APP} ENABLE_RLS ==="
+worker_enable_rls=$(az containerapp show \
+  --name "${WORKER_APP}" \
+  --resource-group "${RG}" \
+  --query "properties.template.containers[?name=='${WORKER_CONTAINER_NAME}'] | [0].env[?name=='ENABLE_RLS'].value | [0]" \
+  -o tsv 2>/dev/null || echo "")
+if [ "${worker_enable_rls}" != "false" ]; then
+  echo "  ERROR: ${WORKER_APP} must set ENABLE_RLS=false (found: '${worker_enable_rls:-<unset>}')"
+  errors=$((errors + 1))
+else
+  echo "  OK: ENABLE_RLS=false"
+fi
+
 # Probes: the worker has no HTTP ingress, so the only signal that distinguishes
 # a healthy worker from a crash-looping one is the TCP socket on port 3000.
 # Require at least one probe on that port.

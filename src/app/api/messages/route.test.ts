@@ -24,6 +24,7 @@ const mockTx = {
   user: { findFirst: vi.fn() },
   room: { findFirst: vi.fn() },
   document: { findFirst: vi.fn() },
+  event: { create: vi.fn() },
 };
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),

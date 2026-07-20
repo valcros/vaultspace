@@ -17,8 +17,22 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: 'VaultSpace',
-  description: 'Secure Virtual Data Room Platform',
+  title: {
+    default: 'VaultSpace',
+    template: '%s | VaultSpace',
+  },
+  description: 'Secure Virtual Data Room — share confidential documents with confidence.',
+  metadataBase: new URL(process.env['APP_URL'] ?? 'https://vaultspace.org'),
+  openGraph: {
+    type: 'website',
+    siteName: 'VaultSpace',
+    title: 'VaultSpace — Secure Virtual Data Room',
+    description: 'Share confidential documents with confidence.',
+  },
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

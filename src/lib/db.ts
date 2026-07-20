@@ -10,7 +10,14 @@
  * - All org-scoped queries will be filtered by RLS policies
  */
 
+import { installBigIntJsonSerializer } from '@/lib/bigint-json';
 import { PrismaClient, Prisma } from '@prisma/client';
+
+// Ensure BigInt values (byte counts on Prisma models) can always be JSON
+// serialized. Every DB-touching route imports this module for its exports, so
+// invoking here guarantees the serializer is installed before any Prisma result
+// is serialized. Must be a *call* (not a bare import) to survive tree-shaking.
+installBigIntJsonSerializer();
 
 declare global {
   // Allow global `var` declarations for singleton pattern
@@ -78,7 +85,11 @@ if (process.env['NODE_ENV'] !== 'production') {
  */
 export async function withOrgContext<T>(
   organizationId: string,
-  operation: (tx: Prisma.TransactionClient) => Promise<T>
+  operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  // Optional Prisma interactive-transaction options. Use a longer `timeout` for
+  // operations that issue many round trips (e.g. writing a preview asset per page
+  // of a large document), which otherwise exceed Prisma's 5s default.
+  options?: { timeout?: number; maxWait?: number }
 ): Promise<T> {
   // Skip RLS in development unless explicitly enabled
   const enableRLS =
@@ -88,7 +99,7 @@ export async function withOrgContext<T>(
     // In development without RLS, just run the operation directly
     return db.$transaction(async (tx) => {
       return operation(tx);
-    });
+    }, options);
   }
 
   // In production, set the RLS context before running queries
@@ -96,7 +107,7 @@ export async function withOrgContext<T>(
     // SET LOCAL scopes the setting to this transaction only
     await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
     return operation(tx);
-  });
+  }, options);
 }
 
 /**

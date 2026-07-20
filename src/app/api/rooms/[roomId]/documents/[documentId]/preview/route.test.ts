@@ -37,6 +37,7 @@ const mockTx = {
   room: { findFirst: vi.fn() },
   document: { findFirst: vi.fn(), update: vi.fn() },
   documentVersion: { findFirst: vi.fn() },
+  previewAsset: { count: vi.fn().mockResolvedValue(1) },
 };
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
@@ -77,6 +78,7 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
     vi.clearAllMocks();
     mockTx.room.findFirst.mockResolvedValue(mockRoom);
     mockTx.document.update.mockResolvedValue({});
+    mockTx.previewAsset.count.mockResolvedValue(1);
     mockStorage.exists.mockResolvedValue(true);
     mockStorage.get.mockResolvedValue(Buffer.from('file content'));
     mockStorage.getSignedUrl.mockResolvedValue('https://storage.example.com/signed?sig=abc');

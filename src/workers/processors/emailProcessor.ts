@@ -197,7 +197,7 @@ function buildRoomDigestText(data: Record<string, unknown>): string {
 }
 
 export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<void> {
-  const { to, subject, template, data } = job.data;
+  const { to, subject, template, data, from, fromName } = job.data;
 
   console.log(`[EmailProcessor] Sending email to ${Array.isArray(to) ? to.join(', ') : to}`);
 
@@ -226,6 +226,9 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
       subject: emailSubject,
       html: emailHtml,
       text: emailText,
+      // Per-org sender identity (when the enqueuer resolved one); else default.
+      from,
+      fromName,
     });
 
     console.log(`[EmailProcessor] Email sent successfully: ${result.messageId}`);

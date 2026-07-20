@@ -52,6 +52,15 @@ export interface EmailOptions {
   text?: string;
   replyTo?: string;
   attachments?: EmailAttachment[];
+  /**
+   * Override the sender address for this message (per-org identity). Falls back
+   * to the provider's configured default when unset. For ACS the address must be
+   * a verified sender username on the domain; its display name is configured in
+   * ACS. For SMTP, `fromName` is combined into a `Name <address>` header.
+   */
+  from?: string;
+  /** Sender display name (used by the SMTP provider). */
+  fromName?: string;
 }
 
 export interface EmailAttachment {

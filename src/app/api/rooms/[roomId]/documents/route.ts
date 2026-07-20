@@ -254,6 +254,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const documents = result.items.map((doc) => ({
       id: doc.id,
       name: doc.name,
+      accessionNumber: doc.accessionNumber ?? null,
+      totalVersions: doc.totalVersions ?? 1,
+      withdrawnAt: doc.withdrawnAt ? doc.withdrawnAt.toISOString() : null,
       status: doc.status,
       scanStatus: doc.latestVersion?.scanStatus ?? null,
       previewStatus: doc.latestVersion?.previewStatus ?? null,

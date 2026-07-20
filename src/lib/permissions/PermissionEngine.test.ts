@@ -328,6 +328,12 @@ describe('PermissionEngine', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       lastAccessedAt: null,
+      inviteeName: null,
+      inviteeCompany: null,
+      inviteMessage: null,
+      remindersSent: 0,
+      lastReminderAt: null,
+      inviteEmailSentAt: null,
     });
 
     const result = await engine.evaluate(actor, 'view', resource);
@@ -366,6 +372,12 @@ describe('PermissionEngine', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       lastAccessedAt: null,
+      inviteeName: null,
+      inviteeCompany: null,
+      inviteMessage: null,
+      remindersSent: 0,
+      lastReminderAt: null,
+      inviteEmailSentAt: null,
     });
 
     const result = await engine.evaluate(actor, 'view', resource);
@@ -374,22 +386,13 @@ describe('PermissionEngine', () => {
     expect(result.level).toBe('NONE');
   });
 
-  // Scenario 10: Default deny when no permission found
+  // Scenario 10: Default deny for a non-member (no org membership at all)
   it('should deny access when no permission is found', async () => {
     const actor: Actor = { userId: 'user-7' };
     const resource: Resource = { type: 'DOCUMENT', organizationId: orgId, documentId };
 
-    mockedDb.userOrganization.findUnique.mockResolvedValue({
-      id: 'uo-7',
-      userId: 'user-7',
-      organizationId: orgId,
-      role: 'VIEWER',
-      isActive: true,
-      canManageUsers: false,
-      canManageRooms: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    // Not a member of the org, so the VIEWER baseline does not apply.
+    mockedDb.userOrganization.findUnique.mockResolvedValue(null);
     mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
     mockedDb.permission.findFirst.mockResolvedValue(null);
 
@@ -398,6 +401,60 @@ describe('PermissionEngine', () => {
     expect(result.allowed).toBe(false);
     expect(result.level).toBe('NONE');
     expect(result.reason).toBe('No permission found');
+  });
+
+  // Scenario 11: Organization VIEWER baseline (Layer 15) — invited viewers can
+  // view the entire room without any explicit grant.
+  const viewerMembership = (isActive = true) => ({
+    id: 'uo-v',
+    userId: 'viewer-1',
+    organizationId: orgId,
+    role: 'VIEWER' as const,
+    isActive,
+    canManageUsers: false,
+    canManageRooms: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  it('should allow an org VIEWER to view room content with no explicit grant', async () => {
+    const actor: Actor = { userId: 'viewer-1' };
+    const resource: Resource = { type: 'DOCUMENT', organizationId: orgId, roomId, documentId };
+
+    mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership());
+    mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+    mockedDb.permission.findFirst.mockResolvedValue(null);
+
+    const result = await engine.evaluate(actor, 'view', resource);
+
+    expect(result.allowed).toBe(true);
+    expect(result.level).toBe('VIEW');
+  });
+
+  it('should deny download to an org VIEWER with only the baseline', async () => {
+    const actor: Actor = { userId: 'viewer-1' };
+    const resource: Resource = { type: 'DOCUMENT', organizationId: orgId, roomId, documentId };
+
+    mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership());
+    mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+    mockedDb.permission.findFirst.mockResolvedValue(null);
+
+    const result = await engine.evaluate(actor, 'download', resource);
+
+    expect(result.allowed).toBe(false);
+  });
+
+  it('should not grant the VIEWER baseline to a deactivated membership', async () => {
+    const actor: Actor = { userId: 'viewer-1' };
+    const resource: Resource = { type: 'DOCUMENT', organizationId: orgId, roomId, documentId };
+
+    mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership(false));
+    mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
+    mockedDb.permission.findFirst.mockResolvedValue(null);
+
+    const result = await engine.evaluate(actor, 'view', resource);
+
+    expect(result.allowed).toBe(false);
   });
 
   // Test the simplified can() method

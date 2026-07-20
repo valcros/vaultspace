@@ -35,6 +35,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       room: {
         select: {
           id: true,
+          allowViewerVersionHistory: true,
         },
       },
     });
@@ -52,56 +53,62 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return jsonResponse({ error: 'Document not found' }, 404);
     }
 
-    // Get page number from query params
+    // Get page number and optional versionId from query params
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
+    const versionId = searchParams.get('versionId') || null;
+
+    // Historical version preview requires the room feature to be enabled
+    if (versionId && !viewerSession.room.allowViewerVersionHistory) {
+      return jsonResponse({ error: 'Version history is not available for this room' }, 403);
+    }
 
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(viewerSession.organizationId, async (tx) => {
-      // Get document with its latest version
+      // Verify the document exists and is viewable in this room
       const document = await tx.document.findFirst({
         where: {
           id: documentId,
           roomId: viewerSession.room.id,
           status: 'ACTIVE',
+          withdrawnAt: null,
         },
-        include: {
-          versions: {
-            orderBy: { versionNumber: 'desc' },
-            take: 1,
-            include: {
-              previewAssets: {
-                where: {
-                  assetType: 'RENDER',
-                  pageNumber: page,
-                },
-                select: {
-                  storageKey: true,
-                  mimeType: true,
-                },
-              },
-            },
-          },
-        },
+        select: { id: true, currentVersionId: true },
       });
 
       if (!document) {
         return { error: 'Document not found', status: 404 };
       }
 
-      const latestVersion = document.versions[0];
-      if (!latestVersion) {
+      // Resolve the target version: caller-specified historical or latest
+      const targetVersionWhere = versionId
+        ? { id: versionId, documentId, organizationId: viewerSession.organizationId }
+        : { documentId, organizationId: viewerSession.organizationId };
+
+      const version = await tx.documentVersion.findFirst({
+        where: targetVersionWhere,
+        orderBy: versionId ? undefined : { versionNumber: 'desc' },
+        select: {
+          id: true,
+          previewAssets: {
+            where: { assetType: 'RENDER', pageNumber: page },
+            select: { storageKey: true, mimeType: true },
+          },
+        },
+      });
+
+      if (!version) {
         return { error: 'Document version not found', status: 404 };
       }
 
-      return { document, latestVersion };
+      return { version };
     });
 
     if ('error' in result) {
       return jsonResponse({ error: result.error }, result.status || 500);
     }
 
-    const { latestVersion } = result;
+    const { version: latestVersion } = result;
 
     const previewAsset = latestVersion.previewAssets[0];
     if (!previewAsset) {

@@ -7,6 +7,8 @@ import {
   Download,
   Eye,
   Trash2,
+  Ban,
+  FolderInput,
   History,
   ArrowUpDown,
   ChevronUp,
@@ -62,6 +64,8 @@ interface DocumentActionHandlers {
   onToggleBookmark: (doc: Document) => void;
   onShowVersions: (doc: Document) => void;
   onToggleConfidential: (doc: Document) => void;
+  onWithdraw: (doc: Document) => void;
+  onMove: (doc: Document) => void;
   onDelete: (doc: Document) => void;
   onContextMenu: (e: React.MouseEvent, doc: Document) => void;
 }
@@ -106,14 +110,14 @@ const FolderListRow = React.memo(function FolderListRow({
       </td>
       {showSize && (
         <td
-          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+          className={`hidden whitespace-nowrap px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
         >
           {folder.documentCount} files, {folder.childCount} folders
         </td>
       )}
       {showUploaded && (
         <td
-          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+          className={`hidden whitespace-nowrap px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
         >
           {formatDate(folder.createdAt)}
         </td>
@@ -177,6 +181,8 @@ const DocumentListRow = React.memo(function DocumentListRow({
   onToggleBookmark,
   onShowVersions,
   onToggleConfidential,
+  onWithdraw,
+  onMove,
   onDelete,
   onContextMenu,
 }: DocumentListRowProps) {
@@ -204,6 +210,15 @@ const DocumentListRow = React.memo(function DocumentListRow({
           <FileTypeIcon mimeType={doc.mimeType} className={compact ? 'h-4 w-4' : undefined} />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
+              {doc.accessionNumber && (
+                <span
+                  className="shrink-0 rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0 font-mono text-[10px] font-medium text-neutral-500"
+                  title="Document accession number"
+                >
+                  {doc.accessionNumber}
+                  {doc.totalVersions && doc.totalVersions > 1 ? ` · v${doc.totalVersions}` : ''}
+                </span>
+              )}
               <NameText
                 name={doc.name}
                 size={nameTextSize}
@@ -212,6 +227,11 @@ const DocumentListRow = React.memo(function DocumentListRow({
               />
               {(doc.confidential || allDocumentsConfidential) && (
                 <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+              )}
+              {doc.withdrawnAt && (
+                <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-1.5 py-0 text-[10px] font-medium text-red-600">
+                  Withdrawn
+                </span>
               )}
             </div>
             {!compact && (
@@ -241,14 +261,14 @@ const DocumentListRow = React.memo(function DocumentListRow({
       </td>
       {showSize && (
         <td
-          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+          className={`hidden whitespace-nowrap px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
         >
           {formatFileSize(doc.size)}
         </td>
       )}
       {showUploaded && (
         <td
-          className={`hidden px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
+          className={`hidden whitespace-nowrap px-3 sm:table-cell ${compact ? 'py-1 text-xs' : 'py-1.5 text-sm'} text-neutral-500`}
         >
           {formatDate(doc.createdAt)}
         </td>
@@ -291,6 +311,14 @@ const DocumentListRow = React.memo(function DocumentListRow({
             <DropdownMenuItem onClick={() => onToggleConfidential(doc)}>
               <Lock className="mr-2 h-4 w-4" />
               {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onMove(doc)}>
+              <FolderInput className="mr-2 h-4 w-4" />
+              Move to folder…
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onWithdraw(doc)}>
+              <Ban className="mr-2 h-4 w-4" />
+              {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onDelete(doc)} className="text-danger-600">
@@ -364,6 +392,8 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
   onToggleBookmark,
   onShowVersions,
   onToggleConfidential,
+  onWithdraw,
+  onMove,
   onDelete,
   onContextMenu,
 }: DocumentGridCardProps) {
@@ -393,6 +423,15 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1">
+        {doc.accessionNumber && (
+          <span
+            className="rounded border border-neutral-200 bg-neutral-50 px-1.5 font-mono text-[9px] font-medium text-neutral-500"
+            title="Document accession number"
+          >
+            {doc.accessionNumber}
+            {doc.totalVersions && doc.totalVersions > 1 ? ` · v${doc.totalVersions}` : ''}
+          </span>
+        )}
         <p className="text-xs text-neutral-600">{formatFileSize(doc.size)}</p>
         {doc.category && (
           <span
@@ -450,6 +489,14 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
             <DropdownMenuItem onClick={() => onToggleConfidential(doc)}>
               <Lock className="mr-2 h-4 w-4" />
               {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onMove(doc)}>
+              <FolderInput className="mr-2 h-4 w-4" />
+              Move to folder…
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onWithdraw(doc)}>
+              <Ban className="mr-2 h-4 w-4" />
+              {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onDelete(doc)} className="text-danger-600">
@@ -518,6 +565,8 @@ export function DocumentsTable({
   onToggleBookmark,
   onShowVersions,
   onToggleConfidential,
+  onWithdraw,
+  onMove,
   onDelete,
   onContextMenu,
 }: DocumentsTableProps) {
@@ -528,6 +577,8 @@ export function DocumentsTable({
     onToggleBookmark,
     onShowVersions,
     onToggleConfidential,
+    onWithdraw,
+    onMove,
     onDelete,
     onContextMenu,
   };

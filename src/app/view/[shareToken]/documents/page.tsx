@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { FileText, Folder, Search, Download, Eye, ChevronRight, Home } from 'lucide-react';
+import { FileText, Folder, Search, Download, Eye, ChevronRight, Home, History } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,11 +17,23 @@ interface ViewerSession {
   brandColor: string | null;
   downloadEnabled: boolean;
   watermarkEnabled: boolean;
+  versionHistoryEnabled: boolean;
+}
+
+interface DocumentVersionInfo {
+  id: string;
+  versionNumber: number;
+  size: number;
+  createdAt: string;
+  isCurrent: boolean;
 }
 
 interface Document {
   id: string;
   name: string;
+  accessionNumber: string | null;
+  totalVersions?: number;
+  withdrawn?: boolean;
   mimeType: string;
   size: number;
   folderId: string | null;
@@ -44,18 +56,21 @@ export default function ViewerDocumentsPage() {
   const [session, setSession] = React.useState<ViewerSession | null>(null);
   const [documents, setDocuments] = React.useState<Document[]>([]);
   const [folders, setFolders] = React.useState<Folder[]>([]);
-  const [currentPath, setCurrentPath] = React.useState<string[]>([]);
+  // Breadcrumb trail from root to the current folder, tracked by immutable
+  // folder id (never a display-derived path string, which is what caused folders
+  // to open empty). Each entry keeps the name only for breadcrumb display.
+  const [trail, setTrail] = React.useState<{ id: string; name: string }[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
 
-  const pathKey = currentPath.join('/');
+  const currentFolderId = trail.at(-1)?.id ?? null;
+  const folderKey = trail.map((t) => t.id).join('/');
 
   const fetchDocuments = React.useCallback(async () => {
     setIsLoading(true);
     try {
-      const path =
-        currentPath.length > 0 ? `?path=${encodeURIComponent(currentPath.join('/'))}` : '';
-      const response = await fetch(`/api/view/${shareToken}/documents${path}`);
+      const query = currentFolderId ? `?folderId=${encodeURIComponent(currentFolderId)}` : '';
+      const response = await fetch(`/api/view/${shareToken}/documents${query}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -72,22 +87,22 @@ export default function ViewerDocumentsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [shareToken, currentPath, router]);
+  }, [shareToken, currentFolderId, router]);
 
   React.useEffect(() => {
     fetchDocuments();
-  }, [fetchDocuments, pathKey]);
+  }, [fetchDocuments, folderKey]);
 
-  const navigateToFolder = (folderName: string) => {
-    setCurrentPath([...currentPath, folderName]);
+  const navigateToFolder = (folder: { id: string; name: string }) => {
+    setTrail((prev) => [...prev, { id: folder.id, name: folder.name }]);
   };
 
   const navigateToRoot = () => {
-    setCurrentPath([]);
+    setTrail([]);
   };
 
   const navigateToPathIndex = (index: number) => {
-    setCurrentPath(currentPath.slice(0, index + 1));
+    setTrail((prev) => prev.slice(0, index + 1));
   };
 
   const formatFileSize = (bytes: number) => {
@@ -117,8 +132,37 @@ export default function ViewerDocumentsPage() {
     router.push(`/view/${shareToken}/documents/${documentId}`);
   };
 
-  const handleDownloadDocument = async (documentId: string) => {
-    window.open(`/api/view/${shareToken}/documents/${documentId}/download`, '_blank');
+  const handleDownloadDocument = async (documentId: string, versionId?: string) => {
+    const q = versionId ? `?versionId=${encodeURIComponent(versionId)}` : '';
+    window.open(`/api/view/${shareToken}/documents/${documentId}/download${q}`, '_blank');
+  };
+
+  const [openVersionsDocId, setOpenVersionsDocId] = React.useState<string | null>(null);
+  const [versionsByDoc, setVersionsByDoc] = React.useState<Record<string, DocumentVersionInfo[]>>(
+    {}
+  );
+  const [versionsLoading, setVersionsLoading] = React.useState(false);
+
+  const toggleVersions = async (documentId: string) => {
+    if (openVersionsDocId === documentId) {
+      setOpenVersionsDocId(null);
+      return;
+    }
+    setOpenVersionsDocId(documentId);
+    if (!versionsByDoc[documentId]) {
+      setVersionsLoading(true);
+      try {
+        const res = await fetch(`/api/view/${shareToken}/documents/${documentId}/versions`);
+        if (res.ok) {
+          const data = await res.json();
+          setVersionsByDoc((prev) => ({ ...prev, [documentId]: data.versions || [] }));
+        }
+      } catch {
+        // Leave the panel empty on failure.
+      } finally {
+        setVersionsLoading(false);
+      }
+    }
   };
 
   const handleLogout = () => {
@@ -161,14 +205,15 @@ export default function ViewerDocumentsPage() {
               size="sm"
               onClick={navigateToRoot}
               className="flex-shrink-0 rounded-xl"
+              aria-label="Go to root folder"
             >
               <Home className="h-4 w-4" />
             </Button>
-            {currentPath.length > 0 && (
+            {trail.length > 0 && (
               <>
                 <ChevronRight className="h-4 w-4 flex-shrink-0 text-neutral-400" />
-                {currentPath.map((segment, index) => (
-                  <React.Fragment key={index}>
+                {trail.map((segment, index) => (
+                  <React.Fragment key={segment.id}>
                     {index > 0 && (
                       <ChevronRight className="h-4 w-4 flex-shrink-0 text-neutral-400" />
                     )}
@@ -176,7 +221,7 @@ export default function ViewerDocumentsPage() {
                       onClick={() => navigateToPathIndex(index)}
                       className="max-w-32 truncate rounded px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
                     >
-                      {segment}
+                      {segment.name}
                     </button>
                   </React.Fragment>
                 ))}
@@ -227,7 +272,7 @@ export default function ViewerDocumentsPage() {
                   <Card
                     key={folder.id}
                     className="cursor-pointer rounded-xl border border-neutral-200 bg-white shadow-sm transition-shadow hover:border-primary-200 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-primary-800"
-                    onClick={() => navigateToFolder(folder.name)}
+                    onClick={() => navigateToFolder({ id: folder.id, name: folder.name })}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-center gap-3">
@@ -277,33 +322,99 @@ export default function ViewerDocumentsPage() {
                             >
                               {doc.name}
                             </p>
-                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                            <p className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+                              {doc.accessionNumber && (
+                                <span
+                                  className="rounded border border-slate-200 bg-slate-50 px-1.5 font-mono text-[10px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                                  title="Document reference number"
+                                >
+                                  {doc.accessionNumber}
+                                  {doc.totalVersions && doc.totalVersions > 1
+                                    ? ` · v${doc.totalVersions}`
+                                    : ''}
+                                </span>
+                              )}
                               {formatFileSize(doc.size)}
                             </p>
                           </div>
                         </div>
-                        <div className="mt-4 flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => handleViewDocument(doc.id)}
-                          >
-                            <Eye className="mr-1 h-4 w-4" />
-                            View
-                          </Button>
-                          {session?.downloadEnabled && (
+                        {doc.withdrawn ? (
+                          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
+                            Withdrawn — this document is no longer available.
+                          </div>
+                        ) : (
+                          <div className="mt-4 flex items-center gap-2">
                             <Button
                               variant="outline"
                               size="sm"
                               className="flex-1"
-                              onClick={() => handleDownloadDocument(doc.id)}
+                              onClick={() => handleViewDocument(doc.id)}
                             >
-                              <Download className="mr-1 h-4 w-4" />
-                              Download
+                              <Eye className="mr-1 h-4 w-4" />
+                              View
                             </Button>
+                            {session?.downloadEnabled && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => handleDownloadDocument(doc.id)}
+                              >
+                                <Download className="mr-1 h-4 w-4" />
+                                Download
+                              </Button>
+                            )}
+                            {session?.versionHistoryEnabled &&
+                              doc.totalVersions !== undefined &&
+                              doc.totalVersions > 1 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleVersions(doc.id)}
+                                  title="Version history"
+                                >
+                                  <History className="mr-1 h-4 w-4" />v{doc.totalVersions}
+                                </Button>
+                              )}
+                          </div>
+                        )}
+                        {!doc.withdrawn &&
+                          session?.versionHistoryEnabled &&
+                          openVersionsDocId === doc.id && (
+                            <div className="mt-3 space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
+                              {versionsLoading && !versionsByDoc[doc.id] ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  Loading version history…
+                                </p>
+                              ) : (versionsByDoc[doc.id]?.length ?? 0) === 0 ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  No version history available.
+                                </p>
+                              ) : (
+                                versionsByDoc[doc.id]?.map((v) => (
+                                  <div
+                                    key={v.id}
+                                    className="flex items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300"
+                                  >
+                                    <span className="truncate">
+                                      v{v.versionNumber}
+                                      {v.isCurrent ? ' · current' : ''} ·{' '}
+                                      {new Date(v.createdAt).toLocaleDateString()} ·{' '}
+                                      {formatFileSize(v.size)}
+                                    </span>
+                                    {session?.downloadEnabled && (
+                                      <button
+                                        onClick={() => handleDownloadDocument(doc.id, v.id)}
+                                        className="flex-shrink-0 rounded px-2 py-0.5 text-primary-600 hover:bg-primary-50 hover:underline dark:text-primary-400 dark:hover:bg-primary-950/30"
+                                      >
+                                        Download
+                                      </button>
+                                    )}
+                                  </div>
+                                ))
+                              )}
+                            </div>
                           )}
-                        </div>
                       </CardContent>
                     </Card>
                   );

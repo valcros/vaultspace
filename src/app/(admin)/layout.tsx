@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
 
 import { getServerComponentSession } from '@/lib/auth/serverComponentSession';
+import { withOrgContext } from '@/lib/db';
 import { DockShell } from '@/components/layout/dock-shell';
+import { RoleProvider } from '@/components/layout/role-provider';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerComponentSession();
@@ -15,5 +17,24 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     email: session.user.email,
   };
 
-  return <DockShell user={user}>{children}</DockShell>;
+  // Resolve org branding so the shell shows the organization you are working in.
+  const org = await withOrgContext(session.organizationId, (tx) =>
+    tx.organization.findUnique({
+      where: { id: session.organizationId },
+      select: { name: true, logoUrl: true },
+    })
+  ).catch(() => null);
+
+  const organization = {
+    name: org?.name ?? session.organization.name,
+    logoUrl: org?.logoUrl ?? null,
+  };
+
+  return (
+    <RoleProvider role={session.role}>
+      <DockShell user={user} organization={organization}>
+        {children}
+      </DockShell>
+    </RoleProvider>
+  );
 }

@@ -7,6 +7,12 @@ on:
     branches: [main]
     types: [completed]
 
+# Serialize deploys so two never race. Do NOT cancel-in-progress: a deploy may be
+# mid-migration or mid-Container-App-update, which must not be interrupted.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -36,6 +42,7 @@ jobs:
       WORKER_CONTAINER_NAME: ${{ vars.WORKER_CONTAINER_NAME }}
       WAKER_JOB_APP: ${{ vars.WAKER_JOB_APP }}
       WAKER_CONTAINER_NAME: ${{ vars.WAKER_CONTAINER_NAME }}
+      LIFECYCLE_JOB_APP: ${{ vars.LIFECYCLE_JOB_APP }}
       APP_URL: ${{ vars.APP_URL }}
       # For workflow_run triggers, deploy the exact commit CI validated, not the
       # branch head at event time (they can differ if another push lands mid-run).
@@ -57,6 +64,7 @@ jobs:
             WORKER_CONTAINER_NAME
             WAKER_JOB_APP
             WAKER_CONTAINER_NAME
+            LIFECYCLE_JOB_APP
             APP_URL
           )
 
@@ -81,17 +89,29 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
+      # Buildx with a persistent layer cache (GitHub Actions cache backend) so
+      # unchanged dependency/build layers are reused across deploys instead of
+      # rebuilt from scratch each time.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push web image
         run: |
-          docker build -t $ACR_SERVER/vaultspace-web:$DEPLOY_SHA -t $ACR_SERVER/vaultspace-web:latest -f Dockerfile .
-          docker push $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
-          docker push $ACR_SERVER/vaultspace-web:latest
+          docker buildx build \
+            --cache-from type=gha,scope=web \
+            --cache-to type=gha,mode=max,scope=web \
+            -t $ACR_SERVER/vaultspace-web:$DEPLOY_SHA \
+            -t $ACR_SERVER/vaultspace-web:latest \
+            -f Dockerfile --push .
 
       - name: Build and push worker image
         run: |
-          docker build -t $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA -t $ACR_SERVER/vaultspace-worker:latest -f Dockerfile.worker .
-          docker push $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
-          docker push $ACR_SERVER/vaultspace-worker:latest
+          docker buildx build \
+            --cache-from type=gha,scope=worker \
+            --cache-to type=gha,mode=max,scope=worker \
+            -t $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA \
+            -t $ACR_SERVER/vaultspace-worker:latest \
+            -f Dockerfile.worker --push .
 
       - name: Setup Node.js for migrations
         uses: actions/setup-node@v4
@@ -116,17 +136,32 @@ jobs:
             --image $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
 
       - name: Update Container App - Worker
+        # ENABLE_RLS=false is asserted on every deploy: the worker connects as the
+        # low-privilege runtime role, so the shared entrypoint's RLS/migration DDL
+        # step ("ALTER TABLE ... ENABLE ROW LEVEL SECURITY") would fail with
+        # "must be owner of table" and crash-loop the worker. The web app remains
+        # the sole applier of RLS. --set-env-vars merges this key without touching
+        # the worker's other env vars. See scripts/validate-container-env.sh, which
+        # fails the deploy if this drifts.
         run: |
           az containerapp update \
             --name $WORKER_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
             --container-name $WORKER_CONTAINER_NAME \
-            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
+            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA \
+            --set-env-vars ENABLE_RLS=false
 
       - name: Update Container App Job - Delayed Waker
         run: |
           az containerapp job update \
             --name $WAKER_JOB_APP \
+            --resource-group $RESOURCE_GROUP \
+            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
+
+      - name: Update Container App Job - Invitation Lifecycle
+        run: |
+          az containerapp job update \
+            --name $LIFECYCLE_JOB_APP \
             --resource-group $RESOURCE_GROUP \
             --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
 
@@ -156,6 +191,31 @@ jobs:
             exit 1
           fi
           echo "✓ Waker job image, command, and trigger verified"
+
+      - name: Validate lifecycle job template
+        run: |
+          JOB_JSON=$(az containerapp job show \
+            --name $LIFECYCLE_JOB_APP \
+            --resource-group $RESOURCE_GROUP \
+            --output json)
+
+          IMAGE=$(echo "$JOB_JSON" | jq -r '.properties.template.containers[0].image')
+          ARGS=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].args // []) | join(" ")')
+          TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
+
+          if [ "$IMAGE" != "$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA" ]; then
+            echo "ERROR: lifecycle job image mismatch: $IMAGE"
+            exit 1
+          fi
+          if ! echo "$ARGS" | grep -q "worker:invitation-lifecycle"; then
+            echo "ERROR: lifecycle job no longer invokes worker:invitation-lifecycle (args: $ARGS)"
+            exit 1
+          fi
+          if [ "$TRIGGER" != "Schedule" ]; then
+            echo "ERROR: lifecycle job trigger type changed: $TRIGGER"
+            exit 1
+          fi
+          echo "✓ Lifecycle job image, command, and trigger verified"
 
       - name: Validate Container App env shape
         run: |

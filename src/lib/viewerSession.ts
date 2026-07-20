@@ -13,6 +13,7 @@ export const viewerSessionBaseSelect = {
     select: {
       slug: true,
       isActive: true,
+      permission: true,
       scope: true,
       scopedFolderId: true,
       scopedDocumentId: true,

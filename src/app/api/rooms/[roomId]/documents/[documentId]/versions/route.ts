@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { serializeBigInt } from '@/lib/serialization';
 import { getProviders } from '@/providers';
 import { createHash } from 'crypto';
 import { sanitizeFilename, resolveMimeType } from '@/lib/fileTypes';
@@ -83,7 +84,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ versions: result.versions });
+    // DocumentVersion rows carry a BigInt fileSize; JSON.stringify throws on
+    // BigInt, which 500s this route. Serialize BigInts as numbers.
+    return NextResponse.json({ versions: serializeBigInt(result.versions) });
   } catch (error) {
     console.error('[VersionsAPI] GET error:', error);
     return NextResponse.json({ error: 'Failed to list versions' }, { status: 500 });
@@ -239,7 +242,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       DOCUMENT_SCAN_JOB_OPTIONS
     );
 
-    return NextResponse.json({ version: result.version }, { status: 201 });
+    // version.fileSize is a BigInt; serialize to avoid a JSON.stringify throw
+    // that would 500 the response even though the version was created.
+    return NextResponse.json({ version: serializeBigInt(result.version) }, { status: 201 });
   } catch (error) {
     console.error('[VersionsAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to upload version' }, { status: 500 });
