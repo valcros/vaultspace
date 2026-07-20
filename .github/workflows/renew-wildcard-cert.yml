@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Reissue even if the current cert is not near expiry. Tick this for the first supervised run; leave off otherwise to respect the Let''s Encrypt rate limit.'
+        description: "Reissue even if the current cert is not near expiry. Tick this for the first supervised run; leave off otherwise to respect the Let's Encrypt rate limit."
         type: boolean
         default: false
 
