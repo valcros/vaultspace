@@ -1,0 +1,64 @@
+name: Renew Wildcard TLS Cert
+
+# Re-issues and rebinds the *.vaultspace.org wildcard certificate on a schedule.
+# Azure Container Apps cannot issue managed wildcard certs, so this keeps the
+# externally issued Let's Encrypt wildcard current. Runs monthly (cert lifetime
+# is ~90 days) and can be triggered manually. Uses the same Azure OIDC identity
+# as staging deploys (Contributor on the resource group).
+#
+# The renewal + verification logic lives in scripts/renew-wildcard-cert.sh: it
+# only issues within RENEW_THRESHOLD_DAYS of expiry (unless forced), uploads each
+# cert under a unique name, and verifies the ingress serves the newly issued leaf
+# by fingerprint before reporting success.
+
+on:
+  schedule:
+    # 06:00 UTC on the 1st of every month
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Reissue even if the current cert is not near expiry. Tick this for the first supervised run; leave off otherwise to respect the Let's Encrypt rate limit."
+        type: boolean
+        default: false
+
+# Never let a manual run and the monthly cron (or two manual runs) issue and
+# rebind concurrently -- they would race the binding and burn the Let's Encrypt
+# rate limit. Do NOT cancel in progress: a run may be mid-issuance or mid-bind.
+concurrency:
+  group: renew-wildcard-cert
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+      WEB_CONTAINER_APP: ${{ vars.WEB_CONTAINER_APP }}
+      DOMAIN: vaultspace.org
+      # Scheduled runs leave inputs.force empty -> 'false' -> expiry-gated.
+      # Manual dispatch is expiry-gated too unless the operator ticks `force`.
+      FORCE_RENEW: ${{ github.event.inputs.force || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The script issues, uploads, binds, and then verifies the new leaf is
+      # actually served (fingerprint match with retry/backoff). It exits non-zero
+      # if the ingress is not serving the new cert, so no extra verify step is
+      # needed here -- a successful TLS handshake alone must not be treated as a
+      # pass while the old cert is still valid.
+      - name: Renew, bind, and verify wildcard certificate
+        run: bash scripts/renew-wildcard-cert.sh
