@@ -21,16 +21,18 @@ vi.mock('@/lib/auth', () => ({
 // Mock database
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn(),
+  bootstrapDb: { userOrganization: { count: vi.fn() } },
 }));
 
 import { requireAuth } from '@/lib/middleware';
 import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
-import { withOrgContext } from '@/lib/db';
+import { withOrgContext, bootstrapDb } from '@/lib/db';
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockClearSessionCache = vi.mocked(clearSessionCache);
 const mockDeactivateAllUserSessionsInTx = vi.mocked(deactivateAllUserSessionsInTx);
 const mockWithOrgContext = vi.mocked(withOrgContext);
+const mockBootstrapCount = vi.mocked(bootstrapDb.userOrganization.count);
 
 describe('GET /api/users/:userId', () => {
   const mockAdminSession = {
@@ -385,6 +387,7 @@ describe('PATCH /api/users/:userId', () => {
     );
     mockClearSessionCache.mockResolvedValue(undefined);
     mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1']);
+    mockBootstrapCount.mockResolvedValue(1);
   });
 
   function useTx(tx: Record<string, unknown>) {
@@ -402,7 +405,14 @@ describe('PATCH /api/users/:userId', () => {
           organizationId: 'org-1',
           role: 'VIEWER',
           isActive: true,
-          user: { id: 'user-2', email: 'user@example.com' },
+          user: {
+            id: 'user-2',
+            email: 'user@example.com',
+            firstName: 'Existing',
+            lastName: 'User',
+            title: null,
+            isActive: true,
+          },
           ...overrides,
         }),
         count: vi.fn().mockResolvedValue(3),
@@ -410,6 +420,7 @@ describe('PATCH /api/users/:userId', () => {
       },
       user: { update: vi.fn().mockResolvedValue({}) },
       event: { create: vi.fn().mockResolvedValue({}) },
+      $queryRaw: vi.fn().mockResolvedValue([]),
     };
   }
 
@@ -473,5 +484,12 @@ describe('PATCH /api/users/:userId', () => {
     useTx(tx);
     const response = await PATCH(patchReq({ email: 'taken@example.com' }), ctx);
     expect(response.status).toBe(409);
+  });
+
+  it('rejects an email change for a user in multiple organizations (403)', async () => {
+    mockBootstrapCount.mockResolvedValue(2);
+    useTx(memberTx());
+    const response = await PATCH(patchReq({ email: 'attacker@example.com' }), ctx);
+    expect(response.status).toBe(403);
   });
 });

@@ -249,6 +249,12 @@ export default function UsersPage() {
       const data = await response.json();
       if (response.ok) {
         setEditTarget(null);
+        if (data.selfSessionInvalidated) {
+          // Editing your own email/role/status signs you out; re-authenticate
+          // rather than showing a stale shell that will fail on the next action.
+          window.location.href = '/auth/login';
+          return;
+        }
         fetchUsers();
       } else {
         setEditError(data.error || 'Failed to update user');
