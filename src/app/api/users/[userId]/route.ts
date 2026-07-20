@@ -8,7 +8,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 
-import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
+import {
+  clearSessionCache,
+  deactivateAllUserSessionsInTx,
+  deactivateUserOrgSessionsInTx,
+} from '@/lib/auth';
 import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { bootstrapDb, withOrgContext } from '@/lib/db';
@@ -379,12 +383,19 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         await tx.userOrganization.update({ where: { id: userOrg.id }, data: memData });
       }
 
-      // Invalidate sessions when a security-relevant attribute changed.
+      // Invalidate sessions when a security-relevant attribute changed. Global
+      // identity changes (email / 2FA) invalidate EVERY session the user holds,
+      // since the login identity moved everywhere. Membership-only changes
+      // (role / active) are scoped to THIS org so a multi-org user keeps their
+      // sessions in unaffected orgs. Email/2FA are already blocked for multi-org
+      // users above, so the global branch only ever hits single-org accounts.
       const roleChanged = role !== undefined && role !== userOrg.role;
       const activeChanged = isActive !== undefined && isActive !== userOrg.isActive;
       let sessionTokens: string[] = [];
-      if (roleChanged || activeChanged || emailChanged || resetTwoFactor === true) {
+      if (emailChanged || resetTwoFactor === true) {
         sessionTokens = await deactivateAllUserSessionsInTx(tx, userId);
+      } else if (roleChanged || activeChanged) {
+        sessionTokens = await deactivateUserOrgSessionsInTx(tx, userId, session.organizationId);
       }
 
       // Record only fields whose values actually changed (accurate audit trail).
