@@ -1,7 +1,17 @@
 'use client';
 
 import * as React from 'react';
-import { Search, MoreHorizontal, Mail, Shield, Eye, Trash2, UserPlus, Link2 } from 'lucide-react';
+import {
+  Search,
+  MoreHorizontal,
+  Mail,
+  Shield,
+  Eye,
+  Trash2,
+  UserPlus,
+  Link2,
+  Pencil,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -100,6 +110,17 @@ export default function UsersPage() {
   const [emailBody, setEmailBody] = React.useState('');
   const [isSendingEmail, setIsSendingEmail] = React.useState(false);
   const [emailError, setEmailError] = React.useState<string | null>(null);
+  // Edit-user dialog.
+  const [editTarget, setEditTarget] = React.useState<User | null>(null);
+  const [editData, setEditData] = React.useState<{
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: 'ADMIN' | 'VIEWER';
+    isActive: boolean;
+  }>({ firstName: '', lastName: '', email: '', role: 'VIEWER', isActive: true });
+  const [isSavingEdit, setIsSavingEdit] = React.useState(false);
+  const [editError, setEditError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     fetchUsers();
@@ -187,6 +208,56 @@ export default function UsersPage() {
       setEmailError('Network error. Please try again.');
     } finally {
       setIsSendingEmail(false);
+    }
+  };
+
+  const openEditDialog = (user: User) => {
+    setEditTarget(user);
+    setEditData({
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+    });
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTarget) {
+      return;
+    }
+    if (!editData.firstName.trim() || !editData.lastName.trim() || !editData.email.trim()) {
+      setEditError('First name, last name, and email are required.');
+      return;
+    }
+    setIsSavingEdit(true);
+    setEditError(null);
+    try {
+      const response = await fetch(`/api/users/${editTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: editData.firstName,
+          lastName: editData.lastName,
+          email: editData.email,
+          role: editData.role,
+          isActive: editData.isActive,
+        }),
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setEditTarget(null);
+        fetchUsers();
+      } else {
+        setEditError(data.error || 'Failed to update user');
+      }
+    } catch (error) {
+      console.error('Failed to update user:', error);
+      setEditError('Network error. Please try again.');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -352,6 +423,10 @@ export default function UsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEditDialog(user)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit User
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {
                                 setEmailTarget(user);
@@ -540,6 +615,122 @@ export default function UsersPage() {
           </AdminSurface>
         )}
       </AdminPageContent>
+
+      {/* Edit User Dialog */}
+      <Dialog
+        open={editTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditTarget(null);
+            setEditError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              Update this member&apos;s details, role, and status. Changing email, role, or status
+              signs the user out of any active sessions.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {editError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                {editError}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-first">First name</Label>
+                <Input
+                  id="edit-first"
+                  value={editData.firstName}
+                  onChange={(e) => {
+                    setEditData({ ...editData, firstName: e.target.value });
+                    setEditError(null);
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-last">Last name</Label>
+                <Input
+                  id="edit-last"
+                  value={editData.lastName}
+                  onChange={(e) => {
+                    setEditData({ ...editData, lastName: e.target.value });
+                    setEditError(null);
+                  }}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                value={editData.email}
+                onChange={(e) => {
+                  setEditData({ ...editData, email: e.target.value });
+                  setEditError(null);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-role">Role</Label>
+              <Select
+                value={editData.role}
+                onValueChange={(value) =>
+                  setEditData({ ...editData, role: value as 'ADMIN' | 'VIEWER' })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ADMIN">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-4 w-4" />
+                      Admin
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="VIEWER">
+                    <div className="flex items-center gap-2">
+                      <Eye className="h-4 w-4" />
+                      Viewer
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-status">Status</Label>
+              <Select
+                value={editData.isActive ? 'active' : 'inactive'}
+                onValueChange={(value) =>
+                  setEditData({ ...editData, isActive: value === 'active' })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} loading={isSavingEdit}>
+              Save changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Send Email (platform message) Dialog */}
       <Dialog

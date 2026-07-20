@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 
 import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
 import { isAuthenticationError } from '@/lib/errors';
@@ -189,5 +190,161 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     }
     console.error('[UserAPI] DELETE error:', error);
     return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/users/:userId
+ * Admin edit of a user's attributes. Name/title/email live on the global User;
+ * role/active live on the per-org membership. Security-sensitive: see
+ * docs/ADMIN_USER_MANAGEMENT_PLAN.md.
+ */
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  try {
+    const session = await requireAuth();
+    const { userId } = await context.params;
+
+    if (session.organization.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { firstName, lastName, title, email, role, isActive, resetTwoFactor } = body;
+
+    // Validate provided fields.
+    if (role !== undefined && role !== 'ADMIN' && role !== 'VIEWER') {
+      return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+    }
+    if (isActive !== undefined && typeof isActive !== 'boolean') {
+      return NextResponse.json({ error: 'isActive must be a boolean' }, { status: 400 });
+    }
+    if (firstName !== undefined && (typeof firstName !== 'string' || !firstName.trim())) {
+      return NextResponse.json({ error: 'First name cannot be empty' }, { status: 400 });
+    }
+    if (lastName !== undefined && (typeof lastName !== 'string' || !lastName.trim())) {
+      return NextResponse.json({ error: 'Last name cannot be empty' }, { status: 400 });
+    }
+    let normalizedEmail: string | undefined;
+    if (email !== undefined) {
+      if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: 'Invalid email address' }, { status: 400 });
+      }
+      normalizedEmail = email.toLowerCase().trim();
+    }
+
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Target must be a member of the caller's org (404 else — existence hiding).
+      const userOrg = await tx.userOrganization.findFirst({
+        where: { userId, organizationId: session.organizationId },
+        include: { user: true },
+      });
+      if (!userOrg) {
+        return { error: 'User not found in organization', status: 404 } as const;
+      }
+
+      // Last-admin lockout: never demote/deactivate the org's only active admin.
+      const demotingAdmin = role !== undefined && role !== 'ADMIN' && userOrg.role === 'ADMIN';
+      const deactivating = isActive === false && userOrg.isActive;
+      if ((demotingAdmin || deactivating) && userOrg.role === 'ADMIN' && userOrg.isActive) {
+        const activeAdmins = await tx.userOrganization.count({
+          where: { organizationId: session.organizationId, role: 'ADMIN', isActive: true },
+        });
+        if (activeAdmins <= 1) {
+          return {
+            error: 'Cannot demote or deactivate the last active admin of the organization',
+            status: 400,
+          } as const;
+        }
+      }
+
+      // Global User fields (name / title / email / 2FA reset).
+      const userData: Prisma.UserUpdateInput = {};
+      if (firstName !== undefined) {
+        userData.firstName = firstName.trim();
+      }
+      if (lastName !== undefined) {
+        userData.lastName = lastName.trim();
+      }
+      if (title !== undefined) {
+        userData.title = (title || '').trim() || null;
+      }
+      if (normalizedEmail !== undefined) {
+        userData.email = normalizedEmail;
+      }
+      if (resetTwoFactor === true) {
+        userData.twoFactorEnabled = false;
+        userData.twoFactorSecret = null;
+        userData.twoFactorBackupCodes = { set: [] };
+      }
+      if (Object.keys(userData).length > 0) {
+        try {
+          await tx.user.update({ where: { id: userId }, data: userData });
+        } catch (e) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            return { error: 'That email address is already in use', status: 409 } as const;
+          }
+          throw e;
+        }
+      }
+
+      // Per-org membership fields (role / active).
+      const memData: Prisma.UserOrganizationUpdateInput = {};
+      if (role !== undefined) {
+        memData.role = role;
+      }
+      if (isActive !== undefined) {
+        memData.isActive = isActive;
+      }
+      if (Object.keys(memData).length > 0) {
+        await tx.userOrganization.update({ where: { id: userOrg.id }, data: memData });
+      }
+
+      // Invalidate sessions when a security-relevant attribute changed.
+      const roleChanged = role !== undefined && role !== userOrg.role;
+      const activeChanged = isActive !== undefined && isActive !== userOrg.isActive;
+      const emailChanged = normalizedEmail !== undefined && normalizedEmail !== userOrg.user.email;
+      let sessionTokens: string[] = [];
+      if (roleChanged || activeChanged || emailChanged || resetTwoFactor === true) {
+        sessionTokens = await deactivateAllUserSessionsInTx(tx, userId);
+      }
+
+      const changedFields = [
+        ...(firstName !== undefined ? ['firstName'] : []),
+        ...(lastName !== undefined ? ['lastName'] : []),
+        ...(title !== undefined ? ['title'] : []),
+        ...(emailChanged ? ['email'] : []),
+        ...(roleChanged ? ['role'] : []),
+        ...(activeChanged ? ['isActive'] : []),
+        ...(resetTwoFactor === true ? ['twoFactorReset'] : []),
+      ];
+      await tx.event.create({
+        data: {
+          organizationId: session.organizationId,
+          eventType: 'USER_UPDATED',
+          actorType: 'ADMIN',
+          actorId: session.userId,
+          actorEmail: session.user.email,
+          description: `Updated user ${userOrg.user.email}`,
+          metadata: { targetUserId: userId, fields: changedFields },
+        },
+      });
+
+      return { success: true, sessionTokens } as const;
+    });
+
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    if (result.sessionTokens.length > 0) {
+      await clearSessionCache(result.sessionTokens);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    console.error('[UserAPI] PATCH error:', error);
+    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
   }
 }
