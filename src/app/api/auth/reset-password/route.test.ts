@@ -51,12 +51,21 @@ describe('POST /api/auth/reset-password', () => {
     mockUserFindUnique.mockResolvedValue({ id: 'user-1', isActive: true });
     mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1', 'token-2']);
     mockClearSessionCache.mockResolvedValue(undefined);
+
+    // Default return values are configured OUTSIDE the transaction impl so a
+    // per-test override (e.g. the claim losing the race) is not clobbered each
+    // time the transaction callback rebuilds the tx object.
+    mockUserUpdate.mockResolvedValue(undefined);
+    mockTokenUpdate.mockResolvedValue(undefined);
+    // The conditional claim (first updateMany) matched exactly one row.
+    mockTokenUpdateMany.mockResolvedValue({ count: 1 });
+
     mockTransaction.mockImplementation(async (callback) => {
       const tx = {
-        user: { update: mockUserUpdate.mockResolvedValue(undefined) },
+        user: { update: mockUserUpdate },
         passwordResetToken: {
-          update: mockTokenUpdate.mockResolvedValue(undefined),
-          updateMany: mockTokenUpdateMany.mockResolvedValue(undefined),
+          update: mockTokenUpdate,
+          updateMany: mockTokenUpdateMany,
         },
         session: {
           findMany: vi.fn(),
@@ -80,7 +89,44 @@ describe('POST /api/auth/reset-password', () => {
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(mockTransaction).toHaveBeenCalledTimes(1);
+    // The claim (first updateMany) must be gated on the token id AND still-unused
+    // AND still-unexpired — if any predicate is dropped the atomic guarantee is
+    // gone, so pin all three here.
+    expect(mockTokenUpdateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: 'reset-1', usedAt: null, expiresAt: { gt: expect.any(Date) } },
+      data: { usedAt: expect.any(Date) },
+    });
     expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-1');
     expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1', 'token-2']);
+  });
+
+  it('claims the token atomically and never sets the password if it lost the race', async () => {
+    // The token passed the initial findFirst, but by the time the transaction
+    // runs it was already consumed elsewhere (e.g. an email change or a
+    // concurrent reset), so the conditional claim matches zero rows.
+    mockTokenUpdateMany.mockResolvedValue({ count: 0 });
+
+    const request = new NextRequest('http://localhost/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/invalid or expired/i);
+    // The claim was attempted with the full unused+unexpired predicate...
+    expect(mockTokenUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'reset-1', usedAt: null, expiresAt: { gt: expect.any(Date) } },
+      data: { usedAt: expect.any(Date) },
+    });
+    // ...and because it lost, it is the ONLY reset-token write (the "invalidate
+    // other tokens" updateMany never runs) and the password/session teardown
+    // must NOT happen.
+    expect(mockTokenUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mockUserUpdate).not.toHaveBeenCalled();
+    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).not.toHaveBeenCalled();
   });
 });

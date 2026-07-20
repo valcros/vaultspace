@@ -44,21 +44,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
     }
 
-    // Hash new password
+    // Hash new password. The findFirst above already rejected invalid/used/
+    // expired tokens, so the only case where this hash is "wasted" is a genuine
+    // race where the token is consumed between validation and the claim below —
+    // near-never, and cheaper than splitting consume + password-update across
+    // two transactions.
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Update password, consume tokens, and deactivate sessions in one transaction.
+    // Consume the token, set the password, and deactivate sessions in ONE
+    // transaction. The first statement CLAIMS the token conditionally: it only
+    // succeeds while the token is still unused and unexpired, so a token
+    // invalidated after the findFirst above (e.g. by an email change that
+    // consumes outstanding tokens, or a concurrent reset) can no longer reset
+    // the password. With a unique id the claim matches 0 or 1 row; anything but
+    // 1 means we lost the race and the transaction commits without touching the
+    // password.
     const sessionTokens = await db.$transaction(async (tx) => {
+      const claim = await tx.passwordResetToken.updateMany({
+        where: {
+          id: resetToken.id,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { usedAt: new Date() },
+      });
+
+      if (claim.count !== 1) {
+        return null;
+      }
+
       await tx.user.update({
         where: { id: resetToken.userId },
         data: { passwordHash },
       });
 
-      await tx.passwordResetToken.update({
-        where: { id: resetToken.id },
-        data: { usedAt: new Date() },
-      });
-
+      // Invalidate any other outstanding reset tokens for this user.
       await tx.passwordResetToken.updateMany({
         where: {
           userId: resetToken.userId,
@@ -70,6 +90,10 @@ export async function POST(request: NextRequest) {
 
       return deactivateAllUserSessionsInTx(tx, resetToken.userId);
     });
+
+    if (sessionTokens === null) {
+      return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
+    }
 
     await clearSessionCache(sessionTokens);
 

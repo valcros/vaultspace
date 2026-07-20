@@ -12,6 +12,7 @@ export {
   clearSessionCache,
   createSession,
   deactivateAllUserSessionsInTx,
+  deactivateUserOrgSessionsInTx,
   validateSession,
   invalidateSession,
   invalidateAllUserSessions,
