@@ -18,9 +18,9 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Reissue even if the current cert is not near expiry (use for the first supervised run)'
+        description: 'Reissue even if the current cert is not near expiry. Tick this for the first supervised run; leave off otherwise to respect the Let''s Encrypt rate limit.'
         type: boolean
-        default: true
+        default: false
 
 # Never let a manual run and the monthly cron (or two manual runs) issue and
 # rebind concurrently -- they would race the binding and burn the Let's Encrypt
@@ -41,8 +41,8 @@ jobs:
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
       WEB_CONTAINER_APP: ${{ vars.WEB_CONTAINER_APP }}
       DOMAIN: vaultspace.org
-      # Scheduled runs leave inputs.force empty -> expiry-gated. Manual dispatch
-      # defaults to true so a supervised run proves the full path end to end.
+      # Scheduled runs leave inputs.force empty -> 'false' -> expiry-gated.
+      # Manual dispatch is expiry-gated too unless the operator ticks `force`.
       FORCE_RENEW: ${{ github.event.inputs.force || 'false' }}
     steps:
       - name: Checkout

@@ -58,13 +58,23 @@ VERIFY_HOST="renewcheck.${DOMAIN}"
 
 # --- helpers ----------------------------------------------------------------
 
-# Normalized (lowercase, colon-free) SHA-256 fingerprint of the leaf cert served
-# by $1. Empty string if the host is unreachable / handshake fails.
-served_fingerprint() {
-  local host="$1"
-  echo | timeout 20 openssl s_client -connect "${host}:443" -servername "${host}" 2>/dev/null \
+# True (0) only if $1 is serving a fully valid public TLS certificate whose leaf
+# fingerprint equals $2. Two independent gates, both must hold:
+#   1. curl validates the chain + hostname against the system trust store and
+#      returns nonzero on ANY TLS failure (unreachable, untrusted, expired,
+#      hostname mismatch). This is the "must be a real TLS success, not a 000
+#      connection failure" check -- HTTP status is irrelevant, so no -f.
+#   2. openssl extracts the served leaf fingerprint to prove it is the exact cert
+#      we just issued (not the still-valid previous cert).
+# Called only from an `if`, so `set -e` is suppressed inside it; a failed pipeline
+# yields an empty $got and a normal false return, never a spurious match.
+verify_served() {
+  local host="$1" want="$2" got
+  curl -sS --max-time 20 -o /dev/null "https://${host}/" || return 1
+  got="$(echo | timeout 20 openssl s_client -connect "${host}:443" -servername "${host}" 2>/dev/null \
     | openssl x509 -noout -fingerprint -sha256 2>/dev/null \
-    | sed 's/.*=//; s/://g' | tr 'A-F' 'a-f'
+    | sed 's/.*=//; s/://g' | tr 'A-F' 'a-f')"
+  [ -n "$got" ] && [ "$got" = "$want" ]
 }
 
 # notAfter of the served leaf cert as a unix epoch, or 0 if unreadable.
@@ -169,16 +179,15 @@ az containerapp hostname bind -n "$WEB" -g "$RG" \
 
 # --- verify the NEW cert is actually being served ---------------------------
 
-echo "==> Verifying ${VERIFY_HOST} serves the new certificate (fingerprint match)"
+echo "==> Verifying ${VERIFY_HOST} serves the new cert (valid public TLS + fingerprint match)"
 verified=0
 for i in $(seq 1 12); do
-  got="$(served_fingerprint "$VERIFY_HOST" || echo '')"
-  if [ -n "$got" ] && [ "$got" = "$NEW_FP" ]; then
-    echo "    verified on attempt ${i}: sha256=${got}"
+  if verify_served "$VERIFY_HOST" "$NEW_FP"; then
+    echo "    verified on attempt ${i}: sha256=${NEW_FP}"
     verified=1
     break
   fi
-  echo "    attempt ${i}/12: served=${got:-<none>} want=${NEW_FP}; retrying in 15s"
+  echo "    attempt ${i}/12: ${VERIFY_HOST} not yet serving ${NEW_FP} over valid TLS; retrying in 15s"
   sleep 15
 done
 
