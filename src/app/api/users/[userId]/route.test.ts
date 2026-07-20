@@ -420,6 +420,7 @@ describe('PATCH /api/users/:userId', () => {
       },
       user: { update: vi.fn().mockResolvedValue({}) },
       event: { create: vi.fn().mockResolvedValue({}) },
+      passwordResetToken: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       $queryRaw: vi.fn().mockResolvedValue([]),
     };
   }
@@ -491,5 +492,57 @@ describe('PATCH /api/users/:userId', () => {
     useTx(memberTx());
     const response = await PATCH(patchReq({ email: 'attacker@example.com' }), ctx);
     expect(response.status).toBe(403);
+  });
+
+  it('invalidates outstanding reset tokens when the login email changes', async () => {
+    const tx = memberTx();
+    useTx(tx);
+    const response = await PATCH(patchReq({ email: 'moved@example.com' }), ctx);
+    expect(response.status).toBe(200);
+    expect(tx.passwordResetToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-2', usedAt: null },
+      data: { usedAt: expect.any(Date) },
+    });
+  });
+
+  it('does not touch reset tokens when the email is unchanged', async () => {
+    const tx = memberTx();
+    useTx(tx);
+    const response = await PATCH(patchReq({ firstName: 'Newname' }), ctx);
+    expect(response.status).toBe(200);
+    expect(tx.passwordResetToken.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string title (400)', async () => {
+    useTx(memberTx());
+    const response = await PATCH(patchReq({ title: 42 }), ctx);
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects an overlong first name (400)', async () => {
+    useTx(memberTx());
+    const response = await PATCH(patchReq({ firstName: 'a'.repeat(101) }), ctx);
+    expect(response.status).toBe(400);
+  });
+
+  it('allows demoting an admin whose global account is already inactive', async () => {
+    const tx = memberTx({
+      role: 'ADMIN',
+      isActive: true,
+      user: {
+        id: 'user-2',
+        email: 'user@example.com',
+        firstName: 'Existing',
+        lastName: 'User',
+        title: null,
+        isActive: false,
+      },
+    });
+    // Only one usable admin remains, but the target is not counted, so the
+    // last-admin guard must not fire.
+    tx.userOrganization.count = vi.fn().mockResolvedValue(1);
+    useTx(tx);
+    const response = await PATCH(patchReq({ role: 'VIEWER' }), ctx);
+    expect(response.status).toBe(200);
   });
 });

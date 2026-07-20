@@ -218,11 +218,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (isActive !== undefined && typeof isActive !== 'boolean') {
       return NextResponse.json({ error: 'isActive must be a boolean' }, { status: 400 });
     }
+    // Column limits mirror prisma/schema.prisma so an overlong value returns a
+    // 400 here instead of a generic 500 from a Postgres length violation.
     if (firstName !== undefined && (typeof firstName !== 'string' || !firstName.trim())) {
       return NextResponse.json({ error: 'First name cannot be empty' }, { status: 400 });
     }
+    if (firstName !== undefined && firstName.trim().length > 100) {
+      return NextResponse.json({ error: 'First name is too long' }, { status: 400 });
+    }
     if (lastName !== undefined && (typeof lastName !== 'string' || !lastName.trim())) {
       return NextResponse.json({ error: 'Last name cannot be empty' }, { status: 400 });
+    }
+    if (lastName !== undefined && lastName.trim().length > 100) {
+      return NextResponse.json({ error: 'Last name is too long' }, { status: 400 });
+    }
+    if (title !== undefined && title !== null && typeof title !== 'string') {
+      return NextResponse.json({ error: 'Invalid title' }, { status: 400 });
+    }
+    if (typeof title === 'string' && title.trim().length > 255) {
+      return NextResponse.json({ error: 'Title is too long' }, { status: 400 });
     }
     let normalizedEmail: string | undefined;
     if (email !== undefined) {
@@ -232,7 +246,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       // Normalize before validating so a pasted address with surrounding
       // whitespace is accepted (matches the invite endpoint).
       normalizedEmail = email.toLowerCase().trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || normalizedEmail.length > 255) {
         return NextResponse.json({ error: 'Invalid email address' }, { status: 400 });
       }
     }
@@ -276,9 +290,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       // Last-admin lockout: never demote/deactivate the org's only active admin.
+      // Only guard when the target is actually part of the counted admin set — a
+      // globally deactivated admin membership cannot log in and is excluded from
+      // the count below, so removing it can never reduce usable admins.
       const demotingAdmin = role !== undefined && role !== 'ADMIN' && userOrg.role === 'ADMIN';
       const deactivating = isActive === false && userOrg.isActive;
-      if ((demotingAdmin || deactivating) && userOrg.role === 'ADMIN' && userOrg.isActive) {
+      if (
+        (demotingAdmin || deactivating) &&
+        userOrg.role === 'ADMIN' &&
+        userOrg.isActive &&
+        userOrg.user.isActive
+      ) {
         // Lock the org's active admin memberships so concurrent demotions
         // serialize and cannot both pass the count check.
         await tx.$queryRaw`
@@ -332,6 +354,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           }
           throw e;
         }
+      }
+
+      // When the login email moves, any outstanding reset link was delivered to
+      // the OLD address. reset-password resolves tokens by userId (not email), so
+      // an old-link holder could otherwise claim the account after the identity
+      // moved. Consume all unused reset tokens in the same transaction.
+      if (emailChanged) {
+        await tx.passwordResetToken.updateMany({
+          where: { userId, usedAt: null },
+          data: { usedAt: new Date() },
+        });
       }
 
       // Per-org membership fields (role / active).

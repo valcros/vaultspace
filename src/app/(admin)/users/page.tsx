@@ -231,19 +231,43 @@ export default function UsersPage() {
       setEditError('First name, last name, and email are required.');
       return;
     }
+    // Send only fields the admin actually changed. The status shown here is the
+    // combined membership+account flag, so blindly resending isActive could
+    // deactivate a membership on an unrelated name edit; only include it (and the
+    // other fields) when it differs from the loaded value.
+    const payload: {
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      role?: 'ADMIN' | 'VIEWER';
+      isActive?: boolean;
+    } = {};
+    if (editData.firstName !== editTarget.firstName) {
+      payload.firstName = editData.firstName;
+    }
+    if (editData.lastName !== editTarget.lastName) {
+      payload.lastName = editData.lastName;
+    }
+    if (editData.email !== editTarget.email) {
+      payload.email = editData.email;
+    }
+    if (editData.role !== editTarget.role) {
+      payload.role = editData.role;
+    }
+    if (editData.isActive !== editTarget.isActive) {
+      payload.isActive = editData.isActive;
+    }
+    if (Object.keys(payload).length === 0) {
+      setEditTarget(null);
+      return;
+    }
     setIsSavingEdit(true);
     setEditError(null);
     try {
       const response = await fetch(`/api/users/${editTarget.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: editData.firstName,
-          lastName: editData.lastName,
-          email: editData.email,
-          role: editData.role,
-          isActive: editData.isActive,
-        }),
+        body: JSON.stringify(payload),
         credentials: 'include',
       });
       const data = await response.json();
@@ -459,6 +483,14 @@ export default function UsersPage() {
                                         credentials: 'include',
                                       });
                                       if (res.ok) {
+                                        const data = await res.json().catch(() => ({}));
+                                        if (data.selfSessionInvalidated) {
+                                          // Demoting yourself ends your session;
+                                          // re-authenticate instead of staying on a
+                                          // stale admin shell.
+                                          window.location.href = '/auth/login';
+                                          return;
+                                        }
                                         fetchUsers();
                                       }
                                     } catch (err) {
