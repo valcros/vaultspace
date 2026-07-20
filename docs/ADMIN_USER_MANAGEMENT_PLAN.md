@@ -89,3 +89,28 @@ password. Reuses the existing token flow.
 - `src/app/(admin)/users/page.tsx` (Users screen UI)
 - `src/app/api/organization/branding/route.ts` (audit-event + admin-gate pattern)
 - `docs/EMAIL_SENDER_SETUP.md` (per-org sender, already wired)
+
+## Deferred follow-ups (from Codex review of PR #78, not blocking merge)
+
+Surfaced by a third adversarial review pass. Both are low severity and were
+deliberately deferred so the edit-user PR does not expand its blast radius into
+unrelated endpoints. Track and address separately.
+
+1. **Reset-password token consumption is not atomic (own ticket, in
+   `reset-password/route.ts`).** That route validates the token outside its
+   transaction, then rewrites the token by `id` unconditionally after hashing,
+   so a token invalidated elsewhere mid-flight can still be consumed. PR #78's
+   email-change already invalidates outstanding reset tokens, which closes the
+   common case; the residual race is near-theoretical (email change is
+   single-org only, and the token was delivered to the OLD address). Proper fix
+   lives in reset-password: conditional `updateMany where id = T AND usedAt =
+null`, assert `count === 1`, and abort before hashing if it lost the race.
+2. **Membership-only edits invalidate the user's sessions in other orgs.** For a
+   multi-org user, changing `role`/`isActive` here calls
+   `deactivateAllUserSessionsInTx(userId)`, which is org-agnostic. This is
+   fail-safe over-invalidation (a UX cost, not a security gap) and near-zero
+   impact given the current single-org user base. If addressed: add a NEW
+   org-scoped helper (`{ userId, organizationId }`) for membership-only changes
+   and reserve full invalidation for global email/2FA mutations. Do NOT change
+   `deactivateAllUserSessionsInTx` itself — reset-password relies on it
+   invalidating everything.
