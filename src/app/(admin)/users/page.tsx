@@ -93,6 +93,13 @@ export default function UsersPage() {
     role: 'VIEWER',
   });
   const [inviteError, setInviteError] = React.useState<string | null>(null);
+  // Compose-email dialog: sends via the VaultSpace platform (org sender), not
+  // the local mail client.
+  const [emailTarget, setEmailTarget] = React.useState<User | null>(null);
+  const [emailSubject, setEmailSubject] = React.useState('');
+  const [emailBody, setEmailBody] = React.useState('');
+  const [isSendingEmail, setIsSendingEmail] = React.useState(false);
+  const [emailError, setEmailError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     fetchUsers();
@@ -146,6 +153,40 @@ export default function UsersPage() {
       setInviteError('Network error. Please try again.');
     } finally {
       setIsInviting(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailTarget || !emailSubject.trim() || !emailBody.trim()) {
+      setEmailError('Subject and message are required.');
+      return;
+    }
+    setIsSendingEmail(true);
+    setEmailError(null);
+    try {
+      const response = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipientEmail: emailTarget.email,
+          subject: emailSubject,
+          body: emailBody,
+        }),
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setEmailTarget(null);
+        setEmailSubject('');
+        setEmailBody('');
+      } else {
+        setEmailError(data.error || 'Failed to send email');
+      }
+    } catch (error) {
+      console.error('Failed to send email:', error);
+      setEmailError('Network error. Please try again.');
+    } finally {
+      setIsSendingEmail(false);
     }
   };
 
@@ -313,7 +354,10 @@ export default function UsersPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               onClick={() => {
-                                window.location.href = `mailto:${user.email}`;
+                                setEmailTarget(user);
+                                setEmailSubject('');
+                                setEmailBody('');
+                                setEmailError(null);
                               }}
                             >
                               <Mail className="mr-2 h-4 w-4" />
@@ -496,6 +540,73 @@ export default function UsersPage() {
           </AdminSurface>
         )}
       </AdminPageContent>
+
+      {/* Send Email (platform message) Dialog */}
+      <Dialog
+        open={emailTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEmailTarget(null);
+            setEmailError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Email</DialogTitle>
+            <DialogDescription>
+              Sent from your organization&apos;s address via VaultSpace
+              {emailTarget ? ` to ${emailTarget.email}` : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {emailError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                {emailError}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="email-subject">Subject</Label>
+              <Input
+                id="email-subject"
+                value={emailSubject}
+                onChange={(e) => {
+                  setEmailSubject(e.target.value);
+                  setEmailError(null);
+                }}
+                placeholder="Subject"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-body">Message</Label>
+              <textarea
+                id="email-body"
+                value={emailBody}
+                onChange={(e) => {
+                  setEmailBody(e.target.value);
+                  setEmailError(null);
+                }}
+                rows={6}
+                placeholder="Write your message…"
+                className="border-input focus-visible:ring-ring flex min-h-[120px] w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSendEmail}
+              loading={isSendingEmail}
+              disabled={!emailSubject.trim() || !emailBody.trim()}
+            >
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Invite User Dialog */}
       <Dialog
