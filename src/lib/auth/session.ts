@@ -281,6 +281,22 @@ export async function deactivateAllUserSessionsInTx(
 }
 
 /**
+ * Deactivate only the sessions a user holds in ONE organization.
+ *
+ * Use for membership-scoped changes (role / active) so that a user who belongs
+ * to multiple organizations is not logged out of their OTHER orgs by a change
+ * confined to this one. Global identity changes (email / two-factor) must still
+ * use deactivateAllUserSessionsInTx, which invalidates everywhere.
+ */
+export async function deactivateUserOrgSessionsInTx(
+  tx: SessionMutationClient,
+  userId: string,
+  organizationId: string
+): Promise<string[]> {
+  return deactivateSessions(tx, { userId, organizationId });
+}
+
+/**
  * Refresh session activity timestamp (sliding window)
  */
 async function refreshSessionActivity(sessionId: string): Promise<void> {

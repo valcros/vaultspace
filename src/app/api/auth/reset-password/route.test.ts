@@ -51,12 +51,21 @@ describe('POST /api/auth/reset-password', () => {
     mockUserFindUnique.mockResolvedValue({ id: 'user-1', isActive: true });
     mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1', 'token-2']);
     mockClearSessionCache.mockResolvedValue(undefined);
+
+    // Default return values are configured OUTSIDE the transaction impl so a
+    // per-test override (e.g. the claim losing the race) is not clobbered each
+    // time the transaction callback rebuilds the tx object.
+    mockUserUpdate.mockResolvedValue(undefined);
+    mockTokenUpdate.mockResolvedValue(undefined);
+    // The conditional claim (first updateMany) matched exactly one row.
+    mockTokenUpdateMany.mockResolvedValue({ count: 1 });
+
     mockTransaction.mockImplementation(async (callback) => {
       const tx = {
-        user: { update: mockUserUpdate.mockResolvedValue(undefined) },
+        user: { update: mockUserUpdate },
         passwordResetToken: {
-          update: mockTokenUpdate.mockResolvedValue(undefined),
-          updateMany: mockTokenUpdateMany.mockResolvedValue(undefined),
+          update: mockTokenUpdate,
+          updateMany: mockTokenUpdateMany,
         },
         session: {
           findMany: vi.fn(),
@@ -82,5 +91,28 @@ describe('POST /api/auth/reset-password', () => {
     expect(mockTransaction).toHaveBeenCalledTimes(1);
     expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-1');
     expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1', 'token-2']);
+  });
+
+  it('claims the token atomically and never sets the password if it lost the race', async () => {
+    // The token passed the initial findFirst, but by the time the transaction
+    // runs it was already consumed elsewhere (e.g. an email change or a
+    // concurrent reset), so the conditional claim matches zero rows.
+    mockTokenUpdateMany.mockResolvedValue({ count: 0 });
+
+    const request = new NextRequest('http://localhost/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/invalid or expired/i);
+    // The critical assertion: the password write and session teardown must NOT
+    // happen when the claim is lost.
+    expect(mockUserUpdate).not.toHaveBeenCalled();
+    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).not.toHaveBeenCalled();
   });
 });
