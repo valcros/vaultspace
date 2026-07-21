@@ -20,6 +20,11 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Release identifier from the CI/CD pipeline (the deploy git SHA), surfaced in
+# the app's About page via next.config.js. Empty for local/dev builds.
+ARG APP_RELEASE=
+ENV APP_RELEASE=${APP_RELEASE}
+
 # Build Next.js app
 RUN npm run build
 
