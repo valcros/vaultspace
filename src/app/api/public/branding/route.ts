@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { db } from '@/lib/db';
+import { bootstrapDb } from '@/lib/db';
 
 // This route uses request headers, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -19,10 +19,11 @@ import { getRequestContext, resolveOrganizationFromHeaders } from '@/lib/middlew
  * GET /api/public/branding
  * Get organization branding based on custom domain or subdomain headers
  *
- * PRE-RLS BOOTSTRAP: This is a public endpoint that resolves organization
- * from custom domain headers. It intentionally uses the global db client
- * to fetch minimal public branding info. The RLS policy `org_bootstrap_lookup`
- * allows SELECT on organizations when no org context is set.
+ * PRE-RLS BOOTSTRAP: public endpoint that resolves organization from custom
+ * domain headers. It MUST use bootstrapDb (BYPASSRLS): the regular `db` pool can
+ * carry a stale app.current_org_id from a prior request, and org_bootstrap_lookup
+ * only permits the read when that setting IS NULL, so a poisoned connection
+ * returns no branding.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -39,8 +40,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // PRE-RLS BOOTSTRAP: Fetch public branding (minimal fields only)
-    const organization = await db.organization.findUnique({
+    // PRE-RLS BOOTSTRAP: Fetch public branding (minimal fields only) via
+    // bootstrapDb (BYPASSRLS) — see the file header for why db must not be used.
+    const organization = await bootstrapDb.organization.findUnique({
       where: { id: resolved.organizationId },
       select: {
         name: true,
