@@ -1,8 +1,18 @@
 # VaultSpace Implementation Status
 
 > **Current Milestone:** MVP launch packaging and Azure staging stabilization
-> **Last Updated:** 2026-07-01
+> **Last Updated:** 2026-07-21
 > **MVP Status:** Staging operational, launch blocker review in progress. See `docs/RELEASE_NOTES_2026-07-01.md` and `docs/VAULTSPACE_ACTIVE_ITEMS_CLOSEOUT_2026-07-01.md` for the current release package, `MASTER_PLAN.md` for the original sprint plan, and `BACKLOG.md` for current outstanding work.
+
+## Recent Security Hardening (2026-07-21)
+
+A scan-gating security pass shipped to `main` (see `CHANGELOG.md` → Unreleased):
+
+- **#87** — large files too big to scan are marked `SKIPPED` (allowed + flagged unscanned) instead of quarantined as infected; ClamAV parsing and `CLAMAV_MAX_SCAN_BYTES` validation hardened (fail-closed).
+- **#88** — one `isServable` (CLEAN/SKIPPED) gate enforced at every serve / preview / thumbnail / export / index path, including worker-side re-checks against the DB-authoritative blob key. `INFECTED` / still-scanning versions and their derived assets can no longer be served or processed.
+- **#89** — serve routes resolve the document's current version (`currentVersionId`), so a non-servable current version returns unavailable (admin `403` / viewer `404`) with no silent downgrade, and version rollback is effective on the serve side.
+
+Open follow-up: **#90** (viewer "unavailable" UI state, reviewed, CI-green, pending merge). Tracked residuals (not INFECTED-leak / hidden-SKIPPED): CLEAN/INFECTED scan-worker side-effect isolation, `/api/search` legacy-row snippets, scanProcessor payload-key binding, ClamAV throw-in-callback. A one-time combined staging smoke should validate #89 + #90 together (upload a new version → document goes dark for a viewer during scan → returns on CLEAN → rollback → serve follows).
 
 ## Current State
 
