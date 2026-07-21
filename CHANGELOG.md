@@ -2,6 +2,14 @@
 
 All notable VaultSpace changes from the current stabilization sprint are recorded here.
 
+## [Unreleased]
+
+### Security
+
+- Enforced one scan-gating policy (`isServable`: only `CLEAN` or `SKIPPED` are servable) at every path that serves original bytes or a derived asset — admin and viewer download / preview / thumbnail, version rollback, preview regeneration, room export, and the preview, text-extraction, and search-index workers (which re-check the persisted scan status independently and read the DB-authoritative blob key). `INFECTED` / still-scanning / errored versions and any preview, thumbnail, search snippet, or export derived from them can no longer be served or processed. (#88)
+- Serve the document's current version (`currentVersionId`), scoped by version id + document + organization, instead of the highest version number. A non-servable current version returns unavailable (admin `403` / viewer `404`, identical whether it is still scanning or blocked, with no scan-reason disclosure) and never silently downgrades to an older servable version; version rollback is now effective on the serve side. (#89)
+- Hardened large-file virus scanning: files too large to scan are marked `SKIPPED` (allowed but flagged unscanned) rather than quarantined as infected; ClamAV responses are parsed structurally (threat match first, exact clean and size-limit recognition, throw on unknown); and `CLAMAV_MAX_SCAN_BYTES` is validated as a positive integer that fails closed on invalid input. (#87)
+
 ## [0.1.0-beta.1] - 2026-07-01
 
 Private beta candidate for the VaultSpace staging environment.
