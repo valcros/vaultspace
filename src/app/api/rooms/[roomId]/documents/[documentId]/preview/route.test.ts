@@ -56,11 +56,12 @@ function makeContext() {
 const mockRoom = { id: 'room-1', organizationId: 'org-1' };
 const fileBlob = { storageKey: 'files/test.bin', storageBucket: 'documents' };
 
-function makeDocument(mimeType: string) {
+function makeDocument(mimeType: string, currentVersionId: string | null = 'ver-current') {
   return {
     id: 'doc-1',
     name: 'test-file',
     mimeType,
+    currentVersionId,
   };
 }
 
@@ -248,6 +249,53 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       const res = await GET(makeRequest(), makeContext());
 
       expect(res.status).toBe(200);
+    });
+  });
+
+  // Default preview follows currentVersionId, never the highest version number.
+  describe('current version', () => {
+    // DB-like store keyed by version id.
+    const rows: Record<string, ReturnType<typeof makeVersion>> = {};
+    beforeEach(() => {
+      rows['ver-1'] = makeVersion('application/pdf', [], 'CLEAN');
+      rows['ver-2'] = makeVersion('application/pdf', [], 'CLEAN');
+      // Scoped like the DB: resolve only when id, documentId AND organizationId
+      // all match (guards tenant scoping + hostile currentVersionId pointers).
+      mockTx.documentVersion.findFirst.mockImplementation(
+        (args: { where?: { id?: string; documentId?: string; organizationId?: string } }) => {
+          const w = args?.where ?? {};
+          if (w.documentId !== 'doc-1' || w.organizationId !== 'org-1') {
+            return Promise.resolve(null);
+          }
+          return Promise.resolve(w.id ? (rows[w.id] ?? null) : null);
+        }
+      );
+    });
+
+    it.each(['INFECTED', 'PENDING'])(
+      'returns 403 and never previews an older clean version when current is %s',
+      async (scanStatus) => {
+        rows['ver-2'] = makeVersion('application/pdf', [], scanStatus);
+        mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf', 'ver-2'));
+
+        const res = await GET(makeRequest(), makeContext());
+
+        expect(res.status).toBe(403);
+        expect(mockStorage.get).not.toHaveBeenCalled();
+      }
+    );
+
+    it('after rollback (current=ver-1) previews ver-1, not the newer ver-2', async () => {
+      mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf', 'ver-1'));
+
+      const res = await GET(makeRequest(), makeContext());
+
+      expect(res.status).toBe(200);
+      // ver-1's blob was fetched (both fixtures share the same fileBlob key, so
+      // assert the current version was the one loaded).
+      expect(mockTx.documentVersion.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: 'ver-1' }) })
+      );
     });
   });
 });

@@ -16,7 +16,7 @@ import sharp from 'sharp';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
-import { isServable } from '@/lib/documents/scanGate';
+import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 import { hasCapability } from '@/lib/deployment-capabilities';
 
@@ -67,36 +67,49 @@ export async function GET(request: NextRequest, context: RouteContext) {
           organizationId: session.organizationId,
           status: 'ACTIVE',
         },
-        include: {
-          versions: {
-            orderBy: { versionNumber: 'desc' },
-            take: 1,
-            include: {
-              fileBlob: {
-                select: { storageKey: true, storageBucket: true },
-              },
-              previewAssets: {
-                where: { assetType: 'THUMBNAIL' },
-                take: 1,
-              },
-            },
-          },
-        },
+        select: { id: true, name: true, mimeType: true, currentVersionId: true },
       });
 
       if (!document) {
         return { error: 'Document not found', status: 404 };
       }
 
-      return { document };
+      const versionInclude = {
+        fileBlob: { select: { storageKey: true, storageBucket: true } },
+        previewAssets: { where: { assetType: 'THUMBNAIL' as const }, take: 1 },
+      };
+
+      // Thumbnail the CURRENT version (grid stays consistent with download /
+      // preview; follows rollback). Legacy documents without a current pointer
+      // fall back to the highest servable version.
+      const currentVersion = document.currentVersionId
+        ? await tx.documentVersion.findFirst({
+            where: {
+              id: document.currentVersionId,
+              documentId,
+              organizationId: session.organizationId,
+            },
+            include: versionInclude,
+          })
+        : await tx.documentVersion.findFirst({
+            where: {
+              documentId,
+              organizationId: session.organizationId,
+              ...SERVABLE_SCAN_STATUS_FILTER,
+            },
+            orderBy: { versionNumber: 'desc' },
+            include: versionInclude,
+          });
+
+      return { document, currentVersion };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status || 500 });
     }
 
-    const { document } = result;
-    const latestVersion = document.versions[0];
+    const { document, currentVersion } = result;
+    const latestVersion = currentVersion;
     if (!latestVersion) {
       return NextResponse.json({ error: 'No version' }, { status: 404 });
     }
