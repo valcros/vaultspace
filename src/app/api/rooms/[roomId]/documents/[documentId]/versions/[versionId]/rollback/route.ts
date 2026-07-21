@@ -87,8 +87,9 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         return { error: 'Version is already the current version', status: 400 };
       }
 
-      // Check scan status - cannot rollback to an infected version
-      if (targetVersion.scanStatus !== 'CLEAN') {
+      // Cannot rollback to an INFECTED (or still-pending) version. CLEAN and
+      // SKIPPED (allowed-but-unscanned) versions are permitted.
+      if (targetVersion.scanStatus !== 'CLEAN' && targetVersion.scanStatus !== 'SKIPPED') {
         return {
           error: 'Cannot rollback to a version that has not passed virus scanning',
           status: 400,

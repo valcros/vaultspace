@@ -9,12 +9,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock db
 const mockVersionUpdate = vi.fn().mockResolvedValue({});
+// Terminal-state idempotency guard reads the current scanStatus; default to a
+// re-processable state so the normal paths run.
+const mockVersionFindFirst = vi.fn().mockResolvedValue({ scanStatus: 'PENDING' });
 const mockDocumentFindFirst = vi.fn().mockResolvedValue({ roomId: 'room-1' });
 const mockUserOrgFindMany = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/db', () => {
   const mockDb = {
-    documentVersion: { update: (...args: unknown[]) => mockVersionUpdate(...args) },
+    documentVersion: {
+      update: (...args: unknown[]) => mockVersionUpdate(...args),
+      findFirst: (...args: unknown[]) => mockVersionFindFirst(...args),
+    },
     document: { findFirst: (...args: unknown[]) => mockDocumentFindFirst(...args) },
     userOrganization: { findMany: (...args: unknown[]) => mockUserOrgFindMany(...args) },
   };
@@ -305,6 +311,73 @@ describe('processScanJob — INFECTED path', () => {
 
     await expect(processScanJob(createMockJob())).resolves.not.toThrow();
     expect(mockEmailSendEmail).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('processScanJob — idempotency (redelivery)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockScanIsAvailable.mockResolvedValue(true);
+  });
+
+  it.each(['CLEAN', 'INFECTED', 'SKIPPED'])(
+    'does not re-scan a version already in terminal state %s',
+    async (status) => {
+      mockVersionFindFirst.mockResolvedValueOnce({ scanStatus: status });
+      await processScanJob(createMockJob());
+      expect(mockScanScan).not.toHaveBeenCalled();
+      expect(mockVersionUpdate).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('processScanJob — SKIPPED path (too large to scan)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockScanIsAvailable.mockResolvedValue(true);
+    mockScanScan.mockResolvedValue({
+      clean: true,
+      skipped: true,
+      skipReason:
+        "File exceeds the scanner's maximum scan size (137740552 > 26214400 bytes); allowed but not virus-scanned",
+    });
+    mockDocumentFindFirst.mockResolvedValue({ roomId: 'room-1' });
+  });
+
+  it('marks version SKIPPED with the reason (NOT INFECTED)', async () => {
+    await processScanJob(createMockJob());
+    expect(mockVersionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          scanStatus: 'SKIPPED',
+          scanError: expect.stringContaining('not virus-scanned'),
+        }),
+      })
+    );
+  });
+
+  it('still queues a preview so the file is usable', async () => {
+    await processScanJob(createMockJob());
+    expect(mockJobAddJob).toHaveBeenCalled();
+  });
+
+  it('does NOT email admins (it is not a threat)', async () => {
+    mockUserOrgFindMany.mockResolvedValue([
+      { user: { email: 'admin@org.com', firstName: 'Admin' } },
+    ]);
+    await processScanJob(createMockJob());
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+  });
+
+  it('audits the skip via DOCUMENT_SCANNED', async () => {
+    await processScanJob(createMockJob());
+    expect(mockEmit).toHaveBeenCalledWith(
+      'DOCUMENT_SCANNED',
+      expect.objectContaining({
+        roomId: 'room-1',
+        metadata: expect.objectContaining({ scanStatus: 'SKIPPED' }),
+      })
+    );
   });
 });
 

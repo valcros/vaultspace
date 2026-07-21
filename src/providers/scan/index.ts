@@ -40,13 +40,26 @@ export function createScanProvider(): ScanProvider {
       const host = clamavHost ?? 'localhost';
       const port = parseInt(process.env['CLAMAV_PORT'] ?? '3310', 10);
       const timeout = parseInt(process.env['CLAMAV_TIMEOUT'] ?? '30000', 10);
+      // Files larger than this are allowed but flagged unscanned (SKIPPED). Must
+      // stay <= clamd's StreamMaxLength; raise both together to scan bigger files.
+      // Validate strictly: this gates whether scanning happens, so a bad value
+      // must fail loudly rather than silently disable scanning. Number() (not
+      // parseInt) rejects partials like "25MB" instead of reading them as 25.
+      const rawMaxSize = process.env['CLAMAV_MAX_SCAN_BYTES'];
+      const maxSize = rawMaxSize === undefined ? 25 * 1024 * 1024 : Number(rawMaxSize);
+      if (!Number.isInteger(maxSize) || maxSize <= 0) {
+        throw new Error(
+          `CLAMAV_MAX_SCAN_BYTES must be a positive integer number of bytes (got: ${rawMaxSize})`
+        );
+      }
 
-      console.log(`[ScanProvider] Using ClamAV at ${host}:${port}`);
+      console.log(`[ScanProvider] Using ClamAV at ${host}:${port} (max scan ${maxSize} bytes)`);
 
       return new ClamAVScanProvider({
         host,
         port,
         timeout,
+        maxSize,
       });
     }
 

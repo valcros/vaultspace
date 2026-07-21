@@ -183,6 +183,7 @@ enum ScanStatus {
   CLEAN // Passed scan
   INFECTED // Flagged as malware
   ERROR // Scan failed with error
+  SKIPPED // Allowed but NOT virus-scanned (e.g. exceeds the scanner's size limit)
 }
 
 // Preview asset type - F101

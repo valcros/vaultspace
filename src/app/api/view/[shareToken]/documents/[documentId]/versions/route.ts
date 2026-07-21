@@ -71,7 +71,11 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return null;
       }
       const versions = await tx.documentVersion.findMany({
-        where: { documentId, organizationId: viewerSession.organizationId, scanStatus: 'CLEAN' },
+        where: {
+          documentId,
+          organizationId: viewerSession.organizationId,
+          scanStatus: { in: ['CLEAN', 'SKIPPED'] },
+        },
         orderBy: { versionNumber: 'desc' },
         select: {
           id: true,
