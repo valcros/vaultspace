@@ -161,16 +161,21 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
     });
 
     // Queue preview generation job
-    await providers.job.addJob('high', 'preview.generate', {
-      documentId,
-      versionId,
-      organizationId,
-      storageKey,
-      fileName: job.data.fileName,
-      contentType: job.data.contentType,
-      fileSizeBytes: job.data.fileSizeBytes,
-      isScanned: false,
-    });
+    await providers.job.addJob(
+      'high',
+      'preview.generate',
+      {
+        documentId,
+        versionId,
+        organizationId,
+        storageKey,
+        fileName: job.data.fileName,
+        contentType: job.data.contentType,
+        fileSizeBytes: job.data.fileSizeBytes,
+        isScanned: false,
+      },
+      { jobId: `preview-${versionId}` }
+    );
 
     return;
   }
@@ -208,16 +213,21 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
       // skip are best-effort follow-ups: if they fail, log and move on -- do NOT
       // let the outer catch reclassify an already-final SKIPPED version to ERROR.
       try {
-        await providers.job.addJob('high', 'preview.generate', {
-          documentId,
-          versionId,
-          organizationId,
-          storageKey,
-          fileName: job.data.fileName,
-          contentType: job.data.contentType,
-          fileSizeBytes: job.data.fileSizeBytes,
-          isScanned: false,
-        });
+        await providers.job.addJob(
+          'high',
+          'preview.generate',
+          {
+            documentId,
+            versionId,
+            organizationId,
+            storageKey,
+            fileName: job.data.fileName,
+            contentType: job.data.contentType,
+            fileSizeBytes: job.data.fileSizeBytes,
+            isScanned: false,
+          },
+          { jobId: `preview-${versionId}` }
+        );
 
         const eventBus = createEventBus(organizationId, { actorType: 'SYSTEM' });
         await eventBus.emit('DOCUMENT_SCANNED', {
@@ -251,16 +261,21 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
       });
 
       // Queue preview generation job
-      await providers.job.addJob('high', 'preview.generate', {
-        documentId,
-        versionId,
-        organizationId,
-        storageKey,
-        fileName: job.data.fileName,
-        contentType: job.data.contentType,
-        fileSizeBytes: job.data.fileSizeBytes,
-        isScanned: false,
-      });
+      await providers.job.addJob(
+        'high',
+        'preview.generate',
+        {
+          documentId,
+          versionId,
+          organizationId,
+          storageKey,
+          fileName: job.data.fileName,
+          contentType: job.data.contentType,
+          fileSizeBytes: job.data.fileSizeBytes,
+          isScanned: false,
+        },
+        { jobId: `preview-${versionId}` }
+      );
     } else {
       console.log(
         `[ScanProcessor] Document ${documentId} is INFECTED: ${scanResult.threats?.join(', ')}`

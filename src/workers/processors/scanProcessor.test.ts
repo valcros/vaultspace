@@ -128,7 +128,9 @@ describe('processScanJob — CLEAN path', () => {
     expect(mockJobAddJob).toHaveBeenCalledWith(
       'high',
       'preview.generate',
-      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1' })
+      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1' }),
+      // Deterministic job id dedups a redelivered/duplicate preview enqueue.
+      expect.objectContaining({ jobId: 'preview-ver-1' })
     );
   });
 
@@ -218,7 +220,9 @@ describe('processScanJob — scanner unavailable', () => {
     expect(mockJobAddJob).toHaveBeenCalledWith(
       'high',
       'preview.generate',
-      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1' })
+      expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1' }),
+      // Deterministic job id dedups a redelivered/duplicate preview enqueue.
+      expect.objectContaining({ jobId: 'preview-ver-1' })
     );
   });
 });
@@ -356,9 +360,16 @@ describe('processScanJob — SKIPPED path (too large to scan)', () => {
     );
   });
 
-  it('still queues a preview so the file is usable', async () => {
+  it('still queues a preview so the file is usable, with a deterministic job id', async () => {
     await processScanJob(createMockJob());
-    expect(mockJobAddJob).toHaveBeenCalled();
+    // Deterministic job id so a redelivered SKIPPED scan does not enqueue a
+    // duplicate preview job (BullMQ dedups on a still-queued id).
+    expect(mockJobAddJob).toHaveBeenCalledWith(
+      'high',
+      'preview.generate',
+      expect.objectContaining({ versionId: 'ver-1' }),
+      expect.objectContaining({ jobId: 'preview-ver-1' })
+    );
   });
 
   it('does NOT email admins (it is not a threat)', async () => {
