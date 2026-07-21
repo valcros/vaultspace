@@ -10,7 +10,7 @@
 
 import { redirect } from 'next/navigation';
 
-import { db } from '@/lib/db';
+import { bootstrapDb } from '@/lib/db';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -19,8 +19,10 @@ interface PageProps {
 export default async function OrgLandingPage({ params }: PageProps) {
   const { slug } = await params;
 
-  // Look up organization by slug (no RLS — public lookup)
-  const organization = await db.organization.findFirst({
+  // Public, pre-session org resolution: MUST use bootstrapDb (BYPASSRLS). The
+  // regular `db` pool can carry a stale app.current_org_id, which makes the
+  // org_bootstrap_lookup RLS policy return nothing -> "Organization Not Found".
+  const organization = await bootstrapDb.organization.findFirst({
     where: { slug },
     select: {
       id: true,

@@ -4,17 +4,17 @@
  * Resolves custom domains to organization context.
  * Used by Next.js middleware to set organization context.
  *
- * PRE-RLS BOOTSTRAP: This module intentionally uses the global db client
- * without org context, as we're resolving which organization based on
- * domain/subdomain BEFORE the org context can be established.
- *
- * The RLS policy `org_bootstrap_lookup` allows SELECT on organizations
- * when no org context is set, enabling this bootstrap pattern.
+ * PRE-RLS BOOTSTRAP: resolves which organization a request belongs to from the
+ * domain/subdomain BEFORE any org context exists. It MUST use bootstrapDb (the
+ * admin, BYPASSRLS connection). The regular `db` pool can carry a stale,
+ * non-NULL `app.current_org_id` from a prior request; `org_bootstrap_lookup`
+ * only permits the read when that setting IS NULL, so a poisoned connection
+ * resolves to nothing and the subdomain fails to route.
  *
  * Security: Only minimal public fields (id, slug) are selected. Active check enforced.
  */
 
-import { db } from '@/lib/db';
+import { bootstrapDb } from '@/lib/db';
 
 export interface CustomDomainResult {
   organizationId: string;
@@ -49,7 +49,7 @@ export async function resolveCustomDomain(hostname: string): Promise<CustomDomai
 
   try {
     // Look up organization by custom domain
-    const organization = await db.organization.findFirst({
+    const organization = await bootstrapDb.organization.findFirst({
       where: {
         customDomain: domain,
         isActive: true,
@@ -104,7 +104,7 @@ export async function resolveSubdomain(hostname: string): Promise<CustomDomainRe
   }
 
   try {
-    const organization = await db.organization.findFirst({
+    const organization = await bootstrapDb.organization.findFirst({
       where: {
         slug: subdomain,
         isActive: true,
