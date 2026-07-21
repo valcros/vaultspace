@@ -11,7 +11,10 @@
  */
 
 import { bootstrapDb } from '@/lib/db';
-import { getProviders } from '@/providers';
+// Build ONLY the email provider (see invitationLifecycle.ts): getProviders()
+// eagerly constructs storage too, which aborts in Azure mode for a job with no
+// storage config.
+import { createEmailProvider } from '@/providers';
 import { buildInviteEmail } from '@/lib/email/inviteEmail';
 
 async function main() {
@@ -22,7 +25,7 @@ async function main() {
     return;
   }
 
-  const email = getProviders().email;
+  const email = createEmailProvider();
 
   const links = await bootstrapDb.link.findMany({
     where: {

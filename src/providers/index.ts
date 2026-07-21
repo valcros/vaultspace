@@ -139,7 +139,7 @@ function createStorageProvider(): StorageProvider {
   }
 }
 
-function createEmailProvider(): EmailProvider {
+export function createEmailProvider(): EmailProvider {
   const provider = process.env['EMAIL_PROVIDER'] ?? 'console';
   const isDev = process.env['NODE_ENV'] !== 'production';
 

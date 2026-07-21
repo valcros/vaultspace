@@ -12,7 +12,10 @@
 
 import { bootstrapDb } from '@/lib/db';
 import { runInvitationLifecycle, type LifecycleDb } from '@/lib/invitations/invitationLifecycle';
-import { getProviders } from '@/providers';
+// Build ONLY the email provider. getProviders() eagerly constructs every
+// provider (incl. storage), which aborts in Azure mode when this lightweight
+// job has no storage config — the cause of the daily lifecycle-job crash.
+import { createEmailProvider } from '@/providers';
 
 async function main() {
   const baseUrl = process.env['APP_URL'] ?? process.env['NEXT_PUBLIC_APP_URL'];
@@ -22,7 +25,7 @@ async function main() {
     return;
   }
 
-  const email = getProviders().email;
+  const email = createEmailProvider();
 
   const summary = await runInvitationLifecycle({
     // bootstrapDb is a full PrismaClient; the lib narrows to the RLS-bypassing
