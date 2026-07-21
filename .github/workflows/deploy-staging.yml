@@ -29,7 +29,15 @@ jobs:
   deploy:
     name: Deploy to Azure Staging
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Only deploy for a manual dispatch, or a SUCCESSFUL CI run that was itself
+    # triggered by a push from THIS repo. Without the event/repo checks, a fork
+    # PR whose source branch is named "main" could match the workflow_run
+    # branches filter and start this privileged (staging-credentialed) job.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
 
     environment: staging
 
@@ -82,37 +90,28 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Login to Azure Container Registry
-        uses: azure/docker-login@v2
-        with:
-          login-server: ${{ env.ACR_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      # Buildx with a persistent layer cache (GitHub Actions cache backend) so
-      # unchanged dependency/build layers are reused across deploys instead of
-      # rebuilt from scratch each time.
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push web image
+      # Safety net for build-once: images are published by CI's "Build & Push
+      # Images" job. Confirm BOTH exist for this SHA before doing anything with
+      # side effects (migrations run below), so a manual dispatch against a SHA
+      # that was never built fails here instead of migrating the DB for an
+      # image that will never deploy.
+      - name: Verify images exist in ACR
         run: |
-          docker buildx build \
-            --cache-from type=gha,scope=web \
-            --cache-to type=gha,mode=max,scope=web \
-            --build-arg APP_RELEASE=$DEPLOY_SHA \
-            -t $ACR_SERVER/vaultspace-web:$DEPLOY_SHA \
-            -t $ACR_SERVER/vaultspace-web:latest \
-            -f Dockerfile --push .
+          ACR_NAME="${ACR_SERVER%%.*}"
+          for repo in vaultspace-web vaultspace-worker; do
+            if ! az acr repository show -n "$ACR_NAME" --image "$repo:$DEPLOY_SHA" -o none 2>/dev/null; then
+              echo "ERROR: $ACR_SERVER/$repo:$DEPLOY_SHA is not in ACR."
+              echo "CI's 'Build & Push Images' job must publish it first. Aborting before migrations."
+              exit 1
+            fi
+          done
+          echo "✓ web + worker images present for $DEPLOY_SHA"
 
-      - name: Build and push worker image
-        run: |
-          docker buildx build \
-            --cache-from type=gha,scope=worker \
-            --cache-to type=gha,mode=max,scope=worker \
-            -t $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA \
-            -t $ACR_SERVER/vaultspace-worker:latest \
-            -f Dockerfile.worker --push .
+      # No build here: the CI "Build & Push Images" job already built and pushed
+      # web + worker images to ACR tagged by this commit SHA before the deploy
+      # was triggered. We just point the Container Apps at that SHA tag below.
+      # (The Container Apps pull from ACR with their own registry credentials, so
+      # no Docker/ACR login is needed in this job.)
 
       - name: Setup Node.js for migrations
         uses: actions/setup-node@v4
