@@ -100,6 +100,7 @@ jobs:
           docker buildx build \
             --cache-from type=gha,scope=web \
             --cache-to type=gha,mode=max,scope=web \
+            --build-arg APP_RELEASE=$DEPLOY_SHA \
             -t $ACR_SERVER/vaultspace-web:$DEPLOY_SHA \
             -t $ACR_SERVER/vaultspace-web:latest \
             -f Dockerfile --push .
