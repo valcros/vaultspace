@@ -29,59 +29,6 @@ interface UploadZoneProps {
 }
 
 const DEFAULT_MAX_SIZE = 500 * 1024 * 1024; // 500MB
-const DEFAULT_ACCEPTED_TYPES = [
-  // Documents - PDF
-  'application/pdf',
-  // Documents - Microsoft Office
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  // Documents - OpenDocument
-  'application/vnd.oasis.opendocument.text',
-  'application/vnd.oasis.opendocument.spreadsheet',
-  'application/vnd.oasis.opendocument.presentation',
-  'application/vnd.oasis.opendocument.graphics',
-  // Documents - Visio
-  'application/vnd.ms-visio.drawing.main+xml',
-  'application/vnd.visio',
-  // Documents - Other
-  'application/rtf',
-  'application/epub+zip',
-  // Images
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/tiff',
-  'image/svg+xml',
-  // Text
-  'text/plain',
-  'text/csv',
-  'text/markdown',
-  'text/html',
-  'text/yaml',
-  'text/xml',
-  'application/json',
-  'application/xml',
-  // Vector Graphics - EPS
-  'application/postscript',
-  'application/eps',
-  'application/x-eps',
-  'image/x-eps',
-  'image/eps',
-  // Vector Graphics - Adobe Illustrator
-  'application/illustrator',
-  'application/x-illustrator',
-  'application/vnd.adobe.illustrator',
-  // CAD - DXF
-  'application/dxf',
-  'image/vnd.dxf',
-  'application/x-dxf',
-  'image/x-dxf',
-];
 
 /**
  * Extension to MIME type mapping for files browsers don't recognize.
@@ -107,7 +54,7 @@ export function UploadZone({
   onUploadComplete,
   onUploadError,
   maxFileSize = DEFAULT_MAX_SIZE,
-  acceptedTypes = DEFAULT_ACCEPTED_TYPES,
+  acceptedTypes = [],
   multiple = true,
   className = '',
 }: UploadZoneProps) {
@@ -144,6 +91,12 @@ export function UploadZone({
     (file: File): string | null => {
       if (file.size > maxFileSize) {
         return `File too large (max ${Math.round(maxFileSize / 1024 / 1024)}MB)`;
+      }
+      // No type restriction by default: a data room accepts any file type,
+      // whether or not the app can preview it. A caller may pass a non-empty
+      // acceptedTypes to restrict a specific picker.
+      if (acceptedTypes.length === 0) {
+        return null;
       }
       // Check MIME type directly first
       if (acceptedTypes.includes(file.type)) {
@@ -356,10 +309,13 @@ export function UploadZone({
           ref={inputRef}
           type="file"
           multiple={multiple}
-          accept={[
-            ...acceptedTypes,
-            ...Object.keys(EXTENSION_MIME_MAP).map((ext) => `.${ext}`),
-          ].join(',')}
+          accept={
+            acceptedTypes.length > 0
+              ? [...acceptedTypes, ...Object.keys(EXTENSION_MIME_MAP).map((ext) => `.${ext}`)].join(
+                  ','
+                )
+              : undefined
+          }
           onChange={handleFileSelect}
           className="hidden"
         />

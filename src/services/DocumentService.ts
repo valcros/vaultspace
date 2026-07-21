@@ -21,62 +21,6 @@ import type { PaginatedResult, PaginationOptions, ServiceContext } from './types
 /**
  * Supported MIME types for upload
  */
-const SUPPORTED_MIME_TYPES = new Set([
-  // Documents - PDF
-  'application/pdf',
-  // Documents - Microsoft Office (modern)
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
-  // Documents - Microsoft Office (legacy)
-  'application/msword', // DOC
-  'application/vnd.ms-excel', // XLS
-  'application/vnd.ms-powerpoint', // PPT
-  // Documents - OpenDocument
-  'application/vnd.oasis.opendocument.text', // ODT
-  'application/vnd.oasis.opendocument.spreadsheet', // ODS
-  'application/vnd.oasis.opendocument.presentation', // ODP
-  'application/vnd.oasis.opendocument.graphics', // ODG
-  // Documents - Visio
-  'application/vnd.ms-visio.drawing.main+xml', // VSDX
-  'application/vnd.visio', // VSD
-  // Documents - Other
-  'application/rtf', // RTF
-  'application/epub+zip', // EPUB
-  // Images
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/tiff',
-  'image/svg+xml', // SVG
-  // Text
-  'text/plain',
-  'text/csv',
-  'text/markdown',
-  'text/html',
-  // Data
-  'application/json',
-  'application/xml',
-  'text/xml',
-  'text/yaml',
-  // Vector Graphics - EPS
-  'application/postscript',
-  'application/eps',
-  'application/x-eps',
-  'image/x-eps',
-  'image/eps',
-  // Vector Graphics - Adobe Illustrator
-  'application/illustrator',
-  'application/x-illustrator',
-  'application/vnd.adobe.illustrator',
-  // CAD - DXF
-  'application/dxf',
-  'image/vnd.dxf',
-  'application/x-dxf',
-  'image/x-dxf',
-]);
-
 /**
  * File input for upload
  */
@@ -349,10 +293,10 @@ export class DocumentService {
       );
     }
 
-    // Check MIME type
-    if (!SUPPORTED_MIME_TYPES.has(file.mimeType)) {
-      throw new ValidationError(`Unsupported file type: ${file.mimeType}`);
-    }
+    // No MIME-type allowlist: a data room accepts ANY file type, whether or not
+    // the app can preview it. Unpreviewable files are still stored and served
+    // for download (attachment disposition); the preview simply degrades to a
+    // download. Size is still bounded above.
 
     // Check filename
     if (!file.filename || file.filename.length === 0) {

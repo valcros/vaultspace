@@ -150,12 +150,29 @@ describe('DocumentService', () => {
       );
     });
 
-    it('should reject unsupported file types', async () => {
-      const badFile = { ...validFile, mimeType: 'application/x-executable' };
+    it('accepts any file type, even one the app cannot preview (e.g. video)', async () => {
+      const mockDoc = {
+        id: 'doc-1',
+        organizationId: 'org-1',
+        roomId: 'room-1',
+        name: 'clip.mp4',
+        status: 'ACTIVE',
+      };
+      const mockVersion = {
+        id: 'ver-1',
+        documentId: 'doc-1',
+        versionNumber: 1,
+        fileName: 'clip.mp4',
+      };
+      mockTx.room.findFirst.mockResolvedValue({ id: 'room-1', status: 'ACTIVE' });
+      mockTx.document.create.mockResolvedValue(mockDoc);
+      mockTx.documentVersion.create.mockResolvedValue(mockVersion);
+      mockTx.fileBlob.create.mockResolvedValue({});
+      mockTx.document.update.mockResolvedValue(mockDoc);
 
-      await expect(service.upload(ctx, { roomId: 'room-1', file: badFile })).rejects.toThrow(
-        'Unsupported file type'
-      );
+      const videoFile = { ...validFile, filename: 'clip.mp4', mimeType: 'video/mp4' };
+      const result = await service.upload(ctx, { roomId: 'room-1', file: videoFile });
+      expect(result.id).toBe('doc-1');
     });
 
     it('should reject files exceeding size limit', async () => {
