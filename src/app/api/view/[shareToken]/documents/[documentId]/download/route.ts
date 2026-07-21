@@ -88,13 +88,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return { error: 'Downloads are not allowed for this document', status: 403 };
       }
 
-      // The requested version (a specific prior version, or the latest), always
-      // scan-clean so an infected/unscanned blob is never served.
+      // The requested version (a specific prior version, or the latest). Serve
+      // CLEAN or SKIPPED (allowed-but-unscanned, e.g. too large to scan)
+      // versions; an INFECTED blob is never served.
       const targetVersion = await tx.documentVersion.findFirst({
         where: {
           documentId,
           organizationId: viewerSession.organizationId,
-          scanStatus: 'CLEAN',
+          scanStatus: { in: ['CLEAN', 'SKIPPED'] },
           ...(versionId ? { id: versionId } : {}),
         },
         orderBy: { versionNumber: 'desc' },

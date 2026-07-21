@@ -158,7 +158,51 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
     // Scan file
     const scanResult = await providers.scan.scan(fileBuffer);
 
-    if (scanResult.clean) {
+    if (scanResult.skipped) {
+      // Allowed but NOT scanned (e.g. the file is too large for the scanner).
+      // Make it usable and flag it as unscanned -- do NOT quarantine it.
+      console.log(
+        `[ScanProcessor] Document ${documentId} allowed unscanned: ${scanResult.skipReason}`
+      );
+
+      const skipDoc = await withOrgContext(organizationId, async (tx) => {
+        await tx.documentVersion.update({
+          where: { id: versionId },
+          data: {
+            scanStatus: 'SKIPPED',
+            scanError: scanResult.skipReason ?? 'Allowed but not virus-scanned',
+            scannedAt: new Date(),
+          },
+        });
+        return tx.document.findFirst({
+          where: { id: documentId, organizationId },
+          select: { roomId: true },
+        });
+      });
+
+      // Generate a preview so the file is usable, and audit that it was skipped.
+      await providers.job.addJob('high', 'preview.generate', {
+        documentId,
+        versionId,
+        organizationId,
+        storageKey,
+        fileName: job.data.fileName,
+        contentType: job.data.contentType,
+        fileSizeBytes: job.data.fileSizeBytes,
+        isScanned: false,
+      });
+
+      const eventBus = createEventBus(organizationId, { actorType: 'SYSTEM' });
+      await eventBus.emit('DOCUMENT_SCANNED', {
+        roomId: skipDoc?.roomId,
+        documentId,
+        metadata: {
+          versionId,
+          scanStatus: 'SKIPPED',
+          reason: scanResult.skipReason,
+        },
+      });
+    } else if (scanResult.clean) {
       console.log(`[ScanProcessor] Document ${documentId} is clean`);
 
       await withOrgContext(organizationId, async (tx) => {

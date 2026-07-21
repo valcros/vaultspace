@@ -36,11 +36,15 @@ export class ClamAVScanProvider implements ScanProvider {
   async scan(data: Buffer): Promise<ScanResult> {
     const startTime = Date.now();
 
-    // Check file size
+    // Too large to scan: allow it through but flag as UNSCANNED. Marking an
+    // oversize file as a threat false-positive-quarantines legitimate large
+    // uploads (e.g. video). Raise the effective limit via CLAMAV_MAX_SCAN_BYTES
+    // (and clamd's StreamMaxLength) to scan bigger files.
     if (data.length > this.maxSize) {
       return {
-        clean: false,
-        threats: [`File exceeds maximum scan size (${this.maxSize} bytes)`],
+        clean: true,
+        skipped: true,
+        skipReason: `File exceeds the scanner's maximum scan size (${data.length} > ${this.maxSize} bytes); allowed but not virus-scanned`,
         scanDuration: Date.now() - startTime,
       };
     }
@@ -131,6 +135,17 @@ export class ClamAVScanProvider implements ScanProvider {
     if (response.includes('OK')) {
       return {
         clean: true,
+        scanDuration,
+      };
+    }
+
+    // clamd rejects streams larger than its StreamMaxLength with a size-limit
+    // error. That is NOT a threat -- allow the file through, flagged as unscanned.
+    if (/size limit/i.test(response)) {
+      return {
+        clean: true,
+        skipped: true,
+        skipReason: `Scanner could not scan the file (too large): ${response.trim()}; allowed but not virus-scanned`,
         scanDuration,
       };
     }

@@ -167,6 +167,11 @@ export interface ScanResult {
   clean: boolean;
   threats?: string[];
   scanDuration?: number;
+  // True when the file was NOT actually scanned (e.g. it exceeds the scanner's
+  // size limit). The file is allowed through but flagged as unscanned rather than
+  // treated as a threat. `clean` is not meaningful when `skipped` is true.
+  skipped?: boolean;
+  skipReason?: string;
 }
 
 export interface ScanProvider {

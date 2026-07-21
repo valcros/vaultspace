@@ -40,13 +40,20 @@ export function createScanProvider(): ScanProvider {
       const host = clamavHost ?? 'localhost';
       const port = parseInt(process.env['CLAMAV_PORT'] ?? '3310', 10);
       const timeout = parseInt(process.env['CLAMAV_TIMEOUT'] ?? '30000', 10);
+      // Files larger than this are allowed but flagged unscanned (SKIPPED). Must
+      // stay <= clamd's StreamMaxLength; raise both together to scan bigger files.
+      const maxSize = parseInt(
+        process.env['CLAMAV_MAX_SCAN_BYTES'] ?? String(25 * 1024 * 1024),
+        10
+      );
 
-      console.log(`[ScanProvider] Using ClamAV at ${host}:${port}`);
+      console.log(`[ScanProvider] Using ClamAV at ${host}:${port} (max scan ${maxSize} bytes)`);
 
       return new ClamAVScanProvider({
         host,
         port,
         timeout,
+        maxSize,
       });
     }
 
