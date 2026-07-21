@@ -79,8 +79,16 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/preview — current 
     VERSIONS['ver-1'] = { id: 'ver-1', scanStatus: 'CLEAN', previewAssets: renderAsset('v1.png') };
     VERSIONS['ver-2'] = { id: 'ver-2', scanStatus: 'CLEAN', previewAssets: renderAsset('v2.png') };
 
-    mockVersionFindFirst.mockImplementation((args: { where?: { id?: string } }) =>
-      Promise.resolve(args?.where?.id ? (VERSIONS[args.where.id] ?? null) : null)
+    // Scoped like the DB: resolve only when id, documentId AND organizationId
+    // all match (guards tenant scoping + hostile currentVersionId pointers).
+    mockVersionFindFirst.mockImplementation(
+      (args: { where?: { id?: string; documentId?: string; organizationId?: string } }) => {
+        const w = args?.where ?? {};
+        if (w.documentId !== 'doc-1' || w.organizationId !== 'org-1') {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve(w.id ? (VERSIONS[w.id] ?? null) : null);
+      }
     );
 
     mockWithOrgContext.mockImplementation(

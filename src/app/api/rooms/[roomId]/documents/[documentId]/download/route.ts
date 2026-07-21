@@ -86,13 +86,20 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             include: versionInclude,
           });
 
-      if (!targetVersion || !targetVersion.fileBlob) {
+      // Order matters: a present-but-non-servable version is a 403 regardless of
+      // whether its blob row happens to be missing, so the scan gate is checked
+      // before the blob. (1) no version row -> 404; (2) non-servable -> 403;
+      // (3) servable but blob missing (data inconsistency) -> 404.
+      if (!targetVersion) {
         return { error: 'Document version not found', status: 404 };
       }
       // Never serve an INFECTED / still-scanning current version; only CLEAN or
       // SKIPPED. Return the same 403 whether it is still scanning or blocked.
       if (!isServable(targetVersion.scanStatus)) {
         return { error: 'This document is not available for download', status: 403 };
+      }
+      if (!targetVersion.fileBlob) {
+        return { error: 'Document version not found', status: 404 };
       }
 
       // Record the download event

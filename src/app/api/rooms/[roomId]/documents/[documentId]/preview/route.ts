@@ -158,12 +158,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
         });
       }
 
-      if (!selectedVersion || !selectedVersion.fileBlob) {
+      // Order matters: a present-but-non-servable version is a 403 regardless of
+      // whether its blob row happens to be missing. (1) no version -> 404;
+      // (2) non-servable -> 403; (3) servable but blob missing -> 404.
+      if (!selectedVersion) {
         return { error: 'Document version not found', status: 404 };
       }
       // Never serve a preview derived from an INFECTED / still-scanning original.
       if (!isServable(selectedVersion.scanStatus)) {
         return { error: 'Preview is not available for this document', status: 403 };
+      }
+      if (!selectedVersion.fileBlob) {
+        return { error: 'Document version not found', status: 404 };
       }
 
       // Total rendered pages, so the viewer can paginate multi-page renders.

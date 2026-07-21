@@ -79,8 +79,29 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/download — current
     VERSIONS['ver-1'] = { scanStatus: 'CLEAN', fileBlob: blob('v1.pdf') };
     VERSIONS['ver-2'] = { scanStatus: 'CLEAN', fileBlob: blob('v2.pdf') };
 
-    mockVersionFindFirst.mockImplementation((args: { where?: { id?: string } }) =>
-      Promise.resolve(args?.where?.id ? (VERSIONS[args.where.id] ?? null) : null)
+    // Scoped like the DB: resolve only when id, documentId AND organizationId
+    // all match, and honor a scanStatus `in` filter when present (the historical
+    // and legacy branches carry SERVABLE_SCAN_STATUS_FILTER). Guards tenant
+    // scoping, hostile pointers, and the historical-path scan gate.
+    mockVersionFindFirst.mockImplementation(
+      (args: {
+        where?: {
+          id?: string;
+          documentId?: string;
+          organizationId?: string;
+          scanStatus?: { in?: string[] };
+        };
+      }) => {
+        const w = args?.where ?? {};
+        if (w.documentId !== 'doc-1' || w.organizationId !== 'org-1') {
+          return Promise.resolve(null);
+        }
+        const row = w.id ? VERSIONS[w.id] : null;
+        if (row && w.scanStatus?.in && !w.scanStatus.in.includes(row.scanStatus)) {
+          return Promise.resolve(null); // DB filter excludes a non-servable row
+        }
+        return Promise.resolve(row ?? null);
+      }
     );
 
     mockWithOrgContext.mockImplementation(
@@ -143,5 +164,90 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/download — current
 
     expect(res.status).toBe(200);
     expect(mockStorageGet).toHaveBeenCalled();
+  });
+
+  it('returns 404 and reads no bytes for a hostile currentVersionId not belonging to this document/org', async () => {
+    docWithCurrent('ver-from-another-tenant');
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(404);
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockDocUpdate).not.toHaveBeenCalled();
+  });
+
+  it('gates an explicit historical versionId: a non-servable historical version is 404, a servable one is served', async () => {
+    docWithCurrent('ver-2'); // current is a distinct clean version
+    const historicalReq = new NextRequest(
+      'http://localhost:3000/api/view/share-token/documents/doc-1/download?versionId=ver-1'
+    );
+
+    // Historical ver-1 INFECTED -> filtered out -> 404, no bytes.
+    VERSIONS['ver-1'] = { scanStatus: 'INFECTED', fileBlob: blob('v1.pdf') };
+    const infected = await GET(historicalReq, makeContext());
+    expect(infected.status).toBe(404);
+    expect(mockStorageGet).not.toHaveBeenCalled();
+
+    // Historical ver-1 CLEAN -> served.
+    VERSIONS['ver-1'] = { scanStatus: 'CLEAN', fileBlob: blob('v1.pdf') };
+    const clean = await GET(
+      new NextRequest(
+        'http://localhost:3000/api/view/share-token/documents/doc-1/download?versionId=ver-1'
+      ),
+      makeContext()
+    );
+    expect(clean.status).toBe(200);
+    expect(mockStorageGet).toHaveBeenCalledWith('documents', 'documents/org-1/v1.pdf');
+  });
+
+  it('a PENDING and an INFECTED current version produce an identical response body', async () => {
+    // Viewers must not be able to tell "still scanning" from "blocked".
+    VERSIONS['ver-2'] = { scanStatus: 'PENDING', fileBlob: blob('v2.pdf') };
+    docWithCurrent('ver-2');
+    const pending = await GET(makeRequest(), makeContext());
+    const pendingBody = await pending.json();
+
+    vi.clearAllMocks();
+    mockCookieStore.get.mockReturnValue({ value: 'viewer-session-token' });
+    mockViewSessionFindFirst.mockResolvedValue({
+      id: 'view-session-1',
+      createdAt: new Date(),
+      isActive: true,
+      organizationId: 'org-1',
+      link: {
+        slug: 'share-token',
+        isActive: true,
+        permission: 'DOWNLOAD',
+        scope: 'ROOM',
+        scopedFolderId: null,
+        scopedDocumentId: null,
+        maxSessionMinutes: 30,
+      },
+      room: { id: 'room-1', allowDownloads: true, allowViewerVersionHistory: true },
+    });
+    mockWithOrgContext.mockImplementation(
+      async (_orgId: string, cb: (tx: unknown) => Promise<unknown>) =>
+        cb({
+          document: { findFirst: mockDocFindFirst, update: mockDocUpdate },
+          documentVersion: { findFirst: mockVersionFindFirst },
+        })
+    );
+    mockVersionFindFirst.mockImplementation(
+      (args: { where?: { id?: string; documentId?: string; organizationId?: string } }) => {
+        const w = args?.where ?? {};
+        if (w.documentId !== 'doc-1' || w.organizationId !== 'org-1') {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve(
+          w.id === 'ver-2' ? { scanStatus: 'INFECTED', fileBlob: blob('v2.pdf') } : null
+        );
+      }
+    );
+    docWithCurrent('ver-2');
+    const infected = await GET(makeRequest(), makeContext());
+    const infectedBody = await infected.json();
+
+    expect(pending.status).toBe(infected.status);
+    expect(pendingBody).toEqual(infectedBody);
   });
 });

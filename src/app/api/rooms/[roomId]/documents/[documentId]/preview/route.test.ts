@@ -259,8 +259,16 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
     beforeEach(() => {
       rows['ver-1'] = makeVersion('application/pdf', [], 'CLEAN');
       rows['ver-2'] = makeVersion('application/pdf', [], 'CLEAN');
-      mockTx.documentVersion.findFirst.mockImplementation((args: { where?: { id?: string } }) =>
-        Promise.resolve(args?.where?.id ? (rows[args.where.id] ?? null) : null)
+      // Scoped like the DB: resolve only when id, documentId AND organizationId
+      // all match (guards tenant scoping + hostile currentVersionId pointers).
+      mockTx.documentVersion.findFirst.mockImplementation(
+        (args: { where?: { id?: string; documentId?: string; organizationId?: string } }) => {
+          const w = args?.where ?? {};
+          if (w.documentId !== 'doc-1' || w.organizationId !== 'org-1') {
+            return Promise.resolve(null);
+          }
+          return Promise.resolve(w.id ? (rows[w.id] ?? null) : null);
+        }
       );
     });
 

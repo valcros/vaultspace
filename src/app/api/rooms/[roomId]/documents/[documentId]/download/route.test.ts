@@ -64,8 +64,17 @@ describe('GET /api/rooms/:roomId/documents/:documentId/download — current vers
     // Reset both versions to CLEAN each test.
     VERSIONS['ver-1'] = { scanStatus: 'CLEAN', fileBlob: blob('v1.pdf') };
     VERSIONS['ver-2'] = { scanStatus: 'CLEAN', fileBlob: blob('v2.pdf') };
-    mockVersionFindFirst.mockImplementation((args: { where?: { id?: string } }) =>
-      Promise.resolve(args?.where?.id ? (VERSIONS[args.where.id] ?? null) : null)
+    // Behave like the scoped DB lookup: resolve a version only when id,
+    // documentId AND organizationId all match. A regression that drops a scoping
+    // predicate (or a hostile cross-tenant currentVersionId pointer) then fails.
+    mockVersionFindFirst.mockImplementation(
+      (args: { where?: { id?: string; documentId?: string; organizationId?: string } }) => {
+        const w = args?.where ?? {};
+        if (w.documentId !== 'doc-1' || w.organizationId !== 'org-1') {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve(w.id ? (VERSIONS[w.id] ?? null) : null);
+      }
     );
   });
 
@@ -125,13 +134,41 @@ describe('GET /api/rooms/:roomId/documents/:documentId/download — current vers
   it('falls back to highest servable when there is no current pointer (legacy doc)', async () => {
     docWithCurrent(null);
     // Legacy branch queries with a scanStatus filter and no id; return v2.
-    mockVersionFindFirst.mockImplementation((args: { where?: { id?: string } }) =>
-      Promise.resolve(args?.where?.id ? null : VERSIONS['ver-2'])
+    mockVersionFindFirst.mockImplementation(
+      (args: { where?: { id?: string; documentId?: string; organizationId?: string } }) => {
+        const w = args?.where ?? {};
+        if (w.documentId !== 'doc-1' || w.organizationId !== 'org-1') {
+          return Promise.resolve(null);
+        }
+        return Promise.resolve(w.id ? null : VERSIONS['ver-2']);
+      }
     );
 
     const res = await GET(makeRequest(), makeContext());
 
     expect(res.status).toBe(200);
     expect(mockStorage.get).toHaveBeenCalledWith('documents', 'documents/org-1/v2.pdf');
+  });
+
+  it('returns 404 and reads no bytes for a hostile currentVersionId that does not belong to this document/org', async () => {
+    // The scoped mock only resolves versions of doc-1/org-1; a pointer to some
+    // other version id resolves to nothing.
+    docWithCurrent('ver-from-another-tenant');
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(404);
+    expect(mockStorage.get).not.toHaveBeenCalled();
+    expect(mockDocUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 (not 404) when the current version is INFECTED even if its file blob is missing', async () => {
+    VERSIONS['ver-2'] = { scanStatus: 'INFECTED', fileBlob: null };
+    docWithCurrent('ver-2');
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(403);
+    expect(mockStorage.get).not.toHaveBeenCalled();
   });
 });

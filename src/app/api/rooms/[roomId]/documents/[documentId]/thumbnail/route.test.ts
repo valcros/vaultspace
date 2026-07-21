@@ -7,34 +7,38 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted to define mocks referenced in vi.mock factories
-const { mockStorageExists, mockStorageGet, mockJobAddJob, mockDocument } = vi.hoisted(() => ({
-  mockStorageExists: vi.fn().mockResolvedValue(true),
-  mockStorageGet: vi.fn().mockResolvedValue(Buffer.alloc(5000)),
-  mockJobAddJob: vi.fn().mockResolvedValue('job-1'),
-  mockDocument: {
-    id: 'doc-1',
-    name: 'report.docx',
-    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    currentVersionId: 'ver-1',
-    versions: [
-      {
-        id: 'ver-1',
-        scanStatus: 'CLEAN',
-        fileBlob: {
-          storageKey: 'documents/org-1/report.docx',
-          storageBucket: 'documents',
-        },
-        previewAssets: [
-          {
-            id: 'thumb-1',
-            assetType: 'THUMBNAIL',
-            storageKey: 'thumbnails/doc-1/ver-1.png',
+const { mockStorageExists, mockStorageGet, mockJobAddJob, mockDocument, extraVersions } =
+  vi.hoisted(() => ({
+    mockStorageExists: vi.fn().mockResolvedValue(true),
+    mockStorageGet: vi.fn().mockResolvedValue(Buffer.alloc(5000)),
+    mockJobAddJob: vi.fn().mockResolvedValue('job-1'),
+    // Additional stored versions (besides mockDocument.versions[0]); tests push
+    // a second version here to exercise current-vs-highest selection.
+    extraVersions: [] as Array<{ id: string; scanStatus: string; previewAssets: unknown[] }>,
+    mockDocument: {
+      id: 'doc-1',
+      name: 'report.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      currentVersionId: 'ver-1',
+      versions: [
+        {
+          id: 'ver-1',
+          scanStatus: 'CLEAN',
+          fileBlob: {
+            storageKey: 'documents/org-1/report.docx',
+            storageBucket: 'documents',
           },
-        ],
-      },
-    ],
-  },
-}));
+          previewAssets: [
+            {
+              id: 'thumb-1',
+              assetType: 'THUMBNAIL',
+              storageKey: 'thumbnails/doc-1/ver-1.png',
+            },
+          ],
+        },
+      ],
+    },
+  }));
 
 // Mock sharp
 vi.mock('sharp', () => ({
@@ -82,9 +86,24 @@ vi.mock('@/lib/db', () => ({
           findFirst: vi.fn().mockResolvedValue(mockDocument),
         },
         documentVersion: {
-          // Route now resolves the current version by id; return the fixture's
-          // current version (mutated per-test via mockDocument.versions[0]).
-          findFirst: vi.fn().mockImplementation(() => Promise.resolve(mockDocument.versions[0])),
+          // Behave like the scoped DB lookup: only resolve a version when id,
+          // documentId AND organizationId all match. Tests fail if the route
+          // drops a scoping predicate or stops resolving currentVersionId.
+          findFirst: vi
+            .fn()
+            .mockImplementation(
+              (args: { where?: { id?: string; documentId?: string; organizationId?: string } }) => {
+                const w = args?.where ?? {};
+                if (w.documentId !== 'doc-1' || w.organizationId !== 'org-1') {
+                  return Promise.resolve(null);
+                }
+                const all = [mockDocument.versions[0], ...extraVersions];
+                if (w.id) {
+                  return Promise.resolve(all.find((v) => v?.id === w.id) ?? null);
+                }
+                return Promise.resolve(null);
+              }
+            ),
         },
       };
       return fn(mockTx);
@@ -117,6 +136,8 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
     // Shared mutable fixture: reset the scan status to servable before each test
     // so a gate test's INFECTED override can't leak into the next test.
     mockDocument.versions[0]!.scanStatus = 'CLEAN';
+    mockDocument.currentVersionId = 'ver-1';
+    extraVersions.length = 0;
   });
 
   it('serves stored thumbnail with correct headers', async () => {
@@ -255,6 +276,43 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get('Cache-Control')).toBe('private, max-age=86400, immutable');
+    });
+  });
+
+  // Teeth against reverting to "highest version" selection: with a newer clean
+  // version present, the grid must thumbnail the CURRENT (older) version.
+  describe('current version', () => {
+    beforeEach(() => {
+      // A newer, CLEAN version 2 with its own stored thumbnail.
+      extraVersions.push({
+        id: 'ver-2',
+        scanStatus: 'CLEAN',
+        previewAssets: [
+          { id: 'thumb-2', assetType: 'THUMBNAIL', storageKey: 'thumbnails/doc-1/ver-2.png' },
+        ],
+      });
+    });
+
+    it('reads the CURRENT version thumbnail (ver-1), never the newer ver-2', async () => {
+      mockDocument.currentVersionId = 'ver-1'; // rolled back to older version
+
+      const response = await GET(createRequest(), createContext());
+
+      expect(response.status).toBe(200);
+      expect(mockStorageGet).toHaveBeenCalledWith('previews', 'thumbnails/doc-1/ver-1.png');
+      expect(mockStorageGet).not.toHaveBeenCalledWith('previews', 'thumbnails/doc-1/ver-2.png');
+    });
+
+    it('serves a placeholder (no stored-thumbnail read, no job) when the CURRENT version is INFECTED, even though ver-2 is clean', async () => {
+      mockDocument.versions[0]!.scanStatus = 'INFECTED'; // ver-1 (current) is infected
+      mockDocument.currentVersionId = 'ver-1';
+
+      const response = await GET(createRequest(), createContext());
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Cache-Control')).toBe('private, max-age=30');
+      expect(mockStorageGet).not.toHaveBeenCalled();
+      expect(mockJobAddJob).not.toHaveBeenCalled();
     });
   });
 });
