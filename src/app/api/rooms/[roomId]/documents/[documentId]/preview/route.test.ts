@@ -64,12 +64,13 @@ function makeDocument(mimeType: string) {
   };
 }
 
-function makeVersion(mimeType: string, previewAssets: unknown[] = []) {
+function makeVersion(mimeType: string, previewAssets: unknown[] = [], scanStatus = 'CLEAN') {
   return {
     versionNumber: 1,
     mimeType,
     fileBlob,
     previewAssets,
+    scanStatus,
   };
 }
 
@@ -217,6 +218,36 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
           incrementViewCount: true,
         })
       );
+    });
+  });
+
+  // Scan gate: an INFECTED / still-scanning original must never have a preview
+  // served, even when the selected version and its blob exist.
+  describe('scan gate', () => {
+    it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
+      'returns 403 and serves nothing for a %s version',
+      async (scanStatus) => {
+        mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
+        mockTx.documentVersion.findFirst.mockResolvedValue(
+          makeVersion('application/pdf', [], scanStatus)
+        );
+
+        const res = await GET(makeRequest(), makeContext());
+
+        expect(res.status).toBe(403);
+        expect(mockStorage.get).not.toHaveBeenCalled();
+      }
+    );
+
+    it('serves a SKIPPED (allowed-but-unscanned) version', async () => {
+      mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
+      mockTx.documentVersion.findFirst.mockResolvedValue(
+        makeVersion('application/pdf', [], 'SKIPPED')
+      );
+
+      const res = await GET(makeRequest(), makeContext());
+
+      expect(res.status).toBe(200);
     });
   });
 });

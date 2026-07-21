@@ -108,9 +108,21 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
   // Idempotency: if this version already has a terminal scan result (a BullMQ
   // redelivery, or a duplicate job), do nothing. ERROR/PENDING are re-processable.
   const existing = await withOrgContext(organizationId, (tx) =>
-    tx.documentVersion.findFirst({ where: { id: versionId }, select: { scanStatus: true } })
+    tx.documentVersion.findFirst({
+      where: { id: versionId, organizationId },
+      select: { scanStatus: true },
+    })
   );
-  if (existing && ['CLEAN', 'INFECTED', 'SKIPPED'].includes(existing.scanStatus)) {
+  // Fail closed: a scan job for a version that does not exist in this org must
+  // not proceed to read and "scan" the payload's storage key (queue payloads are
+  // not authorization for reading arbitrary blobs).
+  if (!existing) {
+    console.warn(
+      `[ScanProcessor] Version ${versionId} not found for org ${organizationId}; skipping scan`
+    );
+    return;
+  }
+  if (['CLEAN', 'INFECTED', 'SKIPPED'].includes(existing.scanStatus)) {
     console.log(
       `[ScanProcessor] Version ${versionId} already ${existing.scanStatus}; skipping re-scan`
     );

@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 import { hasCapability, createCapabilityUnavailableResponse } from '@/lib/deployment-capabilities';
 
@@ -69,10 +70,12 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         },
       });
 
-      // All documents with file blobs need regeneration (force mode)
+      // All documents with file blobs need regeneration (force mode) -- but
+      // never re-run the preview pipeline on an INFECTED / still-scanning
+      // original.
       const needsPreview = documents.filter((doc) => {
         const version = doc.versions[0];
-        return version && version.fileBlob;
+        return version && version.fileBlob && isServable(version.scanStatus);
       });
 
       // Delete existing preview assets so the pipeline recreates them

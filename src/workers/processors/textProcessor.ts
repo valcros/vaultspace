@@ -9,27 +9,50 @@ import { Job } from 'bullmq';
 import { PDFParse } from 'pdf-parse';
 
 import { withOrgContext } from '@/lib/db';
+import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 
 import type { SearchIndexJobPayload, TextExtractJobPayload } from '../types';
 
 export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Promise<void> {
-  const {
-    documentId,
-    versionId,
-    organizationId,
-    storageKey,
-    contentType,
-    fileName: _fileName,
-  } = job.data;
+  const { documentId, versionId, organizationId, contentType, fileName: _fileName } = job.data;
 
   console.log(`[TextProcessor] Extracting text for document ${documentId}, version ${versionId}`);
 
   const providers = getProviders();
 
+  // Worker-side scan gate: never extract/index an INFECTED / still-scanning
+  // original -- indexed text surfaces as search snippets. Queue payloads are not
+  // authorization, so re-check the version's persisted scan status here, and read
+  // the authoritative blob key from the same row so the bytes we extract are
+  // provably the ones whose scan status we just validated.
+  const versionScan = await withOrgContext(organizationId, (tx) =>
+    tx.documentVersion.findFirst({
+      where: { id: versionId, organizationId },
+      select: {
+        scanStatus: true,
+        fileBlob: { select: { storageKey: true, storageBucket: true } },
+      },
+    })
+  );
+  if (!versionScan || !isServable(versionScan.scanStatus)) {
+    console.warn(
+      `[TextProcessor] Version ${versionId} not servable (scanStatus=${versionScan?.scanStatus ?? 'missing'}); skipping text extraction`
+    );
+    return;
+  }
+  if (!versionScan.fileBlob?.storageKey) {
+    console.warn(`[TextProcessor] Version ${versionId} has no file blob; skipping text extraction`);
+    return;
+  }
+
   try {
-    // Get file from storage (documents bucket stores original uploads)
-    const fileBuffer = await providers.storage.get('documents', storageKey);
+    // Get the original bytes using the DB-authoritative blob key (bound to the
+    // scanStatus validated above), not the queue payload's storageKey.
+    const fileBuffer = await providers.storage.get(
+      versionScan.fileBlob.storageBucket || 'documents',
+      versionScan.fileBlob.storageKey
+    );
 
     let extractedText = '';
     let detectedLanguage: string | null = null;
@@ -142,12 +165,26 @@ export async function processSearchIndexJob(job: Job<SearchIndexJobPayload>): Pr
   const providers = getProviders();
 
   try {
-    await withOrgContext(organizationId, async (tx) => {
-      // Get document version for additional metadata
-      const version = await tx.documentVersion.findUnique({
-        where: { id: versionId },
-        select: { mimeType: true, createdAt: true },
+    const indexed = await withOrgContext(organizationId, async (tx) => {
+      // Get document version for additional metadata + scan status.
+      const version = await tx.documentVersion.findFirst({
+        where: { id: versionId, organizationId },
+        select: { mimeType: true, createdAt: true, scanStatus: true },
       });
+
+      // Worker-side scan gate: never index (or keep) search text for a
+      // non-servable version -- indexed text surfaces as search snippets. This
+      // catches stale/redelivered/tampered jobs that textProcessor's gate did
+      // not (queue payloads are not authorization).
+      if (!version || !isServable(version.scanStatus)) {
+        console.warn(
+          `[TextProcessor] Version ${versionId} not servable (scanStatus=${version?.scanStatus ?? 'missing'}); skipping search index and purging any existing row`
+        );
+        // Best-effort: remove any previously-indexed row for this version so a
+        // version that turned non-servable cannot linger in search results.
+        await tx.searchIndex.deleteMany({ where: { organizationId, versionId } });
+        return false;
+      }
 
       // Get document for tags
       const document = await tx.document.findFirst({
@@ -185,7 +222,12 @@ export async function processSearchIndexJob(job: Job<SearchIndexJobPayload>): Pr
           customMetadata: document?.customMetadata ?? undefined,
         },
       });
+      return true;
     });
+
+    if (!indexed) {
+      return;
+    }
 
     // Also index in external search provider (if configured)
     await providers.search.index(organizationId, documentId, versionId, {
