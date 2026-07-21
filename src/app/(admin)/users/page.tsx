@@ -11,6 +11,7 @@ import {
   UserPlus,
   Link2,
   Pencil,
+  KeyRound,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ import {
   AdminToolbar,
 } from '@/components/layout/admin-page';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 interface User {
   id: string;
@@ -86,6 +88,7 @@ interface ViewerLinkInvite {
 
 export default function UsersPage() {
   useRequireAdmin();
+  const { toast } = useToast();
   const [users, setUsers] = React.useState<User[]>([]);
   const [pendingInvites, setPendingInvites] = React.useState<PendingInvite[]>([]);
   const [viewerLinkInvites, setViewerLinkInvites] = React.useState<ViewerLinkInvite[]>([]);
@@ -502,6 +505,45 @@ export default function UsersPage() {
                             >
                               <Shield className="mr-2 h-4 w-4" />
                               Change to {user.role === 'ADMIN' ? 'Viewer' : 'Admin'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setConfirmAction({
+                                  title: 'Reset Password',
+                                  description: `Send a password reset email to ${user.email}? They set a new password themselves; you never see it.`,
+                                  onConfirm: async () => {
+                                    try {
+                                      const res = await fetch(
+                                        `/api/users/${user.id}/reset-password`,
+                                        { method: 'POST', credentials: 'include' }
+                                      );
+                                      if (res.ok) {
+                                        toast({
+                                          title: 'Password reset sent',
+                                          description: `A reset email was sent to ${user.email}.`,
+                                        });
+                                      } else {
+                                        const data = await res.json().catch(() => ({}));
+                                        toast({
+                                          title: 'Could not send reset',
+                                          description: data.error || 'Please try again.',
+                                          variant: 'destructive',
+                                        });
+                                      }
+                                    } catch (err) {
+                                      console.error('Failed to send password reset:', err);
+                                      toast({
+                                        title: 'Could not send reset',
+                                        description: 'Please try again.',
+                                        variant: 'destructive',
+                                      });
+                                    }
+                                  },
+                                });
+                              }}
+                            >
+                              <KeyRound className="mr-2 h-4 w-4" />
+                              Reset Password
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
