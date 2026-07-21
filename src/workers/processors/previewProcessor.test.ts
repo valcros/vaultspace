@@ -8,9 +8,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock db
 const mockVersionUpdate = vi.fn().mockResolvedValue({});
-// Worker-side scan gate looks the version's scan status up before doing any work;
-// default to a servable (CLEAN) version so existing happy-path tests still run.
-const mockVersionFindFirst = vi.fn().mockResolvedValue({ scanStatus: 'CLEAN' });
+// Worker-side scan gate looks the version's scan status + blob up before doing
+// any work; default to a servable (CLEAN) version with a blob so existing
+// happy-path tests still run.
+const CLEAN_VERSION_ROW = {
+  scanStatus: 'CLEAN',
+  fileBlob: { storageKey: 'documents/org-1/file.docx', storageBucket: 'documents' },
+};
+const mockVersionFindFirst = vi.fn().mockResolvedValue(CLEAN_VERSION_ROW);
 const mockDocumentUpdate = vi.fn().mockResolvedValue({});
 const mockPreviewAssetCreate = vi.fn().mockResolvedValue({ id: 'asset-1' });
 const mockPreviewAssetUpsert = vi.fn().mockResolvedValue({ id: 'thumb-1' });
@@ -104,7 +109,7 @@ describe('processPreviewJob', () => {
     vi.clearAllMocks();
     mockStorageGet.mockResolvedValue(Buffer.from('file-content'));
     mockGenerateThumbnailPng.mockResolvedValue(Buffer.from('thumbnail-png'));
-    mockVersionFindFirst.mockResolvedValue({ scanStatus: 'CLEAN' });
+    mockVersionFindFirst.mockResolvedValue(CLEAN_VERSION_ROW);
   });
 
   // Worker-side scan gate: a preview must never be generated from a non-servable
@@ -135,7 +140,10 @@ describe('processPreviewJob', () => {
   });
 
   it('proceeds for a SKIPPED (allowed-but-unscanned) version', async () => {
-    mockVersionFindFirst.mockResolvedValue({ scanStatus: 'SKIPPED' });
+    mockVersionFindFirst.mockResolvedValue({
+      scanStatus: 'SKIPPED',
+      fileBlob: { storageKey: 'documents/org-1/file.docx', storageBucket: 'documents' },
+    });
 
     await processPreviewJob(createMockJob());
 
@@ -252,7 +260,7 @@ describe('processThumbnailJob (deprecated)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStorageGet.mockResolvedValue(Buffer.from('preview-image-data'));
-    mockVersionFindFirst.mockResolvedValue({ scanStatus: 'CLEAN' });
+    mockVersionFindFirst.mockResolvedValue(CLEAN_VERSION_ROW);
   });
 
   it('skips thumbnail generation when the version is INFECTED (not servable)', async () => {

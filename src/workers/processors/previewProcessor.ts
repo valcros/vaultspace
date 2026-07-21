@@ -17,7 +17,7 @@ import type { PreviewGenerateJobPayload, ThumbnailGenerateJobPayload } from '../
 const THUMBNAIL_SIZE_LIMIT = 25 * 1024 * 1024;
 
 export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Promise<void> {
-  const { documentId, versionId, organizationId, storageKey, contentType, fileName } = job.data;
+  const { documentId, versionId, organizationId, contentType, fileName } = job.data;
 
   console.log(
     `[PreviewProcessor] Generating preview for document ${documentId}, version ${versionId}`
@@ -27,9 +27,18 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
 
   // Worker-side scan gate: never feed an INFECTED / still-scanning original into
   // the converter, even for a stale or redelivered job. Queue payloads are not
-  // authorization -- re-check the version's persisted scan status here.
+  // authorization -- re-check the version's persisted scan status here, and read
+  // the authoritative blob key from the same row so the bytes we process are
+  // provably the ones whose scan status we just validated (not a mismatched key
+  // smuggled in via the payload).
   const versionScan = await withOrgContext(organizationId, (tx) =>
-    tx.documentVersion.findFirst({ where: { id: versionId }, select: { scanStatus: true } })
+    tx.documentVersion.findFirst({
+      where: { id: versionId },
+      select: {
+        scanStatus: true,
+        fileBlob: { select: { storageKey: true, storageBucket: true } },
+      },
+    })
   );
   if (!versionScan) {
     console.warn(`[PreviewProcessor] Version ${versionId} not found; skipping preview generation`);
@@ -41,6 +50,12 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
     );
     return;
   }
+  if (!versionScan.fileBlob?.storageKey) {
+    console.warn(`[PreviewProcessor] Version ${versionId} has no file blob; skipping preview`);
+    return;
+  }
+  const originalBucket = versionScan.fileBlob.storageBucket || 'documents';
+  const originalKey = versionScan.fileBlob.storageKey;
 
   // Update status to processing
   await withOrgContext(organizationId, async (tx) => {
@@ -72,8 +87,9 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
   }
 
   try {
-    // Get file from storage (documents bucket stores original uploads)
-    const fileBuffer = await providers.storage.get('documents', storageKey);
+    // Get the original bytes using the DB-authoritative blob key (bound to the
+    // scanStatus validated above), not the queue payload's storageKey.
+    const fileBuffer = await providers.storage.get(originalBucket, originalKey);
 
     // Convert to preview format (PNG for page renders)
     const previewResult = await providers.preview.convert(fileBuffer, contentType, {
@@ -242,12 +258,13 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
       );
     }
 
-    // Queue text extraction using the original document
+    // Queue text extraction using the original document. Forward the DB-
+    // authoritative blob key (textProcessor re-validates independently too).
     await providers.job.addJob('high', 'text.extract', {
       documentId,
       versionId,
       organizationId,
-      storageKey,
+      storageKey: originalKey,
       contentType,
       fileName,
       pageCount: previewResult.totalPages,

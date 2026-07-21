@@ -12,7 +12,11 @@ const mockDocumentFindFirst = vi.fn();
 const mockDocumentVersionFindUnique = vi.fn();
 // Worker-side scan gate reads the version's scan status before extracting;
 // default to a servable (CLEAN) version so existing tests still index text.
-const mockDocumentVersionFindFirst = vi.fn().mockResolvedValue({ scanStatus: 'CLEAN' });
+const SERVABLE_VERSION_ROW = {
+  scanStatus: 'CLEAN',
+  fileBlob: { storageKey: 'documents/org-1/file.pdf', storageBucket: 'documents' },
+};
+const mockDocumentVersionFindFirst = vi.fn().mockResolvedValue(SERVABLE_VERSION_ROW);
 const mockSearchIndexUpsert = vi.fn().mockResolvedValue({});
 
 vi.mock('@/lib/db', () => {
@@ -94,7 +98,7 @@ function makeIndexJob(overrides: Record<string, unknown> = {}) {
 // per-describe `vi.clearAllMocks()` (which preserves implementations) can't let
 // a non-servable status set by one test leak into the next.
 beforeEach(() => {
-  mockDocumentVersionFindFirst.mockResolvedValue({ scanStatus: 'CLEAN' });
+  mockDocumentVersionFindFirst.mockResolvedValue(SERVABLE_VERSION_ROW);
 });
 
 // Worker-side scan gate: never extract/index a non-servable original -- indexed
@@ -103,7 +107,7 @@ describe('processTextExtractJob — scan gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStorageGet.mockResolvedValue(Buffer.from('plain text content'));
-    mockDocumentVersionFindFirst.mockResolvedValue({ scanStatus: 'CLEAN' });
+    mockDocumentVersionFindFirst.mockResolvedValue(SERVABLE_VERSION_ROW);
   });
 
   it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
@@ -129,7 +133,10 @@ describe('processTextExtractJob — scan gate', () => {
   });
 
   it('proceeds for a SKIPPED (allowed-but-unscanned) version', async () => {
-    mockDocumentVersionFindFirst.mockResolvedValue({ scanStatus: 'SKIPPED' });
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      scanStatus: 'SKIPPED',
+      fileBlob: { storageKey: 'documents/org-1/file.pdf', storageBucket: 'documents' },
+    });
     mockDocumentFindFirst.mockResolvedValue({ roomId: 'room-1', name: 'report.txt' });
 
     await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));

@@ -15,14 +15,7 @@ import { getProviders } from '@/providers';
 import type { SearchIndexJobPayload, TextExtractJobPayload } from '../types';
 
 export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Promise<void> {
-  const {
-    documentId,
-    versionId,
-    organizationId,
-    storageKey,
-    contentType,
-    fileName: _fileName,
-  } = job.data;
+  const { documentId, versionId, organizationId, contentType, fileName: _fileName } = job.data;
 
   console.log(`[TextProcessor] Extracting text for document ${documentId}, version ${versionId}`);
 
@@ -30,9 +23,17 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
 
   // Worker-side scan gate: never extract/index an INFECTED / still-scanning
   // original -- indexed text surfaces as search snippets. Queue payloads are not
-  // authorization, so re-check the version's persisted scan status here.
+  // authorization, so re-check the version's persisted scan status here, and read
+  // the authoritative blob key from the same row so the bytes we extract are
+  // provably the ones whose scan status we just validated.
   const versionScan = await withOrgContext(organizationId, (tx) =>
-    tx.documentVersion.findFirst({ where: { id: versionId }, select: { scanStatus: true } })
+    tx.documentVersion.findFirst({
+      where: { id: versionId },
+      select: {
+        scanStatus: true,
+        fileBlob: { select: { storageKey: true, storageBucket: true } },
+      },
+    })
   );
   if (!versionScan || !isServable(versionScan.scanStatus)) {
     console.warn(
@@ -40,10 +41,18 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
     );
     return;
   }
+  if (!versionScan.fileBlob?.storageKey) {
+    console.warn(`[TextProcessor] Version ${versionId} has no file blob; skipping text extraction`);
+    return;
+  }
 
   try {
-    // Get file from storage (documents bucket stores original uploads)
-    const fileBuffer = await providers.storage.get('documents', storageKey);
+    // Get the original bytes using the DB-authoritative blob key (bound to the
+    // scanStatus validated above), not the queue payload's storageKey.
+    const fileBuffer = await providers.storage.get(
+      versionScan.fileBlob.storageBucket || 'documents',
+      versionScan.fileBlob.storageKey
+    );
 
     let extractedText = '';
     let detectedLanguage: string | null = null;
