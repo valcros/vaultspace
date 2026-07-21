@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { withOrgContext } from '@/lib/db';
-import { SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
+import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import {
   getViewerSession,
   requireViewerSession,
@@ -81,27 +81,57 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return { error: 'Document not found', status: 404 };
       }
 
-      // Resolve the target version: caller-specified historical or latest.
-      // Only servable (CLEAN / SKIPPED) versions are eligible -- never preview an
-      // INFECTED / still-scanning original.
-      const targetVersionWhere = {
-        ...(versionId ? { id: versionId } : {}),
-        documentId,
-        organizationId: viewerSession.organizationId,
-        ...SERVABLE_SCAN_STATUS_FILTER,
+      // Resolve the version to preview. Only servable (CLEAN / SKIPPED) versions
+      // are ever previewed; an INFECTED / still-scanning version is never
+      // previewed, and the response is identical (404) whether it is scanning or
+      // blocked -- viewers are not told which.
+      const versionSelect = {
+        id: true,
+        scanStatus: true,
+        previewAssets: {
+          where: { assetType: 'RENDER' as const, pageNumber: page },
+          select: { storageKey: true, mimeType: true },
+        },
       };
 
-      const version = await tx.documentVersion.findFirst({
-        where: targetVersionWhere,
-        orderBy: versionId ? undefined : { versionNumber: 'desc' },
-        select: {
-          id: true,
-          previewAssets: {
-            where: { assetType: 'RENDER', pageNumber: page },
-            select: { storageKey: true, mimeType: true },
+      let version;
+      if (versionId) {
+        // Explicit historical version (already gated on room feature above):
+        // load that exact version, servable only.
+        version = await tx.documentVersion.findFirst({
+          where: {
+            id: versionId,
+            documentId,
+            organizationId: viewerSession.organizationId,
+            ...SERVABLE_SCAN_STATUS_FILTER,
           },
-        },
-      });
+          select: versionSelect,
+        });
+      } else if (document.currentVersionId) {
+        // Default: preview the CURRENT version exactly (follows rollback; never
+        // silently downgrades to an older version when the current one is not
+        // servable).
+        const current = await tx.documentVersion.findFirst({
+          where: {
+            id: document.currentVersionId,
+            documentId,
+            organizationId: viewerSession.organizationId,
+          },
+          select: versionSelect,
+        });
+        version = current && isServable(current.scanStatus) ? current : null;
+      } else {
+        // Legacy documents without a current pointer: highest servable version.
+        version = await tx.documentVersion.findFirst({
+          where: {
+            documentId,
+            organizationId: viewerSession.organizationId,
+            ...SERVABLE_SCAN_STATUS_FILTER,
+          },
+          orderBy: { versionNumber: 'desc' },
+          select: versionSelect,
+        });
+      }
 
       if (!version) {
         return { error: 'Document version not found', status: 404 };
