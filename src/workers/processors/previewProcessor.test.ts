@@ -150,6 +150,35 @@ describe('processPreviewJob', () => {
     expect(mockConvert).toHaveBeenCalled();
   });
 
+  it('reads the DB-authoritative blob key, not the queue payload storageKey', async () => {
+    // The gate validated scanStatus for THIS version's blob; the bytes fetched
+    // must be that blob, never a mismatched key smuggled in via the payload.
+    mockVersionFindFirst.mockResolvedValue({
+      scanStatus: 'CLEAN',
+      fileBlob: { storageKey: 'documents/org-1/DB-AUTHORITATIVE.docx', storageBucket: 'documents' },
+    });
+
+    await processPreviewJob(createMockJob({ storageKey: 'documents/org-1/PAYLOAD-SMUGGLED.docx' }));
+
+    expect(mockStorageGet).toHaveBeenCalledWith(
+      'documents',
+      'documents/org-1/DB-AUTHORITATIVE.docx'
+    );
+    expect(mockStorageGet).not.toHaveBeenCalledWith(
+      'documents',
+      'documents/org-1/PAYLOAD-SMUGGLED.docx'
+    );
+  });
+
+  it('skips generation when the servable version has no file blob', async () => {
+    mockVersionFindFirst.mockResolvedValue({ scanStatus: 'CLEAN', fileBlob: null });
+
+    await processPreviewJob(createMockJob());
+
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockConvert).not.toHaveBeenCalled();
+  });
+
   it('generates thumbnail from original file bytes, not preview output', async () => {
     const fileContent = Buffer.from('original-file-bytes');
     mockStorageGet.mockResolvedValue(fileContent);

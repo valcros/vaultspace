@@ -28,7 +28,7 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
   // provably the ones whose scan status we just validated.
   const versionScan = await withOrgContext(organizationId, (tx) =>
     tx.documentVersion.findFirst({
-      where: { id: versionId },
+      where: { id: versionId, organizationId },
       select: {
         scanStatus: true,
         fileBlob: { select: { storageKey: true, storageBucket: true } },
@@ -165,12 +165,26 @@ export async function processSearchIndexJob(job: Job<SearchIndexJobPayload>): Pr
   const providers = getProviders();
 
   try {
-    await withOrgContext(organizationId, async (tx) => {
-      // Get document version for additional metadata
-      const version = await tx.documentVersion.findUnique({
-        where: { id: versionId },
-        select: { mimeType: true, createdAt: true },
+    const indexed = await withOrgContext(organizationId, async (tx) => {
+      // Get document version for additional metadata + scan status.
+      const version = await tx.documentVersion.findFirst({
+        where: { id: versionId, organizationId },
+        select: { mimeType: true, createdAt: true, scanStatus: true },
       });
+
+      // Worker-side scan gate: never index (or keep) search text for a
+      // non-servable version -- indexed text surfaces as search snippets. This
+      // catches stale/redelivered/tampered jobs that textProcessor's gate did
+      // not (queue payloads are not authorization).
+      if (!version || !isServable(version.scanStatus)) {
+        console.warn(
+          `[TextProcessor] Version ${versionId} not servable (scanStatus=${version?.scanStatus ?? 'missing'}); skipping search index and purging any existing row`
+        );
+        // Best-effort: remove any previously-indexed row for this version so a
+        // version that turned non-servable cannot linger in search results.
+        await tx.searchIndex.deleteMany({ where: { organizationId, versionId } });
+        return false;
+      }
 
       // Get document for tags
       const document = await tx.document.findFirst({
@@ -208,7 +222,12 @@ export async function processSearchIndexJob(job: Job<SearchIndexJobPayload>): Pr
           customMetadata: document?.customMetadata ?? undefined,
         },
       });
+      return true;
     });
+
+    if (!indexed) {
+      return;
+    }
 
     // Also index in external search provider (if configured)
     await providers.search.index(organizationId, documentId, versionId, {

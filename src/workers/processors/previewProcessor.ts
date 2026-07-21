@@ -33,7 +33,7 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
   // smuggled in via the payload).
   const versionScan = await withOrgContext(organizationId, (tx) =>
     tx.documentVersion.findFirst({
-      where: { id: versionId },
+      where: { id: versionId, organizationId },
       select: {
         scanStatus: true,
         fileBlob: { select: { storageKey: true, storageBucket: true } },
@@ -304,7 +304,10 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
   // preview that only exists for servable versions, but re-verify here so a
   // stale/redelivered job can never resurface an INFECTED version's imagery.
   const versionScan = await withOrgContext(organizationId, (tx) =>
-    tx.documentVersion.findFirst({ where: { id: versionId }, select: { scanStatus: true } })
+    tx.documentVersion.findFirst({
+      where: { id: versionId, organizationId },
+      select: { scanStatus: true },
+    })
   );
   if (!versionScan || !isServable(versionScan.scanStatus)) {
     console.warn(

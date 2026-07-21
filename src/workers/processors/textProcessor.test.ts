@@ -18,6 +18,7 @@ const SERVABLE_VERSION_ROW = {
 };
 const mockDocumentVersionFindFirst = vi.fn().mockResolvedValue(SERVABLE_VERSION_ROW);
 const mockSearchIndexUpsert = vi.fn().mockResolvedValue({});
+const mockSearchIndexDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
 
 vi.mock('@/lib/db', () => {
   const mockDb = {
@@ -27,7 +28,10 @@ vi.mock('@/lib/db', () => {
       findUnique: (...args: unknown[]) => mockDocumentVersionFindUnique(...args),
       findFirst: (...args: unknown[]) => mockDocumentVersionFindFirst(...args),
     },
-    searchIndex: { upsert: (...args: unknown[]) => mockSearchIndexUpsert(...args) },
+    searchIndex: {
+      upsert: (...args: unknown[]) => mockSearchIndexUpsert(...args),
+      deleteMany: (...args: unknown[]) => mockSearchIndexDeleteMany(...args),
+    },
   };
 
   return {
@@ -341,7 +345,8 @@ describe('processTextExtractJob — extraction error does not throw', () => {
 describe('processSearchIndexJob — happy path', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDocumentVersionFindUnique.mockResolvedValue({
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      scanStatus: 'CLEAN',
       mimeType: 'application/pdf',
       createdAt: new Date('2024-01-01'),
     });
@@ -391,10 +396,51 @@ describe('processSearchIndexJob — happy path', () => {
 describe('processSearchIndexJob — error does not throw', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDocumentVersionFindUnique.mockRejectedValue(new Error('DB error'));
+    mockDocumentVersionFindFirst.mockRejectedValue(new Error('DB error'));
   });
 
   it('does not re-throw to avoid blocking document processing', async () => {
     await expect(processSearchIndexJob(makeIndexJob())).resolves.not.toThrow();
+  });
+});
+
+// Downstream worker-side scan gate: a stale/redelivered/tampered search.index
+// job must not index (and must purge) text for a non-servable version.
+describe('processSearchIndexJob — scan gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDocumentFindFirst.mockResolvedValue({ tags: [], customMetadata: null });
+    mockSearchIndexUpsert.mockResolvedValue({});
+    mockSearchIndexDeleteMany.mockResolvedValue({ count: 1 });
+    mockSearchIndex.mockResolvedValue(undefined);
+  });
+
+  it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
+    'does not index and purges any existing row when the version is %s',
+    async (scanStatus) => {
+      mockDocumentVersionFindFirst.mockResolvedValue({
+        scanStatus,
+        mimeType: 'application/pdf',
+        createdAt: new Date('2024-01-01'),
+      });
+
+      await processSearchIndexJob(makeIndexJob());
+
+      expect(mockSearchIndexUpsert).not.toHaveBeenCalled();
+      expect(mockSearchIndex).not.toHaveBeenCalled(); // external provider
+      expect(mockSearchIndexDeleteMany).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1', versionId: 'ver-1' },
+      });
+    }
+  );
+
+  it('does not index when the version no longer exists (and purges)', async () => {
+    mockDocumentVersionFindFirst.mockResolvedValue(null);
+
+    await processSearchIndexJob(makeIndexJob());
+
+    expect(mockSearchIndexUpsert).not.toHaveBeenCalled();
+    expect(mockSearchIndex).not.toHaveBeenCalled();
+    expect(mockSearchIndexDeleteMany).toHaveBeenCalled();
   });
 });
