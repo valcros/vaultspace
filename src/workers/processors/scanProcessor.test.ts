@@ -9,12 +9,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock db
 const mockVersionUpdate = vi.fn().mockResolvedValue({});
+// Terminal-state idempotency guard reads the current scanStatus; default to a
+// re-processable state so the normal paths run.
+const mockVersionFindFirst = vi.fn().mockResolvedValue({ scanStatus: 'PENDING' });
 const mockDocumentFindFirst = vi.fn().mockResolvedValue({ roomId: 'room-1' });
 const mockUserOrgFindMany = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/db', () => {
   const mockDb = {
-    documentVersion: { update: (...args: unknown[]) => mockVersionUpdate(...args) },
+    documentVersion: {
+      update: (...args: unknown[]) => mockVersionUpdate(...args),
+      findFirst: (...args: unknown[]) => mockVersionFindFirst(...args),
+    },
     document: { findFirst: (...args: unknown[]) => mockDocumentFindFirst(...args) },
     userOrganization: { findMany: (...args: unknown[]) => mockUserOrgFindMany(...args) },
   };
@@ -306,6 +312,23 @@ describe('processScanJob — INFECTED path', () => {
     await expect(processScanJob(createMockJob())).resolves.not.toThrow();
     expect(mockEmailSendEmail).toHaveBeenCalledTimes(2);
   });
+});
+
+describe('processScanJob — idempotency (redelivery)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockScanIsAvailable.mockResolvedValue(true);
+  });
+
+  it.each(['CLEAN', 'INFECTED', 'SKIPPED'])(
+    'does not re-scan a version already in terminal state %s',
+    async (status) => {
+      mockVersionFindFirst.mockResolvedValueOnce({ scanStatus: status });
+      await processScanJob(createMockJob());
+      expect(mockScanScan).not.toHaveBeenCalled();
+      expect(mockVersionUpdate).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('processScanJob — SKIPPED path (too large to scan)', () => {

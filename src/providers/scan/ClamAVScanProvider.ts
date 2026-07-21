@@ -131,34 +131,41 @@ export class ClamAVScanProvider implements ScanProvider {
   }
 
   private parseResponse(response: string, scanDuration: number): ScanResult {
-    // Response format: "stream: OK" or "stream: <virus_name> FOUND"
-    if (response.includes('OK')) {
+    const normalized = response.trim();
+
+    // A detected threat MUST take precedence and must never be misread as clean
+    // (e.g. a substring "OK" inside a signature name). clamd's INSTREAM threat
+    // response is exactly: "stream: <signature> FOUND".
+    const threatMatch = normalized.match(/^stream:\s+(.+)\s+FOUND$/);
+    if (threatMatch?.[1]) {
+      return {
+        clean: false,
+        threats: [threatMatch[1]],
+        scanDuration,
+      };
+    }
+
+    // Clean is ONLY an exact "stream: OK".
+    if (normalized === 'stream: OK') {
       return {
         clean: true,
         scanDuration,
       };
     }
 
-    // clamd rejects streams larger than its StreamMaxLength with a size-limit
-    // error. That is NOT a threat -- allow the file through, flagged as unscanned.
-    if (/size limit/i.test(response)) {
+    // clamd rejects streams over its StreamMaxLength with this exact error. That
+    // is NOT a threat -- allow the file through, flagged as unscanned.
+    if (/INSTREAM size limit exceeded/i.test(normalized)) {
       return {
         clean: true,
         skipped: true,
-        skipReason: `Scanner could not scan the file (too large): ${response.trim()}; allowed but not virus-scanned`,
+        skipReason: `Scanner could not scan the file (too large): ${normalized}; allowed but not virus-scanned`,
         scanDuration,
       };
     }
 
-    // Extract threat name(s)
-    const threatMatch = response.match(/stream: (.+) FOUND/);
-    const threatName = threatMatch?.[1];
-    const threats: string[] = threatName ? [threatName] : ['Unknown threat detected'];
-
-    return {
-      clean: false,
-      threats,
-      scanDuration,
-    };
+    // Anything else is an unexpected/malformed response. Fail as a scan error
+    // (retryable) rather than guessing clean/skipped from a substring.
+    throw new Error(`Unexpected ClamAV response: ${normalized}`);
   }
 }
