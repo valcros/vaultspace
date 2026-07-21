@@ -10,7 +10,7 @@ import type { NextRequest } from 'next/server';
 import { validateSession } from '../auth';
 import { SESSION_CONFIG } from '../constants';
 import { AuthenticationError } from '../errors';
-import { db } from '../db';
+import { bootstrapDb } from '../db';
 
 import type { SessionData } from '../auth';
 
@@ -203,10 +203,13 @@ export async function clearSessionCookie(): Promise<void> {
  * Resolve organization from custom domain headers (F001)
  * Used by routes that need to handle custom domain/subdomain scenarios
  *
- * PRE-RLS BOOTSTRAP: This function intentionally uses the global db client
- * without org context, as we're resolving which organization based on domain/slug
- * BEFORE the org context can be established. The RLS policy `org_bootstrap_lookup`
- * allows SELECT on organizations when no org context is set.
+ * PRE-RLS BOOTSTRAP: resolves which organization a request belongs to from the
+ * domain/slug BEFORE any org context exists. It MUST use bootstrapDb (the admin,
+ * BYPASSRLS connection). The regular `db` pool can carry a stale, non-NULL
+ * `app.current_org_id` from a prior request; the `org_bootstrap_lookup` policy
+ * only permits the read when that setting IS NULL, so a poisoned connection
+ * makes this resolve to nothing and every subdomain shows "Organization Not
+ * Found". See getServerComponentSession for the same rationale.
  *
  * Security: Only minimal public fields (id, slug) are selected. Active check is enforced.
  */
@@ -215,7 +218,7 @@ export async function resolveOrganizationFromHeaders(
 ): Promise<{ organizationId: string; organizationSlug: string } | null> {
   // PRE-RLS BOOTSTRAP: Lookup org by slug (no org context yet)
   if (customDomain.orgSlug) {
-    const org = await db.organization.findFirst({
+    const org = await bootstrapDb.organization.findFirst({
       where: {
         slug: customDomain.orgSlug,
         isActive: true,
@@ -229,7 +232,7 @@ export async function resolveOrganizationFromHeaders(
 
   // PRE-RLS BOOTSTRAP: Lookup org by custom domain (no org context yet)
   if (customDomain.customHost) {
-    const org = await db.organization.findFirst({
+    const org = await bootstrapDb.organization.findFirst({
       where: {
         customDomain: customDomain.customHost,
         isActive: true,
