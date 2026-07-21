@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
-import { isServable } from '@/lib/documents/scanGate';
+import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -43,7 +43,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return { error: 'Room not found', status: 404 };
       }
 
-      // Get document with its latest version and file blob
+      // Get the document and its current-version pointer.
       const document = await tx.document.findFirst({
         where: {
           id: documentId,
@@ -51,32 +51,47 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           organizationId: session.organizationId,
           status: 'ACTIVE',
         },
-        include: {
-          versions: {
-            orderBy: { versionNumber: 'desc' },
-            take: 1,
-            include: {
-              fileBlob: {
-                select: {
-                  storageKey: true,
-                  storageBucket: true,
-                },
-              },
-            },
-          },
-        },
+        select: { id: true, name: true, mimeType: true, currentVersionId: true },
       });
 
       if (!document) {
         return { error: 'Document not found', status: 404 };
       }
 
-      const latestVersion = document.versions[0];
-      if (!latestVersion || !latestVersion.fileBlob) {
+      const versionInclude = {
+        fileBlob: { select: { storageKey: true, storageBucket: true } },
+      };
+
+      // Serve the CURRENT version exactly. This follows rollback and never
+      // silently downgrades to an older version when the current one is not
+      // servable. Only when there is no current pointer (legacy documents) do we
+      // fall back to the highest servable version -- with no pointer there is
+      // nothing to downgrade from.
+      const targetVersion = document.currentVersionId
+        ? await tx.documentVersion.findFirst({
+            where: {
+              id: document.currentVersionId,
+              documentId,
+              organizationId: session.organizationId,
+            },
+            include: versionInclude,
+          })
+        : await tx.documentVersion.findFirst({
+            where: {
+              documentId,
+              organizationId: session.organizationId,
+              ...SERVABLE_SCAN_STATUS_FILTER,
+            },
+            orderBy: { versionNumber: 'desc' },
+            include: versionInclude,
+          });
+
+      if (!targetVersion || !targetVersion.fileBlob) {
         return { error: 'Document version not found', status: 404 };
       }
-      // Never serve an INFECTED / still-scanning original; only CLEAN or SKIPPED.
-      if (!isServable(latestVersion.scanStatus)) {
+      // Never serve an INFECTED / still-scanning current version; only CLEAN or
+      // SKIPPED. Return the same 403 whether it is still scanning or blocked.
+      if (!isServable(targetVersion.scanStatus)) {
         return { error: 'This document is not available for download', status: 403 };
       }
 
@@ -88,21 +103,21 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         },
       });
 
-      return { document, latestVersion };
+      return { document, targetVersion };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const { document, latestVersion } = result;
+    const { document, targetVersion } = result;
 
     // Get storage provider
     const providers = getProviders();
     const storage = providers.storage;
 
-    const bucket = latestVersion.fileBlob!.storageBucket || 'documents';
-    const key = latestVersion.fileBlob!.storageKey;
+    const bucket = targetVersion.fileBlob!.storageBucket || 'documents';
+    const key = targetVersion.fileBlob!.storageKey;
 
     // Check if file exists
     const exists = await storage.exists(bucket, key);

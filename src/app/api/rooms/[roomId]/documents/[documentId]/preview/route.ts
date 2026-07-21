@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
-import { isServable } from '@/lib/documents/scanGate';
+import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -133,12 +133,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
         if (!selectedVersion) {
           return { error: 'Document version not found', status: 404 };
         }
+      } else if (document.currentVersionId) {
+        // Default: preview the CURRENT version exactly (follows rollback; never
+        // silently downgrades to an older version when the current one is not
+        // servable).
+        selectedVersion = await tx.documentVersion.findFirst({
+          where: {
+            id: document.currentVersionId,
+            documentId,
+            organizationId: session.organizationId,
+          },
+          include: versionInclude,
+        });
       } else {
-        // Load latest version
+        // Legacy documents without a current pointer: highest servable version.
         selectedVersion = await tx.documentVersion.findFirst({
           where: {
             documentId,
             organizationId: session.organizationId,
+            ...SERVABLE_SCAN_STATUS_FILTER,
           },
           orderBy: { versionNumber: 'desc' },
           include: versionInclude,

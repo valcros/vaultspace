@@ -15,6 +15,7 @@ const { mockStorageExists, mockStorageGet, mockJobAddJob, mockDocument } = vi.ho
     id: 'doc-1',
     name: 'report.docx',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    currentVersionId: 'ver-1',
     versions: [
       {
         id: 'ver-1',
@@ -79,6 +80,11 @@ vi.mock('@/lib/db', () => ({
         },
         document: {
           findFirst: vi.fn().mockResolvedValue(mockDocument),
+        },
+        documentVersion: {
+          // Route now resolves the current version by id; return the fixture's
+          // current version (mutated per-test via mockDocument.versions[0]).
+          findFirst: vi.fn().mockImplementation(() => Promise.resolve(mockDocument.versions[0])),
         },
       };
       return fn(mockTx);

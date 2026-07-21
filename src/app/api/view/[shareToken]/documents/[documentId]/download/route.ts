@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { withOrgContext } from '@/lib/db';
-import { SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
+import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import {
   getViewerSession,
   requireViewerSession,
@@ -77,7 +77,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
           status: 'ACTIVE',
           withdrawnAt: null, // withdrawn documents are not accessible
         },
-        select: { id: true, name: true, mimeType: true, allowDownload: true },
+        select: {
+          id: true,
+          name: true,
+          mimeType: true,
+          allowDownload: true,
+          currentVersionId: true,
+        },
       });
 
       if (!document) {
@@ -89,21 +95,52 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return { error: 'Downloads are not allowed for this document', status: 403 };
       }
 
-      // The requested version (a specific prior version, or the latest). Serve
-      // CLEAN or SKIPPED (allowed-but-unscanned, e.g. too large to scan)
-      // versions; an INFECTED blob is never served.
-      const targetVersion = await tx.documentVersion.findFirst({
-        where: {
-          documentId,
-          organizationId: viewerSession.organizationId,
-          ...SERVABLE_SCAN_STATUS_FILTER,
-          ...(versionId ? { id: versionId } : {}),
-        },
-        orderBy: { versionNumber: 'desc' },
-        include: {
-          fileBlob: { select: { storageKey: true, storageBucket: true } },
-        },
-      });
+      const versionInclude = {
+        fileBlob: { select: { storageKey: true, storageBucket: true } },
+      };
+
+      // Resolve the version to serve. Only CLEAN / SKIPPED versions are ever
+      // served; an INFECTED / still-scanning version is never served, and the
+      // response is identical (404) whether it is scanning or blocked -- viewers
+      // are not told which.
+      let targetVersion;
+      if (versionId) {
+        // Explicit historical version (already gated on room feature above):
+        // load that exact version, servable only.
+        targetVersion = await tx.documentVersion.findFirst({
+          where: {
+            id: versionId,
+            documentId,
+            organizationId: viewerSession.organizationId,
+            ...SERVABLE_SCAN_STATUS_FILTER,
+          },
+          include: versionInclude,
+        });
+      } else if (document.currentVersionId) {
+        // Default: serve the CURRENT version exactly (follows rollback; never
+        // silently downgrades to an older version when the current one is not
+        // servable).
+        const current = await tx.documentVersion.findFirst({
+          where: {
+            id: document.currentVersionId,
+            documentId,
+            organizationId: viewerSession.organizationId,
+          },
+          include: versionInclude,
+        });
+        targetVersion = current && isServable(current.scanStatus) ? current : null;
+      } else {
+        // Legacy documents without a current pointer: highest servable version.
+        targetVersion = await tx.documentVersion.findFirst({
+          where: {
+            documentId,
+            organizationId: viewerSession.organizationId,
+            ...SERVABLE_SCAN_STATUS_FILTER,
+          },
+          orderBy: { versionNumber: 'desc' },
+          include: versionInclude,
+        });
+      }
 
       if (!targetVersion || !targetVersion.fileBlob) {
         return { error: 'Document version not found', status: 404 };
