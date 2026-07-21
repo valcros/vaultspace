@@ -105,6 +105,18 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
 
   const providers = getProviders();
 
+  // Idempotency: if this version already has a terminal scan result (a BullMQ
+  // redelivery, or a duplicate job), do nothing. ERROR/PENDING are re-processable.
+  const existing = await withOrgContext(organizationId, (tx) =>
+    tx.documentVersion.findFirst({ where: { id: versionId }, select: { scanStatus: true } })
+  );
+  if (existing && ['CLEAN', 'INFECTED', 'SKIPPED'].includes(existing.scanStatus)) {
+    console.log(
+      `[ScanProcessor] Version ${versionId} already ${existing.scanStatus}; skipping re-scan`
+    );
+    return;
+  }
+
   // Check if scanner is available
   let scannerAvailable = await providers.scan.isAvailable();
 
@@ -158,7 +170,60 @@ export async function processScanJob(job: Job<ScanJobPayload>): Promise<void> {
     // Scan file
     const scanResult = await providers.scan.scan(fileBuffer);
 
-    if (scanResult.clean) {
+    if (scanResult.skipped) {
+      // Allowed but NOT scanned (e.g. the file is too large for the scanner).
+      // Make it usable and flag it as unscanned -- do NOT quarantine it.
+      console.log(
+        `[ScanProcessor] Document ${documentId} allowed unscanned: ${scanResult.skipReason}`
+      );
+
+      const skipDoc = await withOrgContext(organizationId, async (tx) => {
+        await tx.documentVersion.update({
+          where: { id: versionId },
+          data: {
+            scanStatus: 'SKIPPED',
+            scanError: scanResult.skipReason ?? 'Allowed but not virus-scanned',
+            scannedAt: new Date(),
+          },
+        });
+        return tx.document.findFirst({
+          where: { id: documentId, organizationId },
+          select: { roomId: true },
+        });
+      });
+
+      // The version is now durably SKIPPED. Generating a preview and auditing the
+      // skip are best-effort follow-ups: if they fail, log and move on -- do NOT
+      // let the outer catch reclassify an already-final SKIPPED version to ERROR.
+      try {
+        await providers.job.addJob('high', 'preview.generate', {
+          documentId,
+          versionId,
+          organizationId,
+          storageKey,
+          fileName: job.data.fileName,
+          contentType: job.data.contentType,
+          fileSizeBytes: job.data.fileSizeBytes,
+          isScanned: false,
+        });
+
+        const eventBus = createEventBus(organizationId, { actorType: 'SYSTEM' });
+        await eventBus.emit('DOCUMENT_SCANNED', {
+          roomId: skipDoc?.roomId,
+          documentId,
+          metadata: {
+            versionId,
+            scanStatus: 'SKIPPED',
+            reason: scanResult.skipReason,
+          },
+        });
+      } catch (sideEffectError) {
+        console.error(
+          `[ScanProcessor] Version ${versionId} committed as SKIPPED, but a follow-up (preview/audit) failed:`,
+          sideEffectError
+        );
+      }
+    } else if (scanResult.clean) {
       console.log(`[ScanProcessor] Document ${documentId} is clean`);
 
       await withOrgContext(organizationId, async (tx) => {

@@ -36,11 +36,15 @@ export class ClamAVScanProvider implements ScanProvider {
   async scan(data: Buffer): Promise<ScanResult> {
     const startTime = Date.now();
 
-    // Check file size
+    // Too large to scan: allow it through but flag as UNSCANNED. Marking an
+    // oversize file as a threat false-positive-quarantines legitimate large
+    // uploads (e.g. video). Raise the effective limit via CLAMAV_MAX_SCAN_BYTES
+    // (and clamd's StreamMaxLength) to scan bigger files.
     if (data.length > this.maxSize) {
       return {
-        clean: false,
-        threats: [`File exceeds maximum scan size (${this.maxSize} bytes)`],
+        clean: true,
+        skipped: true,
+        skipReason: `File exceeds the scanner's maximum scan size (${data.length} > ${this.maxSize} bytes); allowed but not virus-scanned`,
         scanDuration: Date.now() - startTime,
       };
     }
@@ -127,23 +131,41 @@ export class ClamAVScanProvider implements ScanProvider {
   }
 
   private parseResponse(response: string, scanDuration: number): ScanResult {
-    // Response format: "stream: OK" or "stream: <virus_name> FOUND"
-    if (response.includes('OK')) {
+    const normalized = response.trim();
+
+    // A detected threat MUST take precedence and must never be misread as clean
+    // (e.g. a substring "OK" inside a signature name). clamd's INSTREAM threat
+    // response is exactly: "stream: <signature> FOUND".
+    const threatMatch = normalized.match(/^stream:\s+(.+)\s+FOUND$/);
+    if (threatMatch?.[1]) {
+      return {
+        clean: false,
+        threats: [threatMatch[1]],
+        scanDuration,
+      };
+    }
+
+    // Clean is ONLY an exact "stream: OK".
+    if (normalized === 'stream: OK') {
       return {
         clean: true,
         scanDuration,
       };
     }
 
-    // Extract threat name(s)
-    const threatMatch = response.match(/stream: (.+) FOUND/);
-    const threatName = threatMatch?.[1];
-    const threats: string[] = threatName ? [threatName] : ['Unknown threat detected'];
+    // clamd rejects streams over its StreamMaxLength with this exact error. That
+    // is NOT a threat -- allow the file through, flagged as unscanned.
+    if (/INSTREAM size limit exceeded/i.test(normalized)) {
+      return {
+        clean: true,
+        skipped: true,
+        skipReason: `Scanner could not scan the file (too large): ${normalized}; allowed but not virus-scanned`,
+        scanDuration,
+      };
+    }
 
-    return {
-      clean: false,
-      threats,
-      scanDuration,
-    };
+    // Anything else is an unexpected/malformed response. Fail as a scan error
+    // (retryable) rather than guessing clean/skipped from a substring.
+    throw new Error(`Unexpected ClamAV response: ${normalized}`);
   }
 }

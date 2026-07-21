@@ -50,4 +50,51 @@ describe('ClamAVScanProvider', () => {
     await expect(result).resolves.toBe(true);
     expect(socketState.sockets[0]?.destroy).toHaveBeenCalled();
   });
+
+  async function scanWithResponse(response: string, data = Buffer.from('x')) {
+    const provider = new ClamAVScanProvider({ host: 'localhost', port: 3310 });
+    const result = provider.scan(data);
+    await vi.waitFor(() => {
+      expect(socketState.sockets[0]?.write).toHaveBeenCalled();
+    });
+    socketState.sockets[0]?.emit('data', Buffer.from(response));
+    socketState.sockets[0]?.emit('end');
+    return result;
+  }
+
+  it('reports a threat even when the signature name contains "OK"', async () => {
+    const r = await scanWithResponse('stream: Win.Test.OK-Malware FOUND\0');
+    expect(r.clean).toBe(false);
+    expect(r.threats).toEqual(['Win.Test.OK-Malware']);
+    expect(r.skipped).toBeFalsy();
+  });
+
+  it('treats only an exact "stream: OK" as clean', async () => {
+    const r = await scanWithResponse('stream: OK\0');
+    expect(r.clean).toBe(true);
+    expect(r.skipped).toBeFalsy();
+  });
+
+  it('treats a clamd INSTREAM size-limit error as skipped (allowed, unscanned)', async () => {
+    const r = await scanWithResponse('INSTREAM size limit exceeded\0');
+    expect(r.skipped).toBe(true);
+    expect(r.clean).toBe(true);
+    expect(r.threats).toBeUndefined();
+  });
+
+  it('throws on an unexpected/malformed response rather than guessing', async () => {
+    await expect(scanWithResponse('some garbage response\0')).rejects.toThrow(
+      /Unexpected ClamAV response/
+    );
+  });
+
+  it('skips (does not flag as a threat) a file larger than the scan limit', async () => {
+    const provider = new ClamAVScanProvider({ host: 'localhost', port: 3310, maxSize: 4 });
+    const r = await provider.scan(Buffer.from('this-is-way-too-large'));
+    expect(r.skipped).toBe(true);
+    expect(r.clean).toBe(true);
+    expect(r.threats).toBeUndefined();
+    // No socket should be opened for an oversize file (returns before connecting).
+    expect(socketState.sockets.length).toBe(0);
+  });
 });

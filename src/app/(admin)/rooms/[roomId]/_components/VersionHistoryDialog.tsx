@@ -201,7 +201,8 @@ export function VersionHistoryDialog({
             <div className="space-y-2">
               {versions.map((v, i) => {
                 const isCurrent = i === 0;
-                const isClean = v.scanStatus === 'CLEAN';
+                // CLEAN or SKIPPED (allowed-but-unscanned) versions are viewable.
+                const isViewable = v.scanStatus === 'CLEAN' || v.scanStatus === 'SKIPPED';
                 const fileSizeKb = Number(v.fileSize) / 1024;
                 const fileSizeDisplay =
                   fileSizeKb > 1024
@@ -233,6 +234,12 @@ export function VersionHistoryDialog({
                               Scanning...
                             </Badge>
                           )}
+                          {v.scanStatus === 'SKIPPED' && (
+                            <Badge variant="secondary" className="text-xs">
+                              <AlertCircle className="mr-1 h-3 w-3" />
+                              Not scanned
+                            </Badge>
+                          )}
                         </div>
                         <p className="mt-0.5 text-xs text-neutral-500">
                           {v.uploadedByUser
@@ -250,7 +257,7 @@ export function VersionHistoryDialog({
                         )}
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
-                        {isClean && (
+                        {isViewable && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -271,7 +278,7 @@ export function VersionHistoryDialog({
                             {versionPreviewId === v.id ? 'Hide' : 'Preview'}
                           </Button>
                         )}
-                        {!isCurrent && isClean && (
+                        {!isCurrent && isViewable && (
                           <Button
                             variant="outline"
                             size="sm"
