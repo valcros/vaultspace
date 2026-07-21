@@ -7,7 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
 import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 
-const APP_VERSION = '0.1.0';
+// Version comes from package.json and the release from the CI/CD pipeline (see
+// next.config.js env block). Never hand-edit these; they are inlined at build
+// time so the About page always reflects the actual deployed build.
+const APP_VERSION = process.env['NEXT_PUBLIC_APP_VERSION'] || '0.0.0';
+const APP_RELEASE = process.env['NEXT_PUBLIC_APP_RELEASE'] || '';
 const CREATOR = 'Mark W Munger';
 const COPYRIGHT_YEAR = '2026';
 
@@ -32,6 +36,11 @@ export default function AboutPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="text-sm text-slate-500 dark:text-slate-400">Version {APP_VERSION}</p>
+              {APP_RELEASE ? (
+                <p className="font-mono text-xs text-slate-400 dark:text-slate-500">
+                  Release {APP_RELEASE}
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 
