@@ -9,6 +9,7 @@ import { Job } from 'bullmq';
 import { PDFParse } from 'pdf-parse';
 
 import { withOrgContext } from '@/lib/db';
+import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 
 import type { SearchIndexJobPayload, TextExtractJobPayload } from '../types';
@@ -26,6 +27,19 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
   console.log(`[TextProcessor] Extracting text for document ${documentId}, version ${versionId}`);
 
   const providers = getProviders();
+
+  // Worker-side scan gate: never extract/index an INFECTED / still-scanning
+  // original -- indexed text surfaces as search snippets. Queue payloads are not
+  // authorization, so re-check the version's persisted scan status here.
+  const versionScan = await withOrgContext(organizationId, (tx) =>
+    tx.documentVersion.findFirst({ where: { id: versionId }, select: { scanStatus: true } })
+  );
+  if (!versionScan || !isServable(versionScan.scanStatus)) {
+    console.warn(
+      `[TextProcessor] Version ${versionId} not servable (scanStatus=${versionScan?.scanStatus ?? 'missing'}); skipping text extraction`
+    );
+    return;
+  }
 
   try {
     // Get file from storage (documents bucket stores original uploads)

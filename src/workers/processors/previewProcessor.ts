@@ -8,6 +8,7 @@
 import { Job } from 'bullmq';
 
 import { withOrgContext } from '@/lib/db';
+import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 
 import type { PreviewGenerateJobPayload, ThumbnailGenerateJobPayload } from '../types';
@@ -23,6 +24,23 @@ export async function processPreviewJob(job: Job<PreviewGenerateJobPayload>): Pr
   );
 
   const providers = getProviders();
+
+  // Worker-side scan gate: never feed an INFECTED / still-scanning original into
+  // the converter, even for a stale or redelivered job. Queue payloads are not
+  // authorization -- re-check the version's persisted scan status here.
+  const versionScan = await withOrgContext(organizationId, (tx) =>
+    tx.documentVersion.findFirst({ where: { id: versionId }, select: { scanStatus: true } })
+  );
+  if (!versionScan) {
+    console.warn(`[PreviewProcessor] Version ${versionId} not found; skipping preview generation`);
+    return;
+  }
+  if (!isServable(versionScan.scanStatus)) {
+    console.warn(
+      `[PreviewProcessor] Version ${versionId} not servable (scanStatus=${versionScan.scanStatus}); skipping preview generation`
+    );
+    return;
+  }
 
   // Update status to processing
   await withOrgContext(organizationId, async (tx) => {
@@ -264,6 +282,19 @@ export async function processThumbnailJob(job: Job<ThumbnailGenerateJobPayload>)
   console.log(`[PreviewProcessor] Processing legacy thumbnail job for document ${documentId}`);
 
   const providers = getProviders();
+
+  // Worker-side scan gate (defense-in-depth): a thumbnail is derived from a
+  // preview that only exists for servable versions, but re-verify here so a
+  // stale/redelivered job can never resurface an INFECTED version's imagery.
+  const versionScan = await withOrgContext(organizationId, (tx) =>
+    tx.documentVersion.findFirst({ where: { id: versionId }, select: { scanStatus: true } })
+  );
+  if (!versionScan || !isServable(versionScan.scanStatus)) {
+    console.warn(
+      `[PreviewProcessor] Version ${versionId} not servable (scanStatus=${versionScan?.scanStatus ?? 'missing'}); skipping thumbnail generation`
+    );
+    return;
+  }
 
   try {
     // Get preview file from previews bucket

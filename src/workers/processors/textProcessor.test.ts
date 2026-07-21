@@ -10,6 +10,9 @@ vi.mock('pdf-parse', () => ({
 const mockExtractedTextUpsert = vi.fn().mockResolvedValue({});
 const mockDocumentFindFirst = vi.fn();
 const mockDocumentVersionFindUnique = vi.fn();
+// Worker-side scan gate reads the version's scan status before extracting;
+// default to a servable (CLEAN) version so existing tests still index text.
+const mockDocumentVersionFindFirst = vi.fn().mockResolvedValue({ scanStatus: 'CLEAN' });
 const mockSearchIndexUpsert = vi.fn().mockResolvedValue({});
 
 vi.mock('@/lib/db', () => {
@@ -18,6 +21,7 @@ vi.mock('@/lib/db', () => {
     document: { findFirst: (...args: unknown[]) => mockDocumentFindFirst(...args) },
     documentVersion: {
       findUnique: (...args: unknown[]) => mockDocumentVersionFindUnique(...args),
+      findFirst: (...args: unknown[]) => mockDocumentVersionFindFirst(...args),
     },
     searchIndex: { upsert: (...args: unknown[]) => mockSearchIndexUpsert(...args) },
   };
@@ -85,6 +89,54 @@ function makeIndexJob(overrides: Record<string, unknown> = {}) {
 }
 
 // ---------------------------------------------------------------------------
+
+// Reset the scan-gate lookup to a servable default before EVERY test so the
+// per-describe `vi.clearAllMocks()` (which preserves implementations) can't let
+// a non-servable status set by one test leak into the next.
+beforeEach(() => {
+  mockDocumentVersionFindFirst.mockResolvedValue({ scanStatus: 'CLEAN' });
+});
+
+// Worker-side scan gate: never extract/index a non-servable original -- indexed
+// text surfaces as search snippets. Queue payloads are not authorization.
+describe('processTextExtractJob — scan gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStorageGet.mockResolvedValue(Buffer.from('plain text content'));
+    mockDocumentVersionFindFirst.mockResolvedValue({ scanStatus: 'CLEAN' });
+  });
+
+  it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
+    'skips extraction when the version is %s (not servable)',
+    async (scanStatus) => {
+      mockDocumentVersionFindFirst.mockResolvedValue({ scanStatus });
+
+      await processTextExtractJob(makeExtractJob());
+
+      // No bytes read, no text indexed, no downstream search job.
+      expect(mockStorageGet).not.toHaveBeenCalled();
+      expect(mockExtractedTextUpsert).not.toHaveBeenCalled();
+      expect(mockJobAddJob).not.toHaveBeenCalled();
+    }
+  );
+
+  it('skips extraction when the version no longer exists', async () => {
+    mockDocumentVersionFindFirst.mockResolvedValue(null);
+
+    await processTextExtractJob(makeExtractJob());
+
+    expect(mockStorageGet).not.toHaveBeenCalled();
+  });
+
+  it('proceeds for a SKIPPED (allowed-but-unscanned) version', async () => {
+    mockDocumentVersionFindFirst.mockResolvedValue({ scanStatus: 'SKIPPED' });
+    mockDocumentFindFirst.mockResolvedValue({ roomId: 'room-1', name: 'report.txt' });
+
+    await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
+
+    expect(mockStorageGet).toHaveBeenCalled();
+  });
+});
 
 describe('processTextExtractJob — plain text', () => {
   beforeEach(() => {

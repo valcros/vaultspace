@@ -92,6 +92,7 @@ const MOCK_DOCUMENTS = [
         id: 'ver-1',
         versionNumber: 1,
         mimeType: 'application/pdf',
+        scanStatus: 'CLEAN',
         createdAt: new Date('2024-01-01'),
         fileBlob: { storageKey: 'documents/org-1/file.pdf', storageBucket: 'documents' },
       },
@@ -215,6 +216,48 @@ describe('processRoomExportJob — no documents', () => {
   });
 });
 
+describe('processRoomExportJob — scan gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupArchiverMock();
+    mockRoomFindFirst.mockResolvedValue(MOCK_ROOM);
+    mockEventCreate.mockResolvedValue({});
+    mockUserFindUnique.mockResolvedValue({ email: 'alice@example.com', firstName: 'Alice' });
+  });
+
+  it.each(['INFECTED', 'PENDING', 'ERROR'])(
+    'never bundles a %s version into the archive',
+    async (scanStatus) => {
+      mockDocumentFindMany.mockResolvedValue([
+        {
+          id: 'doc-1',
+          name: 'Deck',
+          folder: null,
+          versions: [
+            {
+              id: 'ver-1',
+              versionNumber: 1,
+              mimeType: 'application/pdf',
+              scanStatus,
+              createdAt: new Date('2024-01-01'),
+              fileBlob: { storageKey: 'documents/org-1/file.pdf', storageBucket: 'documents' },
+            },
+          ],
+        },
+      ]);
+
+      await processRoomExportJob(createMockJob());
+
+      // The infected original is never fetched from storage nor appended.
+      expect(mockStorageGet).not.toHaveBeenCalledWith('documents', 'documents/org-1/file.pdf');
+      expect(_archiverAppend).not.toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({ name: 'Deck.pdf' })
+      );
+    }
+  );
+});
+
 describe('processRoomExportJob — room not found', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -313,6 +356,7 @@ describe('processRoomExportJob — multi-file sequential export', () => {
           id: 'ver-2',
           versionNumber: 1,
           mimeType: 'text/csv',
+          scanStatus: 'CLEAN',
           createdAt: new Date('2024-01-02'),
           fileBlob: { storageKey: 'documents/org-1/file.csv', storageBucket: 'documents' },
         },
@@ -356,6 +400,7 @@ describe('processRoomExportJob — 2GB size guard', () => {
           id: 'ver-2',
           versionNumber: 1,
           mimeType: 'application/pdf',
+          scanStatus: 'CLEAN',
           createdAt: new Date('2024-01-02'),
           fileBlob: { storageKey: 'documents/org-1/big.pdf', storageBucket: 'documents' },
         },
