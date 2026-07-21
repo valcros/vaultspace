@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { isServable } from '@/lib/documents/scanGate';
 import { serializeBigInt } from '@/lib/serialization';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -89,7 +90,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
       // Cannot rollback to an INFECTED (or still-pending) version. CLEAN and
       // SKIPPED (allowed-but-unscanned) versions are permitted.
-      if (targetVersion.scanStatus !== 'CLEAN' && targetVersion.scanStatus !== 'SKIPPED') {
+      if (!isServable(targetVersion.scanStatus)) {
         return {
           error: 'Cannot rollback to a version that has not passed virus scanning',
           status: 400,

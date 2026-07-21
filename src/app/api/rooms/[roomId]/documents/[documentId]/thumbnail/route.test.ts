@@ -18,6 +18,7 @@ const { mockStorageExists, mockStorageGet, mockJobAddJob, mockDocument } = vi.ho
     versions: [
       {
         id: 'ver-1',
+        scanStatus: 'CLEAN',
         fileBlob: {
           storageKey: 'documents/org-1/report.docx',
           storageBucket: 'documents',
@@ -107,6 +108,9 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
     vi.clearAllMocks();
     mockStorageExists.mockResolvedValue(true);
     mockStorageGet.mockResolvedValue(Buffer.alloc(5000));
+    // Shared mutable fixture: reset the scan status to servable before each test
+    // so a gate test's INFECTED override can't leak into the next test.
+    mockDocument.versions[0]!.scanStatus = 'CLEAN';
   });
 
   it('serves stored thumbnail with correct headers', async () => {
@@ -216,5 +220,35 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
         storageKey: 'thumbnails/doc-1/ver-1.png',
       },
     ];
+  });
+
+  // Scan gate: an INFECTED / still-scanning original must never have its rendered
+  // thumbnail served or (re)generated. The branded placeholder (derived from the
+  // file name only) is still returned so the grid does not 404.
+  describe('scan gate', () => {
+    it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
+      'serves the placeholder (not the stored thumbnail) and enqueues nothing for a %s version',
+      async (scanStatus) => {
+        mockDocument.versions[0]!.scanStatus = scanStatus;
+
+        const response = await GET(createRequest(), createContext());
+
+        // Still 200 (placeholder), but the stored thumbnail bytes are never read
+        // and no preview/thumbnail generation is enqueued.
+        expect(response.status).toBe(200);
+        expect(response.headers.get('Cache-Control')).toBe('private, max-age=30');
+        expect(mockStorageGet).not.toHaveBeenCalled();
+        expect(mockJobAddJob).not.toHaveBeenCalled();
+      }
+    );
+
+    it('serves the stored thumbnail for a SKIPPED (allowed-but-unscanned) version', async () => {
+      mockDocument.versions[0]!.scanStatus = 'SKIPPED';
+
+      const response = await GET(createRequest(), createContext());
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Cache-Control')).toBe('private, max-age=86400, immutable');
+    });
   });
 });

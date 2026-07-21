@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { withOrgContext } from '@/lib/db';
+import { SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import {
   getViewerSession,
   requireViewerSession,
@@ -80,10 +81,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return { error: 'Document not found', status: 404 };
       }
 
-      // Resolve the target version: caller-specified historical or latest
-      const targetVersionWhere = versionId
-        ? { id: versionId, documentId, organizationId: viewerSession.organizationId }
-        : { documentId, organizationId: viewerSession.organizationId };
+      // Resolve the target version: caller-specified historical or latest.
+      // Only servable (CLEAN / SKIPPED) versions are eligible -- never preview an
+      // INFECTED / still-scanning original.
+      const targetVersionWhere = {
+        ...(versionId ? { id: versionId } : {}),
+        documentId,
+        organizationId: viewerSession.organizationId,
+        ...SERVABLE_SCAN_STATUS_FILTER,
+      };
 
       const version = await tx.documentVersion.findFirst({
         where: targetVersionWhere,

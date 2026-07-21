@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+import { isServable } from '@/lib/documents/scanGate';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -73,6 +74,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       const latestVersion = document.versions[0];
       if (!latestVersion || !latestVersion.fileBlob) {
         return { error: 'Document version not found', status: 404 };
+      }
+      // Never serve an INFECTED / still-scanning original; only CLEAN or SKIPPED.
+      if (!isServable(latestVersion.scanStatus)) {
+        return { error: 'This document is not available for download', status: 403 };
       }
 
       // Record the download event

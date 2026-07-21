@@ -8,6 +8,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock db
 const mockVersionUpdate = vi.fn().mockResolvedValue({});
+// Worker-side scan gate looks the version's scan status + blob up before doing
+// any work; default to a servable (CLEAN) version with a blob so existing
+// happy-path tests still run.
+const CLEAN_VERSION_ROW = {
+  scanStatus: 'CLEAN',
+  fileBlob: { storageKey: 'documents/org-1/file.docx', storageBucket: 'documents' },
+};
+const mockVersionFindFirst = vi.fn().mockResolvedValue(CLEAN_VERSION_ROW);
 const mockDocumentUpdate = vi.fn().mockResolvedValue({});
 const mockPreviewAssetCreate = vi.fn().mockResolvedValue({ id: 'asset-1' });
 const mockPreviewAssetUpsert = vi.fn().mockResolvedValue({ id: 'thumb-1' });
@@ -15,7 +23,10 @@ const mockDocumentFindFirst = vi.fn().mockResolvedValue({ roomId: 'room-1' });
 
 vi.mock('@/lib/db', () => {
   const mockDb = {
-    documentVersion: { update: (...args: unknown[]) => mockVersionUpdate(...args) },
+    documentVersion: {
+      update: (...args: unknown[]) => mockVersionUpdate(...args),
+      findFirst: (...args: unknown[]) => mockVersionFindFirst(...args),
+    },
     document: {
       update: (...args: unknown[]) => mockDocumentUpdate(...args),
       findFirst: (...args: unknown[]) => mockDocumentFindFirst(...args),
@@ -98,6 +109,74 @@ describe('processPreviewJob', () => {
     vi.clearAllMocks();
     mockStorageGet.mockResolvedValue(Buffer.from('file-content'));
     mockGenerateThumbnailPng.mockResolvedValue(Buffer.from('thumbnail-png'));
+    mockVersionFindFirst.mockResolvedValue(CLEAN_VERSION_ROW);
+  });
+
+  // Worker-side scan gate: a preview must never be generated from a non-servable
+  // (INFECTED / still-scanning / errored) original, even if a stale or
+  // redelivered job asks for it. Queue payloads are not authorization.
+  it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
+    'skips preview generation when the version is %s (not servable)',
+    async (scanStatus) => {
+      mockVersionFindFirst.mockResolvedValue({ scanStatus });
+
+      await processPreviewJob(createMockJob());
+
+      // No conversion, no thumbnail, no PROCESSING flip, no storage read.
+      expect(mockConvert).not.toHaveBeenCalled();
+      expect(mockGenerateThumbnailPng).not.toHaveBeenCalled();
+      expect(mockStorageGet).not.toHaveBeenCalled();
+      expect(mockVersionUpdate).not.toHaveBeenCalled();
+    }
+  );
+
+  it('skips preview generation when the version no longer exists', async () => {
+    mockVersionFindFirst.mockResolvedValue(null);
+
+    await processPreviewJob(createMockJob());
+
+    expect(mockConvert).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
+  });
+
+  it('proceeds for a SKIPPED (allowed-but-unscanned) version', async () => {
+    mockVersionFindFirst.mockResolvedValue({
+      scanStatus: 'SKIPPED',
+      fileBlob: { storageKey: 'documents/org-1/file.docx', storageBucket: 'documents' },
+    });
+
+    await processPreviewJob(createMockJob());
+
+    expect(mockConvert).toHaveBeenCalled();
+  });
+
+  it('reads the DB-authoritative blob key, not the queue payload storageKey', async () => {
+    // The gate validated scanStatus for THIS version's blob; the bytes fetched
+    // must be that blob, never a mismatched key smuggled in via the payload.
+    mockVersionFindFirst.mockResolvedValue({
+      scanStatus: 'CLEAN',
+      fileBlob: { storageKey: 'documents/org-1/DB-AUTHORITATIVE.docx', storageBucket: 'documents' },
+    });
+
+    await processPreviewJob(createMockJob({ storageKey: 'documents/org-1/PAYLOAD-SMUGGLED.docx' }));
+
+    expect(mockStorageGet).toHaveBeenCalledWith(
+      'documents',
+      'documents/org-1/DB-AUTHORITATIVE.docx'
+    );
+    expect(mockStorageGet).not.toHaveBeenCalledWith(
+      'documents',
+      'documents/org-1/PAYLOAD-SMUGGLED.docx'
+    );
+  });
+
+  it('skips generation when the servable version has no file blob', async () => {
+    mockVersionFindFirst.mockResolvedValue({ scanStatus: 'CLEAN', fileBlob: null });
+
+    await processPreviewJob(createMockJob());
+
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockConvert).not.toHaveBeenCalled();
   });
 
   it('generates thumbnail from original file bytes, not preview output', async () => {
@@ -210,6 +289,28 @@ describe('processThumbnailJob (deprecated)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStorageGet.mockResolvedValue(Buffer.from('preview-image-data'));
+    mockVersionFindFirst.mockResolvedValue(CLEAN_VERSION_ROW);
+  });
+
+  it('skips thumbnail generation when the version is INFECTED (not servable)', async () => {
+    mockVersionFindFirst.mockResolvedValue({ scanStatus: 'INFECTED' });
+    const job = {
+      data: {
+        documentId: 'doc-1',
+        versionId: 'ver-1',
+        organizationId: 'org-1',
+        previewKey: 'previews/doc-1/ver-1/page-1.png',
+        pageNumber: 1,
+        width: 200,
+        height: 280,
+      },
+      id: 'job-thumb',
+      name: 'thumbnail.generate',
+    } as never;
+
+    await processThumbnailJob(job);
+
+    expect(mockStorageGet).not.toHaveBeenCalled();
   });
 
   it('still works for backward compatibility', async () => {

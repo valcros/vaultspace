@@ -10,7 +10,15 @@ vi.mock('pdf-parse', () => ({
 const mockExtractedTextUpsert = vi.fn().mockResolvedValue({});
 const mockDocumentFindFirst = vi.fn();
 const mockDocumentVersionFindUnique = vi.fn();
+// Worker-side scan gate reads the version's scan status before extracting;
+// default to a servable (CLEAN) version so existing tests still index text.
+const SERVABLE_VERSION_ROW = {
+  scanStatus: 'CLEAN',
+  fileBlob: { storageKey: 'documents/org-1/file.pdf', storageBucket: 'documents' },
+};
+const mockDocumentVersionFindFirst = vi.fn().mockResolvedValue(SERVABLE_VERSION_ROW);
 const mockSearchIndexUpsert = vi.fn().mockResolvedValue({});
+const mockSearchIndexDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
 
 vi.mock('@/lib/db', () => {
   const mockDb = {
@@ -18,8 +26,12 @@ vi.mock('@/lib/db', () => {
     document: { findFirst: (...args: unknown[]) => mockDocumentFindFirst(...args) },
     documentVersion: {
       findUnique: (...args: unknown[]) => mockDocumentVersionFindUnique(...args),
+      findFirst: (...args: unknown[]) => mockDocumentVersionFindFirst(...args),
     },
-    searchIndex: { upsert: (...args: unknown[]) => mockSearchIndexUpsert(...args) },
+    searchIndex: {
+      upsert: (...args: unknown[]) => mockSearchIndexUpsert(...args),
+      deleteMany: (...args: unknown[]) => mockSearchIndexDeleteMany(...args),
+    },
   };
 
   return {
@@ -85,6 +97,57 @@ function makeIndexJob(overrides: Record<string, unknown> = {}) {
 }
 
 // ---------------------------------------------------------------------------
+
+// Reset the scan-gate lookup to a servable default before EVERY test so the
+// per-describe `vi.clearAllMocks()` (which preserves implementations) can't let
+// a non-servable status set by one test leak into the next.
+beforeEach(() => {
+  mockDocumentVersionFindFirst.mockResolvedValue(SERVABLE_VERSION_ROW);
+});
+
+// Worker-side scan gate: never extract/index a non-servable original -- indexed
+// text surfaces as search snippets. Queue payloads are not authorization.
+describe('processTextExtractJob — scan gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStorageGet.mockResolvedValue(Buffer.from('plain text content'));
+    mockDocumentVersionFindFirst.mockResolvedValue(SERVABLE_VERSION_ROW);
+  });
+
+  it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
+    'skips extraction when the version is %s (not servable)',
+    async (scanStatus) => {
+      mockDocumentVersionFindFirst.mockResolvedValue({ scanStatus });
+
+      await processTextExtractJob(makeExtractJob());
+
+      // No bytes read, no text indexed, no downstream search job.
+      expect(mockStorageGet).not.toHaveBeenCalled();
+      expect(mockExtractedTextUpsert).not.toHaveBeenCalled();
+      expect(mockJobAddJob).not.toHaveBeenCalled();
+    }
+  );
+
+  it('skips extraction when the version no longer exists', async () => {
+    mockDocumentVersionFindFirst.mockResolvedValue(null);
+
+    await processTextExtractJob(makeExtractJob());
+
+    expect(mockStorageGet).not.toHaveBeenCalled();
+  });
+
+  it('proceeds for a SKIPPED (allowed-but-unscanned) version', async () => {
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      scanStatus: 'SKIPPED',
+      fileBlob: { storageKey: 'documents/org-1/file.pdf', storageBucket: 'documents' },
+    });
+    mockDocumentFindFirst.mockResolvedValue({ roomId: 'room-1', name: 'report.txt' });
+
+    await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
+
+    expect(mockStorageGet).toHaveBeenCalled();
+  });
+});
 
 describe('processTextExtractJob — plain text', () => {
   beforeEach(() => {
@@ -282,7 +345,8 @@ describe('processTextExtractJob — extraction error does not throw', () => {
 describe('processSearchIndexJob — happy path', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDocumentVersionFindUnique.mockResolvedValue({
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      scanStatus: 'CLEAN',
       mimeType: 'application/pdf',
       createdAt: new Date('2024-01-01'),
     });
@@ -332,10 +396,51 @@ describe('processSearchIndexJob — happy path', () => {
 describe('processSearchIndexJob — error does not throw', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDocumentVersionFindUnique.mockRejectedValue(new Error('DB error'));
+    mockDocumentVersionFindFirst.mockRejectedValue(new Error('DB error'));
   });
 
   it('does not re-throw to avoid blocking document processing', async () => {
     await expect(processSearchIndexJob(makeIndexJob())).resolves.not.toThrow();
+  });
+});
+
+// Downstream worker-side scan gate: a stale/redelivered/tampered search.index
+// job must not index (and must purge) text for a non-servable version.
+describe('processSearchIndexJob — scan gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDocumentFindFirst.mockResolvedValue({ tags: [], customMetadata: null });
+    mockSearchIndexUpsert.mockResolvedValue({});
+    mockSearchIndexDeleteMany.mockResolvedValue({ count: 1 });
+    mockSearchIndex.mockResolvedValue(undefined);
+  });
+
+  it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
+    'does not index and purges any existing row when the version is %s',
+    async (scanStatus) => {
+      mockDocumentVersionFindFirst.mockResolvedValue({
+        scanStatus,
+        mimeType: 'application/pdf',
+        createdAt: new Date('2024-01-01'),
+      });
+
+      await processSearchIndexJob(makeIndexJob());
+
+      expect(mockSearchIndexUpsert).not.toHaveBeenCalled();
+      expect(mockSearchIndex).not.toHaveBeenCalled(); // external provider
+      expect(mockSearchIndexDeleteMany).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1', versionId: 'ver-1' },
+      });
+    }
+  );
+
+  it('does not index when the version no longer exists (and purges)', async () => {
+    mockDocumentVersionFindFirst.mockResolvedValue(null);
+
+    await processSearchIndexJob(makeIndexJob());
+
+    expect(mockSearchIndexUpsert).not.toHaveBeenCalled();
+    expect(mockSearchIndex).not.toHaveBeenCalled();
+    expect(mockSearchIndexDeleteMany).toHaveBeenCalled();
   });
 });

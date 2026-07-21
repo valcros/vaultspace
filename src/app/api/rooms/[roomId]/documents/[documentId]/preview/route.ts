@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -146,6 +147,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       if (!selectedVersion || !selectedVersion.fileBlob) {
         return { error: 'Document version not found', status: 404 };
+      }
+      // Never serve a preview derived from an INFECTED / still-scanning original.
+      if (!isServable(selectedVersion.scanStatus)) {
+        return { error: 'Preview is not available for this document', status: 403 };
       }
 
       // Total rendered pages, so the viewer can paginate multi-page renders.

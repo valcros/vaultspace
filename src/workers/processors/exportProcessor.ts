@@ -14,6 +14,7 @@ import { Job } from 'bullmq';
 import archiver from 'archiver';
 
 import { withOrgContext } from '@/lib/db';
+import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 
 // Exports larger than this (cumulative source bytes) fail with a clear
@@ -143,6 +144,13 @@ export async function processRoomExportJob(job: Job<RoomExportJobPayload>): Prom
         for (const version of doc.versions) {
           if (!version.fileBlob) {
             console.warn(`[ExportProcessor] No file blob for version ${version.id}`);
+            continue;
+          }
+          // Never bundle an INFECTED / still-scanning original into an export.
+          if (!isServable(version.scanStatus)) {
+            console.warn(
+              `[ExportProcessor] Skipping non-servable version ${version.id} (scanStatus=${version.scanStatus})`
+            );
             continue;
           }
 

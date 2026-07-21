@@ -16,6 +16,7 @@ import sharp from 'sharp';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 import { hasCapability } from '@/lib/deployment-capabilities';
 
@@ -103,8 +104,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const providers = getProviders();
     const storage = providers.storage;
 
+    // Scan gate: an INFECTED / still-scanning original must never have its
+    // rendered thumbnail served or (re)generated. The branded placeholder below
+    // is derived from the file name only, so it is always safe to return.
+    const servable = isServable(latestVersion.scanStatus);
+
     // Path 1: Serve stored THUMBNAIL for ALL types (no PDF skip)
-    const thumbnailAsset = latestVersion.previewAssets?.[0];
+    const thumbnailAsset = servable ? latestVersion.previewAssets?.[0] : undefined;
     if (thumbnailAsset) {
       // Storage keys are version-scoped, so the asset is immutable: a long
       // cache plus ETag/304 replaces re-downloading every grid revisit.
@@ -141,6 +147,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     // the thumbnail inline from original file bytes.
     // Only enqueue if async preview capability is available (Redis + Gotenberg configured)
     if (
+      servable &&
       latestVersion.fileBlob &&
       hasCapability('canGenerateAsyncPreviews') &&
       latestVersion.previewStatus !== 'PROCESSING'
