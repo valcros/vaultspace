@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Maximize2,
   X,
+  FileClock,
 } from 'lucide-react';
 
 import { WatermarkOverlay } from '@/components/documents/WatermarkOverlay';
@@ -67,6 +68,12 @@ export default function ViewerDocumentPage() {
   const [showVersionPanel, setShowVersionPanel] = React.useState(false);
   const [activeVersionId, setActiveVersionId] = React.useState<string | null>(null);
   const [activeTotalPages, setActiveTotalPages] = React.useState<number | null>(null);
+  // The preview image can fail to load when the current version is not yet
+  // servable (still being virus-scanned, or replaced by a newer version that is
+  // being checked) or its preview has not finished rendering. Rather than show a
+  // broken-image icon, we render a friendly "unavailable" panel with a retry.
+  const [previewFailed, setPreviewFailed] = React.useState(false);
+  const [previewReloadKey, setPreviewReloadKey] = React.useState(0);
   const viewerRef = React.useRef<HTMLDivElement>(null);
   const touchStartRef = React.useRef<{ x: number; y: number; dist: number } | null>(null);
 
@@ -122,10 +129,21 @@ export default function ViewerDocumentPage() {
   const effectivePageCount =
     activeVersionId && activeTotalPages !== null ? activeTotalPages : (document?.pageCount ?? 1);
 
-  // Preview URL — pass versionId when viewing a historical version
+  // Preview URL — pass versionId when viewing a historical version. The reload
+  // key is a cache-buster so "Retry" forces a fresh request after a failure.
   const previewSrc = document
-    ? `${document.previewUrl}?page=${currentPage}${activeVersionId ? `&versionId=${activeVersionId}` : ''}`
+    ? `${document.previewUrl}?page=${currentPage}${activeVersionId ? `&versionId=${activeVersionId}` : ''}${previewReloadKey ? `&_r=${previewReloadKey}` : ''}`
     : '';
+
+  // A new page / version / retry means a fresh preview attempt: clear the error.
+  React.useEffect(() => {
+    setPreviewFailed(false);
+  }, [currentPage, activeVersionId, previewReloadKey]);
+
+  const handleRetryPreview = React.useCallback(() => {
+    setPreviewFailed(false);
+    setPreviewReloadKey((k) => k + 1);
+  }, []);
 
   const handleSwitchVersion = React.useCallback((version: DocumentVersion) => {
     if (version.isCurrent) {
@@ -429,33 +447,67 @@ export default function ViewerDocumentPage() {
         onTouchMove={handleTouchMove}
       >
         <div className="rounded-xl border border-neutral-200 bg-neutral-100 p-3 shadow-md dark:border-neutral-700 dark:bg-neutral-800 sm:p-4">
-          <div
-            className="relative overflow-hidden rounded-[1.1rem] bg-white shadow-2xl"
-            style={{
-              transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
-              transformOrigin: 'top center',
-              transition: 'transform 0.2s ease',
-            }}
-          >
-            {/* Document Preview Image */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={previewSrc}
-              alt={`Page ${currentPage} of ${document.name}`}
-              className="w-full max-w-[800px]"
-              draggable={false}
-              onContextMenu={(e) => e.preventDefault()}
-            />
-
-            {/* Watermark Overlay (F023) */}
-            {document.watermarkText && (
-              <WatermarkOverlay
-                template={document.watermarkText}
-                viewerEmail={document.viewerEmail ?? undefined}
-                viewerName={document.viewerName ?? undefined}
+          {previewFailed ? (
+            // Friendly unavailable state (current version not yet servable, or
+            // its preview isn't ready). Rendered OUTSIDE the zoom/rotate
+            // transform so the message is never scaled or rotated.
+            <div
+              role="status"
+              className="flex w-full max-w-[800px] flex-col items-center justify-center gap-4 rounded-[1.1rem] bg-white px-8 py-24 text-center shadow-2xl"
+            >
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 text-neutral-500">
+                <FileClock className="h-7 w-7" aria-hidden="true" />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-base font-medium text-neutral-800">
+                  This document isn&rsquo;t available to view right now
+                </p>
+                <p className="mx-auto max-w-sm text-sm text-neutral-500">
+                  {activeVersionId
+                    ? 'This version could not be loaded. It may be unavailable.'
+                    : 'The current version may still be processing, or is being re-checked after an update. Please check back later, or contact the room owner if this continues.'}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRetryPreview}
+                className="rounded-xl"
+              >
+                <RotateCw className="mr-2 h-4 w-4" />
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <div
+              className="relative overflow-hidden rounded-[1.1rem] bg-white shadow-2xl"
+              style={{
+                transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
+                transformOrigin: 'top center',
+                transition: 'transform 0.2s ease',
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewSrc}
+                alt={`Page ${currentPage} of ${document.name}`}
+                className="w-full max-w-[800px]"
+                draggable={false}
+                onContextMenu={(e) => e.preventDefault()}
+                onError={() => setPreviewFailed(true)}
+                onLoad={() => setPreviewFailed(false)}
               />
-            )}
-          </div>
+
+              {/* Watermark Overlay (F023) */}
+              {document.watermarkText && (
+                <WatermarkOverlay
+                  template={document.watermarkText}
+                  viewerEmail={document.viewerEmail ?? undefined}
+                  viewerName={document.viewerName ?? undefined}
+                />
+              )}
+            </div>
+          )}
         </div>
       </div>
 
