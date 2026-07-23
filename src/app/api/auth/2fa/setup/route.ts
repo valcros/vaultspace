@@ -9,44 +9,47 @@
 import { NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { generateTOTPSecret, buildOTPAuthURI } from '@/lib/totp';
 
 export async function POST() {
   try {
     const session = await requireAuth();
 
-    // Check if 2FA is already enabled
-    const user = await db.user.findUnique({
-      where: { id: session.userId },
-      select: { twoFactorEnabled: true, email: true },
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Check if 2FA is already enabled
+      const user = await tx.user.findUnique({
+        where: { id: session.userId },
+        select: { twoFactorEnabled: true, email: true },
+      });
+
+      if (!user) {
+        return { error: 'User not found', status: 404 } as const;
+      }
+
+      if (user.twoFactorEnabled) {
+        return { error: 'Two-factor authentication is already enabled', status: 400 } as const;
+      }
+
+      // Store the secret temporarily (not enabled yet, user must verify first)
+      const secret = generateTOTPSecret();
+      await tx.user.update({
+        where: { id: session.userId },
+        data: { twoFactorSecret: secret },
+      });
+
+      return { user, secret };
     });
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
-
-    if (user.twoFactorEnabled) {
-      return NextResponse.json(
-        { error: 'Two-factor authentication is already enabled' },
-        { status: 400 }
-      );
-    }
-
-    // Generate a new TOTP secret
-    const secret = generateTOTPSecret();
-
-    // Store the secret temporarily (not enabled yet, user must verify first)
-    await db.user.update({
-      where: { id: session.userId },
-      data: { twoFactorSecret: secret },
-    });
 
     // Build the otpauth URI for authenticator apps
-    const otpauthUri = buildOTPAuthURI(secret, user.email);
+    const otpauthUri = buildOTPAuthURI(result.secret, result.user.email);
 
     return NextResponse.json({
-      secret,
+      secret: result.secret,
       otpauthUri,
       message:
         'Scan the QR code or enter the secret manually in your authenticator app, then verify with a code.',
