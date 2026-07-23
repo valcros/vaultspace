@@ -10,25 +10,11 @@ import { EventType } from '@prisma/client';
 import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { csvCell, redactIpAddress } from '@/lib/audit/exportSanitization';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 const EXPORT_ROW_LIMIT = 10_000;
-
-function redactIpAddress(ipAddress: string | null): string | null {
-  if (!ipAddress) {
-    return null;
-  }
-  const ipv4 = ipAddress.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4) {
-    return `${ipv4[1]}.${ipv4[2]}.${ipv4[3]}.xxx`;
-  }
-  if (ipAddress.includes(':')) {
-    const visible = ipAddress.split(':').filter(Boolean).slice(0, 3).join(':');
-    return `${visible || 'ipv6'}:…`;
-  }
-  return 'redacted';
-}
 
 interface RouteContext {
   params: Promise<{ roomId: string }>;
@@ -164,7 +150,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
           'Actor Email (Asserted when external)',
           'Description',
           'IP Address (Redacted)',
-        ].join(','),
+        ]
+          .map(csvCell)
+          .join(','),
         ...result.allEvents.map((event) => {
           const actorName = event.actor
             ? `${event.actor.firstName} ${event.actor.lastName}`
@@ -172,11 +160,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
           return [
             event.createdAt.toISOString(),
             event.eventType,
-            `"${actorName}"`,
+            actorName,
             event.actor?.email ?? event.actorEmail ?? '',
-            `"${(event.description ?? '').replace(/"/g, '""')}"`,
+            event.description ?? '',
             redactIpAddress(event.ipAddress) ?? '',
-          ].join(',');
+          ]
+            .map(csvCell)
+            .join(',');
         }),
       ];
 

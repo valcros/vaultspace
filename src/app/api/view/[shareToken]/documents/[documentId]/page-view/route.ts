@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { withOrgContext } from '@/lib/db';
 import {
@@ -17,6 +18,15 @@ import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
 interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
 }
+
+const pageViewSchema = z.object({
+  pageNumber: z.number().int().min(1).max(10_000),
+  timeSpentMs: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60 * 60 * 1000),
+});
 
 /**
  * POST /api/view/[shareToken]/documents/[documentId]/page-view
@@ -41,17 +51,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     const viewerSession = sessionResult.session;
 
-    const body = await request.json();
-    const { pageNumber, timeSpentMs } = body;
-
-    // Validate input
-    if (typeof pageNumber !== 'number' || pageNumber < 1) {
-      return NextResponse.json({ error: 'Invalid page number' }, { status: 400 });
+    const parsedBody = pageViewSchema.safeParse(await request.json().catch(() => null));
+    if (!parsedBody.success) {
+      return NextResponse.json({ error: 'Invalid page-view data' }, { status: 400 });
     }
-
-    if (typeof timeSpentMs !== 'number' || timeSpentMs < 0) {
-      return NextResponse.json({ error: 'Invalid time spent' }, { status: 400 });
-    }
+    const { pageNumber, timeSpentMs } = parsedBody.data;
 
     const recorded = await withOrgContext(viewerSession.organizationId, async (tx) => {
       // Verify document exists in this room

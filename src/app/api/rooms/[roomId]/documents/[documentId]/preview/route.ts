@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
@@ -20,6 +21,16 @@ export const dynamic = 'force-dynamic';
 interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
 }
+
+const routeParamsSchema = z.object({
+  roomId: z.string().trim().min(1).max(191),
+  documentId: z.string().trim().min(1).max(191),
+});
+
+const previewQuerySchema = z.object({
+  versionId: z.string().trim().min(1).max(191).optional(),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+});
 
 // MIME types that can be previewed inline
 // Types that can be served inline without conversion
@@ -63,16 +74,18 @@ function jsonResponse(data: object, status: number) {
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const parsedParams = routeParamsSchema.safeParse(await context.params);
+    const parsedQuery = previewQuerySchema.safeParse({
+      versionId: request.nextUrl.searchParams.get('versionId') || undefined,
+      page: request.nextUrl.searchParams.get('page') ?? undefined,
+    });
+    if (!parsedParams.success || !parsedQuery.success) {
+      return jsonResponse({ error: 'Invalid preview request' }, 400);
+    }
+    const { roomId, documentId } = parsedParams.data;
+    const { versionId, page: pageParam } = parsedQuery.data;
     const session = await requireAuth();
-    const { roomId, documentId } = await context.params;
     const reqContext = getRequestContext(request);
-    const versionId = request.nextUrl.searchParams.get('versionId');
-    // Which rendered page to serve (Office docs / spreadsheets render to one PNG
-    // per page). Defaults to page 1.
-    const pageParam = Math.max(
-      1,
-      parseInt(request.nextUrl.searchParams.get('page') || '1', 10) || 1
-    );
 
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {

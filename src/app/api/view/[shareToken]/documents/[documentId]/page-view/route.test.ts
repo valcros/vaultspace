@@ -97,6 +97,20 @@ describe('POST /api/view/[shareToken]/documents/[documentId]/page-view', () => {
     });
   });
 
+  it.each([
+    { pageNumber: 0, timeSpentMs: 100 },
+    { pageNumber: 1.5, timeSpentMs: 100 },
+    { pageNumber: 1, timeSpentMs: -1 },
+    { pageNumber: 1, timeSpentMs: '100' },
+  ])('returns 400 without analytics writes for invalid body %#', async (body) => {
+    const response = await POST(makeRequest(body), makeContext());
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid page-view data' });
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(mockPageViewCreate).not.toHaveBeenCalled();
+  });
+
   it('updates an existing page view for a document in a descendant folder', async () => {
     mockDocumentFindFirst.mockResolvedValue({
       id: 'doc-1',

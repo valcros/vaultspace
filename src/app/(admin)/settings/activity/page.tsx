@@ -131,34 +131,44 @@ export default function SettingsActivityPage() {
   const [searchQuery, setSearchQuery] = React.useState('');
   const deferredSearch = React.useDeferredValue(searchQuery.trim());
 
-  const fetchActivity = React.useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set('page', page.toString());
-      params.set('limit', '50');
-      if (eventTypeFilter !== 'all') {
-        params.set('eventType', eventTypeFilter);
+  const fetchActivity = React.useCallback(
+    async (signal: AbortSignal) => {
+      setIsLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set('page', page.toString());
+        params.set('limit', '50');
+        if (eventTypeFilter !== 'all') {
+          params.set('eventType', eventTypeFilter);
+        }
+        if (deferredSearch) {
+          params.set('search', deferredSearch);
+        }
+        const response = await fetch(`/api/organization/activity?${params}`, { signal });
+        const data = await response.json();
+        if (response.ok && !signal.aborted) {
+          setEvents(data.events || []);
+          setPagination(data.pagination || null);
+          setCoverage(data.coverage || null);
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+        console.error('Failed to fetch activity:', error);
+      } finally {
+        if (!signal.aborted) {
+          setIsLoading(false);
+        }
       }
-      if (deferredSearch) {
-        params.set('search', deferredSearch);
-      }
-      const response = await fetch(`/api/organization/activity?${params}`);
-      const data = await response.json();
-      if (response.ok) {
-        setEvents(data.events || []);
-        setPagination(data.pagination || null);
-        setCoverage(data.coverage || null);
-      }
-    } catch (error) {
-      console.error('Failed to fetch activity:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [deferredSearch, eventTypeFilter, page]);
+    },
+    [deferredSearch, eventTypeFilter, page]
+  );
 
   React.useEffect(() => {
-    fetchActivity();
+    const controller = new AbortController();
+    fetchActivity(controller.signal);
+    return () => controller.abort();
   }, [fetchActivity]);
 
   const formatDate = (dateString: string) => {
@@ -305,9 +315,18 @@ export default function SettingsActivityPage() {
         {coverage && (
           <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
             <span className="font-medium">Audit capture: {coverage.auditCaptureMode}</span>
-            <span className="mx-2 text-slate-400">•</span>
-            Inferred rows come from viewer sessions without linked native access events. External
-            emails are asserted and not verified.
+            {coverage.historicalInferenceIncluded && (
+              <>
+                <span className="mx-2 text-slate-400">•</span>
+                Inferred rows come from viewer sessions without linked native access events.
+              </>
+            )}
+            {coverage.identityNotice && (
+              <>
+                <span className="mx-2 text-slate-400">•</span>
+                {coverage.identityNotice}
+              </>
+            )}
           </div>
         )}
 

@@ -12,7 +12,7 @@ import { invalidateSession } from '@/lib/auth';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { bootstrapDb } from '@/lib/db';
-import { clearSessionCookie } from '@/lib/middleware';
+import { clearSessionCookie, getRequestContext } from '@/lib/middleware';
 
 export async function POST(request?: NextRequest) {
   try {
@@ -68,22 +68,18 @@ export async function POST(request?: NextRequest) {
     await clearSessionCookie();
 
     if (auditContext) {
-      const requestId = request?.headers.get('x-request-id') ?? `req_${randomUUID()}`;
-      const ipAddress =
-        request?.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-        request?.headers.get('x-real-ip') ??
-        null;
+      const reqContext = request ? getRequestContext(request) : null;
       await captureAccessAudit({
         organizationId: auditContext.organizationId,
         eventType: 'USER_LOGOUT',
         actorType: auditContext.actorType,
         actorId: auditContext.userId,
         actorEmail: auditContext.email,
-        requestId,
+        requestId: reqContext?.requestId ?? `req_${randomUUID()}`,
         description: 'User signed out',
         metadata: { authSessionId: auditContext.id },
-        ipAddress,
-        userAgent: request?.headers.get('user-agent') ?? null,
+        ipAddress: reqContext && reqContext.ipAddress !== 'unknown' ? reqContext.ipAddress : null,
+        userAgent: reqContext && reqContext.userAgent !== 'unknown' ? reqContext.userAgent : null,
       });
     }
 

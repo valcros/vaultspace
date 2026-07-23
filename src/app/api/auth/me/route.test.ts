@@ -77,4 +77,14 @@ describe('GET /api/auth/me', () => {
     expect(body).toEqual({ error: 'Authentication required' });
     expect(mockWithOrgContext).not.toHaveBeenCalled();
   });
+
+  it('rejects a session without organization context before an RLS query', async () => {
+    mockRequireAuth.mockResolvedValue({ userId: 'user-1', organizationId: null });
+
+    const response = await GET();
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Authentication required' });
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
+  });
 });

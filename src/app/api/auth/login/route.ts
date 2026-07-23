@@ -26,6 +26,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, password, rememberMe } = loginSchema.parse(body);
     const reqContext = getRequestContext(request);
+    const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
+    const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
 
     // Find user with their organizations. Uses bootstrapDb because we don't
     // know the user's org yet, so RLS can't be scoped — the admin connection
@@ -93,8 +95,8 @@ export async function POST(request: NextRequest) {
           organizationId: userOrg.organization.id,
           token: sessionToken,
           expiresAt,
-          ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-          userAgent: request.headers.get('user-agent') ?? null,
+          ipAddress,
+          userAgent,
         },
       });
 
@@ -121,8 +123,8 @@ export async function POST(request: NextRequest) {
         authSessionId: authSession.id,
         authenticationMethod: 'PASSWORD',
       },
-      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
-      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+      ipAddress,
+      userAgent,
     });
 
     return NextResponse.json({

@@ -58,8 +58,10 @@ vi.mock('@/lib/db', () => ({
 
 import { GET } from './route';
 
-function makeRequest(): NextRequest {
-  return new NextRequest(new URL('http://localhost:3000/api/rooms/room-1/documents/doc-1/preview'));
+function makeRequest(query = ''): NextRequest {
+  return new NextRequest(
+    new URL(`http://localhost:3000/api/rooms/room-1/documents/doc-1/preview${query}`)
+  );
 }
 
 function makeContext() {
@@ -99,6 +101,25 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
     mockStorage.get.mockResolvedValue(Buffer.from('file content'));
     mockStorage.getSignedUrl.mockResolvedValue('https://storage.example.com/signed?sig=abc');
   });
+
+  it('returns 400 before database access for malformed route identifiers', async () => {
+    const res = await GET(makeRequest(), {
+      params: Promise.resolve({ roomId: 'room-1', documentId: '' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+  });
+
+  it.each(['?page=0', '?page=not-a-number', '?page=10001', '?versionId=%20'])(
+    'returns 400 before database access for malformed preview query %s',
+    async (query) => {
+      const res = await GET(makeRequest(query), makeContext());
+
+      expect(res.status).toBe(400);
+      expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+    }
+  );
 
   it('captures a successful document view and remains available on audit failure', async () => {
     mockCaptureAccessAudit.mockResolvedValue('failed');

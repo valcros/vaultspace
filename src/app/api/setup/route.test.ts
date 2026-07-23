@@ -402,8 +402,11 @@ describe('POST /api/setup', () => {
 
     const response = await POST(request);
     expect(response.status).toBe(200);
-    expect(capturedSessionData?.['ipAddress']).toBe('192.168.1.100');
-    expect(capturedSessionData?.['userAgent']).toBe('Mozilla/5.0 Test Browser');
+    expect(capturedSessionData?.['ipAddress']).toBe('127.0.0.1');
+    expect(capturedSessionData?.['userAgent']).toBe('vitest');
+    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
+    );
   });
 
   it('returns 500 when transaction fails', async () => {

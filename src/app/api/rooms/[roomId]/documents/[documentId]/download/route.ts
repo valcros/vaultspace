@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
@@ -21,14 +22,23 @@ interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
 }
 
+const routeParamsSchema = z.object({
+  roomId: z.string().trim().min(1).max(191),
+  documentId: z.string().trim().min(1).max(191),
+});
+
 /**
  * GET /api/rooms/:roomId/documents/:documentId/download
  * Download document as authenticated admin
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const parsedParams = routeParamsSchema.safeParse(await context.params);
+    if (!parsedParams.success) {
+      return NextResponse.json({ error: 'Invalid document route' }, { status: 400 });
+    }
+    const { roomId, documentId } = parsedParams.data;
     const session = await requireAuth();
-    const { roomId, documentId } = await context.params;
     const reqContext = getRequestContext(request);
 
     // Use RLS context for all org-scoped queries

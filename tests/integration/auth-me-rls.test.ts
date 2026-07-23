@@ -114,7 +114,7 @@ describe('GET /api/auth/me with RLS', () => {
     const response = await GET();
     const body = await response.json();
 
-    expect(response.status).not.toBe(200);
+    expect(response.status).toBe(401);
     expect(body.user).toBeUndefined();
   });
 
@@ -124,7 +124,7 @@ describe('GET /api/auth/me with RLS', () => {
     const response = await GET();
     const body = await response.json();
 
-    expect(response.status).not.toBe(200);
+    expect(response.status).toBe(401);
     expect(body.user).toBeUndefined();
   });
 });

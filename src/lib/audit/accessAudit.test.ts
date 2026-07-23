@@ -135,13 +135,42 @@ describe('captureAccessAudit', () => {
         ...baseInput,
         eventType: 'LINK_ACCESS_DENIED',
         description: 'Share-link access denied',
+        metadata: { reason: 'PASSWORD_INVALID' },
         dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.LINK_ACCESS_DENIED,
         dedupeByIp: true,
       })
     ).resolves.toBe('deduplicated');
 
     expect(eventFindFirst).toHaveBeenCalledWith({
-      where: expect.objectContaining({ ipAddress: '192.0.2.10' }),
+      where: expect.objectContaining({
+        ipAddress: '192.0.2.10',
+        metadata: { path: ['reason'], equals: 'PASSWORD_INVALID' },
+      }),
+      select: { id: true },
+    });
+  });
+
+  it('normalizes asserted email in the dedupe lookup', async () => {
+    const eventFindFirst = vi.fn().mockResolvedValue({ id: 'existing-event' });
+    mockWithOrgContext.mockImplementation(async (_orgId, operation) =>
+      operation({
+        organization: { findUnique: vi.fn().mockResolvedValue({ auditCaptureMode: 'SHADOW' }) },
+        event: { findFirst: eventFindFirst, create: vi.fn() },
+        viewSession: { updateMany: vi.fn() },
+      })
+    );
+
+    await expect(
+      captureAccessAudit({
+        ...baseInput,
+        viewSessionId: null,
+        actorEmail: '  Asserted@Example.com  ',
+        dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.DOCUMENT_VIEWED,
+      })
+    ).resolves.toBe('deduplicated');
+
+    expect(eventFindFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({ actorEmail: 'asserted@example.com' }),
       select: { id: true },
     });
   });
