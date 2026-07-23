@@ -361,7 +361,7 @@ export default function SettingsActivityPage() {
                     />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm">
+                    <div className="text-sm">
                       <span className="font-medium">{getActorName(event.actor)}</span>
                       {event.actor?.identityLabel === 'Asserted email' && (
                         <Badge variant="outline" className="ml-2 text-[10px]">
@@ -375,7 +375,7 @@ export default function SettingsActivityPage() {
                           <span className="font-medium">{event.room.name}</span>
                         </>
                       )}
-                    </p>
+                    </div>
                     {event.description && (
                       <p className="mt-1 text-sm text-neutral-600">{event.description}</p>
                     )}

@@ -389,7 +389,7 @@ export default function ActivityPage() {
                           <EventIcon className={`h-4 w-4 ${style.text}`} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm">
+                          <div className="text-sm">
                             {event.actor ? (
                               <>
                                 <span className="font-medium">
@@ -419,7 +419,7 @@ export default function ActivityPage() {
                                 </span>
                               </>
                             )}
-                          </p>
+                          </div>
                           <div className="mt-1 flex items-center gap-3 text-xs text-neutral-600 dark:text-neutral-400">
                             <span>{formatDate(event.createdAt)}</span>
                             {event.room && (
