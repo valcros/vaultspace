@@ -14,10 +14,12 @@ import {
   AlertTriangle,
   FileText,
   Link2,
+  Search,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -43,9 +45,11 @@ interface ActivityEvent {
         id: string;
         name: string;
         email: string;
+        identityLabel: string;
       }
     | {
         email: string;
+        identityLabel: string;
       }
     | null;
   room: {
@@ -55,6 +59,8 @@ interface ActivityEvent {
   description: string | null;
   ipAddress: string | null;
   createdAt: string;
+  provenance: 'native' | 'legacy' | 'inferred';
+  auditStatus: 'authoritative' | 'shadow' | 'inferred';
 }
 
 interface ActivityResponse {
@@ -64,6 +70,11 @@ interface ActivityResponse {
     limit: number;
     total: number;
     totalPages: number;
+  };
+  coverage: {
+    auditCaptureMode: 'OFF' | 'SHADOW' | 'AUTHORITATIVE';
+    historicalInferenceIncluded: boolean;
+    identityNotice: string;
   };
 }
 
@@ -85,6 +96,7 @@ const eventIcons: Record<string, React.ElementType> = {
   DOCUMENT_DELETED: FileText,
   LINK_CREATED: Link2,
   LINK_ACCESSED: Link2,
+  LINK_ACCESS_DENIED: AlertTriangle,
 };
 
 const eventLabels: Record<string, string> = {
@@ -105,15 +117,19 @@ const eventLabels: Record<string, string> = {
   DOCUMENT_DELETED: 'deleted document',
   LINK_CREATED: 'created link',
   LINK_ACCESSED: 'accessed link',
+  LINK_ACCESS_DENIED: 'was denied link access',
 };
 
 export default function SettingsActivityPage() {
   const router = useRouter();
   const [events, setEvents] = React.useState<ActivityEvent[]>([]);
   const [pagination, setPagination] = React.useState<ActivityResponse['pagination'] | null>(null);
+  const [coverage, setCoverage] = React.useState<ActivityResponse['coverage'] | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [eventTypeFilter, setEventTypeFilter] = React.useState('all');
   const [page, setPage] = React.useState(1);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const deferredSearch = React.useDeferredValue(searchQuery.trim());
 
   const fetchActivity = React.useCallback(async () => {
     setIsLoading(true);
@@ -124,18 +140,22 @@ export default function SettingsActivityPage() {
       if (eventTypeFilter !== 'all') {
         params.set('eventType', eventTypeFilter);
       }
+      if (deferredSearch) {
+        params.set('search', deferredSearch);
+      }
       const response = await fetch(`/api/organization/activity?${params}`);
       const data = await response.json();
       if (response.ok) {
         setEvents(data.events || []);
         setPagination(data.pagination || null);
+        setCoverage(data.coverage || null);
       }
     } catch (error) {
       console.error('Failed to fetch activity:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [eventTypeFilter, page]);
+  }, [deferredSearch, eventTypeFilter, page]);
 
   React.useEffect(() => {
     fetchActivity();
@@ -175,6 +195,9 @@ export default function SettingsActivityPage() {
       params.set('export', 'csv');
       if (eventTypeFilter !== 'all') {
         params.set('eventType', eventTypeFilter);
+      }
+      if (deferredSearch) {
+        params.set('search', deferredSearch);
       }
 
       const response = await fetch(`/api/organization/activity?${params}`);
@@ -234,7 +257,23 @@ export default function SettingsActivityPage() {
             </div>
           }
         >
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="relative min-w-[260px] flex-1">
+              <Search
+                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400"
+                aria-hidden="true"
+              />
+              <Input
+                aria-label="Search activity"
+                placeholder="Search actor, asserted email, room, folder, or document"
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setPage(1);
+                }}
+                className="pl-9"
+              />
+            </div>
             <Select
               value={eventTypeFilter}
               onValueChange={(value) => {
@@ -256,10 +295,21 @@ export default function SettingsActivityPage() {
                 <SelectItem value="DOCUMENT_UPLOADED">Document Uploaded</SelectItem>
                 <SelectItem value="DOCUMENT_VIEWED">Document Viewed</SelectItem>
                 <SelectItem value="DOCUMENT_DOWNLOADED">Document Downloaded</SelectItem>
+                <SelectItem value="LINK_ACCESSED">Link Accessed</SelectItem>
+                <SelectItem value="LINK_ACCESS_DENIED">Link Access Denied</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </AdminToolbar>
+
+        {coverage && (
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+            <span className="font-medium">Audit capture: {coverage.auditCaptureMode}</span>
+            <span className="mx-2 text-slate-400">•</span>
+            Inferred rows come from viewer sessions without linked native access events. External
+            emails are asserted and not verified.
+          </div>
+        )}
 
         {/* Activity List */}
         {isLoading ? (
@@ -290,7 +340,9 @@ export default function SettingsActivityPage() {
               const label =
                 eventLabels[event.eventType] || event.eventType.replace(/_/g, ' ').toLowerCase();
               const isSecurityEvent =
-                event.eventType.includes('SECURITY') || event.eventType.includes('ALERT');
+                event.eventType.includes('SECURITY') ||
+                event.eventType.includes('ALERT') ||
+                event.eventType.includes('DENIED');
 
               return (
                 <div
@@ -311,6 +363,11 @@ export default function SettingsActivityPage() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm">
                       <span className="font-medium">{getActorName(event.actor)}</span>
+                      {event.actor?.identityLabel === 'Asserted email' && (
+                        <Badge variant="outline" className="ml-2 text-[10px]">
+                          Asserted email
+                        </Badge>
+                      )}
                       <span className="text-neutral-500"> {label}</span>
                       {event.room && (
                         <>
@@ -327,7 +384,7 @@ export default function SettingsActivityPage() {
                       {event.ipAddress && (
                         <>
                           <span>•</span>
-                          <span>{event.ipAddress}</span>
+                          <span>IP {event.ipAddress}</span>
                         </>
                       )}
                       {isSecurityEvent && (
@@ -337,6 +394,11 @@ export default function SettingsActivityPage() {
                             Security
                           </Badge>
                         </>
+                      )}
+                      {event.auditStatus !== 'authoritative' && (
+                        <Badge variant="outline" className="text-[10px] capitalize">
+                          {event.auditStatus}
+                        </Badge>
                       )}
                     </div>
                   </div>
