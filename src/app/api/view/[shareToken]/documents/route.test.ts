@@ -147,4 +147,101 @@ describe('GET /api/view/[shareToken]/documents', () => {
     expect(body.error).toBe('Session expired or invalid');
     expect(mockWithOrgContext).not.toHaveBeenCalled();
   });
+
+  it('returns a validated breadcrumb for a nested folder context', async () => {
+    const findFirst = vi.fn(async ({ where }: { where: { id: string } }) => {
+      if (where.id === 'folder-child') {
+        return { id: 'folder-child', name: 'Child', parentId: 'folder-parent' };
+      }
+      if (where.id === 'folder-parent') {
+        return { id: 'folder-parent', name: 'Parent', parentId: null };
+      }
+      return null;
+    });
+    const findMany = vi.fn().mockResolvedValue([]);
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) =>
+      callback({
+        folder: { findFirst, findMany },
+        document: { findMany: vi.fn().mockResolvedValue([]) },
+      } as unknown as Parameters<typeof callback>[0])
+    );
+
+    const request = new NextRequest(
+      'http://localhost:3000/api/view/share-token/documents?folderId=folder-child'
+    );
+    const response = await GET(request, makeContext('share-token'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.folderContextId).toBe('folder-child');
+    expect(body.trail).toEqual([
+      { id: 'folder-parent', name: 'Parent' },
+      { id: 'folder-child', name: 'Child' },
+    ]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ parentId: 'folder-child' }) })
+    );
+  });
+
+  it('falls back to the viewer root when folder context is stale', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) =>
+      callback({
+        folder: { findFirst: vi.fn().mockResolvedValue(null), findMany },
+        document: { findMany: vi.fn().mockResolvedValue([]) },
+      } as unknown as Parameters<typeof callback>[0])
+    );
+
+    const request = new NextRequest(
+      'http://localhost:3000/api/view/share-token/documents?folderId=stale-folder'
+    );
+    const response = await GET(request, makeContext('share-token'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.folderContextId).toBeNull();
+    expect(body.trail).toEqual([]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ parentId: null }) })
+    );
+  });
+
+  it('does not let folder context escape a folder-scoped link', async () => {
+    const scopedSession = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...scopedSession,
+      link: {
+        ...scopedSession.link,
+        scope: 'FOLDER',
+        scopedFolderId: 'folder-scope-root',
+      },
+    });
+    const findMany = vi.fn().mockResolvedValue([]);
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) =>
+      callback({
+        folder: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ id: 'outside-folder', name: 'Outside', parentId: null }),
+          findMany,
+        },
+        document: { findMany: vi.fn().mockResolvedValue([]) },
+      } as unknown as Parameters<typeof callback>[0])
+    );
+
+    const request = new NextRequest(
+      'http://localhost:3000/api/view/share-token/documents?folderId=outside-folder'
+    );
+    const response = await GET(request, makeContext('share-token'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.folderContextId).toBeNull();
+    expect(body.trail).toEqual([]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ parentId: 'folder-scope-root' }),
+      })
+    );
+  });
 });

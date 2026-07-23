@@ -8,23 +8,28 @@
 import { NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
     const session = await requireAuth();
+    if (!session.organizationId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
-    const user = await db.user.findUnique({
-      where: { id: session.userId },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        twoFactorEnabled: true,
-      },
+    const user = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.user.findUnique({
+        where: { id: session.userId },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          twoFactorEnabled: true,
+        },
+      });
     });
 
     if (!user) {

@@ -9,8 +9,9 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { generateTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
+import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { bootstrapDb, withOrgContext } from '@/lib/db';
-import { setSessionCookie } from '@/lib/middleware';
+import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
 
@@ -24,6 +25,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { email, password, rememberMe } = loginSchema.parse(body);
+    const reqContext = getRequestContext(request);
+    const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
+    const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
 
     // Find user with their organizations. Uses bootstrapDb because we don't
     // know the user's org yet, so RLS can't be scoped — the admin connection
@@ -84,15 +88,15 @@ export async function POST(request: NextRequest) {
 
     // Create the session and stamp the lastLoginAt atomically inside an org
     // context so RLS policies on the users table can verify membership.
-    await withOrgContext(userOrg.organization.id, async (tx) => {
-      await tx.session.create({
+    const authSession = await withOrgContext(userOrg.organization.id, async (tx) => {
+      const createdSession = await tx.session.create({
         data: {
           userId: user.id,
           organizationId: userOrg.organization.id,
           token: sessionToken,
           expiresAt,
-          ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-          userAgent: request.headers.get('user-agent') ?? null,
+          ipAddress,
+          userAgent,
         },
       });
 
@@ -100,10 +104,28 @@ export async function POST(request: NextRequest) {
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
       });
+
+      return createdSession;
     });
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
+
+    await captureAccessAudit({
+      organizationId: userOrg.organization.id,
+      eventType: 'USER_LOGIN',
+      actorType: userOrg.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+      actorId: user.id,
+      actorEmail: user.email,
+      requestId: reqContext.requestId,
+      description: 'User signed in',
+      metadata: {
+        authSessionId: authSession.id,
+        authenticationMethod: 'PASSWORD',
+      },
+      ipAddress,
+      userAgent,
+    });
 
     return NextResponse.json({
       user: {

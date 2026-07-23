@@ -24,6 +24,59 @@ import { withOrgContext } from '@/lib/db';
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockWithOrgContext = vi.mocked(withOrgContext);
 
+interface MockEvent {
+  id: string;
+  eventType: string;
+  actorType?: string;
+  actor?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
+  actorEmail?: string | null;
+  room?: { id: string; name: string } | null;
+  description?: string | null;
+  ipAddress?: string | null;
+  createdAt: Date;
+  documentId?: string | null;
+  provenance?: string;
+  auditStatus?: string;
+  sourceMetadata?: { source: string; sourceId: string };
+}
+
+function makeActivityResult(events: MockEvent[], total: number) {
+  return {
+    records: events.map((event) => ({
+      id: event.id,
+      eventType: event.eventType,
+      actorType: event.actorType ?? 'SYSTEM',
+      actor: event.actor
+        ? {
+            id: event.actor.id,
+            name: `${event.actor.firstName} ${event.actor.lastName}`.trim(),
+            email: event.actor.email,
+            identityLabel: 'Account identity',
+          }
+        : event.actorEmail
+          ? { email: event.actorEmail, identityLabel: 'Asserted email' }
+          : null,
+      room: event.room,
+      description: event.description,
+      ipAddress: event.ipAddress,
+      createdAt: event.createdAt,
+      documentId: event.documentId ?? null,
+      provenance: event.provenance ?? 'legacy',
+      auditStatus: event.auditStatus ?? 'authoritative',
+      sourceMetadata: event.sourceMetadata ?? { source: 'legacy_event', sourceId: event.id },
+    })),
+    total,
+    folderByDocId: new Map(),
+    auditCaptureMode: 'OFF',
+    exportTruncated: false,
+  };
+}
+
 describe('GET /api/organization/activity', () => {
   const mockAdminSession = {
     userId: 'user-1',
@@ -73,7 +126,7 @@ describe('GET /api/organization/activity', () => {
       },
     ];
 
-    mockWithOrgContext.mockResolvedValue({ events: mockEvents, total: 1 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult(mockEvents, 1));
 
     const request = new NextRequest('http://localhost/api/organization/activity');
     const response = await GET(request);
@@ -87,7 +140,7 @@ describe('GET /api/organization/activity', () => {
   });
 
   it('supports pagination parameters', async () => {
-    mockWithOrgContext.mockResolvedValue({ events: [], total: 150 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult([], 150));
 
     const request = new NextRequest('http://localhost/api/organization/activity?page=3&limit=25');
     const response = await GET(request);
@@ -100,7 +153,7 @@ describe('GET /api/organization/activity', () => {
   });
 
   it('enforces max limit of 100', async () => {
-    mockWithOrgContext.mockResolvedValue({ events: [], total: 500 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult([], 500));
 
     const request = new NextRequest('http://localhost/api/organization/activity?limit=200');
     const response = await GET(request);
@@ -110,8 +163,84 @@ describe('GET /api/organization/activity', () => {
     expect(body.pagination.limit).toBe(100);
   });
 
+  it('merges unlinked viewer sessions as inferred rows without duplicating native access', async () => {
+    const eventFindMany = vi.fn().mockResolvedValue([
+      {
+        id: 'event-1',
+        eventType: 'LINK_ACCESSED',
+        actorType: 'VIEWER',
+        actor: null,
+        actorEmail: 'native@example.com',
+        room: { id: 'room-1', name: 'Investor Room' },
+        description: 'Share link accessed',
+        ipAddress: '198.51.100.23',
+        createdAt: new Date('2024-01-15T10:00:00Z'),
+        documentId: null,
+        metadata: { source: 'native', authoritative: false },
+      },
+    ]);
+    const viewSessionFindMany = vi.fn().mockResolvedValue([
+      {
+        id: 'viewer-session-legacy',
+        createdAt: new Date('2024-01-15T11:00:00Z'),
+        visitorEmail: 'inferred@example.com',
+        visitorName: 'External Viewer',
+        ipAddress: '2001:db8:1234:5678::1',
+        user: null,
+        room: { id: 'room-1', name: 'Investor Room' },
+      },
+    ]);
+    const documentFindMany = vi.fn().mockResolvedValue([]);
+
+    mockWithOrgContext.mockImplementation(async (_organizationId, callback) =>
+      callback({
+        event: { findMany: eventFindMany, count: vi.fn().mockResolvedValue(1) },
+        viewSession: {
+          findMany: viewSessionFindMany,
+          count: vi.fn().mockResolvedValue(1),
+        },
+        organization: {
+          findUnique: vi.fn().mockResolvedValue({ auditCaptureMode: 'SHADOW' }),
+        },
+        room: { findMany: vi.fn().mockResolvedValue([]) },
+        document: { findMany: documentFindMany },
+      } as never)
+    );
+
+    const response = await GET(new NextRequest('http://localhost/api/organization/activity'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.pagination.total).toBe(2);
+    expect(body.events[0]).toEqual(
+      expect.objectContaining({
+        id: 'inferred-view-session-viewer-session-legacy',
+        provenance: 'inferred',
+        auditStatus: 'inferred',
+        ipAddress: '2001:db8:1234:…',
+        sourceMetadata: { source: 'view_session', sourceId: 'viewer-session-legacy' },
+      })
+    );
+    expect(body.events[0].actor.identityLabel).toBe('Asserted email');
+    expect(body.events[1]).toEqual(
+      expect.objectContaining({
+        provenance: 'native',
+        auditStatus: 'shadow',
+        ipAddress: '198.51.100.xxx',
+      })
+    );
+    expect(body.coverage.auditCaptureMode).toBe('SHADOW');
+    expect(viewSessionFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          events: { none: { eventType: 'LINK_ACCESSED' } },
+        }),
+      })
+    );
+  });
+
   it('filters by userId', async () => {
-    mockWithOrgContext.mockResolvedValue({ events: [], total: 0 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult([], 0));
 
     const request = new NextRequest('http://localhost/api/organization/activity?userId=user-2');
     const response = await GET(request);
@@ -119,7 +248,7 @@ describe('GET /api/organization/activity', () => {
   });
 
   it('filters by eventType', async () => {
-    mockWithOrgContext.mockResolvedValue({ events: [], total: 0 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult([], 0));
 
     const request = new NextRequest(
       'http://localhost/api/organization/activity?eventType=DOCUMENT_DOWNLOADED'
@@ -129,7 +258,7 @@ describe('GET /api/organization/activity', () => {
   });
 
   it('filters by roomId', async () => {
-    mockWithOrgContext.mockResolvedValue({ events: [], total: 0 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult([], 0));
 
     const request = new NextRequest('http://localhost/api/organization/activity?roomId=room-1');
     const response = await GET(request);
@@ -137,7 +266,7 @@ describe('GET /api/organization/activity', () => {
   });
 
   it('filters by date range', async () => {
-    mockWithOrgContext.mockResolvedValue({ events: [], total: 0 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult([], 0));
 
     const request = new NextRequest(
       'http://localhost/api/organization/activity?from=2024-01-01&to=2024-01-31'
@@ -151,16 +280,16 @@ describe('GET /api/organization/activity', () => {
       {
         id: 'event-1',
         eventType: 'DOCUMENT_VIEWED',
-        description: 'Viewed document',
+        description: '@SUM(1+1)',
         ipAddress: '10.0.0.1',
         createdAt: new Date('2024-01-15T10:00:00Z'),
         actor: { id: 'user-1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' },
-        room: { id: 'room-1', name: 'Financials' },
+        room: { id: 'room-1', name: '-Financials' },
         actorEmail: null,
       },
     ];
 
-    mockWithOrgContext.mockResolvedValue({ events: mockEvents, total: 1 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult(mockEvents, 1));
 
     const request = new NextRequest('http://localhost/api/organization/activity?export=csv');
     const response = await GET(request);
@@ -169,10 +298,13 @@ describe('GET /api/organization/activity', () => {
     expect(response.headers.get('Content-Disposition')).toContain('attachment');
 
     const csv = await response.text();
-    expect(csv).toContain('Timestamp,Event Type,Actor');
+    expect(csv).toContain('"Timestamp","Event Type","Actor"');
+    expect(csv).toContain('"IP Address (Redacted)"');
+    expect(response.headers.get('X-Activity-Export-Truncated')).toBe('false');
     expect(csv).toContain('DOCUMENT_VIEWED');
     expect(csv).toContain('Jane Doe');
-    expect(csv).toContain('Financials');
+    expect(csv).toContain('"\'-Financials"');
+    expect(csv).toContain('"\'@SUM(1+1)"');
   });
 
   it('handles events without actors', async () => {
@@ -189,7 +321,7 @@ describe('GET /api/organization/activity', () => {
       },
     ];
 
-    mockWithOrgContext.mockResolvedValue({ events: mockEvents, total: 1 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult(mockEvents, 1));
 
     const request = new NextRequest('http://localhost/api/organization/activity');
     const response = await GET(request);
@@ -214,7 +346,7 @@ describe('GET /api/organization/activity', () => {
       },
     ];
 
-    mockWithOrgContext.mockResolvedValue({ events: mockEvents, total: 1 });
+    mockWithOrgContext.mockResolvedValue(makeActivityResult(mockEvents, 1));
 
     const request = new NextRequest('http://localhost/api/organization/activity');
     const response = await GET(request);
@@ -222,5 +354,7 @@ describe('GET /api/organization/activity', () => {
 
     const body = await response.json();
     expect(body.events[0].actor.email).toBe('external@viewer.com');
+    expect(body.events[0].actor.identityLabel).toBe('Asserted email');
+    expect(body.coverage.identityNotice).toContain('asserted, not verified');
   });
 });

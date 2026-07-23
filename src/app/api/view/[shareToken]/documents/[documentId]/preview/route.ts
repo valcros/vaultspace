@@ -15,6 +15,7 @@ import {
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
+import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -46,14 +47,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     const viewerSession = sessionResult.session;
 
-    // Check if document is allowed by link scope
-    if (
-      viewerSession.link.scope === 'DOCUMENT' &&
-      viewerSession.link.scopedDocumentId !== documentId
-    ) {
-      return jsonResponse({ error: 'Document not found' }, 404);
-    }
-
     // Get page number and optional versionId from query params
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
@@ -74,10 +67,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
           status: 'ACTIVE',
           withdrawnAt: null,
         },
-        select: { id: true, currentVersionId: true },
+        select: { id: true, folderId: true, currentVersionId: true },
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const allowed = await canViewerLinkAccessDocument(
+        tx,
+        viewerSession.link,
+        viewerSession.room.id,
+        document
+      );
+      if (!allowed) {
         return { error: 'Document not found', status: 404 };
       }
 

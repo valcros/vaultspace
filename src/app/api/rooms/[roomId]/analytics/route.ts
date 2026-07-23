@@ -43,16 +43,23 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
       const [
         totalDocuments,
-        totalViews,
-        totalDownloads,
+        documentCounters,
+        capturedViews,
+        capturedDownloads,
         uniqueViewerRecords,
         topDocuments,
         recentViewerSessions,
         recentEvents,
         viewEvents,
+        organization,
       ] = await Promise.all([
         tx.document.count({
           where: { ...orgRoomFilter, status: 'ACTIVE', deletedAt: null },
+        }),
+
+        tx.document.aggregate({
+          where: { ...orgRoomFilter, status: 'ACTIVE', deletedAt: null },
+          _sum: { viewCount: true, downloadCount: true },
         }),
 
         tx.event.count({
@@ -63,14 +70,13 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           where: { ...orgRoomFilter, eventType: 'DOCUMENT_DOWNLOADED' },
         }),
 
-        tx.event.findMany({
+        tx.viewSession.findMany({
           where: {
             ...orgRoomFilter,
-            eventType: { in: ['DOCUMENT_VIEWED', 'DOCUMENT_DOWNLOADED'] },
-            actorEmail: { not: null },
+            visitorEmail: { not: null },
           },
-          select: { actorEmail: true },
-          distinct: ['actorEmail'],
+          select: { visitorEmail: true },
+          distinct: ['visitorEmail'],
         }),
 
         tx.document.findMany({
@@ -107,6 +113,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             description: true,
             actorEmail: true,
             actor: { select: { firstName: true, lastName: true, email: true } },
+            metadata: true,
             createdAt: true,
           },
           orderBy: { createdAt: 'desc' },
@@ -124,6 +131,11 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             AND "createdAt" >= ${periodStart}
           GROUP BY 1
         `,
+
+        tx.organization.findUnique({
+          where: { id: session.organizationId },
+          select: { auditCaptureMode: true },
+        }),
       ]);
 
       // Build daily view timeline over the period
@@ -145,9 +157,20 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return {
         summary: {
           totalDocuments,
-          totalViews,
+          totalViews: documentCounters._sum.viewCount ?? 0,
           uniqueViewers: uniqueViewerRecords.length,
-          totalDownloads,
+          totalDownloads: documentCounters._sum.downloadCount ?? 0,
+        },
+        auditReconciliation: {
+          captureMode: organization?.auditCaptureMode ?? 'OFF',
+          operationalViewCount: documentCounters._sum.viewCount ?? 0,
+          capturedViewEvents: capturedViews,
+          operationalDownloadCount: documentCounters._sum.downloadCount ?? 0,
+          capturedDownloadEvents: capturedDownloads,
+          viewDelta: (documentCounters._sum.viewCount ?? 0) - capturedViews,
+          downloadDelta: (documentCounters._sum.downloadCount ?? 0) - capturedDownloads,
+          interpretation:
+            'Operational counters include historical and repeated activity. Audit events begin when capture is enabled and may be deduplicated.',
         },
         topDocuments: topDocuments.map((doc) => ({
           id: doc.id,
@@ -160,6 +183,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         recentViewers: recentViewerSessions.map((s) => ({
           email: s.visitorEmail,
           name: s.visitorName,
+          identityLabel: s.visitorEmail ? 'Asserted email' : 'Anonymous viewer',
           timeSpent: s.totalTimeSpentSeconds,
           lastActive: s.lastActivityAt.toISOString(),
         })),
@@ -168,6 +192,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           type: e.eventType,
           description: e.description,
           actor: e.actor ? `${e.actor.firstName} ${e.actor.lastName}` : (e.actorEmail ?? 'System'),
+          identityLabel: e.actor ? 'Account identity' : e.actorEmail ? 'Asserted email' : 'System',
+          auditStatus:
+            e.metadata &&
+            typeof e.metadata === 'object' &&
+            !Array.isArray(e.metadata) &&
+            (e.metadata as Record<string, unknown>)['authoritative'] === false
+              ? 'shadow'
+              : 'authoritative',
           createdAt: e.createdAt.toISOString(),
         })),
         viewTimeline,

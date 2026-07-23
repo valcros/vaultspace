@@ -22,6 +22,15 @@ enum UserRole {
   VIEWER // Can access documents via links
 }
 
+// Organization-scoped access-audit rollout state. OFF is the global default;
+// SHADOW captures non-authoritative events for reconciliation; AUTHORITATIVE
+// is enabled only after the synthetic zero-mismatch promotion gate passes.
+enum AuditCaptureMode {
+  OFF
+  SHADOW
+  AUTHORITATIVE
+}
+
 // Room lifecycle - F108
 enum RoomStatus {
   DRAFT // Not accessible to viewers
@@ -103,6 +112,7 @@ enum EventType {
   LINK_CREATED
   LINK_REVOKED
   LINK_ACCESSED
+  LINK_ACCESS_DENIED
   LINK_PASSWORD_VERIFIED
 
   // Analytics
@@ -291,8 +301,9 @@ model Organization {
   emailSenderAddress String? @db.VarChar(255)
 
   // Configuration
-  isActive        Boolean @default(true)
-  allowSelfSignup Boolean @default(false)
+  isActive         Boolean          @default(true)
+  allowSelfSignup  Boolean          @default(false)
+  auditCaptureMode AuditCaptureMode @default(OFF)
 
   // Custom Domain (F001)
   customDomain String? @unique @db.VarChar(255)
@@ -1010,7 +1021,10 @@ model ViewSession {
   visitorName  String? @db.VarChar(255)
 
   // Activity tracking
-  lastActivityAt        DateTime @updatedAt
+  // Updated explicitly by meaningful viewer activity. This must not use
+  // @updatedAt, because administrative changes such as session revocation are
+  // not viewer activity and must not advance the timestamp.
+  lastActivityAt        DateTime @default(now())
   totalTimeSpentSeconds Int      @default(0)
 
   // Device info

@@ -16,11 +16,13 @@ import {
   Link2,
   Shield,
   Filter,
+  Search,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -38,12 +40,13 @@ interface AuditEvent {
   ipAddress: string | null;
   createdAt: string;
   actor: {
-    id: string;
-    firstName: string;
-    lastName: string;
+    id?: string;
+    name?: string;
     email: string;
+    identityLabel: string;
   } | null;
-  actorEmail?: string;
+  provenance: 'native' | 'legacy' | 'inferred';
+  auditStatus: 'authoritative' | 'shadow' | 'inferred';
 }
 
 interface AuditData {
@@ -53,6 +56,11 @@ interface AuditData {
     limit: number;
     total: number;
     totalPages: number;
+  };
+  coverage: {
+    auditCaptureMode: 'OFF' | 'SHADOW' | 'AUTHORITATIVE';
+    historicalInferenceIncluded: boolean;
+    identityNotice: string;
   };
 }
 
@@ -68,6 +76,7 @@ const eventIcons: Record<string, React.ElementType> = {
   LINK_CREATED: Link2,
   LINK_DELETED: Link2,
   LINK_ACCESSED: Link2,
+  LINK_ACCESS_DENIED: Shield,
   ROOM_CREATED: Activity,
   ROOM_ARCHIVED: Activity,
 };
@@ -84,6 +93,7 @@ const eventLabels: Record<string, string> = {
   LINK_CREATED: 'Link Created',
   LINK_DELETED: 'Link Deleted',
   LINK_ACCESSED: 'Link Accessed',
+  LINK_ACCESS_DENIED: 'Link Access Denied',
   ROOM_CREATED: 'Room Created',
   ROOM_ARCHIVED: 'Room Archived',
 };
@@ -98,6 +108,8 @@ export default function RoomAuditPage() {
   const [eventType, setEventType] = React.useState('all');
   const [page, setPage] = React.useState(1);
   const [roomName, setRoomName] = React.useState<string>('');
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const deferredSearch = React.useDeferredValue(searchQuery.trim());
 
   const fetchAudit = React.useCallback(async () => {
     setIsLoading(true);
@@ -108,9 +120,13 @@ export default function RoomAuditPage() {
       if (eventType !== 'all') {
         params.set('eventType', eventType);
       }
+      params.set('roomId', roomId);
+      if (deferredSearch) {
+        params.set('search', deferredSearch);
+      }
 
       const [auditResponse, roomResponse] = await Promise.all([
-        fetch(`/api/rooms/${roomId}/audit?${params}`),
+        fetch(`/api/organization/activity?${params}`),
         page === 1 ? fetch(`/api/rooms/${roomId}`) : Promise.resolve(null),
       ]);
 
@@ -128,7 +144,7 @@ export default function RoomAuditPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [roomId, page, eventType]);
+  }, [roomId, page, eventType, deferredSearch]);
 
   React.useEffect(() => {
     fetchAudit();
@@ -137,12 +153,16 @@ export default function RoomAuditPage() {
   const handleExport = async () => {
     try {
       const params = new URLSearchParams();
-      params.set('format', 'csv');
+      params.set('export', 'csv');
+      params.set('roomId', roomId);
       if (eventType !== 'all') {
         params.set('eventType', eventType);
       }
+      if (deferredSearch) {
+        params.set('search', deferredSearch);
+      }
 
-      const response = await fetch(`/api/rooms/${roomId}/audit?${params}`);
+      const response = await fetch(`/api/organization/activity?${params}`);
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -245,7 +265,23 @@ export default function RoomAuditPage() {
 
       <div className="p-6">
         {/* Filters */}
-        <div className="mb-6 flex items-center gap-4">
+        <div className="mb-6 flex flex-wrap items-center gap-4">
+          <div className="relative min-w-[280px] flex-1">
+            <Search
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400"
+              aria-hidden="true"
+            />
+            <Input
+              aria-label="Search room activity"
+              placeholder="Search actor, asserted email, folder, or document"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setPage(1);
+              }}
+              className="pl-9"
+            />
+          </div>
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-neutral-500" />
             <span className="text-sm text-neutral-500">Filter:</span>
@@ -269,9 +305,21 @@ export default function RoomAuditPage() {
               <SelectItem value="PERMISSION_GRANTED">Permissions Granted</SelectItem>
               <SelectItem value="PERMISSION_REVOKED">Permissions Revoked</SelectItem>
               <SelectItem value="LINK_ACCESSED">Link Access</SelectItem>
+              <SelectItem value="LINK_ACCESS_DENIED">Denied Link Access</SelectItem>
             </SelectContent>
           </Select>
         </div>
+
+        {auditData?.coverage && (
+          <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+            <span className="font-medium">
+              Audit capture: {auditData.coverage.auditCaptureMode}
+            </span>
+            <span className="mx-2 text-slate-400">•</span>
+            Inferred rows come from viewer sessions without linked native access events. External
+            emails are asserted and not verified.
+          </div>
+        )}
 
         {/* Audit Events */}
         {!auditData || auditData.events.length === 0 ? (
@@ -301,11 +349,16 @@ export default function RoomAuditPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={getEventVariant(event.eventType)}>{label}</Badge>
                         {event.actor ? (
-                          <span className="text-sm font-medium">
-                            {event.actor.firstName} {event.actor.lastName}
-                          </span>
-                        ) : event.actorEmail ? (
-                          <span className="text-sm text-neutral-600">{event.actorEmail}</span>
+                          <>
+                            <span className="text-sm font-medium">
+                              {event.actor.name || event.actor.email}
+                            </span>
+                            {event.actor.identityLabel === 'Asserted email' && (
+                              <Badge variant="outline" className="text-[10px]">
+                                Asserted email
+                              </Badge>
+                            )}
+                          </>
                         ) : (
                           <span className="text-sm text-neutral-500">System</span>
                         )}
@@ -320,7 +373,7 @@ export default function RoomAuditPage() {
                             <span>•</span>
                             <span className="flex items-center gap-1">
                               <Shield className="h-3 w-3" />
-                              {event.ipAddress}
+                              IP {event.ipAddress}
                             </span>
                           </>
                         )}
@@ -329,6 +382,11 @@ export default function RoomAuditPage() {
                             <span>•</span>
                             <span>{event.actor.email}</span>
                           </>
+                        )}
+                        {event.auditStatus !== 'authoritative' && (
+                          <Badge variant="outline" className="text-[10px] capitalize">
+                            {event.auditStatus}
+                          </Badge>
                         )}
                       </div>
                     </div>

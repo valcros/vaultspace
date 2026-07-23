@@ -8,13 +8,16 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
+import { getRequestContext } from '@/lib/middleware';
 import {
   getViewerSession,
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
+import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -24,8 +27,10 @@ interface RouteContext {
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { shareToken, documentId } = await context.params;
+    const reqContext = getRequestContext(request);
     const session = await getViewerSession(shareToken, {
       ...viewerSessionBaseSelect,
+      visitorEmail: true,
       room: {
         select: {
           id: true,
@@ -48,14 +53,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         { error: 'This link is view-only; downloads are not permitted' },
         { status: 403 }
       );
-    }
-
-    // Check if document is allowed by link scope
-    if (
-      viewerSession.link.scope === 'DOCUMENT' &&
-      viewerSession.link.scopedDocumentId !== documentId
-    ) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
     // Downloading a specific prior version is only allowed when the room exposes
@@ -81,12 +78,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
           id: true,
           name: true,
           mimeType: true,
+          folderId: true,
           allowDownload: true,
           currentVersionId: true,
         },
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const allowed = await canViewerLinkAccessDocument(
+        tx,
+        viewerSession.link,
+        viewerSession.room.id,
+        document
+      );
+      if (!allowed) {
         return { error: 'Document not found', status: 404 };
       }
 
@@ -180,6 +188,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const data = await storage.get(bucket, key);
     const mimeType = document.mimeType || 'application/octet-stream';
     const filename = document.name;
+
+    await captureAccessAudit({
+      organizationId: viewerSession.organizationId,
+      eventType: 'DOCUMENT_DOWNLOADED',
+      actorType: 'VIEWER',
+      actorEmail: viewerSession.visitorEmail,
+      roomId: viewerSession.room.id,
+      documentId,
+      viewSessionId: viewerSession.id,
+      requestId: reqContext.requestId,
+      description: 'Share-link viewer downloaded a document',
+      metadata: {
+        accessPath: 'SHARE_LINK',
+        identityAssurance: viewerSession.visitorEmail ? 'ASSERTED_EMAIL' : 'ANONYMOUS',
+      },
+      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+      dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.DOCUMENT_DOWNLOADED,
+      touchViewerActivity: true,
+    });
 
     // Return file with download headers
     return new NextResponse(new Uint8Array(data), {
