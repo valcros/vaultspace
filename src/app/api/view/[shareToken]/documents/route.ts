@@ -74,7 +74,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     };
 
     // Use RLS context for org-scoped queries
-    const { folders, documents } = await withOrgContext(
+    const { folders, documents, trail, folderContextId } = await withOrgContext(
       viewerSession.organizationId,
       async (tx) => {
         // A document-scoped link exposes exactly one document and no folder tree.
@@ -88,23 +88,51 @@ export async function GET(request: NextRequest, context: RouteContext) {
             orderBy: { name: 'asc' },
             select: documentSelect,
           });
-          return { folders: [], documents: documentsResult };
+          return { folders: [], documents: documentsResult, trail: [], folderContextId: null };
         }
 
         // Resolve the folder the viewer is currently inside. At the root, a
         // folder-scoped link uses its scoped folder as the base.
-        let currentFolderId: string | null =
-          scope === 'FOLDER' && scopedFolderId ? scopedFolderId : null;
+        const baseFolderId = scope === 'FOLDER' && scopedFolderId ? scopedFolderId : null;
+        let currentFolderId: string | null = baseFolderId;
+        let resolvedTrail: Array<{ id: string; name: string }> = [];
         if (requestedFolderId) {
-          // Verify the requested folder exists in this room before using it.
-          const current = await tx.folder.findFirst({
+          // Reconstruct the breadcrumb from immutable parent ids. This also
+          // proves that a requested folder is inside a folder-scoped link's
+          // subtree before any contents are returned.
+          let current = await tx.folder.findFirst({
             where: { id: requestedFolderId, roomId: viewerSession.room.id },
-            select: { id: true },
+            select: { id: true, name: true, parentId: true },
           });
-          if (!current) {
-            return { folders: [], documents: [] };
+
+          const reverseTrail: Array<{ id: string; name: string }> = [];
+          const visited = new Set<string>();
+          let isAccessible = false;
+
+          while (current && !visited.has(current.id)) {
+            visited.add(current.id);
+
+            if (baseFolderId && current.id === baseFolderId) {
+              isAccessible = true;
+              break;
+            }
+
+            reverseTrail.push({ id: current.id, name: current.name });
+            if (!current.parentId) {
+              isAccessible = baseFolderId === null;
+              break;
+            }
+
+            current = await tx.folder.findFirst({
+              where: { id: current.parentId, roomId: viewerSession.room.id },
+              select: { id: true, name: true, parentId: true },
+            });
           }
-          currentFolderId = current.id;
+
+          if (isAccessible) {
+            currentFolderId = requestedFolderId;
+            resolvedTrail = reverseTrail.reverse();
+          }
         }
 
         // Subfolders are the children of the current folder (top-level at root).
@@ -129,7 +157,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
           select: documentSelect,
         });
 
-        return { folders: foldersResult, documents: documentsResult };
+        return {
+          folders: foldersResult,
+          documents: documentsResult,
+          trail: resolvedTrail,
+          // The scoped folder itself is the viewer's logical root, so it does
+          // not need to appear in the URL or breadcrumb.
+          folderContextId: currentFolderId === baseFolderId ? null : currentFolderId,
+        };
       }
     );
 
@@ -163,6 +198,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
         folderPath: d.folder?.path || null,
         createdAt: d.createdAt.toISOString(),
       })),
+      trail,
+      folderContextId,
     });
   } catch (error) {
     console.error('[ViewerDocumentsAPI] Error:', error);
