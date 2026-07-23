@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { verifyTOTP, verifyBackupCode } from '@/lib/totp';
 
 const disableSchema = z.object({
@@ -22,47 +22,52 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { code } = disableSchema.parse(body);
 
-    // Get user with 2FA data
-    const user = await db.user.findUnique({
-      where: { id: session.userId },
-      select: {
-        twoFactorEnabled: true,
-        twoFactorSecret: true,
-        twoFactorBackupCodes: true,
-      },
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Get user with 2FA data
+      const user = await tx.user.findUnique({
+        where: { id: session.userId },
+        select: {
+          twoFactorEnabled: true,
+          twoFactorSecret: true,
+          twoFactorBackupCodes: true,
+        },
+      });
+
+      if (!user) {
+        return { error: 'User not found', status: 404 } as const;
+      }
+
+      if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+        return { error: 'Two-factor authentication is not enabled', status: 400 } as const;
+      }
+
+      // Verify TOTP code or backup code
+      const isTOTPValid = verifyTOTP(user.twoFactorSecret, code);
+      const backupCodeIndex = !isTOTPValid ? verifyBackupCode(code, user.twoFactorBackupCodes) : -1;
+
+      if (!isTOTPValid && backupCodeIndex === -1) {
+        return {
+          error: 'Invalid code. Please enter a valid authenticator or backup code.',
+          status: 400,
+        } as const;
+      }
+
+      // Disable 2FA and clear secret + backup codes
+      await tx.user.update({
+        where: { id: session.userId },
+        data: {
+          twoFactorEnabled: false,
+          twoFactorSecret: null,
+          twoFactorBackupCodes: [],
+        },
+      });
+
+      return { disabled: true } as const;
     });
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
-
-    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
-      return NextResponse.json(
-        { error: 'Two-factor authentication is not enabled' },
-        { status: 400 }
-      );
-    }
-
-    // Verify TOTP code or backup code
-    const isTOTPValid = verifyTOTP(user.twoFactorSecret, code);
-    const backupCodeIndex = !isTOTPValid ? verifyBackupCode(code, user.twoFactorBackupCodes) : -1;
-
-    if (!isTOTPValid && backupCodeIndex === -1) {
-      return NextResponse.json(
-        { error: 'Invalid code. Please enter a valid authenticator or backup code.' },
-        { status: 400 }
-      );
-    }
-
-    // Disable 2FA and clear secret + backup codes
-    await db.user.update({
-      where: { id: session.userId },
-      data: {
-        twoFactorEnabled: false,
-        twoFactorSecret: null,
-        twoFactorBackupCodes: [],
-      },
-    });
 
     return NextResponse.json({
       disabled: true,
