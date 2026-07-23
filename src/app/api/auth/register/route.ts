@@ -9,7 +9,8 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { bootstrapDb as db } from '@/lib/db';
-import { setSessionCookie } from '@/lib/middleware';
+import { captureAccessAudit } from '@/lib/audit/accessAudit';
+import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
 
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { firstName, lastName, email, password, inviteToken, title, relationship } =
       registerSchema.parse(body);
+    const reqContext = getRequestContext(request);
 
     const normalizedEmail = email.toLowerCase();
 
@@ -141,7 +143,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Create session
-    await db.session.create({
+    const authSession = await db.session.create({
       data: {
         userId: result.user.id,
         organizationId: organizationId!,
@@ -154,6 +156,22 @@ export async function POST(request: NextRequest) {
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
+
+    await captureAccessAudit({
+      organizationId: organizationId!,
+      eventType: 'USER_LOGIN',
+      actorType: role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+      actorId: result.user.id,
+      actorEmail: result.user.email,
+      requestId: reqContext.requestId,
+      description: 'User registered and signed in',
+      metadata: {
+        authSessionId: authSession.id,
+        authenticationMethod: 'REGISTRATION',
+      },
+      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+    });
 
     return NextResponse.json({
       user: {

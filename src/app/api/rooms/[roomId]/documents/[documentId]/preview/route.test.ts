@@ -11,9 +11,22 @@ import { NextRequest } from 'next/server';
 const mockSession = {
   userId: 'user-1',
   organizationId: 'org-1',
+  user: { email: 'user@example.com' },
+  organization: { role: 'ADMIN' as const },
 };
 vi.mock('@/lib/middleware', () => ({
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-test',
+    ipAddress: '127.0.0.1',
+    userAgent: 'vitest',
+  })),
   requireAuth: vi.fn(() => Promise.resolve(mockSession)),
+}));
+
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+vi.mock('@/lib/audit/accessAudit', () => ({
+  ACCESS_AUDIT_DEDUPE_MS: { DOCUMENT_VIEWED: 300_000 },
+  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
 // Mock storage
@@ -78,12 +91,31 @@ function makeVersion(mimeType: string, previewAssets: unknown[] = [], scanStatus
 describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockTx.room.findFirst.mockResolvedValue(mockRoom);
     mockTx.document.update.mockResolvedValue({});
     mockTx.previewAsset.count.mockResolvedValue(1);
     mockStorage.exists.mockResolvedValue(true);
     mockStorage.get.mockResolvedValue(Buffer.from('file content'));
     mockStorage.getSignedUrl.mockResolvedValue('https://storage.example.com/signed?sig=abc');
+  });
+
+  it('captures a successful document view and remains available on audit failure', async () => {
+    mockCaptureAccessAudit.mockResolvedValue('failed');
+    mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
+    mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('application/pdf'));
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(200);
+    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'DOCUMENT_VIEWED',
+        roomId: 'room-1',
+        documentId: 'doc-1',
+        dedupeWindowMs: 300_000,
+      })
+    );
   });
 
   describe('text-renderable MIME types served inline', () => {

@@ -10,6 +10,8 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { bootstrapDb, withOrgContext } from '@/lib/db';
+import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
+import { getRequestContext } from '@/lib/middleware';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -104,6 +106,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const body = await request.json();
     const { password, email } = body;
+    const reqContext = getRequestContext(request);
 
     // PRE-RLS BOOTSTRAP: Narrowly scoped lookup to resolve organizationId from slug
     const link = await bootstrapDb.link.findFirst({
@@ -139,33 +142,60 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Link not found or expired' }, { status: 404 });
     }
 
+    const auditDenied = async (reason: string) => {
+      await captureAccessAudit({
+        organizationId: link.organizationId,
+        eventType: 'LINK_ACCESS_DENIED',
+        actorType: 'VIEWER',
+        actorEmail: typeof email === 'string' ? email : null,
+        roomId: link.roomId,
+        requestId: reqContext.requestId,
+        description: 'Share-link access denied',
+        metadata: {
+          reason,
+          linkId: link.id,
+          identityAssurance: typeof email === 'string' ? 'ASSERTED' : 'ANONYMOUS',
+        },
+        ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+        userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+        dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.LINK_ACCESS_DENIED,
+        dedupeByIp: true,
+      });
+    };
+
     // Check expiry
     if (link.expiresAt && link.expiresAt < new Date()) {
+      await auditDenied('LINK_EXPIRED');
       return NextResponse.json({ error: 'Link has expired' }, { status: 410 });
     }
 
     // Check max views
     if (link.maxViews !== null && link.viewCount >= link.maxViews) {
+      await auditDenied('MAX_VIEWS_REACHED');
       return NextResponse.json({ error: 'Link has reached maximum views' }, { status: 410 });
     }
 
     // Check room status
     if (link.room.status !== 'ACTIVE') {
+      await auditDenied('ROOM_NOT_ACTIVE');
       return NextResponse.json({ error: 'Room is not accessible' }, { status: 403 });
     }
 
     // Verify password if required
     if (link.requiresPassword) {
       if (!password) {
+        await auditDenied('PASSWORD_REQUIRED');
         return NextResponse.json({ error: 'Password required' }, { status: 401 });
       }
 
       if (!link.passwordHash) {
+        await auditDenied('LINK_CONFIGURATION_ERROR');
         return NextResponse.json({ error: 'Link configuration error' }, { status: 500 });
       }
 
       const passwordValid = await bcrypt.compare(password, link.passwordHash);
       if (!passwordValid) {
+        await auditDenied('PASSWORD_INVALID');
         return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
       }
     }
@@ -173,6 +203,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Verify email if required
     if (link.requiresEmailVerification || link.allowedEmails.length > 0) {
       if (!email) {
+        await auditDenied('ASSERTED_EMAIL_REQUIRED');
         return NextResponse.json({ error: 'Email required' }, { status: 401 });
       }
 
@@ -184,6 +215,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
 
         if (!allowed) {
+          await auditDenied('ASSERTED_EMAIL_NOT_ALLOWED');
           return NextResponse.json(
             { error: 'Email not authorized for this link' },
             { status: 403 }
@@ -196,7 +228,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const sessionToken = randomBytes(32).toString('base64url');
 
     // Now we have organizationId - use RLS context for all writes
-    const _viewSession = await withOrgContext(link.organizationId, async (tx) => {
+    const viewSession = await withOrgContext(link.organizationId, async (tx) => {
       // Create view session
       const viewSession = await tx.viewSession.create({
         data: {
@@ -205,6 +237,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
           linkId: link.id,
           sessionToken,
           visitorEmail: email?.toLowerCase().trim() ?? null,
+          ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+          userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
         },
       });
 
@@ -225,6 +259,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
           roomId: link.roomId,
           viewSessionId: viewSession.id,
           visitorEmail: email?.toLowerCase().trim() ?? null,
+          ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+          userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
         },
       });
 
@@ -244,6 +280,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
         })
         .catch((err) => console.error('[PublicLinkAPI] Failed to queue notification:', err));
     }
+
+    await captureAccessAudit({
+      organizationId: link.organizationId,
+      eventType: 'LINK_ACCESSED',
+      actorType: 'VIEWER',
+      actorEmail: typeof email === 'string' ? email : null,
+      roomId: link.roomId,
+      documentId: link.scopedDocumentId,
+      viewSessionId: viewSession.id,
+      requestId: reqContext.requestId,
+      description: 'Share link accessed',
+      metadata: {
+        linkId: link.id,
+        identityAssurance: typeof email === 'string' ? 'ASSERTED' : 'ANONYMOUS',
+      },
+      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+    });
 
     return NextResponse.json({
       sessionToken,

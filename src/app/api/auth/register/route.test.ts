@@ -8,6 +8,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+
 // Mock bcrypt
 vi.mock('bcryptjs', () => ({
   default: { hash: vi.fn().mockResolvedValue('hashed-password') },
@@ -15,7 +17,16 @@ vi.mock('bcryptjs', () => ({
 
 // Mock session cookie
 vi.mock('@/lib/middleware', () => ({
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-test',
+    ipAddress: '127.0.0.1',
+    userAgent: 'vitest',
+  })),
   setSessionCookie: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/lib/audit/accessAudit', () => ({
+  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
 // Mock db
@@ -66,7 +77,7 @@ describe('POST /api/auth/register', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFindUnique.mockResolvedValue(null); // No existing user
-    mockSessionCreate.mockResolvedValue({});
+    mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
     mockTransaction.mockImplementation(
       async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
         const tx = {

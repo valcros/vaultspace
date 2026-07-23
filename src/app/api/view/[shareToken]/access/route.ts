@@ -10,6 +10,8 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { bootstrapDb, withOrgContext } from '@/lib/db';
+import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
+import { getRequestContext } from '@/lib/middleware';
 import { isIpAllowed, getClientIp } from '@/lib/utils/ip';
 
 interface RouteContext {
@@ -21,6 +23,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { shareToken } = await context.params;
     const body = await request.json();
     const { email, password, ndaAccepted } = body;
+    const reqContext = getRequestContext(request);
 
     // PRE-RLS BOOTSTRAP: Narrowly scoped lookup to resolve organizationId from shareToken
     // This is the only raw db access allowed - specifically to bootstrap viewer context
@@ -54,10 +57,32 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'This link is invalid or has expired' }, { status: 404 });
     }
 
+    const auditDenied = async (reason: string) => {
+      await captureAccessAudit({
+        organizationId: link.room.organizationId,
+        eventType: 'LINK_ACCESS_DENIED',
+        actorType: 'VIEWER',
+        actorEmail: typeof email === 'string' ? email : null,
+        roomId: link.room.id,
+        requestId: reqContext.requestId,
+        description: 'Share-link access denied',
+        metadata: {
+          reason,
+          linkId: link.id,
+          identityAssurance: typeof email === 'string' ? 'ASSERTED' : 'ANONYMOUS',
+        },
+        ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+        userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+        dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.LINK_ACCESS_DENIED,
+        dedupeByIp: true,
+      });
+    };
+
     // Check IP allowlist (F018) - supports both exact IPs and CIDR notation
     if (link.room.ipAllowlist && link.room.ipAllowlist.length > 0) {
       const clientIp = getClientIp(request.headers);
       if (!isIpAllowed(clientIp, link.room.ipAllowlist)) {
+        await auditDenied('IP_NOT_ALLOWED');
         return NextResponse.json(
           { error: 'Access denied: your IP address is not allowed.' },
           { status: 403 }
@@ -68,6 +93,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Verify email if required
     if (link.requiresEmailVerification) {
       if (!email || typeof email !== 'string' || !email.includes('@')) {
+        await auditDenied('ASSERTED_EMAIL_REQUIRED');
         return NextResponse.json({ error: 'A valid email address is required' }, { status: 400 });
       }
 
@@ -78,6 +104,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           (e) => e.toLowerCase().trim() === normalizedEmail
         );
         if (!isAllowed) {
+          await auditDenied('ASSERTED_EMAIL_NOT_ALLOWED');
           return NextResponse.json(
             { error: 'Your email address is not authorized to access this link' },
             { status: 403 }
@@ -89,12 +116,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Verify password if required
     if (link.requiresPassword) {
       if (!password || typeof password !== 'string') {
+        await auditDenied('PASSWORD_REQUIRED');
         return NextResponse.json({ error: 'Password is required' }, { status: 400 });
       }
 
       const isValid = link.passwordHash ? await bcrypt.compare(password, link.passwordHash) : false;
 
       if (!isValid) {
+        await auditDenied('PASSWORD_INVALID');
         return NextResponse.json({ error: 'Incorrect password' }, { status: 401 });
       }
     }
@@ -102,6 +131,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Verify NDA acceptance if required (F130)
     if (link.room.requiresNda) {
       if (ndaAccepted !== true) {
+        await auditDenied('NDA_ACCEPTANCE_REQUIRED');
         return NextResponse.json(
           {
             error: 'NDA acceptance is required',
@@ -117,9 +147,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const sessionToken = randomBytes(32).toString('base64url');
 
     // Now we have organizationId - use RLS context for all writes
-    await withOrgContext(link.room.organizationId, async (tx) => {
+    const viewSession = await withOrgContext(link.room.organizationId, async (tx) => {
       // Create view session
-      await tx.viewSession.create({
+      const createdSession = await tx.viewSession.create({
         data: {
           organizationId: link.room.organizationId,
           roomId: link.room.id,
@@ -139,6 +169,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
           lastAccessedAt: new Date(),
         },
       });
+
+      return createdSession;
     });
 
     // Set viewer session cookie
@@ -151,6 +183,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
       expires: expiresAt,
       // The viewer session must be available to both /view and /api/view routes.
       path: '/',
+    });
+
+    await captureAccessAudit({
+      organizationId: link.room.organizationId,
+      eventType: 'LINK_ACCESSED',
+      actorType: 'VIEWER',
+      actorEmail: typeof email === 'string' ? email : null,
+      roomId: link.room.id,
+      viewSessionId: viewSession.id,
+      requestId: reqContext.requestId,
+      description: 'Share link accessed',
+      metadata: {
+        linkId: link.id,
+        identityAssurance: typeof email === 'string' ? 'ASSERTED' : 'ANONYMOUS',
+      },
+      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
     });
 
     return NextResponse.json({ success: true });
