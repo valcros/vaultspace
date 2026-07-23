@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   Clock,
@@ -54,8 +54,10 @@ function formatSize(bytes: number): string {
 export default function ViewerDocumentPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const shareToken = params['shareToken'] as string;
   const documentId = params['documentId'] as string;
+  const originatingFolderId = searchParams.get('folderId');
 
   const [document, setDocument] = React.useState<DocumentInfo | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -223,7 +225,8 @@ export default function ViewerDocumentPage() {
   };
 
   const handleBack = () => {
-    router.push(`/view/${shareToken}/documents`);
+    const query = originatingFolderId ? `?folderId=${encodeURIComponent(originatingFolderId)}` : '';
+    router.push(`/view/${shareToken}/documents${query}`);
   };
 
   // Handle fullscreen change events
