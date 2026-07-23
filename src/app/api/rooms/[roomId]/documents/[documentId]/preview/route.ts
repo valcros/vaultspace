@@ -7,10 +7,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
-import { requireAuth } from '@/lib/middleware';
+import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
+import { getRequestContext, requireAuth } from '@/lib/middleware';
 import { getProviders } from '@/providers';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -19,6 +21,16 @@ export const dynamic = 'force-dynamic';
 interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
 }
+
+const routeParamsSchema = z.object({
+  roomId: z.string().trim().min(1).max(191),
+  documentId: z.string().trim().min(1).max(191),
+});
+
+const previewQuerySchema = z.object({
+  versionId: z.string().trim().min(1).max(191).optional(),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+});
 
 // MIME types that can be previewed inline
 // Types that can be served inline without conversion
@@ -62,15 +74,18 @@ function jsonResponse(data: object, status: number) {
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const parsedParams = routeParamsSchema.safeParse(await context.params);
+    const parsedQuery = previewQuerySchema.safeParse({
+      versionId: request.nextUrl.searchParams.get('versionId') || undefined,
+      page: request.nextUrl.searchParams.get('page') ?? undefined,
+    });
+    if (!parsedParams.success || !parsedQuery.success) {
+      return jsonResponse({ error: 'Invalid preview request' }, 400);
+    }
+    const { roomId, documentId } = parsedParams.data;
+    const { versionId, page: pageParam } = parsedQuery.data;
     const session = await requireAuth();
-    const { roomId, documentId } = await context.params;
-    const versionId = request.nextUrl.searchParams.get('versionId');
-    // Which rendered page to serve (Office docs / spreadsheets render to one PNG
-    // per page). Defaults to page 1.
-    const pageParam = Math.max(
-      1,
-      parseInt(request.nextUrl.searchParams.get('page') || '1', 10) || 1
-    );
+    const reqContext = getRequestContext(request);
 
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
@@ -223,6 +238,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Get file content
       const data = await storage.get(bucket, key);
 
+      await captureAccessAudit({
+        organizationId: session.organizationId,
+        eventType: 'DOCUMENT_VIEWED',
+        actorType: session.organization.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+        actorId: session.userId,
+        actorEmail: session.user.email,
+        roomId,
+        documentId,
+        requestId: reqContext.requestId,
+        description: 'Authenticated user viewed a document',
+        metadata: { accessPath: 'AUTHENTICATED_PREVIEW' },
+        ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+        userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+        dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.DOCUMENT_VIEWED,
+      });
+
       // Return file with inline headers for preview
       // X-Frame-Options: SAMEORIGIN allows iframe embedding within same origin for preview dialogs
       // Serve HTML as text/plain to prevent XSS if it ever reaches an iframe
@@ -250,6 +281,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
       const exists = await storage.exists(bucket, key);
       if (exists) {
         const data = await storage.get(bucket, key);
+        await captureAccessAudit({
+          organizationId: session.organizationId,
+          eventType: 'DOCUMENT_VIEWED',
+          actorType: session.organization.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+          actorId: session.userId,
+          actorEmail: session.user.email,
+          roomId,
+          documentId,
+          requestId: reqContext.requestId,
+          description: 'Authenticated user viewed a document',
+          metadata: { accessPath: 'AUTHENTICATED_PREVIEW' },
+          ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+          userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+          dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.DOCUMENT_VIEWED,
+        });
         return new NextResponse(new Uint8Array(data), {
           status: 200,
           headers: {

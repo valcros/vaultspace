@@ -10,7 +10,7 @@ import crypto from 'crypto';
 
 import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { EmailNotificationService } from '@/services/notifications';
 import { getProviders } from '@/providers';
 
@@ -50,23 +50,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid role. Must be ADMIN or VIEWER' }, { status: 400 });
     }
 
-    // Check if user already exists in organization (global user lookup)
-    const existingUser = await db.user.findUnique({
-      where: { email: normalizedEmail },
-      include: {
-        organizations: {
-          where: { organizationId: session.organizationId },
-        },
-      },
-    });
-
-    if (existingUser && existingUser.organizations.length > 0) {
-      return NextResponse.json(
-        { error: 'User is already a member of this organization' },
-        { status: 400 }
-      );
-    }
-
     // Generate invitation token
     const invitationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
@@ -82,6 +65,22 @@ export async function POST(request: NextRequest) {
 
     // Use RLS context for all org-scoped operations
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Under org context, RLS reveals an existing user only when that user is
+      // already a member of this organization. Users in other tenants remain
+      // undisclosed and can still be invited through the normal acceptance flow.
+      const existingUser = await tx.user.findUnique({
+        where: { email: normalizedEmail },
+        include: {
+          organizations: {
+            where: { organizationId: session.organizationId },
+          },
+        },
+      });
+
+      if (existingUser && existingUser.organizations.length > 0) {
+        return { error: 'User is already a member of this organization', status: 400 };
+      }
+
       // Check for existing pending invitation
       const existingInvite = await tx.invitation.findFirst({
         where: {
@@ -154,11 +153,7 @@ export async function POST(request: NextRequest) {
         appUrl: baseUrl,
       });
 
-      // Get inviter name (global user lookup)
-      const inviter = await db.user.findUnique({
-        where: { id: session.userId },
-        select: { firstName: true, lastName: true },
-      });
+      const inviter = invitation.invitedByUser;
       const inviterName = inviter
         ? ((inviter.firstName || '') + ' ' + (inviter.lastName || '')).trim() || 'A team member'
         : 'A team member';

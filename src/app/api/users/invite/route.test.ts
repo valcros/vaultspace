@@ -15,9 +15,6 @@ vi.mock('@/lib/middleware', () => ({
 
 // Mock database
 vi.mock('@/lib/db', () => ({
-  db: {
-    user: { findUnique: vi.fn() },
-  },
   withOrgContext: vi.fn(),
 }));
 
@@ -38,11 +35,10 @@ vi.mock('@/services/notifications', () => ({
 }));
 
 import { requireAuth } from '@/lib/middleware';
-import { db, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockWithOrgContext = vi.mocked(withOrgContext);
-const mockDbUser = vi.mocked(db.user);
 
 describe('POST /api/users/invite', () => {
   const mockAdminSession = {
@@ -124,11 +120,17 @@ describe('POST /api/users/invite', () => {
   });
 
   it('returns 400 when user already in organization', async () => {
-    mockDbUser.findUnique.mockResolvedValue({
+    const userFindUnique = vi.fn().mockResolvedValue({
       id: 'user-exists',
       email: 'existing@example.com',
       organizations: [{ organizationId: 'org-1' }],
-    } as unknown as Awaited<ReturnType<typeof mockDbUser.findUnique>>);
+    });
+    mockWithOrgContext.mockImplementation(async (orgId, callback) => {
+      expect(orgId).toBe('org-1');
+      return callback({ user: { findUnique: userFindUnique } } as unknown as Parameters<
+        typeof callback
+      >[0]);
+    });
 
     const request = new NextRequest('http://localhost/api/users/invite', {
       method: 'POST',
@@ -139,12 +141,16 @@ describe('POST /api/users/invite', () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toContain('already a member');
+    expect(userFindUnique).toHaveBeenCalledWith({
+      where: { email: 'existing@example.com' },
+      include: { organizations: { where: { organizationId: 'org-1' } } },
+    });
   });
 
   it('returns 400 when pending invitation exists', async () => {
-    mockDbUser.findUnique.mockResolvedValue(null);
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
         invitation: {
           findFirst: vi.fn().mockResolvedValue({ id: 'invite-pending' }),
         },
@@ -164,8 +170,6 @@ describe('POST /api/users/invite', () => {
   });
 
   it('creates invitation successfully with default VIEWER role', async () => {
-    mockDbUser.findUnique.mockResolvedValue(null);
-
     const mockInvitation = {
       id: 'invite-1',
       email: 'new@example.com',
@@ -178,6 +182,7 @@ describe('POST /api/users/invite', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
         invitation: {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue(mockInvitation),
@@ -204,8 +209,6 @@ describe('POST /api/users/invite', () => {
   });
 
   it('creates invitation with ADMIN role', async () => {
-    mockDbUser.findUnique.mockResolvedValue(null);
-
     const mockInvitation = {
       id: 'invite-1',
       email: 'admin-invite@example.com',
@@ -218,6 +221,7 @@ describe('POST /api/users/invite', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
         invitation: {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue(mockInvitation),

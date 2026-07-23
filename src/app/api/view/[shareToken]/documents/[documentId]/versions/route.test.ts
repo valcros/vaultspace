@@ -13,6 +13,7 @@ const mockCookieStore = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
 const mockViewSessionFindFirst = vi.fn();
 const mockWithOrgContext = vi.fn();
 const mockDocFindFirst = vi.fn();
+const mockFolderFindFirst = vi.fn();
 const mockVersionFindMany = vi.fn();
 
 vi.mock('next/headers', () => ({ cookies: vi.fn(async () => mockCookieStore) }));
@@ -64,7 +65,7 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/versions — scan ga
         slug: 'share-token',
         isActive: true,
         permission: 'VIEW',
-        scope: 'ROOM',
+        scope: 'ENTIRE_ROOM',
         scopedFolderId: null,
         scopedDocumentId: null,
         maxSessionMinutes: 30,
@@ -72,7 +73,8 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/versions — scan ga
       room: { id: 'room-1', allowViewerVersionHistory: true },
     });
 
-    mockDocFindFirst.mockResolvedValue({ id: 'doc-1', currentVersionId: 'ver-1' });
+    mockDocFindFirst.mockResolvedValue({ id: 'doc-1', folderId: null, currentVersionId: 'ver-1' });
+    mockFolderFindFirst.mockResolvedValue(null);
 
     // The DB "stores" both a CLEAN and an INFECTED version; return only the rows
     // whose scanStatus the query admits.
@@ -87,6 +89,7 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/versions — scan ga
       async (_orgId: string, cb: (tx: unknown) => Promise<unknown>) =>
         cb({
           document: { findFirst: mockDocFindFirst },
+          folder: { findFirst: mockFolderFindFirst },
           documentVersion: { findMany: mockVersionFindMany },
         })
     );
@@ -100,5 +103,55 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/versions — scan ga
     const ids = body.versions.map((v: { id: string }) => v.id);
     expect(ids).toEqual(['ver-1']);
     expect(ids).not.toContain('ver-2');
+  });
+
+  it('allows version history inside a room-bound folder-scoped link', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      link: {
+        ...session.link,
+        scope: 'FOLDER',
+        scopedFolderId: 'allowed-folder',
+      },
+    });
+    mockDocFindFirst.mockResolvedValue({
+      id: 'doc-1',
+      folderId: 'allowed-folder',
+      currentVersionId: 'ver-1',
+    });
+    mockFolderFindFirst.mockResolvedValue({ parentId: null });
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(200);
+    expect(mockFolderFindFirst).toHaveBeenCalledWith({
+      where: { id: 'allowed-folder', roomId: 'room-1' },
+      select: { parentId: true },
+    });
+    expect(mockVersionFindMany).toHaveBeenCalled();
+  });
+
+  it('denies a document outside a folder-scoped link before listing versions', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      link: {
+        ...session.link,
+        scope: 'FOLDER',
+        scopedFolderId: 'allowed-folder',
+      },
+    });
+    mockDocFindFirst.mockResolvedValue({
+      id: 'doc-1',
+      folderId: 'outside-folder',
+      currentVersionId: 'ver-1',
+    });
+    mockFolderFindFirst.mockResolvedValue({ parentId: null });
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(404);
+    expect(mockVersionFindMany).not.toHaveBeenCalled();
   });
 });

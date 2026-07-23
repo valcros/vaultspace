@@ -11,9 +11,22 @@ import { NextRequest } from 'next/server';
 const mockSession = {
   userId: 'user-1',
   organizationId: 'org-1',
+  user: { email: 'user@example.com' },
+  organization: { role: 'ADMIN' as const },
 };
 vi.mock('@/lib/middleware', () => ({
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-test',
+    ipAddress: '127.0.0.1',
+    userAgent: 'vitest',
+  })),
   requireAuth: vi.fn(() => Promise.resolve(mockSession)),
+}));
+
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+vi.mock('@/lib/audit/accessAudit', () => ({
+  ACCESS_AUDIT_DEDUPE_MS: { DOCUMENT_VIEWED: 300_000 },
+  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
 // Mock storage
@@ -45,8 +58,10 @@ vi.mock('@/lib/db', () => ({
 
 import { GET } from './route';
 
-function makeRequest(): NextRequest {
-  return new NextRequest(new URL('http://localhost:3000/api/rooms/room-1/documents/doc-1/preview'));
+function makeRequest(query = ''): NextRequest {
+  return new NextRequest(
+    new URL(`http://localhost:3000/api/rooms/room-1/documents/doc-1/preview${query}`)
+  );
 }
 
 function makeContext() {
@@ -78,12 +93,50 @@ function makeVersion(mimeType: string, previewAssets: unknown[] = [], scanStatus
 describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockTx.room.findFirst.mockResolvedValue(mockRoom);
     mockTx.document.update.mockResolvedValue({});
     mockTx.previewAsset.count.mockResolvedValue(1);
     mockStorage.exists.mockResolvedValue(true);
     mockStorage.get.mockResolvedValue(Buffer.from('file content'));
     mockStorage.getSignedUrl.mockResolvedValue('https://storage.example.com/signed?sig=abc');
+  });
+
+  it('returns 400 before database access for malformed route identifiers', async () => {
+    const res = await GET(makeRequest(), {
+      params: Promise.resolve({ roomId: 'room-1', documentId: '' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+  });
+
+  it.each(['?page=0', '?page=not-a-number', '?page=10001', '?versionId=%20'])(
+    'returns 400 before database access for malformed preview query %s',
+    async (query) => {
+      const res = await GET(makeRequest(query), makeContext());
+
+      expect(res.status).toBe(400);
+      expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+    }
+  );
+
+  it('captures a successful document view and remains available on audit failure', async () => {
+    mockCaptureAccessAudit.mockResolvedValue('failed');
+    mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
+    mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('application/pdf'));
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(200);
+    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'DOCUMENT_VIEWED',
+        roomId: 'room-1',
+        documentId: 'doc-1',
+        dedupeWindowMs: 300_000,
+      })
+    );
   });
 
   describe('text-renderable MIME types served inline', () => {

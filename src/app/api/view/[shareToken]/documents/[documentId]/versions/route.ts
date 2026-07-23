@@ -18,6 +18,7 @@ import {
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
+import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,14 +51,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       );
     }
 
-    // A document-scoped link may only see its own document.
-    if (
-      viewerSession.link.scope === 'DOCUMENT' &&
-      viewerSession.link.scopedDocumentId !== documentId
-    ) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-    }
-
     const result = await withOrgContext(viewerSession.organizationId, async (tx) => {
       const document = await tx.document.findFirst({
         where: {
@@ -66,11 +59,22 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           status: 'ACTIVE',
           withdrawnAt: null,
         },
-        select: { id: true, currentVersionId: true },
+        select: { id: true, folderId: true, currentVersionId: true },
       });
       if (!document) {
         return null;
       }
+
+      const allowed = await canViewerLinkAccessDocument(
+        tx,
+        viewerSession.link,
+        viewerSession.room.id,
+        document
+      );
+      if (!allowed) {
+        return null;
+      }
+
       const versions = await tx.documentVersion.findMany({
         where: {
           documentId,
