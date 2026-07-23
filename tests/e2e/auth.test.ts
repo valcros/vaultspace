@@ -41,7 +41,7 @@ test.describe('Authentication', () => {
     await expect(page).toHaveURL(/\/auth\/login/);
   });
 
-  test('login with valid credentials redirects to rooms', async ({ page }) => {
+  test('login with valid credentials redirects to the dashboard', async ({ page }) => {
     await page.goto('/auth/login');
 
     await page.fill('input[type="email"]', 'admin@demo.vaultspace.app');
@@ -51,7 +51,9 @@ test.describe('Authentication', () => {
     // The dashboard is the post-login landing page.
     await page.waitForURL('**/dashboard', { timeout: 10000 });
     await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /Good (morning|afternoon|evening)/ })
+    ).toBeVisible({ timeout: 10000 });
   });
 
   test('unauthenticated access redirects to login', async ({ page }) => {

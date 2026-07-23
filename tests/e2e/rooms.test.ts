@@ -29,56 +29,81 @@ test.describe('Room Management', () => {
     await expect(page.getByRole('main').getByRole('button', { name: 'Create Room' })).toBeVisible();
   });
 
-  test('room detail page shows documents and tabs', async ({ page }) => {
+  test('room detail page shows seeded content and management sections', async ({ page }) => {
     await page.click('text=Due Diligence Package');
     await page.waitForURL('**/rooms/**', { timeout: 5000 });
 
-    // Verify breadcrumbs
-    await expect(page.locator('text=Rooms')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Due Diligence Package' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Manage' })).toBeVisible();
 
-    // Verify tabs
-    await expect(page.getByRole('tab', { name: 'Documents' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Access' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Share Links' })).toBeVisible();
+    // Folder tiles are buttons in the current grid layout, with their file
+    // count included in the accessible name.
+    await expect(page.getByRole('button', { name: /Financials \d+ files/ })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByRole('button', { name: /Legal \d+ files/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Technical \d+ files/ })).toBeVisible();
 
-    // Verify seeded room content loads.
-    await expect(page.getByRole('cell', { name: 'Financials' })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('cell', { name: 'Legal' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'Technical' })).toBeVisible();
+    // Access and Share Links now live in the room-management drawer.
+    await page.getByRole('button', { name: 'Manage' }).click();
+    const managementTabs = page.getByRole('tablist', { name: 'Room management sections' });
+    await expect(managementTabs).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('tab', { name: 'Access' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await page.getByRole('tab', { name: 'Share Links' }).click();
+    await expect(page.getByRole('tab', { name: 'Share Links' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
   });
 
   test('can navigate into folders', async ({ page }) => {
     await page.click('text=Due Diligence Package');
     await page.waitForURL('**/rooms/**', { timeout: 5000 });
 
-    // Click into Financials folder once seeded content has loaded.
-    await page.getByRole('cell', { name: 'Financials' }).click({ timeout: 15000 });
-    await page.waitForTimeout(1000);
+    const financialsTile = page.getByRole('button', { name: /Financials \d+ files/ });
+    await expect(financialsTile).toBeVisible({ timeout: 15000 });
+    await financialsTile.click();
 
-    // Breadcrumbs should update
-    await expect(page.locator('text=Financials').last()).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Folder path' })).toContainText('Financials');
+    await expect(page.getByText('Capitalization Table.xlsx')).toBeVisible({ timeout: 10000 });
   });
 
-  test('members tab loads', async ({ page }) => {
+  test('Access management section loads', async ({ page }) => {
     await page.click('text=Due Diligence Package');
     await page.waitForURL('**/rooms/**', { timeout: 5000 });
 
-    await page.getByRole('tab', { name: 'Access' }).click();
-    await page.waitForTimeout(1000);
+    await page.getByRole('button', { name: 'Manage' }).click();
+    await expect(page.getByRole('tablist', { name: 'Room management sections' })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByRole('tab', { name: 'Access' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
 
     // The access workspace should load its admin and viewer controls.
     await expect(page.getByRole('button', { name: 'Add Admin' }).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Viewers' })).toBeVisible();
   });
 
-  test('share links tab loads', async ({ page }) => {
+  test('Share Links management section loads', async ({ page }) => {
     await page.click('text=Due Diligence Package');
     await page.waitForURL('**/rooms/**', { timeout: 5000 });
 
-    await page.click('role=tab[name="Share Links"]');
-    await page.waitForTimeout(1000);
+    await page.getByRole('button', { name: 'Manage' }).click();
+    await expect(page.getByRole('tablist', { name: 'Room management sections' })).toBeVisible({
+      timeout: 10000,
+    });
+    await page.getByRole('tab', { name: 'Share Links' }).click();
+    await expect(page.getByRole('tab', { name: 'Share Links' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
 
-    // Should show create link button or existing links
+    // The section must expose its primary action, not merely select the tab.
     await expect(page.getByRole('button', { name: 'Create Link' }).first()).toBeVisible();
   });
 });
