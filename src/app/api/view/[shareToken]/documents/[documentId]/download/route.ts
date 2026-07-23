@@ -17,6 +17,7 @@ import {
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
+import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -54,14 +55,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Check if document is allowed by link scope
-    if (
-      viewerSession.link.scope === 'DOCUMENT' &&
-      viewerSession.link.scopedDocumentId !== documentId
-    ) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-    }
-
     // Downloading a specific prior version is only allowed when the room exposes
     // version history to viewers; otherwise only the current version is served.
     const versionId = request.nextUrl.searchParams.get('versionId');
@@ -85,12 +78,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
           id: true,
           name: true,
           mimeType: true,
+          folderId: true,
           allowDownload: true,
           currentVersionId: true,
         },
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const allowed = await canViewerLinkAccessDocument(
+        tx,
+        viewerSession.link,
+        viewerSession.room.id,
+        document
+      );
+      if (!allowed) {
         return { error: 'Document not found', status: 404 };
       }
 
