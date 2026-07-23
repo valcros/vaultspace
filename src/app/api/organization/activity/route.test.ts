@@ -280,11 +280,11 @@ describe('GET /api/organization/activity', () => {
       {
         id: 'event-1',
         eventType: 'DOCUMENT_VIEWED',
-        description: 'Viewed document',
+        description: '@SUM(1+1)',
         ipAddress: '10.0.0.1',
         createdAt: new Date('2024-01-15T10:00:00Z'),
         actor: { id: 'user-1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' },
-        room: { id: 'room-1', name: 'Financials' },
+        room: { id: 'room-1', name: '-Financials' },
         actorEmail: null,
       },
     ];
@@ -303,7 +303,8 @@ describe('GET /api/organization/activity', () => {
     expect(response.headers.get('X-Activity-Export-Truncated')).toBe('false');
     expect(csv).toContain('DOCUMENT_VIEWED');
     expect(csv).toContain('Jane Doe');
-    expect(csv).toContain('Financials');
+    expect(csv).toContain('"\'-Financials"');
+    expect(csv).toContain('"\'@SUM(1+1)"');
   });
 
   it('handles events without actors', async () => {

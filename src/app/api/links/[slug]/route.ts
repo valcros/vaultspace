@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
+import { z } from 'zod';
 
 import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
@@ -17,6 +18,11 @@ import { getProviders } from '@/providers';
 interface RouteContext {
   params: Promise<{ slug: string }>;
 }
+
+const linkAccessSchema = z.object({
+  password: z.string().max(1024).optional(),
+  email: z.string().email().max(320).optional(),
+});
 
 /**
  * GET /api/links/:slug
@@ -104,8 +110,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { slug } = await context.params;
 
-    const body = await request.json();
-    const { password, email } = body;
+    const parsedBody = linkAccessSchema.safeParse(await request.json().catch(() => null));
+    if (!parsedBody.success) {
+      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    }
+    const { password, email } = parsedBody.data;
     const reqContext = getRequestContext(request);
 
     // PRE-RLS BOOTSTRAP: Narrowly scoped lookup to resolve organizationId from slug

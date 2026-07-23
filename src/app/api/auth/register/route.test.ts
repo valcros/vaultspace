@@ -111,6 +111,12 @@ describe('POST /api/auth/register', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.user.email).toBe('alice@example.com');
+      expect(mockSessionCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' }),
+      });
+      expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
+      );
     });
   });
 

@@ -89,4 +89,22 @@ describe('POST /api/auth/change-password', () => {
     expect(mockUserUpdate).not.toHaveBeenCalled();
     expect(mockSessionUpdateMany).not.toHaveBeenCalled();
   });
+
+  it('rejects a session without organization context before parsing or querying', async () => {
+    mockRequireAuth.mockResolvedValue({
+      userId: 'user-1',
+      sessionId: 'session-current',
+      organizationId: null,
+    });
+    const request = new NextRequest('http://localhost/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword: 'OldPassword1!', newPassword: 'NewPassword2!' }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(401);
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(mockUserUpdate).not.toHaveBeenCalled();
+  });
 });

@@ -15,6 +15,9 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const session = await requireAuth();
+    if (!session.organizationId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     const user = await withOrgContext(session.organizationId, async (tx) => {
       return tx.user.findUnique({

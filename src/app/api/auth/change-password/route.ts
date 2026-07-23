@@ -23,6 +23,9 @@ const schema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const session = await requireAuth();
+    if (!session.organizationId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     const { currentPassword, newPassword } = schema.parse(await request.json());
 
     const user = await withOrgContext(session.organizationId, async (tx) => {

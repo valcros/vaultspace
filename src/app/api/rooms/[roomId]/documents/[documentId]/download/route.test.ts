@@ -104,6 +104,15 @@ describe('GET /api/rooms/:roomId/documents/:documentId/download — current vers
     });
   }
 
+  it('returns 400 before database access for malformed route identifiers', async () => {
+    const res = await GET(makeRequest(), {
+      params: Promise.resolve({ roomId: '', documentId: 'doc-1' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+  });
+
   it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
     'returns 403 and reads no bytes when the CURRENT version is %s (no downgrade to older clean)',
     async (scanStatus) => {

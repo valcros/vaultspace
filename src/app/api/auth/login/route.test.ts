@@ -143,8 +143,16 @@ describe('POST /api/auth/login', () => {
         actorType: 'ADMIN',
         actorId: 'user-1',
         metadata: expect.objectContaining({ authSessionId: 'auth-session-1' }),
+        ipAddress: '127.0.0.1',
+        userAgent: 'vitest',
       })
     );
+    expect(mockSessionCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        ipAddress: '127.0.0.1',
+        userAgent: 'vitest',
+      }),
+    });
   });
 
   it('keeps a successful login available when the bounded audit write fails', async () => {

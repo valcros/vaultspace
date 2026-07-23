@@ -29,6 +29,8 @@ const setupSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const reqContext = getRequestContext(request);
+    const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
+    const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
     // Check if setup has already been completed
     const existingOrg = await db.organization.findFirst();
     if (existingOrg) {
@@ -117,8 +119,8 @@ export async function POST(request: NextRequest) {
         organizationId: result.organization.id,
         token: sessionToken,
         expiresAt,
-        ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-        userAgent: request.headers.get('user-agent') ?? null,
+        ipAddress,
+        userAgent,
       },
     });
 
@@ -137,8 +139,8 @@ export async function POST(request: NextRequest) {
         authSessionId: authSession.id,
         authenticationMethod: 'INITIAL_SETUP',
       },
-      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
-      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+      ipAddress,
+      userAgent,
     });
 
     return NextResponse.json({

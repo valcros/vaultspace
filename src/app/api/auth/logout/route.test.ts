@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 
 const mockCookieStore = {
   get: vi.fn(),
@@ -22,6 +23,11 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/middleware', () => ({
   clearSessionCookie: (...args: Parameters<typeof mockClearSessionCookie>) =>
     mockClearSessionCookie(...args),
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-shared-context',
+    ipAddress: '203.0.113.10',
+    userAgent: 'shared-context-agent',
+  })),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -68,6 +74,21 @@ describe('POST /api/auth/logout', () => {
         organizationId: 'org-1',
         eventType: 'USER_LOGOUT',
         actorId: 'user-1',
+      })
+    );
+  });
+
+  it('uses the shared request context for logout audit metadata', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/logout', { method: 'POST' })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'req-shared-context',
+        ipAddress: '203.0.113.10',
+        userAgent: 'shared-context-agent',
       })
     );
   });

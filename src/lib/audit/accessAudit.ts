@@ -61,9 +61,14 @@ function buildDedupeWhere(input: AccessAuditInput, since: Date): Prisma.EventWhe
   } else if (defined(input.actorId)) {
     where.actorId = input.actorId;
   } else if (defined(input.actorEmail)) {
-    where.actorEmail = input.actorEmail;
+    where.actorEmail = input.actorEmail.toLowerCase().trim();
   } else if (defined(input.ipAddress)) {
     where.ipAddress = input.ipAddress;
+  }
+
+  const denialReason = input.metadata?.['reason'];
+  if (input.eventType === 'LINK_ACCESS_DENIED' && typeof denialReason === 'string') {
+    where.metadata = { path: ['reason'], equals: denialReason };
   }
 
   return where;

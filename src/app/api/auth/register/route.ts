@@ -30,6 +30,8 @@ export async function POST(request: NextRequest) {
     const { firstName, lastName, email, password, inviteToken, title, relationship } =
       registerSchema.parse(body);
     const reqContext = getRequestContext(request);
+    const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
+    const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
 
     const normalizedEmail = email.toLowerCase();
 
@@ -149,8 +151,8 @@ export async function POST(request: NextRequest) {
         organizationId: organizationId!,
         token: sessionToken,
         expiresAt,
-        ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-        userAgent: request.headers.get('user-agent') ?? null,
+        ipAddress,
+        userAgent,
       },
     });
 
@@ -169,8 +171,8 @@ export async function POST(request: NextRequest) {
         authSessionId: authSession.id,
         authenticationMethod: 'REGISTRATION',
       },
-      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
-      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+      ipAddress,
+      userAgent,
     });
 
     return NextResponse.json({

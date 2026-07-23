@@ -29,6 +29,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { code, tempToken } = validateSchema.parse(body);
     const reqContext = getRequestContext(request);
+    const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
+    const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
 
     // Verify temp token
     const tokenData = verifyTwoFactorTempToken(tempToken);
@@ -104,8 +106,8 @@ export async function POST(request: NextRequest) {
         organizationId: userOrg.organization.id,
         token: sessionToken,
         expiresAt,
-        ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-        userAgent: request.headers.get('user-agent') ?? null,
+        ipAddress,
+        userAgent,
       },
     });
 
@@ -130,8 +132,8 @@ export async function POST(request: NextRequest) {
         authSessionId: authSession.id,
         authenticationMethod: backupCodeIndex === -1 ? 'TOTP' : 'BACKUP_CODE',
       },
-      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
-      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+      ipAddress,
+      userAgent,
     });
 
     return NextResponse.json({
