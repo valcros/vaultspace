@@ -16,6 +16,16 @@ interface RoomAnalytics {
     uniqueViewers: number;
     totalDownloads: number;
   };
+  auditReconciliation: {
+    captureMode: 'OFF' | 'SHADOW' | 'AUTHORITATIVE';
+    operationalViewCount: number;
+    capturedViewEvents: number;
+    operationalDownloadCount: number;
+    capturedDownloadEvents: number;
+    viewDelta: number;
+    downloadDelta: number;
+    interpretation: string;
+  };
   topDocuments: Array<{
     id: string;
     name: string;
@@ -27,6 +37,7 @@ interface RoomAnalytics {
   recentViewers: Array<{
     email: string | null;
     name: string | null;
+    identityLabel: string;
     timeSpent: number | null;
     lastActive: string | null;
   }>;
@@ -96,6 +107,7 @@ export default function RoomAnalyticsPage() {
             <Skeleton key={i} className="h-32" />
           ))}
         </div>
+
         <Skeleton className="h-96 w-full" />
       </div>
     );
@@ -182,6 +194,26 @@ export default function RoomAnalyticsPage() {
           </Card>
         </div>
 
+        <div className="mb-8 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="font-medium">
+              Audit capture: {analytics.auditReconciliation.captureMode}
+            </span>
+            <span>
+              Captured views: {analytics.auditReconciliation.capturedViewEvents.toLocaleString()} of{' '}
+              {analytics.auditReconciliation.operationalViewCount.toLocaleString()} operational
+            </span>
+            <span>
+              Captured downloads:{' '}
+              {analytics.auditReconciliation.capturedDownloadEvents.toLocaleString()} of{' '}
+              {analytics.auditReconciliation.operationalDownloadCount.toLocaleString()} operational
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {analytics.auditReconciliation.interpretation}
+          </p>
+        </div>
+
         {/* Top Documents */}
         <Card className="mb-8">
           <CardHeader>
@@ -233,8 +265,11 @@ export default function RoomAnalyticsPage() {
                 <BarChart3 className="h-5 w-5 text-primary-600" />
               </div>
               <div>
-                <CardTitle>Activity Over Time</CardTitle>
-                <CardDescription>Views over the past {analytics.period.days} days</CardDescription>
+                <CardTitle>Captured Audit Views Over Time</CardTitle>
+                <CardDescription>
+                  Audit view events over the past {analytics.period.days} days. Operational totals
+                  above remain counter-based.
+                </CardDescription>
               </div>
             </div>
           </CardHeader>

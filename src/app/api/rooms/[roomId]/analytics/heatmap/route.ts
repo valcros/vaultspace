@@ -106,7 +106,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       `;
 
       // 2. Document activity — get view/download events grouped by document
-      const [viewEvents, downloadEvents, allEvents] = await Promise.all([
+      const [viewEvents, downloadEvents, allEvents, organization] = await Promise.all([
         // View events grouped by document
         tx.event.groupBy({
           by: ['documentId'],
@@ -132,6 +132,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
         // All events in date range for summary
         tx.event.count({
           where: dateFilter,
+        }),
+
+        tx.organization.findUnique({
+          where: { id: session.organizationId },
+          select: { auditCaptureMode: true },
         }),
       ]);
 
@@ -252,6 +257,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         documentActivity,
         totalEvents: allEvents,
         uniqueViewers: allViewerEmails.size,
+        auditCaptureMode: organization?.auditCaptureMode ?? 'OFF',
       };
     });
 
@@ -292,6 +298,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
         uniqueViewers: result.uniqueViewers,
         peakHour,
         mostViewedDocument: mostViewedDoc,
+        dataBasis: 'captured_audit_events',
+        auditCaptureMode: result.auditCaptureMode,
+        identityNotice: 'External viewer email addresses are asserted, not verified.',
       },
       period: {
         type: period,

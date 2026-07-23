@@ -32,6 +32,7 @@ interface ActivityEvent {
     id?: string;
     name?: string;
     email: string;
+    identityLabel: string;
   } | null;
   room: {
     id: string;
@@ -41,6 +42,19 @@ interface ActivityEvent {
   ipAddress: string | null;
   createdAt: string;
   folderName: string | null;
+  provenance: 'native' | 'legacy' | 'inferred';
+  auditStatus: 'authoritative' | 'shadow' | 'inferred';
+  sourceMetadata: { source: string; sourceId: string };
+}
+
+interface ActivityResponse {
+  events: ActivityEvent[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+  coverage: {
+    auditCaptureMode: 'OFF' | 'SHADOW' | 'AUTHORITATIVE';
+    historicalInferenceIncluded: boolean;
+    identityNotice: string;
+  };
 }
 
 interface UserOption {
@@ -67,6 +81,7 @@ const eventLabels: Record<string, string> = {
   permission_revoked: 'revoked permission',
   link_created: 'created a share link',
   link_accessed: 'accessed via share link',
+  link_access_denied: 'was denied share-link access',
   link_revoked: 'revoked a share link',
   user_created: 'created a user',
   user_invited: 'invited a user',
@@ -79,11 +94,15 @@ const eventLabels: Record<string, string> = {
 export default function ActivityPage() {
   useRequireAdmin();
   const [events, setEvents] = React.useState<ActivityEvent[]>([]);
+  const [pagination, setPagination] = React.useState<ActivityResponse['pagination'] | null>(null);
+  const [coverage, setCoverage] = React.useState<ActivityResponse['coverage'] | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [eventType, setEventType] = React.useState('all');
   const [actorId, setActorId] = React.useState('all');
   const [users, setUsers] = React.useState<UserOption[]>([]);
+  const [page, setPage] = React.useState(1);
+  const deferredSearch = React.useDeferredValue(searchQuery.trim());
 
   // Load org members for the user filter dropdown
   React.useEffect(() => {
@@ -97,41 +116,34 @@ export default function ActivityPage() {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set('page', page.toString());
+      params.set('limit', '50');
       if (eventType !== 'all') {
         params.set('eventType', eventType);
       }
       if (actorId !== 'all') {
         params.set('userId', actorId);
       }
+      if (deferredSearch) {
+        params.set('search', deferredSearch);
+      }
       const response = await fetch(`/api/organization/activity?${params}`);
-      const data = await response.json();
+      const data = (await response.json()) as ActivityResponse;
       if (response.ok) {
         setEvents(data.events || []);
+        setPagination(data.pagination || null);
+        setCoverage(data.coverage || null);
       }
     } catch (error) {
       console.error('Failed to fetch activity:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [eventType, actorId]);
+  }, [eventType, actorId, deferredSearch, page]);
 
   React.useEffect(() => {
     fetchActivity();
   }, [fetchActivity]);
-
-  const filteredEvents = events.filter((event) => {
-    if (!searchQuery) {
-      return true;
-    }
-    const query = searchQuery.toLowerCase();
-    return (
-      event.actor?.name?.toLowerCase().includes(query) ||
-      event.actor?.email?.toLowerCase().includes(query) ||
-      event.description?.toLowerCase().includes(query) ||
-      event.room?.name?.toLowerCase().includes(query) ||
-      event.folderName?.toLowerCase().includes(query)
-    );
-  });
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -161,42 +173,38 @@ export default function ActivityPage() {
     });
   };
 
-  const handleExport = () => {
-    const headers = [
-      'Date',
-      'User',
-      'Email',
-      'Action',
-      'Description',
-      'Folder',
-      'Room',
-      'IP Address',
-    ];
-    const rows = filteredEvents.map((event) => [
-      new Date(event.createdAt).toISOString(),
-      event.actor?.name || 'System',
-      event.actor?.email || '',
-      event.eventType.replace(/_/g, ' '),
-      event.description || '',
-      event.folderName || '',
-      event.room?.name || '',
-      event.ipAddress || '',
-    ]);
+  const handleExport = async () => {
+    const params = new URLSearchParams({ export: 'csv' });
+    if (eventType !== 'all') {
+      params.set('eventType', eventType);
+    }
+    if (actorId !== 'all') {
+      params.set('userId', actorId);
+    }
+    if (deferredSearch) {
+      params.set('search', deferredSearch);
+    }
 
-    const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `activity-log-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    try {
+      const response = await fetch(`/api/organization/activity?${params}`);
+      if (!response.ok) {
+        return;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `activity-log-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export activity:', error);
+    }
   };
 
-  const hasActiveFilters = eventType !== 'all' || actorId !== 'all';
+  const hasActiveFilters = eventType !== 'all' || actorId !== 'all' || searchQuery.length > 0;
 
   return (
     <>
@@ -217,7 +225,7 @@ export default function ActivityPage() {
           description="Search who did what, narrow by event type or user, and export the audit trail when you need to share it."
           actions={
             <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-              {filteredEvents.length} events
+              {pagination?.total ?? events.length} events
             </div>
           }
         >
@@ -228,14 +236,23 @@ export default function ActivityPage() {
               <Input
                 placeholder="Search by name, email, document, or room..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
                 className="h-11 rounded-xl border-slate-200 bg-white pl-10 text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
               />
             </div>
 
             {/* Filter row */}
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={eventType} onValueChange={setEventType}>
+              <Select
+                value={eventType}
+                onValueChange={(value) => {
+                  setEventType(value);
+                  setPage(1);
+                }}
+              >
                 <SelectTrigger
                   aria-label="Filter by event type"
                   className="h-9 w-[170px] rounded-lg border-slate-200 bg-white text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900"
@@ -254,7 +271,13 @@ export default function ActivityPage() {
               </Select>
 
               {users.length > 0 && (
-                <Select value={actorId} onValueChange={setActorId}>
+                <Select
+                  value={actorId}
+                  onValueChange={(value) => {
+                    setActorId(value);
+                    setPage(1);
+                  }}
+                >
                   <SelectTrigger
                     aria-label="Filter by user"
                     className="h-9 w-[190px] rounded-lg border-slate-200 bg-white text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900"
@@ -298,6 +321,8 @@ export default function ActivityPage() {
                   onClick={() => {
                     setEventType('all');
                     setActorId('all');
+                    setSearchQuery('');
+                    setPage(1);
                   }}
                 >
                   Clear filters
@@ -306,6 +331,15 @@ export default function ActivityPage() {
             </div>
           </div>
         </AdminToolbar>
+
+        {coverage && (
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+            <span className="font-medium">Audit capture: {coverage.auditCaptureMode}</span>
+            <span className="mx-2 text-slate-400">•</span>
+            Historical share sessions without a native access event are shown as inferred. External
+            viewer identities use asserted email and are not verified.
+          </div>
+        )}
 
         {/* Activity List */}
         {isLoading ? (
@@ -331,7 +365,7 @@ export default function ActivityPage() {
           />
         ) : (
           <AdminSurface className="space-y-4">
-            {groupEventsByDate(filteredEvents).map((group) => (
+            {groupEventsByDate(events).map((group) => (
               <div key={group.label}>
                 <p className="mb-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">
                   {group.label}
@@ -361,6 +395,11 @@ export default function ActivityPage() {
                                 <span className="font-medium">
                                   {event.actor.name || event.actor.email}
                                 </span>
+                                {event.actor.identityLabel === 'Asserted email' && (
+                                  <Badge variant="outline" className="ml-2 text-[10px]">
+                                    Asserted email
+                                  </Badge>
+                                )}
                                 <span className="text-neutral-500"> {label}</span>
                               </>
                             ) : (
@@ -394,8 +433,13 @@ export default function ActivityPage() {
                             {event.ipAddress && (
                               <>
                                 <span>•</span>
-                                <span>{event.ipAddress}</span>
+                                <span>IP {event.ipAddress}</span>
                               </>
+                            )}
+                            {event.auditStatus !== 'authoritative' && (
+                              <Badge variant="outline" className="text-[10px] capitalize">
+                                {event.auditStatus}
+                              </Badge>
                             )}
                           </div>
                         </div>
@@ -408,10 +452,33 @@ export default function ActivityPage() {
           </AdminSurface>
         )}
 
-        {/* Load More */}
-        {events.length > 0 && events.length >= 50 && (
-          <div className="mt-6 text-center">
-            <Button variant="outline">Load More</Button>
+        {pagination && pagination.totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-between">
+            <p className="text-sm text-neutral-500">
+              Showing {(page - 1) * pagination.limit + 1} to{' '}
+              {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} events
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page === 1 || isLoading}
+              >
+                Previous
+              </Button>
+              <span className="px-2 text-sm text-neutral-500">
+                Page {page} of {pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
+                disabled={page === pagination.totalPages || isLoading}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         )}
       </AdminPageContent>
