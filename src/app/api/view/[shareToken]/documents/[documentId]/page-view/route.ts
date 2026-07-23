@@ -12,6 +12,7 @@ import {
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
+import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
 
 interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Invalid time spent' }, { status: 400 });
     }
 
-    await withOrgContext(viewerSession.organizationId, async (tx) => {
+    const recorded = await withOrgContext(viewerSession.organizationId, async (tx) => {
       // Verify document exists in this room
       const document = await tx.document.findFirst({
         where: {
@@ -60,12 +61,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
           roomId: viewerSession.room.id,
           organizationId: viewerSession.organizationId,
           status: 'ACTIVE',
+          withdrawnAt: null,
         },
-        select: { id: true, currentVersionId: true },
+        select: { id: true, folderId: true, currentVersionId: true },
       });
 
       if (!document) {
-        return;
+        return false;
+      }
+
+      const allowed = await canViewerLinkAccessDocument(
+        tx,
+        viewerSession.link,
+        viewerSession.room.id,
+        document
+      );
+      if (!allowed) {
+        return false;
       }
 
       // Try to find existing page view for this viewer+document+page
@@ -104,7 +116,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
           },
         });
       }
+
+      return true;
     });
+
+    if (!recorded) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
