@@ -16,6 +16,7 @@ const mockCookieStore = { get: vi.fn(), set: vi.fn(), delete: vi.fn() };
 const mockViewSessionFindFirst = vi.fn();
 const mockWithOrgContext = vi.fn();
 const mockDocFindFirst = vi.fn();
+const mockFolderFindFirst = vi.fn();
 const mockVersionFindFirst = vi.fn();
 const mockStorageExists = vi.fn().mockResolvedValue(true);
 const mockStorageGet = vi.fn().mockResolvedValue(Buffer.from('preview-png'));
@@ -65,7 +66,7 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/preview — current 
         slug: 'share-token',
         isActive: true,
         permission: 'VIEW',
-        scope: 'ROOM',
+        scope: 'ENTIRE_ROOM',
         scopedFolderId: null,
         scopedDocumentId: null,
         maxSessionMinutes: 30,
@@ -75,6 +76,7 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/preview — current 
 
     mockStorageExists.mockResolvedValue(true);
     mockStorageGet.mockResolvedValue(Buffer.from('preview-png'));
+    mockFolderFindFirst.mockResolvedValue(null);
 
     VERSIONS['ver-1'] = { id: 'ver-1', scanStatus: 'CLEAN', previewAssets: renderAsset('v1.png') };
     VERSIONS['ver-2'] = { id: 'ver-2', scanStatus: 'CLEAN', previewAssets: renderAsset('v2.png') };
@@ -95,13 +97,14 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/preview — current 
       async (_orgId: string, cb: (tx: unknown) => Promise<unknown>) =>
         cb({
           document: { findFirst: mockDocFindFirst },
+          folder: { findFirst: mockFolderFindFirst },
           documentVersion: { findFirst: mockVersionFindFirst },
         })
     );
   });
 
   function docWithCurrent(currentVersionId: string | null) {
-    mockDocFindFirst.mockResolvedValue({ id: 'doc-1', currentVersionId });
+    mockDocFindFirst.mockResolvedValue({ id: 'doc-1', folderId: null, currentVersionId });
   }
 
   it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(
@@ -148,5 +151,57 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/preview — current 
 
     expect(res.status).toBe(200);
     expect(mockStorageGet).toHaveBeenCalled();
+  });
+
+  it('allows preview inside a room-bound folder-scoped link', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      link: {
+        ...session.link,
+        scope: 'FOLDER',
+        scopedFolderId: 'allowed-folder',
+      },
+    });
+    mockDocFindFirst.mockResolvedValue({
+      id: 'doc-1',
+      folderId: 'allowed-folder',
+      currentVersionId: 'ver-2',
+    });
+    mockFolderFindFirst.mockResolvedValue({ parentId: null });
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(200);
+    expect(mockFolderFindFirst).toHaveBeenCalledWith({
+      where: { id: 'allowed-folder', roomId: 'room-1' },
+      select: { parentId: true },
+    });
+    expect(mockVersionFindFirst).toHaveBeenCalled();
+    expect(mockStorageGet).toHaveBeenCalled();
+  });
+
+  it('denies a document outside a folder-scoped link before version or storage reads', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      link: {
+        ...session.link,
+        scope: 'FOLDER',
+        scopedFolderId: 'allowed-folder',
+      },
+    });
+    mockDocFindFirst.mockResolvedValue({
+      id: 'doc-1',
+      folderId: 'outside-folder',
+      currentVersionId: 'ver-2',
+    });
+    mockFolderFindFirst.mockResolvedValue({ parentId: null });
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(404);
+    expect(mockVersionFindFirst).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
   });
 });

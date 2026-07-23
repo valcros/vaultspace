@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
 import { getRequestContext } from '@/lib/middleware';
+import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
 import {
   getViewerSession,
   requireViewerSession,
@@ -42,14 +43,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     const viewerSession = sessionResult.session;
 
-    // Check if document is allowed by link scope
-    if (
-      viewerSession.link.scope === 'DOCUMENT' &&
-      viewerSession.link.scopedDocumentId !== documentId
-    ) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-    }
-
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(viewerSession.organizationId, async (tx) => {
       const document = await tx.document.findFirst({
@@ -62,6 +55,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           id: true,
           name: true,
           mimeType: true,
+          folderId: true,
           allowDownload: true,
           currentVersionId: true,
           versions: {
@@ -78,6 +72,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const allowed = await canViewerLinkAccessDocument(
+        tx,
+        viewerSession.link,
+        viewerSession.room.id,
+        document
+      );
+      if (!allowed) {
         return { error: 'Document not found', status: 404 };
       }
 
