@@ -12,8 +12,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/lib/db';
+import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { verifyTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
-import { setSessionCookie } from '@/lib/middleware';
+import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { verifyTOTP, verifyBackupCode } from '@/lib/totp';
 import { randomBytes } from 'crypto';
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { code, tempToken } = validateSchema.parse(body);
+    const reqContext = getRequestContext(request);
 
     // Verify temp token
     const tokenData = verifyTwoFactorTempToken(tempToken);
@@ -96,7 +98,7 @@ export async function POST(request: NextRequest) {
     const sessionDuration = SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000;
     const expiresAt = new Date(Date.now() + sessionDuration);
 
-    await db.session.create({
+    const authSession = await db.session.create({
       data: {
         userId: user.id,
         organizationId: userOrg.organization.id,
@@ -115,6 +117,22 @@ export async function POST(request: NextRequest) {
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
+
+    await captureAccessAudit({
+      organizationId: userOrg.organization.id,
+      eventType: 'USER_LOGIN',
+      actorType: userOrg.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+      actorId: user.id,
+      actorEmail: user.email,
+      requestId: reqContext.requestId,
+      description: 'User signed in with two-factor authentication',
+      metadata: {
+        authSessionId: authSession.id,
+        authenticationMethod: backupCodeIndex === -1 ? 'TOTP' : 'BACKUP_CODE',
+      },
+      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+    });
 
     return NextResponse.json({
       user: {

@@ -8,9 +8,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { requireAuth } from '@/lib/middleware';
+import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
+import { getRequestContext, requireAuth } from '@/lib/middleware';
 import { getProviders } from '@/providers';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const session = await requireAuth();
     const { roomId, documentId } = await context.params;
+    const reqContext = getRequestContext(request);
     const versionId = request.nextUrl.searchParams.get('versionId');
     // Which rendered page to serve (Office docs / spreadsheets render to one PNG
     // per page). Defaults to page 1.
@@ -223,6 +225,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Get file content
       const data = await storage.get(bucket, key);
 
+      await captureAccessAudit({
+        organizationId: session.organizationId,
+        eventType: 'DOCUMENT_VIEWED',
+        actorType: session.organization.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+        actorId: session.userId,
+        actorEmail: session.user.email,
+        roomId,
+        documentId,
+        requestId: reqContext.requestId,
+        description: 'Authenticated user viewed a document',
+        metadata: { accessPath: 'AUTHENTICATED_PREVIEW' },
+        ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+        userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+        dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.DOCUMENT_VIEWED,
+      });
+
       // Return file with inline headers for preview
       // X-Frame-Options: SAMEORIGIN allows iframe embedding within same origin for preview dialogs
       // Serve HTML as text/plain to prevent XSS if it ever reaches an iframe
@@ -250,6 +268,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
       const exists = await storage.exists(bucket, key);
       if (exists) {
         const data = await storage.get(bucket, key);
+        await captureAccessAudit({
+          organizationId: session.organizationId,
+          eventType: 'DOCUMENT_VIEWED',
+          actorType: session.organization.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+          actorId: session.userId,
+          actorEmail: session.user.email,
+          roomId,
+          documentId,
+          requestId: reqContext.requestId,
+          description: 'Authenticated user viewed a document',
+          metadata: { accessPath: 'AUTHENTICATED_PREVIEW' },
+          ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+          userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+          dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.DOCUMENT_VIEWED,
+        });
         return new NextResponse(new Uint8Array(data), {
           status: 200,
           headers: {

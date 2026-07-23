@@ -8,6 +8,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+
 // Mock database
 vi.mock('@/lib/db', () => ({
   db: {
@@ -46,7 +48,16 @@ vi.mock('crypto', () => ({
 
 // Mock session cookie
 vi.mock('@/lib/middleware', () => ({
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-test',
+    ipAddress: '127.0.0.1',
+    userAgent: 'vitest',
+  })),
   setSessionCookie: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/lib/audit/accessAudit', () => ({
+  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
 import { db } from '@/lib/db';

@@ -6,7 +6,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
+import { getRequestContext } from '@/lib/middleware';
 import {
   getViewerSession,
   requireViewerSession,
@@ -17,9 +19,10 @@ interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { shareToken, documentId } = await context.params;
+    const reqContext = getRequestContext(request);
     const session = await getViewerSession(shareToken, {
       ...viewerSessionBaseSelect,
       visitorEmail: true,
@@ -111,6 +114,26 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         .replace('{{time}}', now.split('T')[1]?.slice(0, 5) ?? '')
         .replace('{{ip}}', viewerSession.ipAddress ?? '');
     }
+
+    await captureAccessAudit({
+      organizationId: viewerSession.organizationId,
+      eventType: 'DOCUMENT_VIEWED',
+      actorType: 'VIEWER',
+      actorEmail: viewerSession.visitorEmail,
+      roomId: viewerSession.room.id,
+      documentId,
+      viewSessionId: viewerSession.id,
+      requestId: reqContext.requestId,
+      description: 'Share-link viewer opened a document',
+      metadata: {
+        accessPath: 'SHARE_LINK',
+        identityAssurance: viewerSession.visitorEmail ? 'ASSERTED_EMAIL' : 'ANONYMOUS',
+      },
+      ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
+      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+      dedupeWindowMs: ACCESS_AUDIT_DEDUPE_MS.DOCUMENT_VIEWED,
+      touchViewerActivity: true,
+    });
 
     return NextResponse.json({
       document: {

@@ -11,9 +11,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const mockSession = { userId: 'user-1', organizationId: 'org-1' };
+const mockSession = {
+  userId: 'user-1',
+  organizationId: 'org-1',
+  user: { email: 'user@example.com' },
+  organization: { role: 'ADMIN' as const },
+};
 vi.mock('@/lib/middleware', () => ({
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-test',
+    ipAddress: '127.0.0.1',
+    userAgent: 'vitest',
+  })),
   requireAuth: vi.fn(() => Promise.resolve(mockSession)),
+}));
+
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+vi.mock('@/lib/audit/accessAudit', () => ({
+  ACCESS_AUDIT_DEDUPE_MS: { DOCUMENT_DOWNLOADED: 3_000 },
+  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
 const mockStorage = { exists: vi.fn(), get: vi.fn() };
@@ -57,6 +73,7 @@ const VERSIONS: Record<string, { scanStatus: string; fileBlob: unknown }> = {
 describe('GET /api/rooms/:roomId/documents/:documentId/download — current version', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockTx.room.findFirst.mockResolvedValue({ id: 'room-1', organizationId: 'org-1' });
     mockDocUpdate.mockResolvedValue({});
     mockStorage.exists.mockResolvedValue(true);
@@ -109,6 +126,14 @@ describe('GET /api/rooms/:roomId/documents/:documentId/download — current vers
 
     expect(res.status).toBe(200);
     expect(mockStorage.get).toHaveBeenCalledWith('documents', 'documents/org-1/v2.pdf');
+    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'DOCUMENT_DOWNLOADED',
+        roomId: 'room-1',
+        documentId: 'doc-1',
+        dedupeWindowMs: 3_000,
+      })
+    );
   });
 
   it('after rollback (current=v1) serves v1 even though v2 is newer and CLEAN', async () => {

@@ -20,6 +20,7 @@ const mockDocUpdate = vi.fn().mockResolvedValue({});
 const mockVersionFindFirst = vi.fn();
 const mockStorageExists = vi.fn().mockResolvedValue(true);
 const mockStorageGet = vi.fn().mockResolvedValue(Buffer.from('original-bytes'));
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
 
 vi.mock('next/headers', () => ({ cookies: vi.fn(async () => mockCookieStore) }));
 
@@ -31,6 +32,19 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/providers', () => ({
   getProviders: () => ({ storage: { exists: mockStorageExists, get: mockStorageGet } }),
+}));
+
+vi.mock('@/lib/middleware', () => ({
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-test',
+    ipAddress: '127.0.0.1',
+    userAgent: 'vitest',
+  })),
+}));
+
+vi.mock('@/lib/audit/accessAudit', () => ({
+  ACCESS_AUDIT_DEDUPE_MS: { DOCUMENT_DOWNLOADED: 3_000 },
+  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
 import { GET } from './route';
@@ -54,6 +68,7 @@ const VERSIONS: Record<string, { scanStatus: string; fileBlob: unknown }> = {
 describe('GET /api/view/[shareToken]/documents/[documentId]/download — current version', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCaptureAccessAudit.mockResolvedValue('disabled');
 
     mockCookieStore.get.mockReturnValue({ value: 'viewer-session-token' });
     mockViewSessionFindFirst.mockResolvedValue({
@@ -61,6 +76,7 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/download — current
       createdAt: new Date(),
       isActive: true,
       organizationId: 'org-1',
+      visitorEmail: 'viewer@example.com',
       link: {
         slug: 'share-token',
         isActive: true,
@@ -144,6 +160,25 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/download — current
 
     expect(res.status).toBe(200);
     expect(mockStorageGet).toHaveBeenCalledWith('documents', 'documents/org-1/v2.pdf');
+    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'DOCUMENT_DOWNLOADED',
+        actorType: 'VIEWER',
+        viewSessionId: 'view-session-1',
+        actorEmail: 'viewer@example.com',
+        touchViewerActivity: true,
+      })
+    );
+  });
+
+  it('keeps the download available when the bounded audit write fails', async () => {
+    docWithCurrent('ver-2');
+    mockCaptureAccessAudit.mockResolvedValue('failed');
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(200);
+    expect((await res.arrayBuffer()).byteLength).toBe('original-bytes'.length);
   });
 
   it('after rollback (current=v1) serves v1, not the newer CLEAN v2', async () => {
