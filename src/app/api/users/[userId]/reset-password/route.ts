@@ -18,14 +18,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 
 import { isAuthenticationError } from '@/lib/errors';
-import { requireAuth } from '@/lib/middleware';
+import { getRequestContext, requireAuth } from '@/lib/middleware';
 import { bootstrapDb, withOrgContext } from '@/lib/db';
+import { captureSecurityAudit, createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { getProviders } from '@/providers';
+import { normalizeEmailError } from '@/providers/email/errors';
 import { hasCapability } from '@/lib/deployment-capabilities';
-import { JOB_NAMES, QUEUE_NAMES } from '@/workers/types';
+import { JOB_NAMES, PASSWORD_RESET_EMAIL_JOB_OPTIONS, QUEUE_NAMES } from '@/workers/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,9 +40,10 @@ interface RouteContext {
 const RESET_COOLDOWN_MS = 60 * 1000;
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-export async function POST(_request: NextRequest, context: RouteContext) {
+export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const session = await requireAuth();
+    const reqContext = getRequestContext(request);
     const { userId } = await context.params;
 
     if (session.organization.role !== 'ADMIN') {
@@ -82,13 +85,47 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         } as const;
       }
 
+      // All issuance paths lock the global user row first. This serializes
+      // admin and self-service reset requests for the same account.
+      await tx.$queryRaw`
+        SELECT 1 FROM users
+        WHERE id = ${userId}
+        FOR UPDATE`;
+
       // Serialize concurrent resets for the same target so the cooldown check
       // below cannot be raced by two simultaneous requests (mirrors the PATCH
       // last-admin guard's row lock).
       await tx.$queryRaw`
-        SELECT 1 FROM user_organizations
-        WHERE "userId" = ${userId} AND "organizationId" = ${session.organizationId}
-        FOR UPDATE`;
+        SELECT 1
+        FROM user_organizations uo
+        JOIN organizations o ON o.id = uo."organizationId"
+        WHERE uo."userId" = ${userId} AND uo."organizationId" = ${session.organizationId}
+        FOR UPDATE OF uo, o`;
+
+      // The pre-lock lookup establishes a candidate only. Re-read recipient and
+      // eligibility after both rows are locked so email changes, deactivation,
+      // or membership removal cannot leave us sending a newly minted token to
+      // stale account state.
+      const lockedUserOrg = await tx.userOrganization.findFirst({
+        where: { userId, organizationId: session.organizationId },
+        include: {
+          user: { select: { id: true, email: true, firstName: true, isActive: true } },
+          organization: { select: { isActive: true } },
+        },
+      });
+      if (!lockedUserOrg) {
+        return { error: 'User not found in organization', status: 404 } as const;
+      }
+      if (
+        !lockedUserOrg.isActive ||
+        !lockedUserOrg.user.isActive ||
+        !lockedUserOrg.organization.isActive
+      ) {
+        return {
+          error: 'Cannot reset the password of a deactivated user',
+          status: 400,
+        } as const;
+      }
 
       // Cooldown: skip if a fresh, unused token was just issued for this user.
       const recent = await tx.passwordResetToken.findFirst({
@@ -107,9 +144,23 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         } as const;
       }
 
+      await tx.passwordResetToken.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+
       const token = randomBytes(32).toString('base64url');
+      const flowId = randomUUID();
       await tx.passwordResetToken.create({
-        data: { userId, token, expiresAt: new Date(Date.now() + TOKEN_TTL_MS) },
+        data: {
+          id: flowId,
+          userId,
+          token,
+          expiresAt: new Date(Date.now() + TOKEN_TTL_MS),
+          requestId: reqContext.requestId,
+          organizationId: session.organizationId,
+          deliveryStatus: 'PENDING',
+        },
       });
 
       const org = await tx.organization.findUnique({
@@ -119,19 +170,24 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
       // Audit the REQUEST (the intent), which is accurate regardless of whether
       // delivery below succeeds. The token itself is never recorded here.
-      await tx.event.create({
-        data: {
-          organizationId: session.organizationId,
-          eventType: 'USER_PASSWORD_RESET',
-          actorType: 'ADMIN',
-          actorId: session.userId,
-          actorEmail: session.user.email,
-          description: `Requested a password reset for ${userOrg.user.email}`,
-          metadata: { targetUserId: userId },
+      await createSecurityAuditEvent(tx, {
+        organizationId: session.organizationId,
+        eventType: 'USER_PASSWORD_RESET',
+        actorType: 'ADMIN',
+        actorId: session.userId,
+        actorEmail: session.user.email,
+        requestId: reqContext.requestId,
+        correlationId: flowId,
+        description: 'Administrator requested a password reset for an organization member',
+        metadata: {
+          outcome: 'accepted',
+          stage: 'request',
+          targetUserId: userId,
+          initiation: 'ADMIN',
         },
       });
 
-      return { success: true as const, token, user: userOrg.user, org };
+      return { success: true as const, flowId, token, user: lockedUserOrg.user, org };
     });
 
     if ('error' in result) {
@@ -148,43 +204,184 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
     try {
       if (canAsync) {
-        await providers.job.addJob(QUEUE_NAMES.NORMAL, JOB_NAMES.EMAIL_SEND, {
-          to: result.user.email,
-          subject: `Reset your ${orgName} password`,
-          template: 'password-reset',
-          from: senderFrom,
-          fromName: senderName,
+        const jobId = await providers.job.addJob(
+          QUEUE_NAMES.NORMAL,
+          JOB_NAMES.EMAIL_SEND,
+          {
+            to: result.user.email,
+            subject: `Reset your ${orgName} password`,
+            template: 'password-reset',
+            from: senderFrom,
+            fromName: senderName,
+            data: {
+              userName: result.user.firstName || 'User',
+              organizationName: orgName,
+              resetUrl,
+              expiresIn: '1 hour',
+            },
+            passwordReset: {
+              flowId: result.flowId,
+              userId,
+              requestId: reqContext.requestId,
+              organizationIds: [session.organizationId],
+            },
+          },
+          {
+            ...PASSWORD_RESET_EMAIL_JOB_OPTIONS,
+            jobId: `password-reset-${result.flowId}`,
+          }
+        );
+        try {
+          const transition = await bootstrapDb.passwordResetToken.updateMany({
+            where: { id: result.flowId, usedAt: null, deliveryStatus: 'PENDING' },
+            data: { deliveryStatus: 'QUEUED', queueJobId: jobId },
+          });
+          if (transition.count === 0) {
+            await bootstrapDb.passwordResetToken.updateMany({
+              where: { id: result.flowId, queueJobId: null },
+              data: { queueJobId: jobId },
+            });
+          }
+        } catch (lifecycleError) {
+          // The job is already durable in Redis. Do not invalidate its token or
+          // claim queue failure solely because the post-enqueue status write
+          // failed; the worker can still advance the flow by its stable id.
+          console.error(
+            JSON.stringify({
+              component: 'admin-password-reset',
+              event: 'delivery_lifecycle_update',
+              outcome: 'failed_after_queue_acceptance',
+              requestId: reqContext.requestId,
+              correlationId: result.flowId,
+              jobId,
+              errorName: lifecycleError instanceof Error ? lifecycleError.name : 'UnknownError',
+            })
+          );
+        }
+      } else {
+        const sendClaim = await bootstrapDb.passwordResetToken.updateMany({
+          where: {
+            id: result.flowId,
+            usedAt: null,
+            expiresAt: { gt: new Date() },
+            deliveryStatus: 'PENDING',
+          },
           data: {
-            userName: result.user.firstName || 'User',
-            organizationName: orgName,
-            resetUrl,
-            expiresIn: '1 hour',
+            deliveryStatus: 'SENDING',
+            deliveryAttempts: 1,
+            lastDeliveryAttemptAt: new Date(),
           },
         });
-      } else {
-        await providers.email.sendEmail({
+        if (sendClaim.count !== 1) {
+          console.warn(
+            JSON.stringify({
+              component: 'admin-password-reset',
+              event: 'provider_submission',
+              outcome: 'skipped_superseded_flow',
+              requestId: reqContext.requestId,
+              correlationId: result.flowId,
+            })
+          );
+          return NextResponse.json(
+            { error: 'This reset was superseded by a newer request. Please try again.' },
+            { status: 409 }
+          );
+        }
+        const sendResult = await providers.email.sendEmail({
           to: result.user.email,
           subject: `Reset your ${orgName} password`,
           html: `<p>Hi ${result.user.firstName || 'User'},</p><p>An administrator has requested a password reset for your account. Click <a href="${resetUrl}">here</a> to set a new password.</p><p>This link expires in 1 hour.</p>`,
           text: `Hi ${result.user.firstName || 'User'},\n\nAn administrator has requested a password reset for your account. Set a new password here: ${resetUrl}\n\nThis link expires in 1 hour.`,
           from: senderFrom,
           fromName: senderName,
+          operationId: result.flowId,
+          sensitiveContent: true,
         });
+        // Once the provider accepts the submission, a later bookkeeping error
+        // must not invalidate the delivered token or report a false delivery
+        // failure to the administrator.
+        // eslint-disable-next-line no-console
+        console.log(
+          JSON.stringify({
+            component: 'admin-password-reset',
+            event: 'provider_submission',
+            outcome: 'accepted',
+            requestId: reqContext.requestId,
+            correlationId: result.flowId,
+            providerMessageId: sendResult.messageId,
+          })
+        );
+        try {
+          await bootstrapDb.passwordResetToken.updateMany({
+            where: { id: result.flowId, usedAt: null },
+            data: {
+              deliveryStatus: 'PROVIDER_ACCEPTED',
+              providerMessageId: sendResult.messageId,
+              lastDeliveryAttemptAt: new Date(),
+            },
+          });
+        } catch (lifecycleError) {
+          console.error(
+            JSON.stringify({
+              component: 'admin-password-reset',
+              event: 'delivery_lifecycle_update',
+              outcome: 'failed_after_provider_acceptance',
+              requestId: reqContext.requestId,
+              correlationId: result.flowId,
+              providerMessageId: sendResult.messageId,
+              errorName: lifecycleError instanceof Error ? lifecycleError.name : 'UnknownError',
+            })
+          );
+        }
       }
     } catch (emailErr) {
-      console.error('[UserResetPasswordAPI] email delivery failed:', emailErr);
+      const deliveryError = normalizeEmailError(emailErr, 'unknown');
+      console.error(
+        JSON.stringify({
+          component: 'admin-password-reset',
+          event: 'email_submission',
+          outcome: 'failed',
+          requestId: reqContext.requestId,
+          correlationId: result.flowId,
+          errorCode: deliveryError.code,
+          retryable: deliveryError.retryable,
+        })
+      );
       // Neutralize the undelivered token so it cannot linger for an hour and so
       // an immediate retry is not blocked by the cooldown. The tx above is
       // closed, so use a fresh handle; best-effort. (password_reset_tokens has
       // no RLS, so bootstrapDb is appropriate here.)
       try {
         await bootstrapDb.passwordResetToken.updateMany({
-          where: { token: result.token, usedAt: null },
-          data: { usedAt: new Date() },
+          where: { id: result.flowId, usedAt: null },
+          data: {
+            usedAt: new Date(),
+            deliveryStatus: canAsync
+              ? 'QUEUE_FAILED'
+              : deliveryError.retryable
+                ? 'FAILED_EXHAUSTED'
+                : 'FAILED_PERMANENT',
+            deliveryErrorCode: deliveryError.code,
+          },
         });
       } catch (cleanupErr) {
         console.error('[UserResetPasswordAPI] failed to invalidate undelivered token:', cleanupErr);
       }
+      await captureSecurityAudit({
+        organizationId: session.organizationId,
+        eventType: 'USER_PASSWORD_RESET',
+        actorType: 'SYSTEM',
+        requestId: reqContext.requestId,
+        correlationId: result.flowId,
+        description: 'Password reset email could not be queued or submitted',
+        metadata: {
+          outcome: 'failure',
+          stage: canAsync ? 'queue' : 'provider_submission',
+          targetUserId: userId,
+          errorCode: deliveryError.code,
+          retryable: deliveryError.retryable,
+        },
+      });
       return NextResponse.json(
         { error: 'Could not send the reset email. Please try again.' },
         { status: 502 }

@@ -5,6 +5,7 @@
  */
 
 import { cookies } from 'next/headers';
+import { randomUUID } from 'crypto';
 import type { NextRequest } from 'next/server';
 
 import { validateSession } from '../auth';
@@ -140,9 +141,11 @@ export function getRequestContext(request: NextRequest): {
   userAgent: string;
   customDomain: CustomDomainContext;
 } {
+  const suppliedRequestId = request.headers.get('x-request-id');
   const requestId =
-    request.headers.get('x-request-id') ??
-    `req_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+    suppliedRequestId && /^[A-Za-z0-9._:-]{1,100}$/.test(suppliedRequestId)
+      ? suppliedRequestId
+      : `req_${randomUUID()}`;
 
   const ipAddress =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??

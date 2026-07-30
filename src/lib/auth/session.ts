@@ -136,7 +136,27 @@ export async function validateSession(token: string): Promise<SessionData> {
         revived.issuedAt.getTime() + SESSION_CONFIG.ABSOLUTE_MAX_DAYS * 24 * 60 * 60 * 1000
       );
       if (revived.expiresAt > now && now <= absoluteMax && revived.user.isActive) {
-        return revived;
+        // Redis is an accelerator, never the source of truth. A password reset
+        // can revoke the database session while cache deletion is unavailable,
+        // so verify the security-critical state before accepting the snapshot.
+        const currentSession = await bootstrapDb.session.findUnique({
+          where: { id: revived.sessionId },
+          select: {
+            isActive: true,
+            userId: true,
+            organizationId: true,
+            expiresAt: true,
+          },
+        });
+        if (
+          currentSession?.isActive &&
+          currentSession.userId === revived.userId &&
+          currentSession.organizationId === revived.organizationId &&
+          currentSession.expiresAt > now
+        ) {
+          return revived;
+        }
+        await getProviders().cache.delete(`session:${token}`);
       }
       // Expired or inactive in cache: fall through to the DB path, which owns
       // deactivation and error semantics.
@@ -336,7 +356,19 @@ async function deactivateSessions(
 
 export async function clearSessionCache(tokens: string[]): Promise<void> {
   const cache = getProviders().cache;
-  await Promise.allSettled(tokens.map((token) => cache.delete(`session:${token}`)));
+  const results = await Promise.allSettled(tokens.map((token) => cache.delete(`session:${token}`)));
+  const failureCount = results.filter((result) => result.status === 'rejected').length;
+  if (failureCount > 0) {
+    console.error(
+      JSON.stringify({
+        component: 'session-cache',
+        event: 'revoked_session_cache_delete',
+        outcome: 'partial_failure',
+        requestedCount: tokens.length,
+        failureCount,
+      })
+    );
+  }
 }
 
 /**

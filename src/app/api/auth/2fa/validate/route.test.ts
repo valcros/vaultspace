@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 const mockUserFindUnique = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockSessionCreate = vi.fn();
-const mockCaptureAccessAudit = vi.fn();
+const mockCreateSecurityAuditEvent = vi.fn();
 
 vi.mock('@/lib/db', () => ({
   db: {
@@ -14,6 +14,11 @@ vi.mock('@/lib/db', () => ({
     },
     session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
   },
+  withOrgContext: async (_orgId: string, operation: (tx: unknown) => Promise<unknown>) =>
+    operation({
+      user: { update: (...args: unknown[]) => mockUserUpdate(...args) },
+      session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
+    }),
 }));
 
 vi.mock('@/lib/auth/twoFactorTempToken', () => ({
@@ -34,8 +39,8 @@ vi.mock('@/lib/middleware', () => ({
   setSessionCookie: vi.fn(),
 }));
 
-vi.mock('@/lib/audit/accessAudit', () => ({
-  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
+vi.mock('@/lib/audit/securityAudit', () => ({
+  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
 }));
 
 import { POST } from './route';
@@ -61,7 +66,7 @@ describe('POST /api/auth/2fa/validate', () => {
     });
     mockUserUpdate.mockResolvedValue({});
     mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
-    mockCaptureAccessAudit.mockResolvedValue('disabled');
+    mockCreateSecurityAuditEvent.mockResolvedValue('event-1');
   });
 
   it('uses identical normalized request metadata for the session and login audit', async () => {
@@ -79,7 +84,8 @@ describe('POST /api/auth/2fa/validate', () => {
         userAgent: '2fa-context-agent',
       }),
     });
-    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.objectContaining({
         requestId: 'req-2fa',
         ipAddress: '203.0.113.20',

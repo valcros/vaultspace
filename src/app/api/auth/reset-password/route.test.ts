@@ -5,11 +5,14 @@ const mockHash = vi.fn();
 const mockFindFirst = vi.fn();
 const mockUserFindUnique = vi.fn();
 const mockUserUpdate = vi.fn();
+const mockLockedUserFindUnique = vi.fn();
+const mockLockUser = vi.fn();
 const mockTokenUpdate = vi.fn();
 const mockTokenUpdateMany = vi.fn();
 const mockTransaction = vi.fn();
 const mockDeactivateAllUserSessionsInTx = vi.fn();
 const mockClearSessionCache = vi.fn();
+const mockCreateSecurityAuditEvent = vi.fn();
 
 vi.mock('bcryptjs', () => ({
   default: {
@@ -22,6 +25,18 @@ vi.mock('@/lib/auth', () => ({
     mockClearSessionCache(...args),
   deactivateAllUserSessionsInTx: (...args: Parameters<typeof mockDeactivateAllUserSessionsInTx>) =>
     mockDeactivateAllUserSessionsInTx(...args),
+}));
+
+vi.mock('@/lib/audit/securityAudit', () => ({
+  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
+}));
+
+vi.mock('@/lib/middleware', () => ({
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-reset',
+    ipAddress: '192.0.2.20',
+    userAgent: 'reset-test-agent',
+  })),
 }));
 
 vi.mock('@/lib/db', () => {
@@ -47,22 +62,40 @@ describe('POST /api/auth/reset-password', () => {
     vi.clearAllMocks();
 
     mockHash.mockResolvedValue('hashed-password');
-    mockFindFirst.mockResolvedValue({ id: 'reset-1', userId: 'user-1' });
-    mockUserFindUnique.mockResolvedValue({ id: 'user-1', isActive: true });
+    mockFindFirst.mockResolvedValue({
+      id: 'reset-1',
+      userId: 'user-1',
+      requestId: 'req-forgot',
+    });
+    mockUserFindUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      isActive: true,
+      organizations: [{ role: 'ADMIN', organizationId: 'org-1' }],
+    });
     mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1', 'token-2']);
     mockClearSessionCache.mockResolvedValue(undefined);
+    mockCreateSecurityAuditEvent.mockResolvedValue('event-1');
 
     // Default return values are configured OUTSIDE the transaction impl so a
     // per-test override (e.g. the claim losing the race) is not clobbered each
     // time the transaction callback rebuilds the tx object.
     mockUserUpdate.mockResolvedValue(undefined);
+    mockLockedUserFindUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      isActive: true,
+      organizations: [{ role: 'ADMIN', organizationId: 'org-1' }],
+    });
+    mockLockUser.mockResolvedValue([]);
     mockTokenUpdate.mockResolvedValue(undefined);
     // The conditional claim (first updateMany) matched exactly one row.
     mockTokenUpdateMany.mockResolvedValue({ count: 1 });
 
     mockTransaction.mockImplementation(async (callback) => {
       const tx = {
-        user: { update: mockUserUpdate },
+        user: { findUnique: mockLockedUserFindUnique, update: mockUserUpdate },
+        $queryRaw: mockLockUser,
         passwordResetToken: {
           update: mockTokenUpdate,
           updateMany: mockTokenUpdateMany,
@@ -87,6 +120,7 @@ describe('POST /api/auth/reset-password', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(mockLockUser).toHaveBeenCalledTimes(2);
     expect(body.success).toBe(true);
     expect(mockTransaction).toHaveBeenCalledTimes(1);
     // The claim (first updateMany) must be gated on the token id AND still-unused
@@ -98,6 +132,14 @@ describe('POST /api/auth/reset-password', () => {
     });
     expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-1');
     expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1', 'token-2']);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        eventType: 'USER_PASSWORD_RESET',
+        correlationId: 'reset-1',
+        requestId: 'req-reset',
+      })
+    );
   });
 
   it('claims the token atomically and never sets the password if it lost the race', async () => {
@@ -128,5 +170,77 @@ describe('POST /api/auth/reset-password', () => {
     expect(mockUserUpdate).not.toHaveBeenCalled();
     expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
     expect(mockClearSessionCache).not.toHaveBeenCalled();
+  });
+
+  it('rejects a valid token for an active orphan account without consuming it', async () => {
+    mockUserFindUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'orphan@example.com',
+      isActive: true,
+      organizations: [],
+    });
+
+    const request = new NextRequest('http://localhost/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: 'legacy-reset-token', password: 'password123' }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/invalid or expired/i);
+    expect(mockHash).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockTokenUpdateMany).not.toHaveBeenCalled();
+    expect(mockUserUpdate).not.toHaveBeenCalled();
+    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the final membership becomes inactive before token claim', async () => {
+    mockLockedUserFindUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      isActive: true,
+      organizations: [],
+    });
+
+    const request = new NextRequest('http://localhost/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/invalid or expired/i);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(mockTokenUpdateMany).not.toHaveBeenCalled();
+    expect(mockUserUpdate).not.toHaveBeenCalled();
+    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
+    expect(mockCreateSecurityAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the account becomes inactive before the locked re-read', async () => {
+    mockLockedUserFindUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      isActive: false,
+      organizations: [{ role: 'ADMIN', organizationId: 'org-1' }],
+    });
+
+    const request = new NextRequest('http://localhost/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    expect(mockTokenUpdateMany).not.toHaveBeenCalled();
+    expect(mockUserUpdate).not.toHaveBeenCalled();
+    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
   });
 });

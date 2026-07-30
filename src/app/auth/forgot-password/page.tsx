@@ -63,8 +63,7 @@ export default function ForgotPasswordPage() {
             Check your email
           </h1>
           <p className="mb-6 text-sm text-slate-500">
-            We&apos;ve sent a password reset link to{' '}
-            <span className="font-medium text-slate-950">{email}</span>
+            If an active account exists for that address, a password reset link will arrive shortly.
           </p>
           <p className="mb-6 text-sm text-slate-500">
             Didn&apos;t receive the email? Check your spam folder or try again.

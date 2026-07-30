@@ -11,8 +11,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { db } from '@/lib/db';
-import { captureAccessAudit } from '@/lib/audit/accessAudit';
+import { db, withOrgContext } from '@/lib/db';
+import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { verifyTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
 import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
@@ -79,16 +79,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid verification code' }, { status: 400 });
     }
 
-    // If a backup code was used, remove it (one-time use)
-    if (backupCodeIndex !== -1) {
-      const updatedCodes = [...user.twoFactorBackupCodes];
-      updatedCodes.splice(backupCodeIndex, 1);
-      await db.user.update({
-        where: { id: user.id },
-        data: { twoFactorBackupCodes: updatedCodes },
-      });
-    }
-
     // Get default organization
     const userOrg = user.organizations[0];
     if (!userOrg || !userOrg.organization.isActive) {
@@ -100,41 +90,52 @@ export async function POST(request: NextRequest) {
     const sessionDuration = SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000;
     const expiresAt = new Date(Date.now() + sessionDuration);
 
-    const authSession = await db.session.create({
-      data: {
-        userId: user.id,
+    await withOrgContext(userOrg.organization.id, async (tx) => {
+      if (backupCodeIndex !== -1) {
+        const updatedCodes = [...user.twoFactorBackupCodes];
+        updatedCodes.splice(backupCodeIndex, 1);
+        await tx.user.update({
+          where: { id: user.id },
+          data: { twoFactorBackupCodes: updatedCodes },
+        });
+      }
+
+      const authSession = await tx.session.create({
+        data: {
+          userId: user.id,
+          organizationId: userOrg.organization.id,
+          token: sessionToken,
+          expiresAt,
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+
+      await createSecurityAuditEvent(tx, {
         organizationId: userOrg.organization.id,
-        token: sessionToken,
-        expiresAt,
+        eventType: 'USER_LOGIN',
+        actorType: userOrg.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+        actorId: user.id,
+        actorEmail: user.email,
+        requestId: reqContext.requestId,
+        description: 'User signed in with two-factor authentication',
+        metadata: {
+          outcome: 'success',
+          authSessionId: authSession.id,
+          authenticationMethod: backupCodeIndex === -1 ? 'TOTP' : 'BACKUP_CODE',
+        },
         ipAddress,
         userAgent,
-      },
-    });
-
-    // Update last login
-    await db.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      });
     });
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
-
-    await captureAccessAudit({
-      organizationId: userOrg.organization.id,
-      eventType: 'USER_LOGIN',
-      actorType: userOrg.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
-      actorId: user.id,
-      actorEmail: user.email,
-      requestId: reqContext.requestId,
-      description: 'User signed in with two-factor authentication',
-      metadata: {
-        authSessionId: authSession.id,
-        authenticationMethod: backupCodeIndex === -1 ? 'TOTP' : 'BACKUP_CODE',
-      },
-      ipAddress,
-      userAgent,
-    });
 
     return NextResponse.json({
       user: {

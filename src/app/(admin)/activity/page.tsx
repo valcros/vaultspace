@@ -88,6 +88,9 @@ const eventLabels: Record<string, string> = {
   user_accepted_invitation: 'accepted invitation',
   user_login: 'signed in',
   user_logout: 'signed out',
+  user_password_reset_requested: 'requested a password reset',
+  user_password_reset_completed: 'completed a password reset',
+  user_password_reset_email_failed: 'encountered a password reset email failure',
   user_updated: 'updated profile',
 };
 

@@ -7,7 +7,7 @@ const mockCookieStore = {
 
 const mockInvalidateSession = vi.fn();
 const mockClearSessionCookie = vi.fn();
-const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+const mockCaptureSecurityAudit = vi.fn().mockResolvedValue('captured');
 const mockSessionFindUnique = vi.fn();
 const mockMembershipFindUnique = vi.fn();
 
@@ -39,8 +39,8 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 
-vi.mock('@/lib/audit/accessAudit', () => ({
-  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
+vi.mock('@/lib/audit/securityAudit', () => ({
+  captureSecurityAudit: (...args: unknown[]) => mockCaptureSecurityAudit(...args),
 }));
 
 import { POST } from './route';
@@ -58,7 +58,7 @@ describe('POST /api/auth/logout', () => {
       user: { email: 'user@example.com' },
     });
     mockMembershipFindUnique.mockResolvedValue({ role: 'ADMIN' });
-    mockCaptureAccessAudit.mockResolvedValue('disabled');
+    mockCaptureSecurityAudit.mockResolvedValue('captured');
   });
 
   it('invalidates the session via the shared helper and clears the cookie', async () => {
@@ -69,7 +69,7 @@ describe('POST /api/auth/logout', () => {
     expect(body.success).toBe(true);
     expect(mockInvalidateSession).toHaveBeenCalledWith('session-token');
     expect(mockClearSessionCookie).toHaveBeenCalledTimes(1);
-    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: 'org-1',
         eventType: 'USER_LOGOUT',
@@ -84,7 +84,7 @@ describe('POST /api/auth/logout', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         requestId: 'req-shared-context',
         ipAddress: '203.0.113.10',

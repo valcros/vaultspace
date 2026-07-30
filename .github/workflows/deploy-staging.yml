@@ -52,6 +52,10 @@ jobs:
       WAKER_CONTAINER_NAME: ${{ vars.WAKER_CONTAINER_NAME }}
       LIFECYCLE_JOB_APP: ${{ vars.LIFECYCLE_JOB_APP }}
       APP_URL: ${{ vars.APP_URL }}
+      DEPLOYMENT_MUTATED: 'false'
+      WEB_MUTATED: 'false'
+      JOBS_MUTATED: 'false'
+      FORWARD_WORKER_VERIFIED: 'false'
       # For workflow_run triggers, deploy the exact commit CI validated, not the
       # branch head at event time (they can differ if another push lands mid-run).
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -90,6 +94,102 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Validate Container Apps CLI support
+        run: |
+          EXTENSION_VERSION=$(az extension show --name containerapp --query version --output tsv 2>/dev/null || true)
+          if [ -z "$EXTENSION_VERSION" ]; then
+            az extension add --name containerapp --upgrade --allow-preview true
+            EXTENSION_VERSION=$(az extension show --name containerapp --query version --output tsv)
+          fi
+          az containerapp revision set-mode --help >/dev/null
+          az containerapp ingress traffic set --help >/dev/null
+          echo "Container Apps extension: $EXTENSION_VERSION"
+
+      # Capture the deployable artifacts currently serving staging. If any
+      # later mutation fails, the final recovery step restores these images and
+      # routes web traffic to the restored release. Database migrations remain
+      # applied because they are additive and intentionally not rolled back.
+      - name: Capture staging before-state
+        id: before_state
+        run: |
+          TRAFFIC_JSON=$(az containerapp ingress traffic show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          HIGHEST_WEIGHT=$(echo "$TRAFFIC_JSON" | jq '[.[].weight] | max')
+          HIGHEST_COUNT=$(echo "$TRAFFIC_JSON" | jq --argjson weight "$HIGHEST_WEIGHT" \
+            '[.[] | select(.weight == $weight)] | length')
+          if [ "$HIGHEST_COUNT" != "1" ]; then
+            echo "ERROR: no unambiguous highest-weight staging web revision exists"
+            echo "$TRAFFIC_JSON"
+            exit 1
+          fi
+          PREVIOUS_WEB_REVISION=$(echo "$TRAFFIC_JSON" | jq -r --argjson weight "$HIGHEST_WEIGHT" \
+            '.[] | select(.weight == $weight) | .revisionName // empty')
+          if [ -z "$PREVIOUS_WEB_REVISION" ]; then
+            PREVIOUS_WEB_REVISION=$(az containerapp show \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestRevisionName \
+              --output tsv)
+          fi
+          PREVIOUS_WEB_IMAGE=$(az containerapp revision show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$PREVIOUS_WEB_REVISION" \
+            --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+
+          HEALTHY_WORKER_REVISIONS=$(az containerapp revision list \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "[?properties.active && properties.runningState=='Running'].name" \
+            --output tsv)
+          if [ "$(echo "$HEALTHY_WORKER_REVISIONS" | sed '/^$/d' | wc -l | tr -d ' ')" != "1" ]; then
+            echo "ERROR: expected one unambiguous active, running worker revision"
+            exit 1
+          fi
+          PREVIOUS_WORKER_REVISION="$HEALTHY_WORKER_REVISIONS"
+          PREVIOUS_WORKER_IMAGE=$(az containerapp revision show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$PREVIOUS_WORKER_REVISION" \
+            --query "properties.template.containers[?name=='$WORKER_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+          PREVIOUS_WAKER_IMAGE=$(az containerapp job show \
+            --name "$WAKER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.template.containers[0].image \
+            --output tsv)
+          PREVIOUS_LIFECYCLE_IMAGE=$(az containerapp job show \
+            --name "$LIFECYCLE_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.template.containers[0].image \
+            --output tsv)
+
+          for value in \
+            "$PREVIOUS_WEB_REVISION" \
+            "$PREVIOUS_WORKER_REVISION" \
+            "$PREVIOUS_WEB_IMAGE" \
+            "$PREVIOUS_WORKER_IMAGE" \
+            "$PREVIOUS_WAKER_IMAGE" \
+            "$PREVIOUS_LIFECYCLE_IMAGE"; do
+            if [ -z "$value" ]; then
+              echo "ERROR: staging before-state is incomplete"
+              exit 1
+            fi
+          done
+
+          {
+            echo "PREVIOUS_WEB_REVISION=$PREVIOUS_WEB_REVISION"
+            echo "PREVIOUS_WORKER_REVISION=$PREVIOUS_WORKER_REVISION"
+            echo "PREVIOUS_WEB_IMAGE=$PREVIOUS_WEB_IMAGE"
+            echo "PREVIOUS_WEB_RELEASE=${PREVIOUS_WEB_IMAGE##*:}"
+            echo "PREVIOUS_WORKER_IMAGE=$PREVIOUS_WORKER_IMAGE"
+            echo "PREVIOUS_WAKER_IMAGE=$PREVIOUS_WAKER_IMAGE"
+            echo "PREVIOUS_LIFECYCLE_IMAGE=$PREVIOUS_LIFECYCLE_IMAGE"
+          } >> "$GITHUB_ENV"
+
       # Safety net for build-once: images are published by CI's "Build & Push
       # Images" job. Confirm BOTH exist for this SHA before doing anything with
       # side effects (migrations run below), so a manual dispatch against a SHA
@@ -127,13 +227,18 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-      - name: Update Container App - Web
+      # The worker must be compatible with enriched reset jobs before the new
+      # web revision can enqueue them. Single-revision mode also prevents an old
+      # worker replica from continuing to consume the same Redis queues.
+      - name: Mark Container App mutation start
+        run: echo "DEPLOYMENT_MUTATED=true" >> "$GITHUB_ENV"
+
+      - name: Set Worker to single-revision mode
         run: |
-          az containerapp update \
-            --name $WEB_CONTAINER_APP \
+          az containerapp revision set-mode \
+            --name $WORKER_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
-            --container-name $WEB_CONTAINER_NAME \
-            --image $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
+            --mode single
 
       - name: Update Container App - Worker
         # ENABLE_RLS=false is asserted on every deploy: the worker connects as the
@@ -151,8 +256,148 @@ jobs:
             --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA \
             --set-env-vars ENABLE_RLS=false
 
-      - name: Update Container App Job - Delayed Waker
+      - name: Verify Worker revision and image
         run: |
+          EXPECTED_IMAGE="$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA"
+          WORKER_MIN_REPLICAS=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.template.scale.minReplicas || `0`' \
+            --output tsv)
+
+          for ATTEMPT in $(seq 1 20); do
+            WORKER_REVISION=$(az containerapp show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestRevisionName \
+              --output tsv)
+            REVISION_JSON=$(az containerapp revision show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision "$WORKER_REVISION" \
+              --output json)
+            WORKER_IMAGE=$(echo "$REVISION_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
+              '.properties.template.containers[] | select(.name==$c) | .image')
+            WORKER_ACTIVE=$(echo "$REVISION_JSON" | jq -r '.properties.active')
+            WORKER_PROVISIONING=$(echo "$REVISION_JSON" | jq -r '.properties.provisioningState')
+            WORKER_RUNNING=$(echo "$REVISION_JSON" | jq -r '.properties.runningState')
+            WORKER_REPLICAS=$(echo "$REVISION_JSON" | jq -r '.properties.replicas // 0')
+            ACTIVE_WORKER_COUNT=$(az containerapp revision list \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "length([?properties.active])" \
+              --output tsv)
+
+            READY_REPLICAS=true
+            if [ "$WORKER_MIN_REPLICAS" -gt 0 ] && [ "$WORKER_REPLICAS" -lt "$WORKER_MIN_REPLICAS" ]; then
+              READY_REPLICAS=false
+            fi
+
+            if [ "$WORKER_IMAGE" = "$EXPECTED_IMAGE" ] && \
+               [ "$WORKER_ACTIVE" = "true" ] && \
+               [ "$WORKER_PROVISIONING" = "Provisioned" ] && \
+               [ "$WORKER_RUNNING" = "Running" ] && \
+               [ "$READY_REPLICAS" = "true" ] && \
+               [ "$ACTIVE_WORKER_COUNT" = "1" ]; then
+              echo "✓ Worker revision $WORKER_REVISION is ready on $EXPECTED_IMAGE"
+              break
+            fi
+
+            echo "Worker not ready (attempt $ATTEMPT/20): image=$WORKER_IMAGE active=$WORKER_ACTIVE provisioning=$WORKER_PROVISIONING running=$WORKER_RUNNING replicas=$WORKER_REPLICAS minReplicas=$WORKER_MIN_REPLICAS activeRevisions=$ACTIVE_WORKER_COUNT"
+            if [ "$ATTEMPT" = "20" ]; then
+              echo "ERROR: worker revision did not become ready"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "FORWARD_WORKER_VERIFIED=true" >> "$GITHUB_ENV"
+
+      # Single-revision mode gives a zero-downtime cutover only after the new
+      # revision is ready and eliminates the mixed-build traffic that caused the
+      # post-login page failure.
+      - name: Mark Web mutation start
+        run: echo "WEB_MUTATED=true" >> "$GITHUB_ENV"
+
+      - name: Normalize Web to captured stable revision
+        run: |
+          CURRENT_WEB_MODE=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.activeRevisionsMode \
+            --output tsv)
+          if [ "$CURRENT_WEB_MODE" = "Multiple" ]; then
+            az containerapp revision activate \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision "$PREVIOUS_WEB_REVISION"
+            az containerapp ingress traffic set \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision-weight "$PREVIOUS_WEB_REVISION=100"
+            while IFS= read -r REVISION; do
+              if [ -n "$REVISION" ] && [ "$REVISION" != "$PREVIOUS_WEB_REVISION" ]; then
+                az containerapp revision deactivate \
+                  --name "$WEB_CONTAINER_APP" \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --revision "$REVISION"
+              fi
+            done < <(az containerapp revision list \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "[?properties.active].name" \
+              --output tsv)
+          fi
+
+          STABLE_IMAGE=$(az containerapp revision show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$PREVIOUS_WEB_REVISION" \
+            --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+          ACTIVE_WEB_COUNT=$(az containerapp revision list \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "length([?properties.active])" \
+            --output tsv)
+          STABLE_TRAFFIC=$(az containerapp ingress traffic show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          if [ "$STABLE_IMAGE" != "$PREVIOUS_WEB_IMAGE" ] || \
+             [ "$ACTIVE_WEB_COUNT" != "1" ] || \
+             [ "$(echo "$STABLE_TRAFFIC" | jq --arg r "$PREVIOUS_WEB_REVISION" \
+               '([.[] | select(.revisionName == $r and .weight == 100)] | length)')" != "1" ]; then
+            echo "ERROR: captured stable web revision was not normalized safely"
+            exit 1
+          fi
+
+      - name: Set Web to single-revision mode
+        run: |
+          az containerapp revision set-mode \
+            --name $WEB_CONTAINER_APP \
+            --resource-group $RESOURCE_GROUP \
+            --mode single
+
+      - name: Update Container App - Web
+        run: |
+          az containerapp update \
+            --name $WEB_CONTAINER_APP \
+            --resource-group $RESOURCE_GROUP \
+            --container-name $WEB_CONTAINER_NAME \
+            --image $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
+
+      - name: Route all Web traffic to the latest revision
+        run: |
+          az containerapp ingress traffic set \
+            --name $WEB_CONTAINER_APP \
+            --resource-group $RESOURCE_GROUP \
+            --revision-weight latest=100
+
+      - name: Update Container App Job - Delayed Waker
+        env:
+          JOBS_MUTATED: 'true'
+        run: |
+          echo "JOBS_MUTATED=true" >> "$GITHUB_ENV"
           az containerapp job update \
             --name $WAKER_JOB_APP \
             --resource-group $RESOURCE_GROUP \
@@ -255,7 +500,7 @@ jobs:
             echo "=== Attempt $ATTEMPT of $MAX_ATTEMPTS ==="
 
             # Basic health check
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL/api/health" 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL/api/health?deep=true" 2>/dev/null || echo "000")
             echo "HTTP status: $HTTP_CODE"
 
             if [ "$HTTP_CODE" != "200" ]; then
@@ -272,12 +517,17 @@ jobs:
             fi
 
             # Fetch full health response
-            HEALTH_RESPONSE=$(curl -s --max-time 10 "$APP_URL/api/health" 2>/dev/null || echo '{}')
+            HEALTH_RESPONSE=$(curl -s --max-time 10 "$APP_URL/api/health?deep=true" 2>/dev/null || echo '{}')
             echo "Health response: $HEALTH_RESPONSE"
 
             # Validate deployment mode
             DEPLOY_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.mode // "unknown"')
             echo "Deployment mode: $DEPLOY_MODE"
+
+            RELEASE=$(echo "$HEALTH_RESPONSE" | jq -r '.release // "unknown"')
+            REVISION=$(echo "$HEALTH_RESPONSE" | jq -r '.revision // "unknown"')
+            echo "Release: $RELEASE"
+            echo "Revision: $REVISION"
 
             if [ "$DEPLOY_MODE" = "unknown" ]; then
               echo "New container not yet active (mode field missing)"
@@ -304,9 +554,44 @@ jobs:
             fi
             echo "✓ Deployment mode verified: $DEPLOY_MODE"
 
+            if [ "$RELEASE" != "$DEPLOY_SHA" ]; then
+              echo "Expected release $DEPLOY_SHA but reached $RELEASE"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Retrying in ${RETRY_INTERVAL}s..."
+                sleep $RETRY_INTERVAL
+                ATTEMPT=$((ATTEMPT + 1))
+                continue
+              fi
+              echo "ERROR: public traffic did not converge on $DEPLOY_SHA"
+              exit 1
+            fi
+            if [ "$REVISION" = "unknown" ]; then
+              echo "ERROR: health response did not include Container App revision identity"
+              exit 1
+            fi
+            echo "✓ Release identity verified: $RELEASE ($REVISION)"
+
+            OVERALL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.status // "unknown"')
+            DATABASE_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.checks.database.status // "unknown"')
+            CACHE_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.checks.cache.status // "unknown"')
+            if [ "$OVERALL_STATUS" != "healthy" ] || \
+               [ "$DATABASE_STATUS" != "healthy" ] || \
+               [ "$CACHE_STATUS" != "healthy" ]; then
+              echo "Dependencies not ready: overall=$OVERALL_STATUS database=$DATABASE_STATUS cache=$CACHE_STATUS"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                sleep $RETRY_INTERVAL
+                ATTEMPT=$((ATTEMPT + 1))
+                continue
+              fi
+              echo "ERROR: live dependency checks did not become healthy"
+              exit 1
+            fi
+            echo "✓ Database and cache live checks verified"
+
             # Verify critical Azure capabilities
             CAN_QUEUE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canQueueJobs // false')
             CAN_CACHE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canUseDistributedCache // false')
+            CAN_SEND_ASYNC=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canSendAsyncEmail // false')
 
             if [ "$CAN_QUEUE" != "true" ]; then
               echo "ERROR: Job queue capability unavailable in Azure mode"
@@ -320,6 +605,12 @@ jobs:
             fi
             echo "✓ Distributed cache capability verified"
 
+            if [ "$CAN_SEND_ASYNC" != "true" ]; then
+              echo "ERROR: Asynchronous email capability unavailable in Azure mode"
+              exit 1
+            fi
+            echo "✓ Asynchronous email capability verified"
+
             # Check for degraded capabilities (warning, not failure)
             DEGRADED=$(echo "$HEALTH_RESPONSE" | jq -r '.degraded // []')
             if [ "$DEGRADED" != "[]" ]; then
@@ -331,6 +622,100 @@ jobs:
             echo ""
             echo "=== Health Check Passed (attempt $ATTEMPT) ==="
             exit 0
+          done
+
+      - name: Verify Web revision, image, and traffic allocation
+        run: |
+          EXPECTED_IMAGE="$ACR_SERVER/vaultspace-web:$DEPLOY_SHA"
+          WEB_REVISION=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName \
+            --output tsv)
+          WEB_IMAGE=$(az containerapp revision show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$WEB_REVISION" \
+            --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+          ACTIVE_WEB_COUNT=$(az containerapp revision list \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "length([?properties.active])" \
+            --output tsv)
+          TRAFFIC_JSON=$(az containerapp ingress traffic show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+
+          if [ "$WEB_IMAGE" != "$EXPECTED_IMAGE" ]; then
+            echo "ERROR: web image mismatch: $WEB_IMAGE"
+            exit 1
+          fi
+          if [ "$ACTIVE_WEB_COUNT" != "1" ]; then
+            echo "ERROR: expected one active web revision, found $ACTIVE_WEB_COUNT"
+            exit 1
+          fi
+          if [ "$(echo "$TRAFFIC_JSON" | jq '[.[] | select(.weight == 100)] | length')" != "1" ]; then
+            echo "ERROR: web traffic is not assigned 100 percent to one revision"
+            echo "$TRAFFIC_JSON"
+            exit 1
+          fi
+          if [ "$(echo "$TRAFFIC_JSON" | jq '[.[] | select(.weight > 0)] | length')" != "1" ]; then
+            echo "ERROR: an unintended web revision retains traffic"
+            echo "$TRAFFIC_JSON"
+            exit 1
+          fi
+          echo "✓ Web revision $WEB_REVISION is the sole active revision with 100 percent traffic"
+
+      - name: Final Worker readiness gate
+        run: |
+          EXPECTED_IMAGE="$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA"
+          WORKER_MIN_REPLICAS=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.template.scale.minReplicas || `0`' \
+            --output tsv)
+          for ATTEMPT in $(seq 1 20); do
+            WORKER_REVISION=$(az containerapp show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestRevisionName \
+              --output tsv)
+            REVISION_JSON=$(az containerapp revision show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision "$WORKER_REVISION" \
+              --output json)
+            WORKER_IMAGE=$(echo "$REVISION_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
+              '.properties.template.containers[] | select(.name==$c) | .image')
+            WORKER_ACTIVE=$(echo "$REVISION_JSON" | jq -r '.properties.active')
+            WORKER_PROVISIONING=$(echo "$REVISION_JSON" | jq -r '.properties.provisioningState')
+            WORKER_RUNNING=$(echo "$REVISION_JSON" | jq -r '.properties.runningState')
+            WORKER_REPLICAS=$(echo "$REVISION_JSON" | jq -r '.properties.replicas // 0')
+            ACTIVE_WORKER_COUNT=$(az containerapp revision list \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "length([?properties.active])" \
+              --output tsv)
+            READY_REPLICAS=true
+            if [ "$WORKER_MIN_REPLICAS" -gt 0 ] && [ "$WORKER_REPLICAS" -lt "$WORKER_MIN_REPLICAS" ]; then
+              READY_REPLICAS=false
+            fi
+            if [ "$WORKER_IMAGE" = "$EXPECTED_IMAGE" ] && \
+               [ "$WORKER_ACTIVE" = "true" ] && \
+               [ "$WORKER_PROVISIONING" = "Provisioned" ] && \
+               [ "$WORKER_RUNNING" = "Running" ] && \
+               [ "$READY_REPLICAS" = "true" ] && \
+               [ "$ACTIVE_WORKER_COUNT" = "1" ]; then
+              echo "✓ Final worker readiness verified: $WORKER_REVISION"
+              break
+            fi
+            if [ "$ATTEMPT" = "20" ]; then
+              echo "ERROR: worker lost readiness before deployment completion"
+              exit 1
+            fi
+            sleep 15
           done
 
       - name: Post deployment summary
@@ -352,3 +737,199 @@ jobs:
           echo "- **Mode:** $DEPLOY_MODE" >> $GITHUB_STEP_SUMMARY
           echo "- **Degraded Capabilities:** $DEGRADED" >> $GITHUB_STEP_SUMMARY
           echo "- **Health:** ✓ Verified" >> $GITHUB_STEP_SUMMARY
+
+      - name: Restore previous staging release after failure
+        if: failure() && steps.before_state.outcome == 'success' && env.DEPLOYMENT_MUTATED == 'true'
+        run: |
+          set +e
+          ROLLBACK_FAILED=0
+
+          # Stop the new web from creating enriched jobs before considering a
+          # worker rollback. The highest-weight pre-deploy revision is the
+          # deliberate known-good release and is restored at 100 percent.
+          if [ "$WEB_MUTATED" = "true" ]; then
+            RECOVERY_WEB_MODE=$(az containerapp show \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.configuration.activeRevisionsMode \
+              --output tsv)
+            if [ "$RECOVERY_WEB_MODE" = "Multiple" ]; then
+              az containerapp revision activate \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --revision "$PREVIOUS_WEB_REVISION" || ROLLBACK_FAILED=1
+              az containerapp ingress traffic set \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --revision-weight "$PREVIOUS_WEB_REVISION=100" || ROLLBACK_FAILED=1
+              while IFS= read -r REVISION; do
+                if [ -n "$REVISION" ] && [ "$REVISION" != "$PREVIOUS_WEB_REVISION" ]; then
+                  az containerapp revision deactivate \
+                    --name "$WEB_CONTAINER_APP" \
+                    --resource-group "$RESOURCE_GROUP" \
+                    --revision "$REVISION" || ROLLBACK_FAILED=1
+                fi
+              done < <(az containerapp revision list \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "[?properties.active].name" \
+                --output tsv)
+            fi
+            az containerapp revision set-mode \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --mode single || ROLLBACK_FAILED=1
+            az containerapp update \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --container-name "$WEB_CONTAINER_NAME" \
+              --image "$PREVIOUS_WEB_IMAGE" || ROLLBACK_FAILED=1
+            az containerapp ingress traffic set \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision-weight latest=100 || ROLLBACK_FAILED=1
+          fi
+
+          if [ "$JOBS_MUTATED" = "true" ]; then
+            az containerapp job update \
+              --name "$WAKER_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$PREVIOUS_WAKER_IMAGE" || ROLLBACK_FAILED=1
+            az containerapp job update \
+              --name "$LIFECYCLE_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$PREVIOUS_LIFECYCLE_IMAGE" || ROLLBACK_FAILED=1
+          fi
+
+          # A verified forward worker is backward-compatible with the restored
+          # web and may already own enriched jobs. Re-check it now because the
+          # earlier readiness flag is historical, not a health guarantee.
+          EXPECTED_RECOVERY_WORKER_IMAGE="$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA"
+          WORKER_MIN_REPLICAS=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.template.scale.minReplicas || `0`' \
+            --output tsv)
+
+          recovery_worker_ready() {
+            local expected_image="$1"
+            RECOVERY_WORKER_REVISION=$(az containerapp show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestRevisionName \
+              --output tsv)
+            RECOVERY_WORKER_JSON=$(az containerapp revision show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision "$RECOVERY_WORKER_REVISION" \
+              --output json)
+            RECOVERY_WORKER_IMAGE=$(echo "$RECOVERY_WORKER_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
+              '.properties.template.containers[] | select(.name==$c) | .image')
+            RECOVERY_WORKER_ACTIVE=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.active')
+            RECOVERY_WORKER_STATE=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.runningState')
+            RECOVERY_WORKER_PROVISIONING=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.provisioningState')
+            RECOVERY_WORKER_REPLICAS=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.replicas // 0')
+            RECOVERY_ACTIVE_COUNT=$(az containerapp revision list \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "length([?properties.active])" \
+              --output tsv)
+            [ "$RECOVERY_WORKER_IMAGE" = "$expected_image" ] && \
+              [ "$RECOVERY_WORKER_ACTIVE" = "true" ] && \
+              [ "$RECOVERY_WORKER_STATE" = "Running" ] && \
+              [ "$RECOVERY_WORKER_PROVISIONING" = "Provisioned" ] && \
+              [ "$RECOVERY_ACTIVE_COUNT" = "1" ] && \
+              { [ "$WORKER_MIN_REPLICAS" -eq 0 ] || [ "$RECOVERY_WORKER_REPLICAS" -ge "$WORKER_MIN_REPLICAS" ]; }
+          }
+
+          USE_PRIOR_WORKER=true
+          if [ "$FORWARD_WORKER_VERIFIED" = "true" ]; then
+            for ATTEMPT in $(seq 1 5); do
+              if recovery_worker_ready "$EXPECTED_RECOVERY_WORKER_IMAGE"; then
+                USE_PRIOR_WORKER=false
+                break
+              fi
+              sleep 10
+            done
+          fi
+
+          if [ "$USE_PRIOR_WORKER" = "true" ]; then
+            EXPECTED_RECOVERY_WORKER_IMAGE="$PREVIOUS_WORKER_IMAGE"
+            az containerapp update \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --container-name "$WORKER_CONTAINER_NAME" \
+              --image "$EXPECTED_RECOVERY_WORKER_IMAGE" \
+              --set-env-vars ENABLE_RLS=false || ROLLBACK_FAILED=1
+          fi
+          az containerapp revision set-mode \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --mode single || ROLLBACK_FAILED=1
+
+          for ATTEMPT in $(seq 1 20); do
+            if recovery_worker_ready "$EXPECTED_RECOVERY_WORKER_IMAGE"; then
+              break
+            fi
+            if [ "$ATTEMPT" = "20" ]; then
+              echo "ERROR: recovery worker did not become ready"
+              ROLLBACK_FAILED=1
+              break
+            fi
+            sleep 15
+          done
+
+          if [ "$WEB_MUTATED" = "true" ]; then
+            for ATTEMPT in $(seq 1 20); do
+              RECOVERY_HEALTH=$(curl -s --max-time 15 "$APP_URL/api/health?deep=true" || echo '{}')
+              RECOVERY_RELEASE=$(echo "$RECOVERY_HEALTH" | jq -r '.release // "unknown"')
+              RECOVERY_STATUS=$(echo "$RECOVERY_HEALTH" | jq -r '.status // "unknown"')
+              RECOVERY_DB=$(echo "$RECOVERY_HEALTH" | jq -r '.checks.database.status // "unknown"')
+              RECOVERY_CACHE=$(echo "$RECOVERY_HEALTH" | jq -r '.checks.cache.status // "unknown"')
+              RECOVERY_WEB_REVISION=$(az containerapp show \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query properties.latestRevisionName \
+                --output tsv)
+              RECOVERY_WEB_IMAGE=$(az containerapp revision show \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --revision "$RECOVERY_WEB_REVISION" \
+                --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+                --output tsv)
+              RECOVERY_TRAFFIC=$(az containerapp ingress traffic show \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --output json)
+              RECOVERY_TRAFFIC_OK=$(echo "$RECOVERY_TRAFFIC" | jq \
+                '([.[] | select(.weight == 100)] | length) == 1 and ([.[] | select(.weight > 0)] | length) == 1')
+              # Legacy rollback images predate release identity in /api/health.
+              # Exact Azure image and traffic checks remain authoritative in
+              # that transitional case while deep dependency health must pass.
+              RELEASE_MATCH=false
+              if [ "$RECOVERY_RELEASE" = "$PREVIOUS_WEB_RELEASE" ] || \
+                 [ "$RECOVERY_RELEASE" = "unknown" ]; then
+                RELEASE_MATCH=true
+              fi
+              if [ "$RELEASE_MATCH" = "true" ] && \
+                 [ "$RECOVERY_STATUS" = "healthy" ] && \
+                 [ "$RECOVERY_DB" = "healthy" ] && \
+                 [ "$RECOVERY_CACHE" = "healthy" ] && \
+                 [ "$RECOVERY_WEB_IMAGE" = "$PREVIOUS_WEB_IMAGE" ] && \
+                 [ "$RECOVERY_TRAFFIC_OK" = "true" ]; then
+                break
+              fi
+              if [ "$ATTEMPT" = "20" ]; then
+                echo "ERROR: restored web release failed identity, traffic, or dependency verification"
+                ROLLBACK_FAILED=1
+                break
+              fi
+              sleep 15
+            done
+          fi
+
+          if [ "$ROLLBACK_FAILED" != "0" ]; then
+            echo "ERROR: automatic staging recovery was incomplete; manual intervention is required"
+            exit 1
+          fi
+          echo "Known-good web release restored at 100 percent; compatible worker verified; additive database migrations remain applied"

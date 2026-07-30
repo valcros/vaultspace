@@ -37,6 +37,9 @@ describe('BullMQJobProvider', () => {
 
     const addOptions = mocks.queueAdd.mock.calls[0]?.[2];
     expect(addOptions).not.toHaveProperty('priority');
+    expect(addOptions).not.toHaveProperty('attempts');
+    expect(addOptions).not.toHaveProperty('backoff');
+    expect(addOptions).not.toHaveProperty('delay');
     expect(mocks.queueAdd).toHaveBeenCalledWith('email.send', { ok: true }, addOptions);
   });
 
@@ -52,5 +55,26 @@ describe('BullMQJobProvider', () => {
         priority: 1,
       })
     );
+  });
+
+  it('passes an explicit password-reset retry policy without undefined overrides', async () => {
+    const provider = new BullMQJobProvider({ redisUrl: 'redis://localhost:6379' });
+
+    await provider.addJob(
+      'normal',
+      'email.send',
+      { flowId: 'flow-1' },
+      {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 60_000 },
+        jobId: 'password-reset-flow-1',
+      }
+    );
+
+    expect(mocks.queueAdd.mock.calls[0]?.[2]).toEqual({
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 60_000 },
+      jobId: 'password-reset-flow-1',
+    });
   });
 });

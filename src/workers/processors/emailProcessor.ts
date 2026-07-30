@@ -5,10 +5,12 @@
  * Also handles notification jobs for document events.
  */
 
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
 
-import { withOrgContext } from '@/lib/db';
+import { bootstrapDb, withOrgContext } from '@/lib/db';
+import { captureSecurityAudit } from '@/lib/audit/securityAudit';
 import { getProviders } from '@/providers';
+import { normalizeEmailError } from '@/providers/email/errors';
 import { EmailNotificationService } from '@/services/notifications';
 
 import type { EmailSendJobPayload, NotificationJobPayload } from '../types';
@@ -197,31 +199,100 @@ function buildRoomDigestText(data: Record<string, unknown>): string {
 }
 
 export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<void> {
-  const { to, subject, template, data, from, fromName } = job.data;
+  const { to, subject, template, data, from, fromName, passwordReset } = job.data;
+  const attempt = (job.attemptsMade ?? 0) + 1;
+  const maxAttempts = job.opts?.attempts ?? 1;
 
-  console.log(`[EmailProcessor] Sending email to ${Array.isArray(to) ? to.join(', ') : to}`);
+  console.log(
+    JSON.stringify({
+      component: 'email-worker',
+      event: 'provider_submission_started',
+      outcome: 'started',
+      template,
+      jobId: job.id ?? null,
+      correlationId: passwordReset?.flowId ?? null,
+      attempt,
+      maxAttempts,
+      recipientCount: Array.isArray(to) ? to.length : 1,
+    })
+  );
 
   const providers = getProviders();
 
-  try {
-    let emailSubject = subject;
-    let emailHtml = '';
-    let emailText: string | undefined;
+  if (passwordReset) {
+    const now = new Date();
+    const claim = await bootstrapDb.passwordResetToken.updateMany({
+      where: {
+        id: passwordReset.flowId,
+        usedAt: null,
+        expiresAt: { gt: now },
+        deliveryStatus: { in: ['PENDING', 'QUEUED', 'FAILED_RETRYING', 'SENDING'] },
+        deliveryAttempts: { lt: attempt },
+      },
+      data: {
+        deliveryStatus: 'SENDING',
+        deliveryAttempts: attempt,
+        lastDeliveryAttemptAt: now,
+        deliveryErrorCode: null,
+      },
+    });
 
-    // Use template if provided
-    if (template && EMAIL_TEMPLATES[template]) {
-      const rendered = EMAIL_TEMPLATES[template](data);
-      emailSubject = rendered.subject;
-      emailHtml = rendered.html;
-      emailText = rendered.text;
-    } else {
-      // Fallback to raw HTML from data
-      emailHtml = (data['html'] as string) || '';
-      emailText = (data['text'] as string) || undefined;
+    if (claim.count !== 1) {
+      const existing = await bootstrapDb.passwordResetToken.findUnique({
+        where: { id: passwordReset.flowId },
+        select: {
+          deliveryStatus: true,
+          deliveryAttempts: true,
+          usedAt: true,
+          expiresAt: true,
+        },
+      });
+      const reason = !existing
+        ? 'FLOW_NOT_FOUND'
+        : existing.usedAt
+          ? 'FLOW_ALREADY_USED'
+          : existing.expiresAt <= now
+            ? 'FLOW_EXPIRED'
+            : existing.deliveryStatus === 'PROVIDER_ACCEPTED'
+              ? 'ALREADY_ACCEPTED'
+              : existing.deliveryAttempts >= attempt
+                ? 'ATTEMPT_ALREADY_CLAIMED'
+                : 'FLOW_NOT_CLAIMABLE';
+
+      console.log(
+        JSON.stringify({
+          component: 'email-worker',
+          event: 'provider_submission_skipped',
+          outcome: 'skipped',
+          reason,
+          jobId: job.id ?? null,
+          correlationId: passwordReset.flowId,
+          attempt,
+        })
+      );
+      return;
     }
+  }
 
-    // Send email
-    const result = await providers.email.sendEmail({
+  let emailSubject = subject;
+  let emailHtml = '';
+  let emailText: string | undefined;
+
+  // Use template if provided
+  if (template && EMAIL_TEMPLATES[template]) {
+    const rendered = EMAIL_TEMPLATES[template](data);
+    emailSubject = rendered.subject;
+    emailHtml = rendered.html;
+    emailText = rendered.text;
+  } else {
+    // Fallback to raw HTML from data
+    emailHtml = (data['html'] as string) || '';
+    emailText = (data['text'] as string) || undefined;
+  }
+
+  let result: { messageId: string };
+  try {
+    result = await providers.email.sendEmail({
       to,
       subject: emailSubject,
       html: emailHtml,
@@ -229,12 +300,156 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
       // Per-org sender identity (when the enqueuer resolved one); else default.
       from,
       fromName,
+      operationId: passwordReset?.flowId,
+      sensitiveContent: template === 'password-reset',
     });
-
-    console.log(`[EmailProcessor] Email sent successfully: ${result.messageId}`);
   } catch (error) {
-    console.error(`[EmailProcessor] Failed to send email:`, error);
-    throw error;
+    const deliveryError = normalizeEmailError(error, 'unknown');
+    const exhausted = attempt >= maxAttempts;
+    const terminal = !deliveryError.retryable || exhausted;
+    let lifecycleTransitioned = !passwordReset;
+
+    if (passwordReset) {
+      try {
+        const transition = await bootstrapDb.passwordResetToken.updateMany({
+          where: {
+            id: passwordReset.flowId,
+            usedAt: null,
+            deliveryStatus: 'SENDING',
+            deliveryAttempts: attempt,
+          },
+          data: {
+            deliveryStatus: terminal
+              ? deliveryError.retryable
+                ? 'FAILED_EXHAUSTED'
+                : 'FAILED_PERMANENT'
+              : 'FAILED_RETRYING',
+            deliveryErrorCode: deliveryError.code,
+            lastDeliveryAttemptAt: new Date(),
+          },
+        });
+        lifecycleTransitioned = transition.count === 1;
+      } catch (lifecycleError) {
+        console.error(
+          JSON.stringify({
+            component: 'email-worker',
+            event: 'delivery_lifecycle_update',
+            outcome: 'failed',
+            jobId: job.id ?? null,
+            correlationId: passwordReset.flowId,
+            errorName: lifecycleError instanceof Error ? lifecycleError.name : 'UnknownError',
+          })
+        );
+      }
+
+      if (terminal && lifecycleTransitioned) {
+        await Promise.all(
+          passwordReset.organizationIds.map((organizationId) =>
+            captureSecurityAudit({
+              organizationId,
+              eventType: 'USER_PASSWORD_RESET',
+              actorType: 'SYSTEM',
+              requestId: passwordReset.requestId,
+              correlationId: passwordReset.flowId,
+              description: 'Password reset email could not be submitted to the provider',
+              metadata: {
+                outcome: 'failure',
+                stage: 'provider_submission',
+                targetUserId: passwordReset.userId,
+                jobId: job.id ?? null,
+                attempt,
+                maxAttempts,
+                errorCode: deliveryError.code,
+                retryable: deliveryError.retryable,
+              },
+            })
+          )
+        );
+      }
+    }
+
+    console.error(
+      JSON.stringify({
+        component: 'email-worker',
+        event: 'provider_submission_failed',
+        outcome: terminal ? 'failed' : 'retrying',
+        template,
+        jobId: job.id ?? null,
+        correlationId: passwordReset?.flowId ?? null,
+        attempt,
+        maxAttempts,
+        errorCode: deliveryError.code,
+        provider: deliveryError.provider,
+        retryable: deliveryError.retryable,
+      })
+    );
+
+    if (!deliveryError.retryable) {
+      throw new UnrecoverableError(deliveryError.code);
+    }
+    throw deliveryError;
+  }
+
+  // The provider has returned acceptance. Log it before lifecycle persistence
+  // so a database failure cannot erase the provider message correlation. Do not
+  // retry a successfully submitted email solely because this later write fails.
+  console.log(
+    JSON.stringify({
+      component: 'email-worker',
+      event: 'provider_submission_accepted',
+      outcome: 'accepted',
+      template,
+      jobId: job.id ?? null,
+      correlationId: passwordReset?.flowId ?? null,
+      providerMessageId: result.messageId,
+      attempt,
+    })
+  );
+
+  if (passwordReset) {
+    try {
+      const transition = await bootstrapDb.passwordResetToken.updateMany({
+        where: {
+          id: passwordReset.flowId,
+          usedAt: null,
+          deliveryStatus: 'SENDING',
+          deliveryAttempts: attempt,
+        },
+        data: {
+          deliveryStatus: 'PROVIDER_ACCEPTED',
+          providerMessageId: result.messageId,
+          deliveryErrorCode: null,
+          lastDeliveryAttemptAt: new Date(),
+        },
+      });
+      if (transition.count !== 1) {
+        console.error(
+          JSON.stringify({
+            component: 'email-worker',
+            event: 'delivery_lifecycle_update',
+            outcome: 'skipped',
+            reason: 'FLOW_CHANGED_AFTER_PROVIDER_ACCEPTANCE',
+            jobId: job.id ?? null,
+            correlationId: passwordReset.flowId,
+            providerMessageId: result.messageId,
+            attempt,
+          })
+        );
+      }
+    } catch (lifecycleError) {
+      console.error(
+        JSON.stringify({
+          component: 'email-worker',
+          event: 'delivery_lifecycle_update',
+          outcome: 'failed_after_provider_acceptance',
+          jobId: job.id ?? null,
+          correlationId: passwordReset.flowId,
+          providerMessageId: result.messageId,
+          attempt,
+          errorName: lifecycleError instanceof Error ? lifecycleError.name : 'UnknownError',
+        })
+      );
+    }
   }
 }
 

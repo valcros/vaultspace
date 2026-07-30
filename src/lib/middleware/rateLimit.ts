@@ -90,6 +90,27 @@ export const rateLimiters = {
       prefix: 'login:ip',
     }),
 
+  passwordResetByEmailFingerprint: (fingerprint: string) =>
+    assertRateLimit(fingerprint, {
+      limit: RATE_LIMIT_CONFIG.PASSWORD_RESET_ATTEMPTS_PER_EMAIL_PER_HOUR,
+      windowSeconds: 60 * 60,
+      prefix: 'password-reset:email',
+    }),
+
+  passwordResetByIp: (ip: string) =>
+    assertRateLimit(ip, {
+      limit: RATE_LIMIT_CONFIG.PASSWORD_RESET_ATTEMPTS_PER_IP_PER_HOUR,
+      windowSeconds: 60 * 60,
+      prefix: 'password-reset:ip',
+    }),
+
+  clientDiagnosticsByUser: (userId: string) =>
+    assertRateLimit(userId, {
+      limit: RATE_LIMIT_CONFIG.CLIENT_DIAGNOSTICS_PER_USER_PER_MINUTE,
+      windowSeconds: 60,
+      prefix: 'client-diagnostics:user',
+    }),
+
   /**
    * API requests for viewers
    */
