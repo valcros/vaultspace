@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 const mockCompare = vi.fn();
 const mockFindUnique = vi.fn();
-const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+const mockCreateSecurityAuditEvent = vi.fn().mockResolvedValue('event-1');
 const mockSessionCreate = vi.fn();
 const mockUserUpdate = vi.fn();
 
@@ -39,8 +39,8 @@ vi.mock('@/lib/middleware', () => ({
   setSessionCookie: vi.fn(),
 }));
 
-vi.mock('@/lib/audit/accessAudit', () => ({
-  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
+vi.mock('@/lib/audit/securityAudit', () => ({
+  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
 }));
 
 import { POST } from './route';
@@ -72,7 +72,7 @@ describe('POST /api/auth/login', () => {
     mockCompare.mockResolvedValue(true);
     mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
     mockUserUpdate.mockResolvedValue({});
-    mockCaptureAccessAudit.mockResolvedValue('disabled');
+    mockCreateSecurityAuditEvent.mockResolvedValue('event-1');
   });
 
   it('returns 500 instead of using a weak fallback when SESSION_SECRET is missing', async () => {
@@ -137,7 +137,8 @@ describe('POST /api/auth/login', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.objectContaining({
         eventType: 'USER_LOGIN',
         actorType: 'ADMIN',
@@ -155,7 +156,7 @@ describe('POST /api/auth/login', () => {
     });
   });
 
-  it('keeps a successful login available when the bounded audit write fails', async () => {
+  it('rolls back login when the authoritative audit write fails', async () => {
     process.env['SESSION_SECRET'] = 'test-session-secret';
     mockFindUnique.mockResolvedValue({
       id: 'user-1',
@@ -177,7 +178,7 @@ describe('POST /api/auth/login', () => {
         },
       ],
     });
-    mockCaptureAccessAudit.mockResolvedValue('failed');
+    mockCreateSecurityAuditEvent.mockRejectedValue(new Error('audit unavailable'));
 
     const response = await POST(
       new NextRequest('http://localhost/api/auth/login', {
@@ -186,6 +187,6 @@ describe('POST /api/auth/login', () => {
       })
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(500);
   });
 });

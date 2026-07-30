@@ -44,6 +44,11 @@ const EVENT_STYLES: Record<string, EventStyle> = {
 
   // Auth / User
   USER_LOGIN: { bg: 'bg-neutral-100', text: 'text-neutral-600', icon: LogIn },
+  USER_PASSWORD_RESET: {
+    bg: 'bg-green-100',
+    text: 'text-green-600',
+    icon: Shield,
+  },
   USER_INVITED: { bg: 'bg-indigo-100', text: 'text-indigo-600', icon: UserPlus },
   MEMBER_ADDED: { bg: 'bg-indigo-100', text: 'text-indigo-600', icon: UserPlus },
   MEMBER_REMOVED: { bg: 'bg-red-100', text: 'text-red-600', icon: UserPlus },

@@ -8,16 +8,33 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from './route';
 
-vi.mock('@/lib/middleware', () => ({ requireAuth: vi.fn() }));
+vi.mock('@/lib/middleware', () => ({
+  requireAuth: vi.fn(),
+  getRequestContext: vi.fn(() => ({
+    requestId: 'req-admin-reset',
+    ipAddress: '192.0.2.30',
+    userAgent: 'admin-reset-test-agent',
+  })),
+}));
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn(),
   bootstrapDb: { passwordResetToken: { updateMany: vi.fn() } },
 }));
 vi.mock('@/providers', () => ({ getProviders: vi.fn() }));
 vi.mock('@/lib/deployment-capabilities', () => ({ hasCapability: vi.fn() }));
+const mockCreateSecurityAuditEvent = vi.fn();
+const mockCaptureSecurityAudit = vi.fn();
+vi.mock('@/lib/audit/securityAudit', () => ({
+  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
+  captureSecurityAudit: (...args: unknown[]) => mockCaptureSecurityAudit(...args),
+}));
 vi.mock('@/workers/types', () => ({
   JOB_NAMES: { EMAIL_SEND: 'email.send' },
   QUEUE_NAMES: { NORMAL: 'normal' },
+  PASSWORD_RESET_EMAIL_JOB_OPTIONS: {
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 60_000 },
+  },
 }));
 
 import { requireAuth } from '@/lib/middleware';
@@ -53,7 +70,10 @@ describe('POST /api/users/:userId/reset-password', () => {
       job: { addJob: mockAddJob },
       email: { sendEmail: mockSendEmail },
     } as unknown as ReturnType<typeof getProviders>);
-    mockAddJob.mockResolvedValue(undefined);
+    mockAddJob.mockResolvedValue('job-1');
+    mockCreateSecurityAuditEvent.mockResolvedValue('event-1');
+    mockCaptureSecurityAudit.mockResolvedValue('captured');
+    mockInvalidateToken.mockResolvedValue({ count: 1 } as never);
   });
 
   afterEach(() => {
@@ -75,10 +95,12 @@ describe('POST /api/users/:userId/reset-password', () => {
             isActive: true,
             ...userOverride,
           },
+          organization: { isActive: true },
         }),
       },
       passwordResetToken: {
         findFirst: vi.fn().mockResolvedValue(recentToken),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         create: vi.fn().mockResolvedValue({}),
       },
       organization: {
@@ -174,9 +196,79 @@ describe('POST /api/users/:userId/reset-password', () => {
     expect(tx.passwordResetToken.create).toHaveBeenCalled();
     // ...then neutralized so it can't linger and doesn't block a retry.
     expect(mockInvalidateToken).toHaveBeenCalledWith({
-      where: { token: expect.any(String), usedAt: null },
-      data: { usedAt: expect.any(Date) },
+      where: { id: expect.any(String), usedAt: null },
+      data: expect.objectContaining({
+        usedAt: expect.any(Date),
+        deliveryStatus: 'QUEUE_FAILED',
+      }),
     });
+  });
+
+  it('records retryable synchronous submission failure as exhausted', async () => {
+    const tx = resetTx();
+    useTx(tx);
+    mockHasCapability.mockImplementation((cap) => cap === 'canSendSyncEmail');
+    mockSendEmail.mockRejectedValue({ statusCode: 503 });
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(502);
+    expect(mockInvalidateToken).toHaveBeenLastCalledWith({
+      where: { id: expect.any(String), usedAt: null },
+      data: expect.objectContaining({
+        usedAt: expect.any(Date),
+        deliveryStatus: 'FAILED_EXHAUSTED',
+        deliveryErrorCode: 'EMAIL_PROVIDER_UNAVAILABLE',
+      }),
+    });
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          stage: 'provider_submission',
+          retryable: true,
+        }),
+      })
+    );
+  });
+
+  it('records permanent synchronous submission rejection as permanent', async () => {
+    const tx = resetTx();
+    useTx(tx);
+    mockHasCapability.mockImplementation((cap) => cap === 'canSendSyncEmail');
+    mockSendEmail.mockRejectedValue({ statusCode: 400 });
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(502);
+    expect(mockInvalidateToken).toHaveBeenLastCalledWith({
+      where: { id: expect.any(String), usedAt: null },
+      data: expect.objectContaining({
+        deliveryStatus: 'FAILED_PERMANENT',
+        deliveryErrorCode: 'EMAIL_HTTP_400',
+      }),
+    });
+  });
+
+  it('keeps an accepted synchronous reset valid when lifecycle persistence fails', async () => {
+    const tx = resetTx();
+    useTx(tx);
+    mockHasCapability.mockImplementation((cap) => cap === 'canSendSyncEmail');
+    mockSendEmail.mockResolvedValue({ messageId: 'provider-message-1' });
+    mockInvalidateToken
+      .mockResolvedValueOnce({ count: 1 } as never)
+      .mockRejectedValueOnce(new Error('database unavailable after acceptance'));
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ success: true });
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    expect(mockCaptureSecurityAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'USER_PASSWORD_RESET' })
+    );
+    expect(mockInvalidateToken).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ usedAt: expect.any(Date) }) })
+    );
   });
 
   it('mints a token, audits USER_PASSWORD_RESET, and queues the email via the per-org sender', async () => {
@@ -188,21 +280,27 @@ describe('POST /api/users/:userId/reset-password', () => {
     // A per-target row lock is taken before the cooldown check (atomic cooldown).
     expect(tx.$queryRaw).toHaveBeenCalled();
     expect(tx.passwordResetToken.create).toHaveBeenCalledWith({
-      data: { userId: 'user-2', token: expect.any(String), expiresAt: expect.any(Date) },
+      data: expect.objectContaining({
+        id: expect.any(String),
+        userId: 'user-2',
+        token: expect.any(String),
+        expiresAt: expect.any(Date),
+        requestId: 'req-admin-reset',
+        organizationId: 'org-1',
+      }),
     });
     // Audit records the request but NEVER the token itself (metadata + text).
-    const eventArg = (tx.event.create as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     const createArg = (tx.passwordResetToken.create as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     const mintedToken = createArg?.data?.token as string;
     expect(mintedToken).toEqual(expect.any(String));
-    expect(JSON.stringify(eventArg?.data)).not.toContain(mintedToken);
-    expect(eventArg?.data?.metadata).toEqual({ targetUserId: 'user-2' });
-    expect(tx.event.create).toHaveBeenCalledWith(
+    expect(JSON.stringify(mockCreateSecurityAuditEvent.mock.calls)).not.toContain(mintedToken);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.objectContaining({
-        data: expect.objectContaining({
-          eventType: 'USER_PASSWORD_RESET',
-          actorType: 'ADMIN',
-        }),
+        eventType: 'USER_PASSWORD_RESET',
+        actorType: 'ADMIN',
+        correlationId: createArg?.data?.id,
+        metadata: expect.objectContaining({ targetUserId: 'user-2' }),
       })
     );
     expect(mockAddJob).toHaveBeenCalledWith(
@@ -216,7 +314,148 @@ describe('POST /api/users/:userId/reset-password', () => {
         data: expect.objectContaining({
           resetUrl: expect.stringContaining('/auth/reset-password?token='),
         }),
+      }),
+      expect.objectContaining({
+        attempts: 5,
+        jobId: expect.stringMatching(/^password-reset-/),
       })
     );
+  });
+
+  it('does not regress a flow advanced by a fast worker back to QUEUED', async () => {
+    const tx = resetTx();
+    useTx(tx);
+    mockInvalidateToken
+      .mockResolvedValueOnce({ count: 0 } as never)
+      .mockResolvedValueOnce({ count: 1 } as never);
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(200);
+    expect(mockInvalidateToken).toHaveBeenNthCalledWith(1, {
+      where: expect.objectContaining({ deliveryStatus: 'PENDING' }),
+      data: expect.objectContaining({ deliveryStatus: 'QUEUED', queueJobId: 'job-1' }),
+    });
+    expect(mockInvalidateToken).toHaveBeenNthCalledWith(2, {
+      where: expect.objectContaining({ queueJobId: null }),
+      data: { queueJobId: 'job-1' },
+    });
+  });
+
+  it('supersedes older links under the shared user lock before minting a new one', async () => {
+    const tx = resetTx();
+    useTx(tx);
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(200);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(tx.passwordResetToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-2', usedAt: null },
+      data: { usedAt: expect.any(Date) },
+    });
+    expect(tx.passwordResetToken.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.passwordResetToken.create.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER
+    );
+  });
+
+  it('does not synchronously send a flow superseded before the send claim', async () => {
+    const tx = resetTx();
+    useTx(tx);
+    mockHasCapability.mockImplementation((cap) => cap === 'canSendSyncEmail');
+    mockInvalidateToken.mockResolvedValue({ count: 0 } as never);
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(409);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockInvalidateToken).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        usedAt: null,
+        expiresAt: { gt: expect.any(Date) },
+        deliveryStatus: 'PENDING',
+      }),
+      data: expect.objectContaining({ deliveryStatus: 'SENDING' }),
+    });
+  });
+
+  it('delivers only to the post-lock account email', async () => {
+    const tx = resetTx();
+    tx.userOrganization.findFirst
+      .mockResolvedValueOnce({
+        id: 'uo-2',
+        userId: 'user-2',
+        organizationId: 'org-1',
+        isActive: true,
+        user: {
+          id: 'user-2',
+          email: 'old-address@example.com',
+          firstName: 'Existing',
+          isActive: true,
+        },
+        organization: { isActive: true },
+      })
+      .mockResolvedValueOnce({
+        id: 'uo-2',
+        userId: 'user-2',
+        organizationId: 'org-1',
+        isActive: true,
+        user: {
+          id: 'user-2',
+          email: 'new-address@example.com',
+          firstName: 'Existing',
+          isActive: true,
+        },
+        organization: { isActive: true },
+      });
+    useTx(tx);
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(200);
+    expect(mockAddJob).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ to: 'new-address@example.com' }),
+      expect.any(Object)
+    );
+  });
+
+  it('does not mint when the account is deactivated before the locked re-read', async () => {
+    const tx = resetTx();
+    tx.userOrganization.findFirst
+      .mockResolvedValueOnce({
+        id: 'uo-2',
+        userId: 'user-2',
+        organizationId: 'org-1',
+        isActive: true,
+        user: {
+          id: 'user-2',
+          email: 'user@example.com',
+          firstName: 'Existing',
+          isActive: true,
+        },
+        organization: { isActive: true },
+      })
+      .mockResolvedValueOnce({
+        id: 'uo-2',
+        userId: 'user-2',
+        organizationId: 'org-1',
+        isActive: true,
+        user: {
+          id: 'user-2',
+          email: 'user@example.com',
+          firstName: 'Existing',
+          isActive: false,
+        },
+        organization: { isActive: true },
+      });
+    useTx(tx);
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(400);
+    expect(tx.passwordResetToken.create).not.toHaveBeenCalled();
+    expect(mockAddJob).not.toHaveBeenCalled();
   });
 });

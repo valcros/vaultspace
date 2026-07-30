@@ -61,6 +61,10 @@ export interface EmailOptions {
   from?: string;
   /** Sender display name (used by the SMTP provider). */
   fromName?: string;
+  /** Stable non-secret provider operation id used to make retries idempotent. */
+  operationId?: string;
+  /** Prevent development providers from printing message bodies containing secrets. */
+  sensitiveContent?: boolean;
 }
 
 export interface EmailAttachment {

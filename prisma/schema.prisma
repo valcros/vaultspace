@@ -1207,8 +1207,9 @@ model Event {
   documentId String?
 
   // Request/Session tracking
-  requestId String? @db.VarChar(100)
-  sessionId String?
+  requestId     String? @db.VarChar(100)
+  correlationId String? @db.VarChar(100)
+  sessionId     String?
 
   // Details
   description String? @db.Text
@@ -1233,6 +1234,7 @@ model Event {
   @@index([documentId])
   @@index([createdAt])
   @@index([requestId])
+  @@index([correlationId])
   @@index([sessionId])
   @@index([organizationId, createdAt])
   @@index([organizationId, eventType, createdAt])
@@ -1377,9 +1379,22 @@ model PasswordResetToken {
   // Usage tracking
   usedAt DateTime?
 
+  // Non-secret, durable delivery lifecycle. The token value itself must never
+  // be copied into logs or audit metadata; this row id is the reset flow id.
+  requestId             String?   @db.VarChar(100)
+  organizationId        String?
+  deliveryStatus        String    @default("PENDING") @db.VarChar(32)
+  queueJobId            String?   @db.VarChar(255)
+  providerMessageId     String?   @db.VarChar(255)
+  deliveryErrorCode     String?   @db.VarChar(100)
+  deliveryAttempts      Int       @default(0)
+  lastDeliveryAttemptAt DateTime?
+
   @@index([token])
   @@index([userId])
   @@index([expiresAt])
+  @@index([organizationId, createdAt])
+  @@index([deliveryStatus, createdAt])
   @@map("password_reset_tokens")
 }
 

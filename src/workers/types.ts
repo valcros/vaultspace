@@ -81,6 +81,13 @@ export interface EmailSendJobPayload {
   /** Per-org sender override (see EmailOptions). Falls back to the global sender. */
   from?: string;
   fromName?: string;
+  /** Password-reset-specific correlation and durable delivery context. */
+  passwordReset?: {
+    flowId: string;
+    userId: string;
+    requestId: string;
+    organizationIds: string[];
+  };
 }
 
 export interface NotificationJobPayload {
@@ -161,6 +168,16 @@ export const DOCUMENT_SCAN_JOB_OPTIONS = {
   backoff: {
     type: 'exponential',
     delay: 10000,
+  },
+} as const;
+
+// Email retry policy from JOB_SPECS.md. Callers opt in explicitly so unrelated
+// processors are not made retryable without an idempotency review.
+export const PASSWORD_RESET_EMAIL_JOB_OPTIONS = {
+  attempts: 5,
+  backoff: {
+    type: 'exponential',
+    delay: 60_000,
   },
 } as const;
 

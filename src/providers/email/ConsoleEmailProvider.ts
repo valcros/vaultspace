@@ -12,16 +12,20 @@ export class ConsoleEmailProvider implements EmailProvider {
 
     console.log('\n========== EMAIL ==========');
     console.log(`Message ID: ${messageId}`);
-    console.log(`To: ${Array.isArray(options.to) ? options.to.join(', ') : options.to}`);
+    console.log(`Recipients: ${Array.isArray(options.to) ? options.to.length : 1}`);
     console.log(`Subject: ${options.subject}`);
     if (options.replyTo) {
       console.log(`Reply-To: ${options.replyTo}`);
     }
-    console.log('--- HTML Body ---');
-    console.log(options.html);
-    if (options.text) {
-      console.log('--- Plain Text ---');
-      console.log(options.text);
+    if (options.sensitiveContent) {
+      console.log('Body: [REDACTED SENSITIVE CONTENT]');
+    } else {
+      console.log('--- HTML Body ---');
+      console.log(options.html);
+      if (options.text) {
+        console.log('--- Plain Text ---');
+        console.log(options.text);
+      }
     }
     if (options.attachments?.length) {
       console.log(`Attachments: ${options.attachments.map((a) => a.filename).join(', ')}`);

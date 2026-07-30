@@ -12,7 +12,20 @@ export default function AdminError({
   reset: () => void;
 }) {
   React.useEffect(() => {
-    console.error('[AdminError]', error);
+    void fetch('/api/diagnostics/client-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      keepalive: true,
+      body: JSON.stringify({
+        pathname: window.location.pathname,
+        errorName: error.name || 'Error',
+        digest: error.digest,
+        clientRelease: process.env['NEXT_PUBLIC_APP_RELEASE'] || undefined,
+      }),
+    }).catch(() => {
+      // Diagnostics must never replace the original recovery UI with another error.
+    });
   }, [error]);
 
   return (

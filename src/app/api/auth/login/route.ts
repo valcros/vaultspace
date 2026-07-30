@@ -9,7 +9,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { generateTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
-import { captureAccessAudit } from '@/lib/audit/accessAudit';
+import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
 
     // Create the session and stamp the lastLoginAt atomically inside an org
     // context so RLS policies on the users table can verify membership.
-    const authSession = await withOrgContext(userOrg.organization.id, async (tx) => {
+    await withOrgContext(userOrg.organization.id, async (tx) => {
       const createdSession = await tx.session.create({
         data: {
           userId: user.id,
@@ -105,27 +105,28 @@ export async function POST(request: NextRequest) {
         data: { lastLoginAt: new Date() },
       });
 
+      await createSecurityAuditEvent(tx, {
+        organizationId: userOrg.organization.id,
+        eventType: 'USER_LOGIN',
+        actorType: userOrg.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+        actorId: user.id,
+        actorEmail: user.email,
+        requestId: reqContext.requestId,
+        description: 'User signed in',
+        metadata: {
+          outcome: 'success',
+          authSessionId: createdSession.id,
+          authenticationMethod: 'PASSWORD',
+        },
+        ipAddress,
+        userAgent,
+      });
+
       return createdSession;
     });
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
-
-    await captureAccessAudit({
-      organizationId: userOrg.organization.id,
-      eventType: 'USER_LOGIN',
-      actorType: userOrg.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
-      actorId: user.id,
-      actorEmail: user.email,
-      requestId: reqContext.requestId,
-      description: 'User signed in',
-      metadata: {
-        authSessionId: authSession.id,
-        authenticationMethod: 'PASSWORD',
-      },
-      ipAddress,
-      userAgent,
-    });
 
     return NextResponse.json({
       user: {

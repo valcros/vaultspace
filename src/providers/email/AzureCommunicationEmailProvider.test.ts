@@ -76,6 +76,25 @@ describe('AzureCommunicationEmailProvider', () => {
         subject: 'Subject',
         html: '<p>Hello</p>',
       })
-    ).rejects.toThrow('Email send failed with status: Failed');
+    ).rejects.toThrow('ACS_SEND_NOT_ACCEPTED');
+  });
+
+  it('uses the reset flow id as the ACS operation id for idempotent retries', async () => {
+    const provider = new AzureCommunicationEmailProvider({
+      connectionString:
+        'endpoint=https://acs-vaultspace-staging.unitedstates.communication.azure.com/;accesskey=test',
+      senderAddress: 'noreply@vaultspace.org',
+    });
+
+    await provider.sendEmail({
+      to: 'recipient@example.com',
+      subject: 'Subject',
+      html: '<p>Hello</p>',
+      operationId: '8f4938eb-6fd6-4e96-b6ca-267c437952a8',
+    });
+
+    expect(mockBeginSend).toHaveBeenCalledWith(expect.any(Object), {
+      operationId: '8f4938eb-6fd6-4e96-b6ca-267c437952a8',
+    });
   });
 });

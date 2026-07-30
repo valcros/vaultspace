@@ -9,7 +9,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { db } from '@/lib/db';
-import { captureAccessAudit } from '@/lib/audit/accessAudit';
+import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
@@ -71,7 +71,13 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(adminPassword, 12);
 
-    // Create organization and admin user in transaction
+    const sessionToken = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(
+      Date.now() + SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000
+    );
+
+    // Initial identity, membership, session, and authoritative login audit are
+    // atomic so setup cannot report failure after it has actually completed.
     const result = await db.$transaction(async (tx) => {
       // Create organization
       const organization = await tx.organization.create({
@@ -102,46 +108,39 @@ export async function POST(request: NextRequest) {
           isActive: true,
         },
       });
+      const authSession = await tx.session.create({
+        data: {
+          userId: user.id,
+          organizationId: organization.id,
+          token: sessionToken,
+          expiresAt,
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      await createSecurityAuditEvent(tx, {
+        organizationId: organization.id,
+        eventType: 'USER_LOGIN',
+        actorType: 'ADMIN',
+        actorId: user.id,
+        actorEmail: user.email,
+        requestId: reqContext.requestId,
+        description: 'Initial administrator signed in',
+        metadata: {
+          outcome: 'success',
+          authSessionId: authSession.id,
+          authenticationMethod: 'INITIAL_SETUP',
+        },
+        ipAddress,
+        userAgent,
+      });
 
       return { organization, user };
     });
 
-    // Generate session token
-    const sessionToken = randomBytes(32).toString('base64url');
-    const expiresAt = new Date(
-      Date.now() + SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000
-    );
-
-    // Create session
-    const authSession = await db.session.create({
-      data: {
-        userId: result.user.id,
-        organizationId: result.organization.id,
-        token: sessionToken,
-        expiresAt,
-        ipAddress,
-        userAgent,
-      },
-    });
-
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
-
-    await captureAccessAudit({
-      organizationId: result.organization.id,
-      eventType: 'USER_LOGIN',
-      actorType: 'ADMIN',
-      actorId: result.user.id,
-      actorEmail: result.user.email,
-      requestId: reqContext.requestId,
-      description: 'Initial administrator signed in',
-      metadata: {
-        authSessionId: authSession.id,
-        authenticationMethod: 'INITIAL_SETUP',
-      },
-      ipAddress,
-      userAgent,
-    });
 
     return NextResponse.json({
       success: true,

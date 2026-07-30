@@ -8,11 +8,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 
-const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+const mockCreateSecurityAuditEvent = vi.fn().mockResolvedValue('event-1');
 
 // Mock database
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const mockedDb = {
     organization: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
@@ -29,8 +29,13 @@ vi.mock('@/lib/db', () => ({
       create: vi.fn(),
     },
     $transaction: vi.fn(),
-  },
-}));
+  };
+  return {
+    db: mockedDb,
+    withOrgContext: async (_orgId: string, operation: (tx: unknown) => Promise<unknown>) =>
+      operation({ session: mockedDb.session }),
+  };
+});
 
 // Mock bcrypt
 vi.mock('bcryptjs', () => ({
@@ -56,8 +61,8 @@ vi.mock('@/lib/middleware', () => ({
   setSessionCookie: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('@/lib/audit/accessAudit', () => ({
-  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
+vi.mock('@/lib/audit/securityAudit', () => ({
+  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
 }));
 
 import { db } from '@/lib/db';
@@ -280,6 +285,7 @@ describe('POST /api/setup', () => {
         userOrganization: {
           create: vi.fn().mockResolvedValue({ id: 'uo-1' }),
         },
+        session: mockDbSession,
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
@@ -336,6 +342,7 @@ describe('POST /api/setup', () => {
         userOrganization: {
           create: vi.fn().mockResolvedValue({ id: 'uo-1' }),
         },
+        session: mockDbSession,
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
@@ -379,6 +386,7 @@ describe('POST /api/setup', () => {
         userOrganization: {
           create: vi.fn().mockResolvedValue({ id: 'uo-1' }),
         },
+        session: mockDbSession,
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
@@ -404,7 +412,8 @@ describe('POST /api/setup', () => {
     expect(response.status).toBe(200);
     expect(capturedSessionData?.['ipAddress']).toBe('127.0.0.1');
     expect(capturedSessionData?.['userAgent']).toBe('vitest');
-    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
     );
   });
@@ -422,6 +431,46 @@ describe('POST /api/setup', () => {
 
     const body = await response.json();
     expect(body.error).toContain('Failed to complete setup');
+  });
+
+  it('keeps setup identity, session, and authoritative audit in one transaction', async () => {
+    mockDbSession.create.mockResolvedValue({ id: 'session-1' } as never);
+    mockCreateSecurityAuditEvent.mockRejectedValueOnce(new Error('audit unavailable'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockDbTransaction.mockImplementation(async (callback) => {
+      const tx = {
+        organization: {
+          create: vi.fn().mockResolvedValue({
+            id: 'org-new',
+            name: 'Acme Corp',
+            slug: 'acme-corp',
+          }),
+        },
+        user: {
+          create: vi.fn().mockResolvedValue({
+            id: 'user-new',
+            email: 'john@acme.com',
+            firstName: 'John',
+            lastName: 'Doe',
+          }),
+        },
+        userOrganization: { create: vi.fn().mockResolvedValue({ id: 'uo-1' }) },
+        session: mockDbSession,
+      };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/setup', {
+        method: 'POST',
+        body: JSON.stringify(validSetupData),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(mockDbTransaction).toHaveBeenCalledOnce();
+    expect(mockDbSession.create).toHaveBeenCalledOnce();
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledOnce();
   });
 
   it('validates slug format - allows hyphens', async () => {
@@ -449,6 +498,7 @@ describe('POST /api/setup', () => {
         userOrganization: {
           create: vi.fn().mockResolvedValue({ id: 'uo-1' }),
         },
+        session: mockDbSession,
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
@@ -491,6 +541,7 @@ describe('POST /api/setup', () => {
         userOrganization: {
           create: vi.fn().mockResolvedValue({ id: 'uo-1' }),
         },
+        session: mockDbSession,
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });

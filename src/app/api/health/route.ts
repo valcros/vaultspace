@@ -31,6 +31,8 @@ interface HealthResponse {
   status: 'healthy' | 'unhealthy' | 'degraded';
   timestamp: string;
   version: string;
+  release: string | null;
+  revision: string | null;
   mode: DeploymentMode;
   capabilities: DeploymentCapabilities;
   degraded: (keyof DeploymentCapabilities)[];
@@ -161,6 +163,8 @@ export async function GET(request: NextRequest) {
   const deep = searchParams.get('deep') === 'true';
 
   const version = process.env['npm_package_version'] ?? '0.1.0';
+  const release = process.env['NEXT_PUBLIC_APP_RELEASE'] || process.env['APP_RELEASE'] || null;
+  const revision = process.env['CONTAINER_APP_REVISION'] || null;
 
   const mode = getDeploymentMode();
   const capabilities = resolveCapabilities();
@@ -172,6 +176,8 @@ export async function GET(request: NextRequest) {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       version,
+      release,
+      revision,
       mode,
       capabilities,
       degraded,
@@ -210,6 +216,8 @@ export async function GET(request: NextRequest) {
     status: overallStatus,
     timestamp: new Date().toISOString(),
     version,
+    release,
+    revision,
     mode,
     capabilities,
     degraded,
