@@ -21,6 +21,7 @@ import {
   type DeploymentCapabilities,
 } from '@/lib/deployment-capabilities';
 import { getPasswordResetTokenWriteMode } from '@/lib/auth/passwordResetToken';
+import { validatePasswordResetRecoveryConfiguration } from '@/lib/auth/passwordResetRecovery';
 
 interface HealthCheck {
   status: 'healthy' | 'unhealthy' | 'degraded';
@@ -41,6 +42,12 @@ interface HealthResponse {
     readerVersion: 1;
     writeMode: 'legacy' | 'hmac';
     activeKeyId: 'session-v1';
+  };
+  passwordResetRecovery: {
+    writerVersion: 1;
+    configured: boolean;
+    activeKeyId: string | null;
+    reconcilerEnabled: boolean;
   };
   checks: {
     database: HealthCheck;
@@ -180,6 +187,18 @@ export async function GET(request: NextRequest) {
     writeMode: getPasswordResetTokenWriteMode(),
     activeKeyId: 'session-v1' as const,
   };
+  let recoveryConfiguration: { activeKeyId: string; keyCount: number } | null = null;
+  try {
+    recoveryConfiguration = validatePasswordResetRecoveryConfiguration();
+  } catch {
+    // Recovery keys are intentionally optional during the legacy-writer phase.
+  }
+  const passwordResetRecovery = {
+    writerVersion: 1 as const,
+    configured: recoveryConfiguration !== null,
+    activeKeyId: recoveryConfiguration?.activeKeyId ?? null,
+    reconcilerEnabled: process.env['PASSWORD_RESET_RECONCILER_ENABLED'] === 'true',
+  };
 
   // Quick liveness check
   if (!deep) {
@@ -193,6 +212,7 @@ export async function GET(request: NextRequest) {
       capabilities,
       degraded,
       passwordResetTokens,
+      passwordResetRecovery,
     });
   }
 
@@ -234,6 +254,7 @@ export async function GET(request: NextRequest) {
     capabilities,
     degraded,
     passwordResetTokens,
+    passwordResetRecovery,
     checks,
   };
 

@@ -42,6 +42,10 @@ WORKER_ONLY_REQUIRED=(
   WORKER_TYPE
 )
 
+WORKER_FORBIDDEN=(
+  DATABASE_URL_ADMIN
+)
+
 # Vars whose value MUST come from a Key Vault secretRef (never plaintext).
 SECRET_BACKED=(
   SESSION_SECRET
@@ -104,6 +108,20 @@ check_app() {
 
 check_app "${WEB_APP}" "${SHARED_REQUIRED[@]}" "${WEB_ONLY_REQUIRED[@]}"
 check_app "${WORKER_APP}" "${SHARED_REQUIRED[@]}" "${WORKER_ONLY_REQUIRED[@]}"
+
+worker_env_json=$(az containerapp show \
+  --name "${WORKER_APP}" \
+  --resource-group "${RG}" \
+  --query "properties.template.containers[0].env" \
+  -o json)
+for var in "${WORKER_FORBIDDEN[@]}"; do
+  if echo "${worker_env_json}" | jq -e --arg var "${var}" '.[] | select(.name == $var)' >/dev/null; then
+    echo "  ERROR: ${WORKER_APP} has forbidden runtime env var: ${var}"
+    errors=$((errors + 1))
+  else
+    echo "  OK: ${var} is absent from runtime worker"
+  fi
+done
 
 # The worker Container App MUST run the worker image (vaultspace-worker), not the
 # web image. On 2026-07-17 the worker was repointed to vaultspace-web, which boots

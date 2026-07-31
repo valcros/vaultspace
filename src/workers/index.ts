@@ -9,6 +9,11 @@
  */
 
 import { enforceDeploymentMode, validateConfig } from '@/lib/azure-guard';
+import {
+  PasswordResetRecoveryError,
+  validatePasswordResetRecoveryConfiguration,
+} from '@/lib/auth/passwordResetRecovery';
+import { getPasswordResetTokenWriteMode } from '@/lib/auth/passwordResetToken';
 import { getDeploymentMode } from '@/lib/deployment-mode';
 
 const mode = getDeploymentMode();
@@ -37,6 +42,36 @@ if (!process.env['REDIS_URL']) {
   process.exit(1);
 }
 
+if (process.env['DATABASE_URL_ADMIN']) {
+  console.error(
+    '[VaultSpace Worker] STARTUP BLOCKED - DATABASE_URL_ADMIN is forbidden for runtime workers.'
+  );
+  process.exit(1);
+}
+
+if (
+  process.env['PASSWORD_RESET_RECOVERY_KEYS'] ||
+  process.env['PASSWORD_RESET_RECONCILER_ENABLED'] === 'true' ||
+  getPasswordResetTokenWriteMode() === 'hmac'
+) {
+  try {
+    validatePasswordResetRecoveryConfiguration();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        component: 'worker-startup',
+        event: 'password_reset_recovery_configuration',
+        outcome: 'blocked',
+        errorCode:
+          error instanceof PasswordResetRecoveryError
+            ? error.code
+            : 'PASSWORD_RESET_RECOVERY_CONFIGURATION_INVALID',
+      })
+    );
+    process.exit(1);
+  }
+}
+
 // Log warnings
 if (warnings.length > 0) {
   console.warn(`[VaultSpace Worker] Configuration warnings:`);
@@ -49,6 +84,8 @@ import { Worker, type ConnectionOptions, type Job } from 'bullmq';
 
 import {
   processEmailJob,
+  processPasswordResetAcceptanceJob,
+  processPasswordResetDeliveryJob,
   processDocumentUploadedNotification,
   processDocumentViewedNotification,
   processPreviewJob,
@@ -114,6 +151,14 @@ async function processJob(job: Job): Promise<void> {
       await processEmailJob(job);
       break;
 
+    case JOB_NAMES.PASSWORD_RESET_DELIVER:
+      await processPasswordResetDeliveryJob(job);
+      break;
+
+    case JOB_NAMES.PASSWORD_RESET_ACCEPTANCE_RECONCILE:
+      await processPasswordResetAcceptanceJob(job);
+      break;
+
     case JOB_NAMES.NOTIFY_DOCUMENT_UPLOADED:
       await processDocumentUploadedNotification(job);
       break;
@@ -128,6 +173,9 @@ async function processJob(job: Job): Promise<void> {
 
     default:
       console.warn(`[VaultSpace Worker] Unknown job type: ${jobName}`);
+      if (jobName.startsWith('password-reset.')) {
+        throw new Error(`Unsupported security-critical job type: ${jobName}`);
+      }
   }
 
   console.log(`[VaultSpace Worker] Job completed: ${jobName} (${job.id})`);
@@ -191,6 +239,8 @@ async function main() {
     workers.push(worker);
     console.log(`[VaultSpace Worker] Listening on queue: ${queueName}`);
   }
+
+  await Promise.all(workers.map((worker) => worker.waitUntilReady()));
 
   console.log(`[VaultSpace Worker] ${workerType} worker initialized`);
 

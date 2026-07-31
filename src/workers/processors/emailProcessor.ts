@@ -8,7 +8,7 @@
 import { Job, UnrecoverableError } from 'bullmq';
 
 import { bootstrapDb, withOrgContext } from '@/lib/db';
-import { captureSecurityAudit } from '@/lib/audit/securityAudit';
+import { captureSecurityAudit, createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { getProviders } from '@/providers';
 import { normalizeEmailError } from '@/providers/email/errors';
 import { EmailNotificationService } from '@/services/notifications';
@@ -408,21 +408,50 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
 
   if (passwordReset) {
     try {
-      const transition = await bootstrapDb.passwordResetToken.updateMany({
-        where: {
-          id: passwordReset.flowId,
-          usedAt: null,
-          deliveryStatus: 'SENDING',
-          deliveryAttempts: attempt,
-        },
-        data: {
-          deliveryStatus: 'PROVIDER_ACCEPTED',
-          providerMessageId: result.messageId,
-          deliveryErrorCode: null,
-          lastDeliveryAttemptAt: new Date(),
-        },
+      const transitioned = await bootstrapDb.$transaction(async (tx) => {
+        const transition = await tx.passwordResetToken.updateMany({
+          where: {
+            id: passwordReset.flowId,
+            usedAt: null,
+            deliveryStatus: 'SENDING',
+            deliveryAttempts: attempt,
+          },
+          data: {
+            deliveryStatus: 'PROVIDER_ACCEPTED',
+            provider: 'configured',
+            providerOperationId: passwordReset.flowId,
+            providerMessageId: result.messageId,
+            providerAcceptedAt: new Date(),
+            deliveryErrorCode: null,
+            lastDeliveryAttemptAt: new Date(),
+          },
+        });
+        if (transition.count !== 1) {
+          return false;
+        }
+        for (const organizationId of passwordReset.organizationIds) {
+          await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+          await createSecurityAuditEvent(tx, {
+            organizationId,
+            eventType: 'USER_PASSWORD_RESET',
+            actorType: 'SYSTEM',
+            requestId: passwordReset.requestId,
+            correlationId: passwordReset.flowId,
+            idempotencyKey: `password-reset-${passwordReset.flowId}-accepted-${organizationId}`,
+            description: 'Password reset email was accepted by the provider',
+            metadata: {
+              outcome: 'accepted',
+              stage: 'provider_submission',
+              targetUserId: passwordReset.userId,
+              jobId: job.id ?? null,
+              attempt,
+              providerMessageId: result.messageId,
+            },
+          });
+        }
+        return true;
       });
-      if (transition.count !== 1) {
+      if (!transitioned) {
         console.error(
           JSON.stringify({
             component: 'email-worker',

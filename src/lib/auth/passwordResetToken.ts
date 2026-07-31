@@ -1,4 +1,5 @@
 import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'crypto';
+import type { Prisma } from '@prisma/client';
 
 const PUBLIC_PREFIX = 'prt1_';
 const STORED_PREFIX = 'prh1:';
@@ -36,6 +37,21 @@ export interface PasswordResetTokenLookup {
 }
 
 export type PasswordResetTokenWriteMode = 'legacy' | 'hmac';
+
+/**
+ * Serialize every account-global password-reset lifecycle edge without relying
+ * on tenant-scoped row locks. This works for the NOBYPASSRLS worker role and is
+ * paired with ordinary row locks in web transactions where org context exists.
+ */
+export async function lockPasswordResetUser(
+  tx: Pick<Prisma.TransactionClient, '$executeRaw'>,
+  userId: string
+): Promise<void> {
+  await tx.$executeRaw`
+    SELECT pg_advisory_xact_lock(
+      hashtextextended(${`vaultspace/password-reset/user/${userId}`}, 0)
+    )`;
+}
 
 export function getPasswordResetTokenWriteMode(): PasswordResetTokenWriteMode {
   const value = process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'];

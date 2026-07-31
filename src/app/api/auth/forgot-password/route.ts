@@ -11,16 +11,28 @@ import { z } from 'zod';
 import { captureSecurityAudit, createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import {
   createPasswordResetToken,
+  getPasswordResetTokenWriteMode,
+  lockPasswordResetUser,
   PasswordResetTokenConfigurationError,
   requirePasswordResetTokenSecret,
 } from '@/lib/auth/passwordResetToken';
+import {
+  encryptPasswordResetRecoveryToken,
+  PasswordResetRecoveryError,
+  validatePasswordResetRecoveryConfiguration,
+} from '@/lib/auth/passwordResetRecovery';
 import { bootstrapDb as db } from '@/lib/db';
 import { hasCapability } from '@/lib/deployment-capabilities';
 import { RateLimitError } from '@/lib/errors';
 import { getRequestContext, rateLimiters } from '@/lib/middleware';
 import { getProviders } from '@/providers';
 import { normalizeEmailError } from '@/providers/email/errors';
-import { JOB_NAMES, PASSWORD_RESET_EMAIL_JOB_OPTIONS, QUEUE_NAMES } from '@/workers/types';
+import {
+  JOB_NAMES,
+  PASSWORD_RESET_EMAIL_JOB_OPTIONS,
+  PASSWORD_RESET_RECOVERY_JOB_OPTIONS,
+  QUEUE_NAMES,
+} from '@/workers/types';
 
 const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -67,6 +79,18 @@ export async function POST(request: NextRequest) {
     }
     try {
       requirePasswordResetTokenSecret();
+      if (getPasswordResetTokenWriteMode() === 'hmac') {
+        validatePasswordResetRecoveryConfiguration();
+        if (!hasCapability('canSendAsyncEmail')) {
+          structuredLog({
+            event: 'configuration_check',
+            outcome: 'failed',
+            requestId: reqContext.requestId,
+            errorCode: 'PASSWORD_RESET_RECOVERY_REQUIRES_ASYNC_EMAIL',
+          });
+          return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+        }
+      }
     } catch (error) {
       structuredLog({
         event: 'configuration_check',
@@ -75,7 +99,9 @@ export async function POST(request: NextRequest) {
         errorCode:
           error instanceof PasswordResetTokenConfigurationError
             ? error.code
-            : 'PASSWORD_RESET_TOKEN_CONFIGURATION_INVALID',
+            : error instanceof PasswordResetRecoveryError
+              ? error.code
+              : 'PASSWORD_RESET_TOKEN_CONFIGURATION_INVALID',
       });
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
@@ -154,8 +180,18 @@ export async function POST(request: NextRequest) {
       const tokenPair = createPasswordResetToken();
       const resetToken = tokenPair.publicToken;
       const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+      const recoveryEnvelope =
+        tokenPair.format === 'hmac'
+          ? encryptPasswordResetRecoveryToken(resetToken, normalizedEmail, {
+              flowId,
+              userId: user.id,
+              storedToken: tokenPair.storedToken,
+              expiresAt,
+            })
+          : null;
 
       const issuance = await db.$transaction(async (tx) => {
+        await lockPasswordResetUser(tx, user.id);
         // Serialize self-service and administrator issuance for this account.
         // Every issuance path takes the same global user lock, supersedes older
         // unused links, and only then creates the new flow.
@@ -216,9 +252,25 @@ export async function POST(request: NextRequest) {
         const lockedSenderOrg =
           hostnameOrg ?? (lockedMemberships.length === 1 ? lockedMemberships[0] : undefined);
 
+        const supersededResetFlows = await tx.passwordResetToken.findMany({
+          where: { userId: lockedUser.id, usedAt: null },
+          select: { id: true, requestId: true },
+        });
         await tx.passwordResetToken.updateMany({
           where: { userId: lockedUser.id, usedAt: null },
           data: { usedAt: new Date() },
+        });
+        await tx.passwordResetRecovery.updateMany({
+          where: { resetToken: { userId: lockedUser.id, usedAt: { not: null } }, wipedAt: null },
+          data: {
+            cipherVersion: null,
+            keyId: null,
+            nonce: null,
+            ciphertext: null,
+            authTag: null,
+            wipedAt: new Date(),
+            enqueueStatus: 'SUPERSEDED',
+          },
         });
         await tx.passwordResetToken.create({
           data: {
@@ -231,27 +283,60 @@ export async function POST(request: NextRequest) {
             deliveryStatus: 'PENDING',
           },
         });
+        if (recoveryEnvelope) {
+          await tx.passwordResetRecovery.create({
+            data: {
+              flowId,
+              userId: lockedUser.id,
+              recipientFingerprint: recoveryEnvelope.recipientFingerprint,
+              cipherVersion: recoveryEnvelope.cipherVersion,
+              keyId: recoveryEnvelope.keyId,
+              nonce: recoveryEnvelope.nonce,
+              ciphertext: recoveryEnvelope.ciphertext,
+              authTag: recoveryEnvelope.authTag,
+              providerOperationId: flowId,
+            },
+          });
+        }
 
-        await Promise.all(
-          lockedMemberships.map((membership) =>
-            createSecurityAuditEvent(tx, {
+        for (const membership of lockedMemberships) {
+          await createSecurityAuditEvent(tx, {
+            organizationId: membership.organization.id,
+            eventType: 'USER_PASSWORD_RESET',
+            actorType: 'SYSTEM',
+            requestId: reqContext.requestId,
+            correlationId: flowId,
+            description: 'Password reset requested for an organization member',
+            metadata: {
+              outcome: 'accepted',
+              stage: 'request',
+              targetUserId: lockedUser.id,
+              initiation: 'SELF_SERVICE',
+            },
+            ipAddress,
+            userAgent,
+          });
+          for (const superseded of supersededResetFlows) {
+            await createSecurityAuditEvent(tx, {
               organizationId: membership.organization.id,
               eventType: 'USER_PASSWORD_RESET',
               actorType: 'SYSTEM',
-              requestId: reqContext.requestId,
-              correlationId: flowId,
-              description: 'Password reset requested for an organization member',
+              requestId: superseded.requestId ?? `recovery-${superseded.id}`,
+              correlationId: superseded.id,
+              idempotencyKey: `password-reset-${superseded.id}-superseded-${membership.organization.id}`,
+              description: 'Password reset flow was superseded by a newer request',
               metadata: {
-                outcome: 'accepted',
-                stage: 'request',
+                outcome: 'cancelled',
+                stage: 'request_supersession',
                 targetUserId: lockedUser.id,
-                initiation: 'SELF_SERVICE',
+                replacementFlowId: flowId,
+                errorCode: 'SUPERSEDED',
               },
               ipAddress,
               userAgent,
-            })
-          )
-        );
+            });
+          }
+        }
 
         return { user: lockedUser, memberships: lockedMemberships, senderOrg: lockedSenderOrg };
       });
@@ -306,33 +391,43 @@ export async function POST(request: NextRequest) {
 
       if (hasCapability('canSendAsyncEmail')) {
         try {
-          const jobId = await providers.job.addJob(
-            QUEUE_NAMES.NORMAL,
-            JOB_NAMES.EMAIL_SEND,
-            {
-              to: deliveryUser.email,
-              subject: `Reset your ${orgName} password`,
-              template: 'password-reset',
-              from: senderFrom,
-              fromName: senderName,
-              data: {
-                userName: deliveryUser.firstName || 'User',
-                organizationName: orgName,
-                resetUrl,
-                expiresIn: '1 hour',
-              },
-              passwordReset: {
-                flowId,
-                userId: deliveryUser.id,
-                requestId: reqContext.requestId,
-                organizationIds,
-              },
-            },
-            {
-              ...PASSWORD_RESET_EMAIL_JOB_OPTIONS,
-              jobId: `password-reset-${flowId}`,
-            }
-          );
+          const jobId = recoveryEnvelope
+            ? await providers.job.addJob(
+                QUEUE_NAMES.NORMAL,
+                JOB_NAMES.PASSWORD_RESET_DELIVER,
+                { schemaVersion: 1, flowId, deliveryAttempt: 1 },
+                {
+                  ...PASSWORD_RESET_RECOVERY_JOB_OPTIONS,
+                  jobId: `password-reset-${flowId}-delivery-1`,
+                }
+              )
+            : await providers.job.addJob(
+                QUEUE_NAMES.NORMAL,
+                JOB_NAMES.EMAIL_SEND,
+                {
+                  to: deliveryUser.email,
+                  subject: `Reset your ${orgName} password`,
+                  template: 'password-reset',
+                  from: senderFrom,
+                  fromName: senderName,
+                  data: {
+                    userName: deliveryUser.firstName || 'User',
+                    organizationName: orgName,
+                    resetUrl,
+                    expiresIn: '1 hour',
+                  },
+                  passwordReset: {
+                    flowId,
+                    userId: deliveryUser.id,
+                    requestId: reqContext.requestId,
+                    organizationIds,
+                  },
+                },
+                {
+                  ...PASSWORD_RESET_EMAIL_JOB_OPTIONS,
+                  jobId: `password-reset-${flowId}`,
+                }
+              );
           try {
             const transition = await db.passwordResetToken.updateMany({
               where: { id: flowId, usedAt: null, deliveryStatus: 'PENDING' },
@@ -345,6 +440,12 @@ export async function POST(request: NextRequest) {
               await db.passwordResetToken.updateMany({
                 where: { id: flowId, queueJobId: null },
                 data: { queueJobId: jobId },
+              });
+            }
+            if (recoveryEnvelope) {
+              await db.passwordResetRecovery.updateMany({
+                where: { flowId, enqueueStatus: 'PENDING', wipedAt: null },
+                data: { enqueueStatus: 'QUEUED' },
               });
             }
           } catch (lifecycleError) {
@@ -370,19 +471,87 @@ export async function POST(request: NextRequest) {
             })
           );
         } catch (error) {
-          await db.passwordResetToken.updateMany({
-            where: { id: flowId, usedAt: null },
-            data: { deliveryStatus: 'QUEUE_FAILED', deliveryErrorCode: 'EMAIL_QUEUE_ERROR' },
-          });
+          if (recoveryEnvelope) {
+            await db.$transaction(async (tx) => {
+              await tx.$queryRaw`
+                SELECT 1 FROM password_reset_tokens
+                WHERE id = ${flowId}
+                FOR UPDATE`;
+              await tx.$queryRaw`
+                SELECT 1 FROM password_reset_recoveries
+                WHERE "flowId" = ${flowId}
+                FOR UPDATE`;
+              const [resetState, recoveryState] = await Promise.all([
+                tx.passwordResetToken.findUnique({
+                  where: { id: flowId },
+                  select: { deliveryStatus: true, providerAcceptedAt: true },
+                }),
+                tx.passwordResetRecovery.findUnique({
+                  where: { flowId },
+                  select: { enqueueStatus: true, wipedAt: true },
+                }),
+              ]);
+              if (
+                resetState?.deliveryStatus !== 'PENDING' ||
+                resetState.providerAcceptedAt ||
+                recoveryState?.enqueueStatus !== 'PENDING' ||
+                recoveryState.wipedAt
+              ) {
+                return;
+              }
+              await tx.passwordResetToken.update({
+                where: { id: flowId },
+                data: {
+                  deliveryStatus: 'QUEUE_RETRYING',
+                  deliveryErrorCode: 'EMAIL_QUEUE_ERROR',
+                },
+              });
+              await tx.passwordResetRecovery.update({
+                where: { flowId },
+                data: {
+                  enqueueStatus: 'QUEUE_RETRYING',
+                  enqueueAttempts: { increment: 1 },
+                  nextEnqueueAt: new Date(Date.now() + 30_000),
+                },
+              });
+              await Promise.all(
+                organizationIds.map((organizationId) =>
+                  createSecurityAuditEvent(tx, {
+                    organizationId,
+                    eventType: 'USER_PASSWORD_RESET',
+                    actorType: 'SYSTEM',
+                    requestId: reqContext.requestId,
+                    correlationId: flowId,
+                    idempotencyKey: `password-reset-${flowId}-queue-recovery-pending-${organizationId}`,
+                    description: 'Password reset email is pending queue recovery',
+                    metadata: {
+                      outcome: 'pending',
+                      stage: 'queue',
+                      targetUserId: deliveryUser.id,
+                      errorCode: 'EMAIL_QUEUE_ERROR',
+                    },
+                  })
+                )
+              );
+            });
+          } else {
+            await db.passwordResetToken.updateMany({
+              where: { id: flowId, usedAt: null, deliveryStatus: 'PENDING' },
+              data: {
+                deliveryStatus: 'QUEUE_FAILED',
+                deliveryErrorCode: 'EMAIL_QUEUE_ERROR',
+              },
+            });
+            await captureDeliveryFailure('queue', 'EMAIL_QUEUE_ERROR');
+          }
           structuredLog({
             event: 'email_queue',
-            outcome: 'failed',
+            outcome: recoveryEnvelope ? 'pending_recovery' : 'failed',
             requestId: reqContext.requestId,
             correlationId: flowId,
             errorCode: 'EMAIL_QUEUE_ERROR',
             errorName: error instanceof Error ? error.name : 'UnknownError',
           });
-          await captureDeliveryFailure('queue', 'EMAIL_QUEUE_ERROR');
         }
       } else if (hasCapability('canSendSyncEmail')) {
         const sendClaim = await db.passwordResetToken.updateMany({
@@ -425,10 +594,24 @@ export async function POST(request: NextRequest) {
           await db.passwordResetToken.updateMany({
             where: { id: flowId, usedAt: null },
             data: {
-              deliveryStatus: deliveryError.retryable ? 'FAILED_EXHAUSTED' : 'FAILED_PERMANENT',
+              deliveryStatus: deliveryError.retryable ? 'ACCEPTANCE_UNKNOWN' : 'FAILED_PERMANENT',
               deliveryErrorCode: deliveryError.code,
             },
           });
+          if (recoveryEnvelope) {
+            await db.passwordResetRecovery.updateMany({
+              where: { flowId, wipedAt: null },
+              data: {
+                cipherVersion: null,
+                keyId: null,
+                nonce: null,
+                ciphertext: null,
+                authTag: null,
+                wipedAt: new Date(),
+                enqueueStatus: deliveryError.retryable ? 'ACCEPTANCE_UNKNOWN' : 'FAILED_PERMANENT',
+              },
+            });
+          }
           structuredLog({
             event: 'provider_submission',
             outcome: 'failed',
@@ -460,13 +643,50 @@ export async function POST(request: NextRequest) {
           })
         );
         try {
-          await db.passwordResetToken.updateMany({
-            where: { id: flowId, usedAt: null },
-            data: {
-              deliveryStatus: 'PROVIDER_ACCEPTED',
-              providerMessageId: result.messageId,
-              deliveryErrorCode: null,
-            },
+          await db.$transaction(async (tx) => {
+            await tx.passwordResetToken.updateMany({
+              where: { id: flowId },
+              data: {
+                deliveryStatus: 'PROVIDER_ACCEPTED',
+                provider: 'configured',
+                providerOperationId: flowId,
+                providerMessageId: result.messageId,
+                providerAcceptedAt: new Date(),
+                deliveryErrorCode: null,
+              },
+            });
+            await tx.passwordResetRecovery.updateMany({
+              where: { flowId, wipedAt: null },
+              data: {
+                cipherVersion: null,
+                keyId: null,
+                nonce: null,
+                ciphertext: null,
+                authTag: null,
+                wipedAt: new Date(),
+                enqueueStatus: 'PROVIDER_ACCEPTED',
+              },
+            });
+            for (const organizationId of organizationIds) {
+              await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+              await createSecurityAuditEvent(tx, {
+                organizationId,
+                eventType: 'USER_PASSWORD_RESET',
+                actorType: 'SYSTEM',
+                requestId: reqContext.requestId,
+                correlationId: flowId,
+                idempotencyKey: `password-reset-${flowId}-accepted-${organizationId}`,
+                description: 'Password reset email was accepted by the provider',
+                metadata: {
+                  outcome: 'accepted',
+                  stage: 'provider_submission',
+                  targetUserId: deliveryUser.id,
+                  provider: 'configured',
+                  providerOperationId: flowId,
+                  providerMessageId: result.messageId,
+                },
+              });
+            }
           });
         } catch (lifecycleError) {
           structuredLog({
@@ -483,6 +703,20 @@ export async function POST(request: NextRequest) {
           where: { id: flowId, usedAt: null },
           data: { deliveryStatus: 'NOT_CONFIGURED', deliveryErrorCode: 'EMAIL_NOT_CONFIGURED' },
         });
+        if (recoveryEnvelope) {
+          await db.passwordResetRecovery.updateMany({
+            where: { flowId, wipedAt: null },
+            data: {
+              cipherVersion: null,
+              keyId: null,
+              nonce: null,
+              ciphertext: null,
+              authTag: null,
+              wipedAt: new Date(),
+              enqueueStatus: 'NOT_CONFIGURED',
+            },
+          });
+        }
         structuredLog({
           event: 'email_capability',
           outcome: 'unavailable',

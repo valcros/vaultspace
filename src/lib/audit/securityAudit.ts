@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { ActorType, EventType, Prisma } from '@prisma/client';
 
 import { withOrgContext } from '@/lib/db';
@@ -13,6 +14,7 @@ export interface SecurityAuditInput {
   requestId: string;
   correlationId?: string | null;
   sessionId?: string | null;
+  idempotencyKey?: string | null;
   description: string;
   metadata?: Record<string, unknown>;
   ipAddress?: string | null;
@@ -31,6 +33,7 @@ function eventData(input: SecurityAuditInput) {
     requestId: input.requestId,
     correlationId: input.correlationId ?? null,
     sessionId: input.sessionId ?? null,
+    idempotencyKey: input.idempotencyKey ?? null,
     description: input.description,
     metadata: {
       ...input.metadata,
@@ -52,8 +55,32 @@ export async function createSecurityAuditEvent(
   client: AuditClient,
   input: SecurityAuditInput
 ): Promise<string> {
-  const event = await client.event.create({ data: eventData(input) });
-  return event.id;
+  const data = eventData(input);
+  if (!input.idempotencyKey) {
+    const event = await client.event.create({ data });
+    return event.id;
+  }
+
+  // `events` is structurally append-only: the runtime role has UPDATE and
+  // DELETE revoked and a trigger rejects mutations. createMany(skipDuplicates)
+  // compiles to INSERT ... ON CONFLICT DO NOTHING, preserving idempotency
+  // without requiring UPDATE privilege or aborting the caller's transaction.
+  const id = randomUUID();
+  const inserted = await client.event.createMany({
+    data: { id, ...data },
+    skipDuplicates: true,
+  });
+  if (inserted.count === 1) {
+    return id;
+  }
+  const existing = await client.event.findUnique({
+    where: { idempotencyKey: input.idempotencyKey },
+    select: { id: true, organizationId: true },
+  });
+  if (!existing || existing.organizationId !== input.organizationId) {
+    throw new Error('Security audit idempotency conflict is not visible in this organization');
+  }
+  return existing.id;
 }
 
 /**

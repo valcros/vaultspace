@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createPasswordResetToken,
   isStoredPasswordResetDigest,
+  lockPasswordResetUser,
   PasswordResetTokenConfigurationError,
   passwordResetTokenMatchesStoredValue,
   requirePasswordResetTokenSecret,
@@ -115,5 +116,13 @@ describe('passwordResetToken', () => {
     expect(() => resolvePasswordResetTokenLookup('A'.repeat(43))).toThrow(
       PasswordResetTokenConfigurationError
     );
+  });
+
+  it('takes the shared transaction-scoped advisory lock for an account', async () => {
+    const executeRaw = vi.fn().mockResolvedValue(1);
+
+    await lockPasswordResetUser({ $executeRaw: executeRaw } as never, 'user-1');
+
+    expect(executeRaw).toHaveBeenCalledTimes(1);
   });
 });

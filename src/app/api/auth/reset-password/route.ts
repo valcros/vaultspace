@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import {
+  lockPasswordResetUser,
   passwordResetTokenMatchesStoredValue,
   resolvePasswordResetTokenLookup,
 } from '@/lib/auth/passwordResetToken';
@@ -104,6 +105,7 @@ export async function POST(request: NextRequest) {
     // 1 means we lost the race and the transaction commits without touching the
     // password.
     const sessionTokens = await db.$transaction(async (tx) => {
+      await lockPasswordResetUser(tx, resetToken.userId);
       // Use the same account lock as every issuance path. This prevents an old
       // token redemption and replacement-token issuance from interleaving
       // their token claims in opposite lock order.
@@ -151,6 +153,18 @@ export async function POST(request: NextRequest) {
       if (claim.count !== 1) {
         return null;
       }
+      await tx.passwordResetRecovery.updateMany({
+        where: { flowId: resetToken.id, wipedAt: null },
+        data: {
+          cipherVersion: null,
+          keyId: null,
+          nonce: null,
+          ciphertext: null,
+          authTag: null,
+          wipedAt: new Date(),
+          enqueueStatus: 'REDEEMED',
+        },
+      });
 
       await tx.user.update({
         where: { id: resetToken.userId },
@@ -158,6 +172,14 @@ export async function POST(request: NextRequest) {
       });
 
       // Invalidate any other outstanding reset tokens for this user.
+      const supersededResetFlows = await tx.passwordResetToken.findMany({
+        where: {
+          userId: resetToken.userId,
+          id: { not: resetToken.id },
+          usedAt: null,
+        },
+        select: { id: true, requestId: true },
+      });
       await tx.passwordResetToken.updateMany({
         where: {
           userId: resetToken.userId,
@@ -166,31 +188,65 @@ export async function POST(request: NextRequest) {
         },
         data: { usedAt: new Date() },
       });
+      await tx.passwordResetRecovery.updateMany({
+        where: {
+          resetToken: { userId: resetToken.userId, usedAt: { not: null } },
+          wipedAt: null,
+        },
+        data: {
+          cipherVersion: null,
+          keyId: null,
+          nonce: null,
+          ciphertext: null,
+          authTag: null,
+          wipedAt: new Date(),
+          enqueueStatus: 'SUPERSEDED',
+        },
+      });
 
       const sessionTokens = await deactivateAllUserSessionsInTx(tx, resetToken.userId);
 
-      await Promise.all(
-        lockedUser.organizations.map((membership) =>
-          createSecurityAuditEvent(tx, {
+      for (const membership of lockedUser.organizations) {
+        await createSecurityAuditEvent(tx, {
+          organizationId: membership.organizationId,
+          eventType: 'USER_PASSWORD_RESET',
+          actorType: membership.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+          actorId: lockedUser.id,
+          actorEmail: lockedUser.email,
+          requestId: reqContext.requestId,
+          correlationId: resetToken.id,
+          description: 'User completed a password reset',
+          metadata: {
+            outcome: 'success',
+            stage: 'completed',
+            invalidatedSessionCount: sessionTokens.length,
+            initiationRequestId: resetToken.requestId ?? null,
+          },
+          ipAddress,
+          userAgent,
+        });
+        for (const superseded of supersededResetFlows) {
+          await createSecurityAuditEvent(tx, {
             organizationId: membership.organizationId,
             eventType: 'USER_PASSWORD_RESET',
             actorType: membership.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
             actorId: lockedUser.id,
             actorEmail: lockedUser.email,
-            requestId: reqContext.requestId,
-            correlationId: resetToken.id,
-            description: 'User completed a password reset',
+            requestId: superseded.requestId ?? `recovery-${superseded.id}`,
+            correlationId: superseded.id,
+            idempotencyKey: `password-reset-${superseded.id}-superseded-${membership.organizationId}`,
+            description: 'Password reset flow was superseded by successful password redemption',
             metadata: {
-              outcome: 'success',
-              stage: 'completed',
-              invalidatedSessionCount: sessionTokens.length,
-              initiationRequestId: resetToken.requestId ?? null,
+              outcome: 'cancelled',
+              stage: 'redemption_supersession',
+              replacementFlowId: resetToken.id,
+              errorCode: 'SUPERSEDED',
             },
             ipAddress,
             userAgent,
-          })
-        )
-      );
+          });
+        }
+      }
 
       return sessionTokens;
     });

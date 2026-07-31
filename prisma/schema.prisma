@@ -1207,9 +1207,10 @@ model Event {
   documentId String?
 
   // Request/Session tracking
-  requestId     String? @db.VarChar(100)
-  correlationId String? @db.VarChar(100)
-  sessionId     String?
+  requestId      String? @db.VarChar(100)
+  correlationId  String? @db.VarChar(100)
+  sessionId      String?
+  idempotencyKey String? @unique @db.VarChar(255)
 
   // Details
   description String? @db.Text
@@ -1386,10 +1387,17 @@ model PasswordResetToken {
   organizationId        String?
   deliveryStatus        String    @default("PENDING") @db.VarChar(32)
   queueJobId            String?   @db.VarChar(255)
+  provider              String?   @db.VarChar(32)
+  providerOperationId   String?   @db.VarChar(255)
   providerMessageId     String?   @db.VarChar(255)
+  providerAcceptedAt    DateTime?
   deliveryErrorCode     String?   @db.VarChar(100)
   deliveryAttempts      Int       @default(0)
   lastDeliveryAttemptAt DateTime?
+
+  // Present only for HMAC reset flows that can be recovered without placing
+  // the bearer token in Redis. Legacy rows deliberately have no recovery row.
+  recovery PasswordResetRecovery?
 
   @@index([token])
   @@index([userId])
@@ -1397,6 +1405,47 @@ model PasswordResetToken {
   @@index([organizationId, createdAt])
   @@index([deliveryStatus, createdAt])
   @@map("password_reset_tokens")
+}
+
+// Encrypted, short-lived delivery recovery material for HMAC reset flows.
+// Ciphertext is a bearer credential and is wiped at every terminal lifecycle
+// transition. Delivery leases fence PostgreSQL, Redis, and provider work.
+model PasswordResetRecovery {
+  flowId String @id
+  userId String
+
+  recipientFingerprint String    @db.VarChar(64)
+  cipherVersion        Int?
+  keyId                String?   @db.VarChar(64)
+  nonce                Bytes?
+  ciphertext           Bytes?
+  authTag              Bytes?
+  encryptedAt          DateTime  @default(now())
+  wipedAt              DateTime?
+
+  enqueueStatus         String    @default("PENDING") @db.VarChar(32)
+  enqueueAttempts       Int       @default(0)
+  nextEnqueueAt         DateTime  @default(now())
+  enqueueLeaseId        String?   @db.VarChar(64)
+  enqueueLeaseExpiresAt DateTime?
+
+  deliveryAttempt     Int       @default(1)
+  sendLeaseId         String?   @db.VarChar(64)
+  sendLeaseExpiresAt  DateTime?
+  sendFence           Int       @default(0)
+  providerOperationId String    @db.VarChar(255)
+
+  acceptanceAttempts Int       @default(0)
+  nextAcceptanceAt   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  resetToken PasswordResetToken @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@index([enqueueStatus, nextEnqueueAt, enqueueLeaseExpiresAt], map: "prr_enqueue_due_lease_idx")
+  @@index([sendLeaseExpiresAt], map: "prr_send_lease_idx")
+  @@index([wipedAt, createdAt], map: "prr_wipe_created_idx")
+  @@map("password_reset_recoveries")
 }
 
 // EmailVerificationToken (Email Verification)

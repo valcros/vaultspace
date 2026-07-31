@@ -111,6 +111,20 @@ export async function withOrgContext<T>(
 }
 
 /**
+ * Establish the deterministic no-organization state used by pre-context
+ * bootstrap policies inside an interactive transaction.
+ *
+ * PostgreSQL custom settings can read back as an empty string after a prior
+ * transaction-local value has been reset on a pooled connection. Bootstrap
+ * policies therefore treat both NULL and the empty string as no context.
+ */
+export async function setBootstrapContext(
+  tx: Pick<Prisma.TransactionClient, '$executeRaw'>
+): Promise<void> {
+  await tx.$executeRaw`SELECT set_config('app.current_org_id', '', true)`;
+}
+
+/**
  * Check if RLS is enabled in the current environment.
  */
 export function isRLSEnabled(): boolean {

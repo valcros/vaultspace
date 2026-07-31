@@ -2,6 +2,12 @@ name: Deploy to Staging
 
 on:
   workflow_dispatch:
+    inputs:
+      allow_reset_mode_downgrade:
+        description: Allow an intentional HMAC-to-legacy password-reset writer downgrade
+        required: false
+        type: boolean
+        default: false
   workflow_run:
     workflows: ['CI']
     branches: [main]
@@ -51,11 +57,16 @@ jobs:
       WAKER_JOB_APP: ${{ vars.WAKER_JOB_APP }}
       WAKER_CONTAINER_NAME: ${{ vars.WAKER_CONTAINER_NAME }}
       LIFECYCLE_JOB_APP: ${{ vars.LIFECYCLE_JOB_APP }}
+      RESET_RECONCILER_JOB_APP: ${{ vars.RESET_RECONCILER_JOB_APP }}
+      DESIRED_RESET_WRITE_MODE: ${{ vars.PASSWORD_RESET_TOKEN_WRITE_MODE }}
+      ALLOW_RESET_MODE_DOWNGRADE: ${{ inputs.allow_reset_mode_downgrade || 'false' }}
       APP_URL: ${{ vars.APP_URL }}
       DEPLOYMENT_MUTATED: 'false'
       WEB_MUTATED: 'false'
       JOBS_MUTATED: 'false'
       FORWARD_WORKER_VERIFIED: 'false'
+      RESET_FLOW_ONLY_POSSIBLE: 'false'
+      TARGET_RESET_WRITE_MODE: 'legacy'
       # For workflow_run triggers, deploy the exact commit CI validated, not the
       # branch head at event time (they can differ if another push lands mid-run).
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -166,6 +177,14 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --query properties.template.containers[0].image \
             --output tsv)
+          PREVIOUS_RESET_RECONCILER_IMAGE=""
+          if [ -n "$RESET_RECONCILER_JOB_APP" ]; then
+            PREVIOUS_RESET_RECONCILER_IMAGE=$(az containerapp job show \
+              --name "$RESET_RECONCILER_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.template.containers[0].image \
+              --output tsv)
+          fi
 
           for value in \
             "$PREVIOUS_WEB_REVISION" \
@@ -188,6 +207,7 @@ jobs:
             echo "PREVIOUS_WORKER_IMAGE=$PREVIOUS_WORKER_IMAGE"
             echo "PREVIOUS_WAKER_IMAGE=$PREVIOUS_WAKER_IMAGE"
             echo "PREVIOUS_LIFECYCLE_IMAGE=$PREVIOUS_LIFECYCLE_IMAGE"
+            echo "PREVIOUS_RESET_RECONCILER_IMAGE=$PREVIOUS_RESET_RECONCILER_IMAGE"
           } >> "$GITHUB_ENV"
 
       # Safety net for build-once: images are published by CI's "Build & Push
@@ -312,11 +332,268 @@ jobs:
           done
           echo "FORWARD_WORKER_VERIFIED=true" >> "$GITHUB_ENV"
 
+      # Resolve current and desired reset writer modes independently. An empty
+      # repository variable preserves the current mode. HMAC cutover is allowed
+      # only from a recovery-aware web release, which keeps rollback safe after
+      # flow-only jobs have entered Redis.
+      - name: Validate password reset cutover compatibility
+        run: |
+          CURRENT_HEALTH=$(curl -fsS --max-time 15 "$APP_URL/api/health")
+          HEALTH_MODE=$(echo "$CURRENT_HEALTH" | jq -r '.passwordResetTokens.writeMode // "unknown"')
+          WEB_APP_JSON=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          WORKER_APP_JSON=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          WEB_ENV=$(echo "$WEB_APP_JSON" | jq -c --arg c "$WEB_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.env // [])')
+          WORKER_ENV=$(echo "$WORKER_APP_JSON" | jq -c --arg c "$WORKER_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.env // [])')
+          CONFIGURED_MODE=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_TOKEN_WRITE_MODE") | .value // empty')
+          MODE_SECRET_REF=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_TOKEN_WRITE_MODE") | .secretRef // empty')
+          if [ -n "$CONFIGURED_MODE" ]; then
+            CURRENT_MODE="$CONFIGURED_MODE"
+          elif [ -n "$MODE_SECRET_REF" ]; then
+            if [ "$HEALTH_MODE" = "unknown" ]; then
+              echo "ERROR: secret-backed reset write mode cannot be resolved from the current health contract"
+              exit 1
+            fi
+            CURRENT_MODE="$HEALTH_MODE"
+          elif [ "$HEALTH_MODE" != "unknown" ]; then
+            CURRENT_MODE="$HEALTH_MODE"
+          else
+            CURRENT_MODE="legacy"
+          fi
+          if [ "$HEALTH_MODE" != "unknown" ] && [ "$HEALTH_MODE" != "$CURRENT_MODE" ]; then
+            echo "ERROR: current reset write mode disagrees with Container App configuration"
+            exit 1
+          fi
+          TARGET_MODE="${DESIRED_RESET_WRITE_MODE:-$CURRENT_MODE}"
+          if [ "$TARGET_MODE" != "legacy" ] && [ "$TARGET_MODE" != "hmac" ]; then
+            echo "ERROR: unsupported password reset token write mode"
+            exit 1
+          fi
+          if echo "$WORKER_ENV" | jq -e '.[] | select(.name=="DATABASE_URL_ADMIN")' >/dev/null; then
+            echo "ERROR: runtime worker must not receive DATABASE_URL_ADMIN"
+            exit 1
+          fi
+          if [ "$CURRENT_MODE" = "hmac" ] && [ "$TARGET_MODE" = "legacy" ]; then
+            if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ] || [ "$ALLOW_RESET_MODE_DOWNGRADE" != "true" ]; then
+              echo "ERROR: HMAC-to-legacy reset writer downgrade requires manual dispatch approval"
+              exit 1
+            fi
+          fi
+          echo "PREVIOUS_RESET_WRITE_MODE=$CURRENT_MODE" >> "$GITHUB_ENV"
+          echo "TARGET_RESET_WRITE_MODE=$TARGET_MODE" >> "$GITHUB_ENV"
+
+          if [ "$TARGET_MODE" = "hmac" ]; then
+            CURRENT_WRITER_VERSION=$(echo "$CURRENT_HEALTH" | jq -r '.passwordResetRecovery.writerVersion // 0')
+            CURRENT_RECOVERY_CONFIGURED=$(echo "$CURRENT_HEALTH" | jq -r '.passwordResetRecovery.configured // false')
+            CURRENT_RECONCILER_ENABLED=$(echo "$CURRENT_HEALTH" | jq -r '.passwordResetRecovery.reconcilerEnabled // false')
+            if [ "$CURRENT_WRITER_VERSION" != "1" ]; then
+              echo "ERROR: HMAC cutover requires an expand-first recovery-aware web release"
+              exit 1
+            fi
+            if [ "$CURRENT_RECOVERY_CONFIGURED" != "true" ] || \
+               [ "$CURRENT_RECONCILER_ENABLED" != "true" ] || \
+               [ -z "$RESET_RECONCILER_JOB_APP" ]; then
+              echo "ERROR: HMAC cutover requires configured recovery and the enabled reconciler job"
+              exit 1
+            fi
+            WEB_KEYS_REF=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
+            WORKER_KEYS_REF=$(echo "$WORKER_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
+            if [ -z "$WEB_KEYS_REF" ] || [ -z "$WORKER_KEYS_REF" ]; then
+              echo "ERROR: web and worker reset recovery keys must use secret references"
+              exit 1
+            fi
+            WEB_KEYS_VAULT_URL=$(echo "$WEB_APP_JSON" | jq -r --arg ref "$WEB_KEYS_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            WORKER_KEYS_VAULT_URL=$(echo "$WORKER_APP_JSON" | jq -r --arg ref "$WORKER_KEYS_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            if [ -z "$WEB_KEYS_VAULT_URL" ] || [ "$WEB_KEYS_VAULT_URL" != "$WORKER_KEYS_VAULT_URL" ]; then
+              echo "ERROR: web and worker recovery keys must reference the same Key Vault secret"
+              exit 1
+            fi
+            WEB_ACTIVE_VALUE=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .value // empty')
+            WORKER_ACTIVE_VALUE=$(echo "$WORKER_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .value // empty')
+            WEB_ACTIVE_REF=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .secretRef // empty')
+            WORKER_ACTIVE_REF=$(echo "$WORKER_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .secretRef // empty')
+            if [ -n "$WEB_ACTIVE_VALUE" ] && [ -n "$WORKER_ACTIVE_VALUE" ]; then
+              if [ "$WEB_ACTIVE_VALUE" != "$WORKER_ACTIVE_VALUE" ]; then
+                echo "ERROR: web and worker active reset recovery key IDs do not match"
+                exit 1
+              fi
+            elif [ -n "$WEB_ACTIVE_REF" ] && [ -n "$WORKER_ACTIVE_REF" ]; then
+              WEB_ACTIVE_VAULT_URL=$(echo "$WEB_APP_JSON" | jq -r --arg ref "$WEB_ACTIVE_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+              WORKER_ACTIVE_VAULT_URL=$(echo "$WORKER_APP_JSON" | jq -r --arg ref "$WORKER_ACTIVE_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+              if [ -z "$WEB_ACTIVE_VAULT_URL" ] || [ "$WEB_ACTIVE_VAULT_URL" != "$WORKER_ACTIVE_VAULT_URL" ]; then
+                echo "ERROR: secret-backed active key IDs must reference the same Key Vault secret"
+                exit 1
+              fi
+            else
+              echo "ERROR: web and worker active reset recovery key settings do not match"
+              exit 1
+            fi
+          fi
+
+      - name: Update Container App Job - Password Reset Reconciler
+        if: env.RESET_RECONCILER_JOB_APP != ''
+        run: |
+          echo "JOBS_MUTATED=true" >> "$GITHUB_ENV"
+          az containerapp job update \
+            --name "$RESET_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA"
+
+      - name: Validate password reset reconciler before Web cutover
+        if: env.RESET_RECONCILER_JOB_APP != ''
+        run: |
+          JOB_JSON=$(az containerapp job show \
+            --name "$RESET_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          IMAGE=$(echo "$JOB_JSON" | jq -r '.properties.template.containers[0].image')
+          ARGS=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].args // []) | join(" ")')
+          TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
+          CRON=$(echo "$JOB_JSON" | jq -r '.properties.configuration.scheduleTriggerConfig.cronExpression // empty')
+          COMPLETIONS=$(echo "$JOB_JSON" | jq -r '.properties.configuration.replicaCompletionCount // 1')
+          PARALLELISM=$(echo "$JOB_JSON" | jq -r '.properties.configuration.parallelism // 1')
+          TIMEOUT=$(echo "$JOB_JSON" | jq -r '.properties.configuration.replicaTimeout // 1800')
+          ENV=$(echo "$JOB_JSON" | jq -c '.properties.template.containers[0].env // []')
+          WEB_APP_JSON=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          WORKER_APP_JSON=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          WEB_RUNTIME_ENV=$(echo "$WEB_APP_JSON" | jq -c --arg c "$WEB_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.env // [])')
+          WORKER_RUNTIME_ENV=$(echo "$WORKER_APP_JSON" | jq -c --arg c "$WORKER_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.env // [])')
+
+          if [ "$IMAGE" != "$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA" ]; then
+            echo "ERROR: password reset reconciler image mismatch"
+            exit 1
+          fi
+          if ! echo "$ARGS" | grep -q "worker:password-reset-reconcile"; then
+            echo "ERROR: password reset reconciler command mismatch"
+            exit 1
+          fi
+          if [ "$TRIGGER" != "Schedule" ]; then
+            echo "ERROR: password reset reconciler must use a Schedule trigger"
+            exit 1
+          fi
+          if ! echo "$CRON" | grep -Eq '^(\*|\*/[1-5]) \* \* \* \*$'; then
+            echo "ERROR: password reset reconciler must run at least every five minutes"
+            exit 1
+          fi
+          if [ "$COMPLETIONS" != "1" ] || [ "$PARALLELISM" != "1" ] || [ "$TIMEOUT" -gt 600 ]; then
+            echo "ERROR: password reset reconciler requires one completion, parallelism one, and timeout at most 600 seconds"
+            exit 1
+          fi
+
+          for key in DATABASE_URL REDIS_URL; do
+            SECRET_REF=$(echo "$ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
+            if [ -z "$SECRET_REF" ]; then
+              echo "ERROR: password reset reconciler requires secret-backed $key"
+              exit 1
+            fi
+            WEB_SECRET_REF=$(echo "$WEB_RUNTIME_ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
+            WORKER_SECRET_REF=$(echo "$WORKER_RUNTIME_ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
+            JOB_SECRET_URL=$(echo "$JOB_JSON" | jq -r --arg ref "$SECRET_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            WEB_SECRET_URL=$(echo "$WEB_APP_JSON" | jq -r --arg ref "$WEB_SECRET_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            WORKER_SECRET_URL=$(echo "$WORKER_APP_JSON" | jq -r --arg ref "$WORKER_SECRET_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            if [ -z "$JOB_SECRET_URL" ] || [ -z "$WEB_SECRET_URL" ] || [ -z "$WORKER_SECRET_URL" ]; then
+              echo "ERROR: reconciler, web, and worker $key must use verifiable Key Vault references"
+              exit 1
+            fi
+            if [ "$JOB_SECRET_URL" != "$WEB_SECRET_URL" ] || [ "$JOB_SECRET_URL" != "$WORKER_SECRET_URL" ]; then
+              echo "ERROR: reconciler, web, and worker $key references do not match"
+              exit 1
+            fi
+          done
+          JOB_PREFIX_REF=$(echo "$ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .secretRef // empty')
+          WEB_PREFIX_REF=$(echo "$WEB_RUNTIME_ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .secretRef // empty')
+          WORKER_PREFIX_REF=$(echo "$WORKER_RUNTIME_ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .secretRef // empty')
+          if [ -n "$JOB_PREFIX_REF" ] || [ -n "$WEB_PREFIX_REF" ] || [ -n "$WORKER_PREFIX_REF" ]; then
+            echo "ERROR: JOB_QUEUE_PREFIX must be a directly comparable non-secret value"
+            exit 1
+          fi
+          JOB_PREFIX=$(echo "$ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .value // empty')
+          WEB_PREFIX=$(echo "$WEB_RUNTIME_ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .value // empty')
+          WORKER_PREFIX=$(echo "$WORKER_RUNTIME_ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .value // empty')
+          JOB_PREFIX_PRESENT=$(echo "$ENV" | jq -r '[.[] | select(.name=="JOB_QUEUE_PREFIX")] | length')
+          WEB_PREFIX_PRESENT=$(echo "$WEB_RUNTIME_ENV" | jq -r '[.[] | select(.name=="JOB_QUEUE_PREFIX")] | length')
+          WORKER_PREFIX_PRESENT=$(echo "$WORKER_RUNTIME_ENV" | jq -r '[.[] | select(.name=="JOB_QUEUE_PREFIX")] | length')
+          if [ "$JOB_PREFIX_PRESENT" = "0" ]; then JOB_PREFIX='vaultspace:jobs:'; fi
+          if [ "$WEB_PREFIX_PRESENT" = "0" ]; then WEB_PREFIX='vaultspace:jobs:'; fi
+          if [ "$WORKER_PREFIX_PRESENT" = "0" ]; then WORKER_PREFIX='vaultspace:jobs:'; fi
+          if [ "$JOB_PREFIX" != "$WEB_PREFIX" ] || [ "$JOB_PREFIX" != "$WORKER_PREFIX" ]; then
+            echo "ERROR: reconciler, web, and worker JOB_QUEUE_PREFIX values do not match"
+            exit 1
+          fi
+          DEPLOYMENT_MODE=$(echo "$ENV" | jq -r '.[] | select(.name=="DEPLOYMENT_MODE") | .value // empty')
+          RECONCILER_ENABLED=$(echo "$ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECONCILER_ENABLED") | .value // empty')
+          if [ "$DEPLOYMENT_MODE" != "azure" ] || [ "$RECONCILER_ENABLED" != "true" ]; then
+            echo "ERROR: password reset reconciler must run in Azure mode and be explicitly enabled"
+            exit 1
+          fi
+          for forbidden in APP_URL SESSION_SECRET DATABASE_URL_ADMIN PASSWORD_RESET_RECOVERY_KEYS PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID; do
+            if echo "$ENV" | jq -e --arg key "$forbidden" '.[] | select(.name==$key)' >/dev/null; then
+              echo "ERROR: password reset reconciler has unnecessary sensitive configuration: $forbidden"
+              exit 1
+            fi
+          done
+          echo "Password reset reconciler image, bounded schedule, and minimal environment verified"
+
+      - name: Execute password reset reconciler preflight
+        if: env.RESET_RECONCILER_JOB_APP != ''
+        run: |
+          EXECUTION_NAME=$(az containerapp job start \
+            --name "$RESET_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --args "npm" "run" "worker:password-reset-preflight" \
+            --query name \
+            --output tsv)
+          if [ -z "$EXECUTION_NAME" ]; then
+            echo "ERROR: password reset reconciler did not return an execution name"
+            exit 1
+          fi
+
+          for attempt in $(seq 1 20); do
+            STATUS=$(az containerapp job execution show \
+              --name "$RESET_RECONCILER_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$EXECUTION_NAME" \
+              --query properties.status \
+              --output tsv)
+            if [ "$STATUS" = "Succeeded" ]; then
+              echo "Password reset reconciler preflight succeeded: $EXECUTION_NAME"
+              exit 0
+            fi
+            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Stopped" ]; then
+              echo "ERROR: password reset reconciler preflight ended with status $STATUS"
+              exit 1
+            fi
+            echo "Password reset reconciler preflight status: ${STATUS:-Pending} ($attempt/20)"
+            sleep 15
+          done
+
+          echo "ERROR: password reset reconciler preflight did not succeed within five minutes"
+          exit 1
+
       # Single-revision mode gives a zero-downtime cutover only after the new
       # revision is ready and eliminates the mixed-build traffic that caused the
       # post-login page failure.
       - name: Mark Web mutation start
-        run: echo "WEB_MUTATED=true" >> "$GITHUB_ENV"
+        run: |
+          echo "WEB_MUTATED=true" >> "$GITHUB_ENV"
+          if [ "$TARGET_RESET_WRITE_MODE" = "hmac" ] || [ "$PREVIOUS_RESET_WRITE_MODE" = "hmac" ]; then
+            echo "RESET_FLOW_ONLY_POSSIBLE=true" >> "$GITHUB_ENV"
+          fi
 
       - name: Normalize Web to captured stable revision
         run: |
@@ -384,7 +661,8 @@ jobs:
             --name $WEB_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
             --container-name $WEB_CONTAINER_NAME \
-            --image $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
+            --image $ACR_SERVER/vaultspace-web:$DEPLOY_SHA \
+            --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$TARGET_RESET_WRITE_MODE"
 
       - name: Route all Web traffic to the latest revision
         run: |
@@ -588,6 +866,34 @@ jobs:
             fi
             echo "✓ Database and cache live checks verified"
 
+            RESET_WRITE_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetTokens.writeMode // "unknown"')
+            RESET_RECOVERY_CONFIGURED=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetRecovery.configured // false')
+            RESET_RECONCILER_ENABLED=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetRecovery.reconcilerEnabled // false')
+            if [ "$RESET_WRITE_MODE" = "hmac" ]; then
+              if [ "$RESET_RECOVERY_CONFIGURED" != "true" ] || \
+                 [ "$RESET_RECONCILER_ENABLED" != "true" ] || \
+                 [ -z "$RESET_RECONCILER_JOB_APP" ]; then
+                echo "ERROR: HMAC reset writes require recovery keys, enabled reconciler, and RESET_RECONCILER_JOB_APP"
+                exit 1
+              fi
+              for app in "$WEB_CONTAINER_APP" "$WORKER_CONTAINER_APP"; do
+                RESET_KEYS_SECRET_REF=$(az containerapp show \
+                  --name "$app" \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --query "properties.template.containers[0].env[?name=='PASSWORD_RESET_RECOVERY_KEYS'].secretRef | [0]" \
+                  --output tsv)
+                RESET_ACTIVE_KEY_PRESENT=$(az containerapp show \
+                  --name "$app" \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --query "length(properties.template.containers[0].env[?name=='PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID'])" \
+                  --output tsv)
+                if [ -z "$RESET_KEYS_SECRET_REF" ] || [ "$RESET_ACTIVE_KEY_PRESENT" != "1" ]; then
+                  echo "ERROR: $app lacks secret-backed reset recovery keys or an active key ID"
+                  exit 1
+                fi
+              done
+            fi
+
             # Verify critical Azure capabilities
             CAN_QUEUE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canQueueJobs // false')
             CAN_CACHE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canUseDistributedCache // false')
@@ -783,7 +1089,8 @@ jobs:
               --name "$WEB_CONTAINER_APP" \
               --resource-group "$RESOURCE_GROUP" \
               --container-name "$WEB_CONTAINER_NAME" \
-              --image "$PREVIOUS_WEB_IMAGE" || ROLLBACK_FAILED=1
+              --image "$PREVIOUS_WEB_IMAGE" \
+              --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$PREVIOUS_RESET_WRITE_MODE" || ROLLBACK_FAILED=1
             az containerapp ingress traffic set \
               --name "$WEB_CONTAINER_APP" \
               --resource-group "$RESOURCE_GROUP" \
@@ -799,6 +1106,14 @@ jobs:
               --name "$LIFECYCLE_JOB_APP" \
               --resource-group "$RESOURCE_GROUP" \
               --image "$PREVIOUS_LIFECYCLE_IMAGE" || ROLLBACK_FAILED=1
+            if [ "$RESET_FLOW_ONLY_POSSIBLE" != "true" ] && \
+               [ -n "$RESET_RECONCILER_JOB_APP" ] && \
+               [ -n "$PREVIOUS_RESET_RECONCILER_IMAGE" ]; then
+              az containerapp job update \
+                --name "$RESET_RECONCILER_JOB_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "$PREVIOUS_RESET_RECONCILER_IMAGE" || ROLLBACK_FAILED=1
+            fi
           fi
 
           # A verified forward worker is backward-compatible with the restored
@@ -851,6 +1166,14 @@ jobs:
               fi
               sleep 10
             done
+          fi
+
+          # Once an HMAC web revision could have emitted flow-only reset jobs,
+          # an older worker or reconciler may not understand the queue schema.
+          # Keep the forward-compatible consumers in place and fail recovery
+          # loudly if they cannot be restored to health.
+          if [ "$RESET_FLOW_ONLY_POSSIBLE" = "true" ]; then
+            USE_PRIOR_WORKER=false
           fi
 
           if [ "$USE_PRIOR_WORKER" = "true" ]; then

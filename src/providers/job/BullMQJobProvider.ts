@@ -88,6 +88,10 @@ export class BullMQJobProvider implements JobProvider {
     return this.queues.get(queueName)!;
   }
 
+  async waitUntilReady(queueName: string): Promise<void> {
+    await this.getQueue(queueName).waitUntilReady();
+  }
+
   /**
    * Add a job to the queue
    */
@@ -97,6 +101,9 @@ export class BullMQJobProvider implements JobProvider {
     data: T,
     options?: JobOptions
   ): Promise<string> {
+    if (options?.jobId?.includes(':')) {
+      throw new Error('BullMQ custom job IDs must not contain a colon');
+    }
     const queue = this.getQueue(queueName);
     const jobOptions = {
       ...(options?.delay !== undefined ? { delay: options.delay } : {}),

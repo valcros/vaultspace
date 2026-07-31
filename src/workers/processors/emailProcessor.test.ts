@@ -13,6 +13,10 @@ vi.mock('@/providers', () => ({
 const mockDocumentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 const mockResetFindUnique = vi.fn();
 const mockResetUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+const mockExecuteRaw = vi.fn().mockResolvedValue(1);
+const mockEventCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+const mockEventFindUnique = vi.fn().mockResolvedValue({ id: 'event-1', organizationId: 'org-1' });
+const mockTransaction = vi.fn();
 const mockWithOrgContext = vi.fn(
   async (_organizationId: string, operation: (tx: unknown) => Promise<unknown>) =>
     operation({ document: { updateMany: mockDocumentUpdateMany } })
@@ -24,14 +28,17 @@ vi.mock('@/lib/db', () => ({
       findUnique: (...args: unknown[]) => mockResetFindUnique(...args),
       updateMany: (...args: unknown[]) => mockResetUpdateMany(...args),
     },
+    $transaction: (...args: unknown[]) => mockTransaction(...args),
   },
   withOrgContext: (organizationId: string, operation: (tx: unknown) => Promise<unknown>) =>
     mockWithOrgContext(organizationId, operation),
 }));
 
 const mockCaptureSecurityAudit = vi.fn().mockResolvedValue('captured');
+const mockCreateSecurityAuditEvent = vi.fn().mockResolvedValue('event-1');
 vi.mock('@/lib/audit/securityAudit', () => ({
   captureSecurityAudit: (...args: unknown[]) => mockCaptureSecurityAudit(...args),
+  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
 }));
 
 // ------ EmailNotificationService mock ---------------------------------------
@@ -88,6 +95,13 @@ function makeNotificationJob(overrides: Record<string, unknown> = {}) {
 describe('processEmailJob — template rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockEmailSendEmail.mockResolvedValue({ messageId: 'msg-1' });
   });
 
@@ -204,6 +218,13 @@ describe('processEmailJob — template rendering', () => {
 describe('processEmailJob — raw HTML fallback', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockEmailSendEmail.mockResolvedValue({ messageId: 'msg-1' });
   });
 
@@ -247,6 +268,13 @@ describe('processEmailJob — raw HTML fallback', () => {
 describe('processEmailJob — send failure', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockEmailSendEmail.mockRejectedValue(new Error('SMTP unreachable'));
   });
 
@@ -258,6 +286,13 @@ describe('processEmailJob — send failure', () => {
 describe('processEmailJob — password reset lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockResetFindUnique.mockResolvedValue({
       deliveryStatus: 'QUEUED',
       deliveryAttempts: 0,
@@ -296,6 +331,17 @@ describe('processEmailJob — password reset lifecycle', () => {
         providerMessageId: 'acs-message-1',
       }),
     });
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        correlationId: 'flow-1',
+        idempotencyKey: 'password-reset-flow-1-accepted-org-1',
+        metadata: expect.objectContaining({
+          outcome: 'accepted',
+          providerMessageId: 'acs-message-1',
+        }),
+      })
+    );
   });
 
   it('does not submit a reset email again after provider acceptance', async () => {
@@ -430,6 +476,13 @@ describe('processEmailJob — password reset lifecycle', () => {
 describe('processEmailJob — recipient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockEmailSendEmail.mockResolvedValue({ messageId: 'msg-1' });
   });
 
