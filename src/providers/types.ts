@@ -5,6 +5,8 @@
  * This enables swappable implementations without changing business logic.
  */
 
+import type { EmailProviderName } from './email/errors';
+
 // =============================================================================
 // Storage Provider
 // =============================================================================
@@ -74,6 +76,9 @@ export interface EmailAttachment {
 }
 
 export interface EmailProvider {
+  /** Immutable identity of this instantiated transport. */
+  readonly providerName: EmailProviderName;
+
   /**
    * Send an email
    */

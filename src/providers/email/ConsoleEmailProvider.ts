@@ -7,6 +7,8 @@
 import type { EmailOptions, EmailProvider } from '../types';
 
 export class ConsoleEmailProvider implements EmailProvider {
+  readonly providerName = 'console' as const;
+
   async sendEmail(options: EmailOptions): Promise<{ messageId: string }> {
     const messageId = `console-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 

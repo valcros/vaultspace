@@ -281,6 +281,9 @@ export async function POST(request: NextRequest) {
             requestId: reqContext.requestId,
             organizationId: lockedSenderOrg?.organization.id ?? null,
             deliveryStatus: 'PENDING',
+            auditOrganizationIds: lockedMemberships
+              .map((membership) => membership.organization.id)
+              .sort(),
           },
         });
         if (recoveryEnvelope) {
@@ -357,6 +360,7 @@ export async function POST(request: NextRequest) {
       const organizationIds = memberships.map((membership) => membership.organization.id);
 
       const providers = getProviders();
+      const provider = providers.email.providerName;
       const orgName = senderOrg?.organization.name ?? 'VaultSpace';
       const senderFrom = senderOrg?.organization.emailSenderAddress || undefined;
       const senderName =
@@ -565,6 +569,8 @@ export async function POST(request: NextRequest) {
             deliveryStatus: 'SENDING',
             deliveryAttempts: { increment: 1 },
             lastDeliveryAttemptAt: new Date(),
+            provider,
+            providerOperationId: flowId,
           },
         });
         if (sendClaim.count !== 1) {
@@ -590,7 +596,7 @@ export async function POST(request: NextRequest) {
             sensitiveContent: true,
           });
         } catch (error) {
-          const deliveryError = normalizeEmailError(error, 'unknown');
+          const deliveryError = normalizeEmailError(error, provider);
           await db.passwordResetToken.updateMany({
             where: { id: flowId, usedAt: null },
             data: {
@@ -648,7 +654,7 @@ export async function POST(request: NextRequest) {
               where: { id: flowId },
               data: {
                 deliveryStatus: 'PROVIDER_ACCEPTED',
-                provider: 'configured',
+                provider,
                 providerOperationId: flowId,
                 providerMessageId: result.messageId,
                 providerAcceptedAt: new Date(),
@@ -681,7 +687,7 @@ export async function POST(request: NextRequest) {
                   outcome: 'accepted',
                   stage: 'provider_submission',
                   targetUserId: deliveryUser.id,
-                  provider: 'configured',
+                  provider,
                   providerOperationId: flowId,
                   providerMessageId: result.messageId,
                 },

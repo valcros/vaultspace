@@ -19,6 +19,7 @@ export interface SmtpConfig {
 }
 
 export class SmtpEmailProvider implements EmailProvider {
+  readonly providerName = 'smtp' as const;
   private transporter: Transporter;
   private from: string;
 

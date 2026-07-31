@@ -73,13 +73,15 @@ describe('password reset reconciler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env['REDIS_URL'] = 'redis://localhost:6379';
+    delete process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'];
+    delete process.env['PASSWORD_RESET_PROVIDER_CORRELATION_CUTOVER_AT'];
     mocks.queryRaw.mockResolvedValue([]);
     mocks.executeRaw.mockResolvedValue(1);
     mocks.recoveryUpdateMany.mockResolvedValue({ count: 1 });
     mocks.recoveryCreate.mockResolvedValue({});
     mocks.recoveryUpdate.mockResolvedValue({ enqueueStatus: 'PREFLIGHT_VERIFIED' });
     mocks.tokenCreate.mockResolvedValue({});
-    mocks.tokenUpdate.mockResolvedValue({});
+    mocks.tokenUpdate.mockImplementation(async (input) => input.data);
     mocks.tokenUpdateMany.mockResolvedValue({ count: 1 });
     mocks.recoveryFindUnique.mockResolvedValue({ wipedAt: null, sendFence: 4 });
     mocks.tokenFindUnique.mockResolvedValue({
@@ -155,9 +157,22 @@ describe('password reset reconciler', () => {
   });
 
   it('preflights Redis and rolls back runtime recovery and audit mutations', async () => {
-    mocks.queryRaw.mockResolvedValueOnce([
-      { current_user: 'vaultspace_app', bypasses_rls: false, is_superuser: false },
-    ]);
+    mocks.queryRaw
+      .mockResolvedValueOnce([
+        {
+          duplicateAcsMessageIdGroups: 0,
+          duplicateAcsOperationIdGroups: 0,
+          configuredProviderRows: 0,
+          acceptedAcsRowsWithoutMessageId: 0,
+          messageIdRowsWithoutAcceptedAt: 0,
+          correlationRowsWithoutProvider: 0,
+          acsRowsWithoutAuditOrganizationSnapshot: 0,
+          partialProviderFinalProjectionRows: 0,
+        },
+      ])
+      .mockResolvedValueOnce([
+        { current_user: 'vaultspace_app', bypasses_rls: false, is_superuser: false },
+      ]);
 
     await preflightPasswordResetRecovery();
 
@@ -175,6 +190,14 @@ describe('password reset reconciler', () => {
         ciphertext: expect.any(Buffer),
       }),
     });
+    expect(mocks.tokenUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          providerFinalStatus: 'PREFLIGHT',
+          providerFinalEventIdFingerprint: '0'.repeat(64),
+        }),
+      })
+    );
     expect(mocks.recoveryUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { enqueueStatus: 'PREFLIGHT_VERIFIED' } })
     );
@@ -183,14 +206,140 @@ describe('password reset reconciler', () => {
   });
 
   it('rejects a superuser database role during preflight', async () => {
-    mocks.queryRaw.mockResolvedValueOnce([
-      { current_user: 'postgres', bypasses_rls: false, is_superuser: true },
-    ]);
+    mocks.queryRaw
+      .mockResolvedValueOnce([
+        {
+          duplicateAcsMessageIdGroups: 0,
+          duplicateAcsOperationIdGroups: 0,
+          configuredProviderRows: 0,
+          acceptedAcsRowsWithoutMessageId: 0,
+          messageIdRowsWithoutAcceptedAt: 0,
+          correlationRowsWithoutProvider: 0,
+          acsRowsWithoutAuditOrganizationSnapshot: 0,
+          partialProviderFinalProjectionRows: 0,
+        },
+      ])
+      .mockResolvedValueOnce([
+        { current_user: 'postgres', bypasses_rls: false, is_superuser: true },
+      ]);
 
     await expect(preflightPasswordResetRecovery()).rejects.toThrow(/non-superuser/i);
 
     expect(mocks.tokenCreate).not.toHaveBeenCalled();
     expect(mocks.closeJobProvider).toHaveBeenCalledOnce();
+  });
+
+  it('fails preflight before mutation when ACS message identifiers are duplicated', async () => {
+    mocks.queryRaw.mockResolvedValueOnce([
+      {
+        duplicateAcsMessageIdGroups: 1,
+        duplicateAcsOperationIdGroups: 0,
+        configuredProviderRows: 2,
+        acceptedAcsRowsWithoutMessageId: 0,
+        messageIdRowsWithoutAcceptedAt: 0,
+        correlationRowsWithoutProvider: 0,
+        acsRowsWithoutAuditOrganizationSnapshot: 0,
+        partialProviderFinalProjectionRows: 0,
+      },
+    ]);
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(
+      /unsafe password reset provider correlation state/i
+    );
+
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+    expect(mocks.closeJobProvider).toHaveBeenCalledOnce();
+  });
+
+  it('fails preflight for an accepted ACS row without a usable message identifier', async () => {
+    mocks.queryRaw.mockResolvedValueOnce([
+      {
+        duplicateAcsMessageIdGroups: 0,
+        duplicateAcsOperationIdGroups: 0,
+        configuredProviderRows: 0,
+        acceptedAcsRowsWithoutMessageId: 1,
+        messageIdRowsWithoutAcceptedAt: 0,
+        correlationRowsWithoutProvider: 0,
+        acsRowsWithoutAuditOrganizationSnapshot: 0,
+        partialProviderFinalProjectionRows: 0,
+      },
+    ]);
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(/unsafe password reset/i);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+  });
+
+  it('allows legacy configured rows only as an explicit warning inventory', async () => {
+    mocks.queryRaw
+      .mockResolvedValueOnce([
+        {
+          duplicateAcsMessageIdGroups: 0,
+          duplicateAcsOperationIdGroups: 0,
+          configuredProviderRows: 2,
+          acceptedAcsRowsWithoutMessageId: 0,
+          messageIdRowsWithoutAcceptedAt: 0,
+          correlationRowsWithoutProvider: 0,
+          acsRowsWithoutAuditOrganizationSnapshot: 0,
+          partialProviderFinalProjectionRows: 0,
+        },
+      ])
+      .mockResolvedValueOnce([
+        { current_user: 'vaultspace_app', bypasses_rls: false, is_superuser: false },
+      ]);
+
+    await expect(preflightPasswordResetRecovery()).resolves.toBeUndefined();
+    expect(mocks.tokenCreate).toHaveBeenCalledOnce();
+  });
+
+  it('blocks provider-final projection when an ACS row lacks a captured audit scope', async () => {
+    process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] = 'true';
+    process.env['PASSWORD_RESET_PROVIDER_CORRELATION_CUTOVER_AT'] = '2026-07-31T03:00:00.000Z';
+    mocks.queryRaw.mockResolvedValueOnce([
+      {
+        duplicateAcsMessageIdGroups: 0,
+        duplicateAcsOperationIdGroups: 0,
+        configuredProviderRows: 0,
+        acceptedAcsRowsWithoutMessageId: 0,
+        messageIdRowsWithoutAcceptedAt: 0,
+        correlationRowsWithoutProvider: 0,
+        acsRowsWithoutAuditOrganizationSnapshot: 1,
+        partialProviderFinalProjectionRows: 0,
+      },
+    ]);
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(/unsafe password reset/i);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit correlation cutover before provider-final projection', async () => {
+    process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] = 'true';
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(
+      /PASSWORD_RESET_PROVIDER_CORRELATION_CUTOVER_AT is required/i
+    );
+    expect(mocks.queryRaw).not.toHaveBeenCalled();
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+  });
+
+  it('blocks post-cutover legacy provider labels during a rolling deployment', async () => {
+    process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] = 'true';
+    process.env['PASSWORD_RESET_PROVIDER_CORRELATION_CUTOVER_AT'] = '2026-07-31T03:00:00.000Z';
+    mocks.queryRaw.mockResolvedValueOnce([
+      {
+        duplicateAcsMessageIdGroups: 0,
+        duplicateAcsOperationIdGroups: 0,
+        configuredProviderRows: 1,
+        postCutoverConfiguredProviderRows: 1,
+        acceptedAcsRowsWithoutMessageId: 0,
+        messageIdRowsWithoutAcceptedAt: 0,
+        correlationRowsWithoutProvider: 0,
+        acsRowsWithoutAuditOrganizationSnapshot: 0,
+        partialProviderFinalProjectionRows: 0,
+      },
+    ]);
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(/unsafe password reset/i);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
   });
 
   it('fails closed before constructing a queue client when Redis is missing', async () => {

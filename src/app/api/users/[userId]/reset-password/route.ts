@@ -99,6 +99,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     // Fail fast when the platform cannot send email at all: an admin action must
     // not mint a token and report success when nothing will be delivered.
     const providers = getProviders();
+    const provider = providers.email.providerName;
     const canAsync = hasCapability('canSendAsyncEmail');
     const canSync = hasCapability('canSendSyncEmail');
     if (getPasswordResetTokenWriteMode() === 'hmac' && !canAsync) {
@@ -226,6 +227,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         ).map((membership) => membership.organizationId)
       );
       auditOrganizationIds.add(session.organizationId);
+      const auditScope = [...auditOrganizationIds].sort();
       await tx.passwordResetToken.updateMany({
         where: { userId, usedAt: null },
         data: { usedAt: new Date() },
@@ -252,6 +254,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           requestId: reqContext.requestId,
           organizationId: session.organizationId,
           deliveryStatus: 'PENDING',
+          auditOrganizationIds: auditScope,
         },
       });
       if (recoveryEnvelope) {
@@ -275,7 +278,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         select: { name: true, emailSenderName: true, emailSenderAddress: true },
       });
 
-      for (const organizationId of auditOrganizationIds) {
+      for (const organizationId of auditScope) {
         await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
         // The reset is account-global, so each affected organization receives
         // the request fact as well as terminal facts for superseded flows.
@@ -326,6 +329,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         flowId,
         token: tokenPair.publicToken,
         recoverable: recoveryEnvelope !== null,
+        auditOrganizationIds: auditScope,
         user: lockedUserOrg.user,
         org,
       };
@@ -376,7 +380,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                   flowId: result.flowId,
                   userId,
                   requestId: reqContext.requestId,
-                  organizationIds: [session.organizationId],
+                  organizationIds: result.auditOrganizationIds,
                 },
               },
               {
@@ -429,6 +433,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
             deliveryStatus: 'SENDING',
             deliveryAttempts: 1,
             lastDeliveryAttemptAt: new Date(),
+            provider,
+            providerOperationId: result.flowId,
           },
         });
         if (sendClaim.count !== 1) {
@@ -476,7 +482,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
               where: { id: result.flowId },
               data: {
                 deliveryStatus: 'PROVIDER_ACCEPTED',
-                provider: 'configured',
+                provider,
                 providerOperationId: result.flowId,
                 providerMessageId: sendResult.messageId,
                 providerAcceptedAt: new Date(),
@@ -495,24 +501,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 enqueueStatus: 'PROVIDER_ACCEPTED',
               },
             });
-            await tx.$executeRaw`SELECT set_config('app.current_org_id', ${session.organizationId}, true)`;
-            await createSecurityAuditEvent(tx, {
-              organizationId: session.organizationId,
-              eventType: 'USER_PASSWORD_RESET',
-              actorType: 'SYSTEM',
-              requestId: reqContext.requestId,
-              correlationId: result.flowId,
-              idempotencyKey: `password-reset-${result.flowId}-accepted-${session.organizationId}`,
-              description: 'Password reset email was accepted by the provider',
-              metadata: {
-                outcome: 'accepted',
-                stage: 'provider_submission',
-                targetUserId: userId,
-                provider: 'configured',
-                providerOperationId: result.flowId,
-                providerMessageId: sendResult.messageId,
-              },
-            });
+            for (const organizationId of result.auditOrganizationIds) {
+              await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+              await createSecurityAuditEvent(tx, {
+                organizationId,
+                eventType: 'USER_PASSWORD_RESET',
+                actorType: 'SYSTEM',
+                requestId: reqContext.requestId,
+                correlationId: result.flowId,
+                idempotencyKey: `password-reset-${result.flowId}-accepted-${organizationId}`,
+                description: 'Password reset email was accepted by the provider',
+                metadata: {
+                  outcome: 'accepted',
+                  stage: 'provider_submission',
+                  targetUserId: userId,
+                  auditScopeSource: 'captured_snapshot',
+                  provider,
+                  providerOperationId: result.flowId,
+                  providerMessageId: sendResult.messageId,
+                },
+              });
+            }
           });
         } catch (lifecycleError) {
           console.error(
@@ -529,7 +538,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
       }
     } catch (emailErr) {
-      const deliveryError = normalizeEmailError(emailErr, 'unknown');
+      const deliveryError = normalizeEmailError(emailErr, provider);
       console.error(
         JSON.stringify({
           component: 'admin-password-reset',
@@ -581,21 +590,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
               nextEnqueueAt: new Date(Date.now() + 30_000),
             },
           });
-          await createSecurityAuditEvent(tx, {
-            organizationId: session.organizationId,
-            eventType: 'USER_PASSWORD_RESET',
-            actorType: 'SYSTEM',
-            requestId: reqContext.requestId,
-            correlationId: result.flowId,
-            idempotencyKey: `password-reset-${result.flowId}-queue-recovery-pending-${session.organizationId}`,
-            description: 'Password reset email is pending queue recovery',
-            metadata: {
-              outcome: 'pending',
-              stage: 'queue',
-              targetUserId: userId,
-              errorCode: 'EMAIL_QUEUE_ERROR',
-            },
-          });
+          for (const organizationId of result.auditOrganizationIds) {
+            await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+            await createSecurityAuditEvent(tx, {
+              organizationId,
+              eventType: 'USER_PASSWORD_RESET',
+              actorType: 'SYSTEM',
+              requestId: reqContext.requestId,
+              correlationId: result.flowId,
+              idempotencyKey: `password-reset-${result.flowId}-queue-recovery-pending-${organizationId}`,
+              description: 'Password reset email is pending queue recovery',
+              metadata: {
+                outcome: 'pending',
+                stage: 'queue',
+                targetUserId: userId,
+                auditScopeSource: 'captured_snapshot',
+                configuredProvider: provider,
+                errorCode: 'EMAIL_QUEUE_ERROR',
+              },
+            });
+          }
         });
         return NextResponse.json({ success: true, deliveryPending: true }, { status: 202 });
       }
@@ -643,21 +657,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
           })
         );
       }
-      await captureSecurityAudit({
-        organizationId: session.organizationId,
-        eventType: 'USER_PASSWORD_RESET',
-        actorType: 'SYSTEM',
-        requestId: reqContext.requestId,
-        correlationId: result.flowId,
-        description: 'Password reset email could not be queued or submitted',
-        metadata: {
-          outcome: 'failure',
-          stage: canAsync ? 'queue' : 'provider_submission',
-          targetUserId: userId,
-          errorCode: deliveryError.code,
-          retryable: deliveryError.retryable,
-        },
-      });
+      await Promise.all(
+        result.auditOrganizationIds.map((organizationId) =>
+          captureSecurityAudit({
+            organizationId,
+            eventType: 'USER_PASSWORD_RESET',
+            actorType: 'SYSTEM',
+            requestId: reqContext.requestId,
+            correlationId: result.flowId,
+            description: 'Password reset email could not be queued or submitted',
+            metadata: {
+              outcome: 'failure',
+              stage: canAsync ? 'queue' : 'provider_submission',
+              targetUserId: userId,
+              auditScopeSource: 'captured_snapshot',
+              provider,
+              errorCode: deliveryError.code,
+              retryable: deliveryError.retryable,
+            },
+          })
+        )
+      );
       return NextResponse.json(
         { error: 'Could not send the reset email. Please try again.' },
         { status: 502 }

@@ -48,8 +48,9 @@ vi.mock('@/lib/db', () => {
 });
 
 vi.mock('@/providers', () => ({
+  getConfiguredEmailProviderName: () => 'acs',
   getProviders: () => ({
-    email: { sendEmail: mocks.sendEmail },
+    email: { providerName: 'acs', sendEmail: mocks.sendEmail },
     job: { addJob: mocks.addJob },
   }),
 }));
@@ -294,6 +295,11 @@ describe('password reset recovery delivery processor', () => {
 
     await expect(processPasswordResetDeliveryJob(job(flowId))).resolves.toBeUndefined();
 
+    expect(mocks.tokenUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: 'acs', providerOperationId: flowId }),
+      })
+    );
     expect(mocks.tokenUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ deliveryStatus: 'ACCEPTANCE_UNKNOWN' }),
@@ -495,6 +501,53 @@ describe('password reset recovery delivery processor', () => {
       })
     );
     expect(mocks.sendEmail).toHaveBeenCalledOnce();
+  });
+
+  it('does not switch providers when a recoverable delivery is retried', async () => {
+    const { flowId, reset } = arrange();
+    reset.deliveryStatus = 'RECOVERY_BLOCKED_CONFIGURATION';
+    Object.assign(reset, { provider: 'smtp', deliveryAttempts: 0 });
+    Object.assign(reset.recovery, { enqueueStatus: 'RECOVERY_BLOCKED_CONFIGURATION' });
+    mocks.tokenFindUnique.mockReset();
+    mocks.tokenFindUnique.mockResolvedValueOnce({ userId: reset.userId });
+    mocks.tokenFindUnique.mockResolvedValueOnce(reset);
+
+    await processPasswordResetDeliveryJob(job(flowId));
+
+    expect(mocks.tokenUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: flowId, provider: 'smtp' }),
+        data: expect.objectContaining({
+          deliveryStatus: 'PROVIDER_CONFIGURATION_MISMATCH',
+          deliveryErrorCode: 'PROVIDER_CHANGED_DURING_RETRY',
+        }),
+      })
+    );
+    expect(mocks.recoveryUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ flowId, wipedAt: null }),
+        data: expect.objectContaining({
+          enqueueStatus: 'PROVIDER_CONFIGURATION_MISMATCH',
+          ciphertext: null,
+          keyId: null,
+          nonce: null,
+          authTag: null,
+          wipedAt: expect.any(Date),
+        }),
+      })
+    );
+    expect(mocks.eventCreateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          idempotencyKey: 'password-reset-flow-1-provider-mismatch-1-org-1',
+          metadata: expect.objectContaining({
+            previousProvider: 'smtp',
+            configuredProvider: 'acs',
+          }),
+        }),
+      })
+    );
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
   });
 
   it('records a conflict and refuses provider acceptance with the wrong fence', async () => {

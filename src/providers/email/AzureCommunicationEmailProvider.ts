@@ -15,6 +15,7 @@ export interface AzureCommunicationEmailConfig {
 }
 
 export class AzureCommunicationEmailProvider implements EmailProvider {
+  readonly providerName = 'acs' as const;
   private client: EmailClient;
   private senderAddress: string;
 
