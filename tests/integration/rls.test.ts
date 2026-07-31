@@ -27,6 +27,7 @@ import { PrismaClient, UserRole } from '@prisma/client';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { withOrgContext, db, setBootstrapContext } from '@/lib/db';
 import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
+import { revokeAndVerifyProviderInboxAccess } from '@/lib/integrations/providerInboxDatabasePrivileges';
 import { getPermissionEngine } from '@/lib/permissions';
 import { createEventBus } from '@/lib/events/EventBus';
 
@@ -225,6 +226,72 @@ describe('RLS Enforcement', () => {
       `;
 
       expect(roomsWithoutContext).toHaveLength(0);
+    });
+
+    it('denies the ordinary application role every provider inbox privilege', async () => {
+      const inaccessibleId = `rls-provider-inbox-${randomUUID()}`;
+      await expect(db.providerEventInbox.findMany({ take: 1 })).rejects.toThrow();
+      await expect(
+        db.providerEventInbox.create({
+          data: {
+            id: inaccessibleId,
+            provider: 'acs',
+            eventType: 'RLS_TEST',
+            eventIdFingerprint: '1'.repeat(64),
+            payloadFingerprint: '2'.repeat(64),
+            payloadFingerprintKeyId: 'rls-test',
+            topicFingerprint: '3'.repeat(64),
+            dataVersion: '1.0',
+            metadataVersion: '1',
+            eventAt: new Date(),
+          },
+        })
+      ).rejects.toThrow();
+      await expect(
+        db.providerEventInbox.updateMany({
+          where: { id: inaccessibleId },
+          data: { lastErrorCode: 'RLS_TEST' },
+        })
+      ).rejects.toThrow();
+      await expect(
+        db.providerEventInbox.deleteMany({ where: { id: inaccessibleId } })
+      ).rejects.toThrow();
+    });
+
+    it('rejects SET ROLE reachability even when vaultspace_app is NOINHERIT', async () => {
+      const reachableRole = 'vaultspace_app_set_role_test';
+      await rawPrisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${reachableRole}') THEN
+            CREATE ROLE ${reachableRole} NOLOGIN;
+          END IF;
+        END
+        $$
+      `);
+      await rawPrisma.$executeRawUnsafe(`REVOKE ${reachableRole} FROM vaultspace_app`);
+      await rawPrisma.$executeRawUnsafe(
+        `REVOKE ALL PRIVILEGES ON public.provider_event_inbox FROM ${reachableRole}`
+      );
+      await rawPrisma.$executeRawUnsafe('ALTER ROLE vaultspace_app NOINHERIT');
+      await rawPrisma.$executeRawUnsafe(
+        `GRANT SELECT ON public.provider_event_inbox TO ${reachableRole}`
+      );
+      await rawPrisma.$executeRawUnsafe(`GRANT ${reachableRole} TO vaultspace_app`);
+      try {
+        await expect(
+          revokeAndVerifyProviderInboxAccess(rawPrisma, 'vaultspace_app')
+        ).rejects.toMatchObject({ code: 'PROVIDER_INBOX_APPLICATION_ROLE_ACCESS_REMAINS' });
+      } finally {
+        await rawPrisma.$executeRawUnsafe(`REVOKE ${reachableRole} FROM vaultspace_app`);
+        await rawPrisma.$executeRawUnsafe(
+          `REVOKE ALL PRIVILEGES ON public.provider_event_inbox FROM ${reachableRole}`
+        );
+        await rawPrisma.$executeRawUnsafe('ALTER ROLE vaultspace_app INHERIT');
+      }
+      await expect(
+        revokeAndVerifyProviderInboxAccess(rawPrisma, 'vaultspace_app')
+      ).resolves.toBeUndefined();
     });
   });
 

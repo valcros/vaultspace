@@ -36,6 +36,7 @@ if (process.env['NODE_ENV'] !== 'production') {
 
 declare global {
   var prismaBootstrap: PrismaClient | undefined;
+  var prismaProviderIngress: PrismaClient | undefined;
 }
 
 /**
@@ -64,6 +65,26 @@ export const bootstrapDb =
 
 if (process.env['NODE_ENV'] !== 'production') {
   globalThis.prismaBootstrap = bootstrapDb;
+}
+
+/** Dedicated least-privilege client for the organization-independent provider
+ * receipt inbox. Production must use a database role limited to that table.
+ */
+export const providerIngressDb =
+  globalThis.prismaProviderIngress ??
+  new PrismaClient({
+    log: process.env['NODE_ENV'] === 'development' ? ['error', 'warn'] : ['error'],
+    datasources: {
+      db: {
+        url:
+          process.env['EVENT_GRID_INGRESS_DATABASE_URL'] ||
+          (process.env['NODE_ENV'] === 'production' ? '' : process.env['DATABASE_URL'] || ''),
+      },
+    },
+  });
+
+if (process.env['NODE_ENV'] !== 'production') {
+  globalThis.prismaProviderIngress = providerIngressDb;
 }
 
 /**

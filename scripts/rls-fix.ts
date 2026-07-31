@@ -18,6 +18,7 @@
  *     npx tsx scripts/rls-fix.ts
  */
 import { PrismaClient } from '@prisma/client';
+import { revokeAndVerifyProviderInboxAccess } from '../src/lib/integrations/providerInboxDatabasePrivileges';
 
 const APP_ROLE = 'vaultspace_app';
 
@@ -117,6 +118,12 @@ async function main() {
       console.log(`  SKIPPED: REVOKE UPDATE/DELETE on ${table} (${(err as Error).message})`);
     }
   }
+
+  // The authenticated provider inbox is a global security ledger with its own
+  // isolated database identity. The ordinary tenant application role must not
+  // be able to read, create, modify, or delete its rows.
+  await revokeAndVerifyProviderInboxAccess(prisma, APP_ROLE);
+  console.log(`  REVOKED AND VERIFIED ALL: provider_event_inbox from ${APP_ROLE}`);
 
   console.log('\n=== Step 5: Verify ===');
   const verify = await prisma.$queryRawUnsafe<

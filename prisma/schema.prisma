@@ -1462,6 +1462,51 @@ model PasswordResetRecovery {
   @@map("password_reset_recoveries")
 }
 
+// Organization-independent, authenticated provider-event receipt ledger.
+// First-seen evidence is immutable; later workers may update only processing,
+// lease, and conflict metadata. Raw provider payloads and recipient PII are not
+// stored in this table.
+model ProviderEventInbox {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  provider                String    @db.VarChar(32)
+  eventType               String    @db.VarChar(100)
+  eventIdFingerprint      String    @db.VarChar(64)
+  payloadFingerprint      String    @db.VarChar(64)
+  payloadFingerprintKeyId String    @db.VarChar(64)
+  topicFingerprint        String    @db.VarChar(64)
+  providerMessageId       String?   @db.VarChar(255)
+  providerStatus          String?   @db.VarChar(32)
+  dataVersion             String    @db.VarChar(16)
+  metadataVersion         String    @db.VarChar(16)
+  eventAt                 DateTime
+  deliveryAttemptAt       DateTime?
+  receivedAt              DateTime  @default(now())
+
+  processingStatus         String    @default("PENDING") @db.VarChar(32)
+  processingAttempts       Int       @default(0)
+  nextProcessingAt         DateTime  @default(now())
+  processingLeaseId        String?   @db.VarChar(64)
+  processingLeaseExpiresAt DateTime?
+  processedAt              DateTime?
+  lastErrorCode            String?   @db.VarChar(100)
+  quarantineReasonCodes    String[]  @default([]) @db.VarChar(100)
+
+  conflictCount                     Int       @default(0)
+  firstConflictAt                   DateTime?
+  conflictingPayloadFingerprint     String?   @db.VarChar(64)
+  lastConflictAt                    DateTime?
+  lastConflictingPayloadFingerprint String?   @db.VarChar(64)
+
+  @@unique([provider, eventIdFingerprint])
+  @@index([processingStatus, nextProcessingAt, processingLeaseExpiresAt])
+  @@index([provider, providerMessageId])
+  @@index([receivedAt])
+  @@map("provider_event_inbox")
+}
+
 // EmailVerificationToken (Email Verification)
 model EmailVerificationToken {
   id        String   @id @default(cuid())
