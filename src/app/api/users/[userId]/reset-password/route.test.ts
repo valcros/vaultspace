@@ -34,6 +34,8 @@ vi.mock('@/workers/types', () => ({
   PASSWORD_RESET_EMAIL_JOB_OPTIONS: {
     attempts: 5,
     backoff: { type: 'exponential', delay: 60_000 },
+    removeOnComplete: true,
+    removeOnFail: true,
   },
 }));
 
@@ -60,10 +62,14 @@ describe('POST /api/users/:userId/reset-password', () => {
     user: { email: 'admin@example.com' },
   };
   const OLD_APP_URL = process.env['APP_URL'];
+  const OLD_SESSION_SECRET = process.env['SESSION_SECRET'];
+  const OLD_WRITE_MODE = process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'];
 
   beforeEach(() => {
     vi.clearAllMocks();
     process.env['APP_URL'] = 'https://app.example.com';
+    process.env['SESSION_SECRET'] = 'test-session-secret';
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
     mockRequireAuth.mockResolvedValue(adminSession as Session);
     mockHasCapability.mockImplementation((cap) => cap === 'canSendAsyncEmail');
     mockGetProviders.mockReturnValue({
@@ -78,6 +84,16 @@ describe('POST /api/users/:userId/reset-password', () => {
 
   afterEach(() => {
     process.env['APP_URL'] = OLD_APP_URL;
+    if (OLD_SESSION_SECRET === undefined) {
+      delete process.env['SESSION_SECRET'];
+    } else {
+      process.env['SESSION_SECRET'] = OLD_SESSION_SECRET;
+    }
+    if (OLD_WRITE_MODE === undefined) {
+      delete process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'];
+    } else {
+      process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = OLD_WRITE_MODE;
+    }
   });
 
   function resetTx(userOverride: Record<string, unknown> = {}, recentToken: unknown = null) {
@@ -143,6 +159,17 @@ describe('POST /api/users/:userId/reset-password', () => {
     // withOrgContext is never entered — token/tx work is skipped entirely.
     expect(mockWithOrgContext).not.toHaveBeenCalled();
     expect(tx.passwordResetToken.create).not.toHaveBeenCalled();
+  });
+
+  it('fails before provider or transaction work when the reset secret is missing', async () => {
+    delete process.env['SESSION_SECRET'];
+
+    const res = await POST(req(), ctx);
+
+    expect(res.status).toBe(500);
+    expect(mockGetProviders).not.toHaveBeenCalled();
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(mockAddJob).not.toHaveBeenCalled();
   });
 
   it('returns 404 when the target is not a member of the org', async () => {
@@ -283,7 +310,7 @@ describe('POST /api/users/:userId/reset-password', () => {
       data: expect.objectContaining({
         id: expect.any(String),
         userId: 'user-2',
-        token: expect.any(String),
+        token: expect.stringMatching(/^prh1:[a-f0-9]{64}$/),
         expiresAt: expect.any(Date),
         requestId: 'req-admin-reset',
         organizationId: 'org-1',
@@ -312,7 +339,7 @@ describe('POST /api/users/:userId/reset-password', () => {
         from: 'dataroom@acme.example',
         fromName: 'Acme Data Room',
         data: expect.objectContaining({
-          resetUrl: expect.stringContaining('/auth/reset-password?token='),
+          resetUrl: expect.stringContaining('/auth/reset-password#token='),
         }),
       }),
       expect.objectContaining({
@@ -320,6 +347,12 @@ describe('POST /api/users/:userId/reset-password', () => {
         jobId: expect.stringMatching(/^password-reset-/),
       })
     );
+    const queuedUrl = mockAddJob.mock.calls[0]?.[2]?.data?.resetUrl as string;
+    const queuedUrlObject = new URL(queuedUrl);
+    const publicToken = new URLSearchParams(queuedUrlObject.hash.slice(1)).get('token');
+    expect(queuedUrlObject.search).toBe('');
+    expect(publicToken).toMatch(/^prt1_[A-Za-z0-9_-]{43}$/);
+    expect(publicToken).not.toBe(mintedToken);
   });
 
   it('does not regress a flow advanced by a fast worker back to QUEUED', async () => {
@@ -457,5 +490,34 @@ describe('POST /api/users/:userId/reset-password', () => {
     expect(res.status).toBe(400);
     expect(tx.passwordResetToken.create).not.toHaveBeenCalled();
     expect(mockAddJob).not.toHaveBeenCalled();
+  });
+
+  it('does not log or audit the public token, reset URL, or secret on queue failure', async () => {
+    const tx = resetTx();
+    useTx(tx);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let resetUrl = '';
+    mockAddJob.mockImplementation(async (_queue, _name, data) => {
+      resetUrl = data.data.resetUrl;
+      throw new Error(`queue rejected ${resetUrl} test-session-secret`);
+    });
+
+    await POST(req(), ctx);
+
+    const publicToken = new URLSearchParams(new URL(resetUrl).hash.slice(1)).get('token') ?? '';
+    const emitted = JSON.stringify({
+      logs: [consoleLog.mock.calls, consoleWarn.mock.calls, consoleError.mock.calls],
+      requestAudit: mockCreateSecurityAuditEvent.mock.calls,
+      failureAudit: mockCaptureSecurityAudit.mock.calls,
+      lifecycleWrites: mockInvalidateToken.mock.calls,
+    });
+    expect(emitted).not.toContain(publicToken);
+    expect(emitted).not.toContain(resetUrl);
+    expect(emitted).not.toContain('test-session-secret');
+    consoleLog.mockRestore();
+    consoleWarn.mockRestore();
+    consoleError.mockRestore();
   });
 });

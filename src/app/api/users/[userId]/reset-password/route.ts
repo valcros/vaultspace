@@ -18,7 +18,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { randomBytes, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 
 import { isAuthenticationError } from '@/lib/errors';
 import { getRequestContext, requireAuth } from '@/lib/middleware';
@@ -28,6 +28,11 @@ import { getProviders } from '@/providers';
 import { normalizeEmailError } from '@/providers/email/errors';
 import { hasCapability } from '@/lib/deployment-capabilities';
 import { JOB_NAMES, PASSWORD_RESET_EMAIL_JOB_OPTIONS, QUEUE_NAMES } from '@/workers/types';
+import {
+  createPasswordResetToken,
+  PasswordResetTokenConfigurationError,
+  requirePasswordResetTokenSecret,
+} from '@/lib/auth/passwordResetToken';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +58,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const baseUrl = process.env['APP_URL'];
     if (!baseUrl) {
       console.error('[UserResetPasswordAPI] APP_URL must be configured');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
+    try {
+      requirePasswordResetTokenSecret();
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          component: 'admin-password-reset',
+          event: 'configuration_check',
+          outcome: 'failed',
+          requestId: reqContext.requestId,
+          errorCode:
+            error instanceof PasswordResetTokenConfigurationError
+              ? error.code
+              : 'PASSWORD_RESET_TOKEN_CONFIGURATION_INVALID',
+        })
+      );
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
@@ -149,13 +172,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
         data: { usedAt: new Date() },
       });
 
-      const token = randomBytes(32).toString('base64url');
+      const tokenPair = createPasswordResetToken();
       const flowId = randomUUID();
       await tx.passwordResetToken.create({
         data: {
           id: flowId,
           userId,
-          token,
+          token: tokenPair.storedToken,
           expiresAt: new Date(Date.now() + TOKEN_TTL_MS),
           requestId: reqContext.requestId,
           organizationId: session.organizationId,
@@ -187,7 +210,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
         },
       });
 
-      return { success: true as const, flowId, token, user: lockedUserOrg.user, org };
+      return {
+        success: true as const,
+        flowId,
+        token: tokenPair.publicToken,
+        user: lockedUserOrg.user,
+        org,
+      };
     });
 
     if ('error' in result) {
@@ -200,7 +229,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const orgName = result.org?.name || 'VaultSpace';
     const senderFrom = result.org?.emailSenderAddress || undefined;
     const senderName = result.org?.emailSenderName || result.org?.name || undefined;
-    const resetUrl = `${baseUrl}/auth/reset-password?token=${result.token}`;
+    const resetUrlObject = new URL('/auth/reset-password', baseUrl);
+    resetUrlObject.hash = new URLSearchParams({ token: result.token }).toString();
+    const resetUrl = resetUrlObject.toString();
 
     try {
       if (canAsync) {
@@ -365,7 +396,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
           },
         });
       } catch (cleanupErr) {
-        console.error('[UserResetPasswordAPI] failed to invalidate undelivered token:', cleanupErr);
+        console.error(
+          JSON.stringify({
+            component: 'admin-password-reset',
+            event: 'undelivered_token_invalidation',
+            outcome: 'failed',
+            requestId: reqContext.requestId,
+            correlationId: result.flowId,
+            errorName: cleanupErr instanceof Error ? cleanupErr.name : 'UnknownError',
+          })
+        );
       }
       await captureSecurityAudit({
         organizationId: session.organizationId,
@@ -393,7 +433,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (isAuthenticationError(error)) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
-    console.error('[UserResetPasswordAPI] POST error:', error);
+    console.error(
+      JSON.stringify({
+        component: 'admin-password-reset',
+        event: 'request_processing',
+        outcome: 'failed',
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      })
+    );
     return NextResponse.json({ error: 'Failed to send password reset' }, { status: 500 });
   }
 }

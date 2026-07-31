@@ -68,6 +68,8 @@ describe('BullMQJobProvider', () => {
         attempts: 5,
         backoff: { type: 'exponential', delay: 60_000 },
         jobId: 'password-reset-flow-1',
+        removeOnComplete: true,
+        removeOnFail: true,
       }
     );
 
@@ -75,6 +77,8 @@ describe('BullMQJobProvider', () => {
       attempts: 5,
       backoff: { type: 'exponential', delay: 60_000 },
       jobId: 'password-reset-flow-1',
+      removeOnComplete: true,
+      removeOnFail: true,
     });
   });
 });

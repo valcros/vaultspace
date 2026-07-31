@@ -4,11 +4,16 @@
  * POST /api/auth/forgot-password - Request password reset
  */
 
-import { createHmac, randomBytes, randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { captureSecurityAudit, createSecurityAuditEvent } from '@/lib/audit/securityAudit';
+import {
+  createPasswordResetToken,
+  PasswordResetTokenConfigurationError,
+  requirePasswordResetTokenSecret,
+} from '@/lib/auth/passwordResetToken';
 import { bootstrapDb as db } from '@/lib/db';
 import { hasCapability } from '@/lib/deployment-capabilities';
 import { RateLimitError } from '@/lib/errors';
@@ -51,12 +56,26 @@ export async function POST(request: NextRequest) {
 
     // Configuration checks occur before account lookup so status cannot reveal
     // whether an address belongs to a known user.
-    if (!baseUrl || !fingerprintSecret) {
+    if (!baseUrl || !fingerprintSecret?.trim()) {
       structuredLog({
         event: 'configuration_check',
         outcome: 'failed',
         requestId: reqContext.requestId,
         errorCode: !baseUrl ? 'APP_URL_MISSING' : 'SESSION_SECRET_MISSING',
+      });
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+    try {
+      requirePasswordResetTokenSecret();
+    } catch (error) {
+      structuredLog({
+        event: 'configuration_check',
+        outcome: 'failed',
+        requestId: reqContext.requestId,
+        errorCode:
+          error instanceof PasswordResetTokenConfigurationError
+            ? error.code
+            : 'PASSWORD_RESET_TOKEN_CONFIGURATION_INVALID',
       });
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
@@ -132,7 +151,8 @@ export async function POST(request: NextRequest) {
 
     try {
       const flowId = randomUUID();
-      const resetToken = randomBytes(32).toString('base64url');
+      const tokenPair = createPasswordResetToken();
+      const resetToken = tokenPair.publicToken;
       const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
 
       const issuance = await db.$transaction(async (tx) => {
@@ -204,7 +224,7 @@ export async function POST(request: NextRequest) {
           data: {
             id: flowId,
             userId: lockedUser.id,
-            token: resetToken,
+            token: tokenPair.storedToken,
             expiresAt,
             requestId: reqContext.requestId,
             organizationId: lockedSenderOrg?.organization.id ?? null,
@@ -256,7 +276,9 @@ export async function POST(request: NextRequest) {
       const senderFrom = senderOrg?.organization.emailSenderAddress || undefined;
       const senderName =
         senderOrg?.organization.emailSenderName || senderOrg?.organization.name || undefined;
-      const resetUrl = `${baseUrl}/auth/reset-password?token=${resetToken}`;
+      const resetUrlObject = new URL('/auth/reset-password', baseUrl);
+      resetUrlObject.hash = new URLSearchParams({ token: resetToken }).toString();
+      const resetUrl = resetUrlObject.toString();
       const captureDeliveryFailure = async (
         stage: 'queue' | 'provider_submission' | 'configuration',
         errorCode: string,

@@ -56,16 +56,21 @@ vi.mock('@/lib/db', () => {
 });
 
 import { POST } from './route';
+import { createPasswordResetToken } from '@/lib/auth/passwordResetToken';
+
+const LEGACY_TOKEN = 'A'.repeat(43);
 
 describe('POST /api/auth/reset-password', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env['SESSION_SECRET'] = 'test-session-secret';
 
     mockHash.mockResolvedValue('hashed-password');
     mockFindFirst.mockResolvedValue({
       id: 'reset-1',
       userId: 'user-1',
       requestId: 'req-forgot',
+      token: LEGACY_TOKEN,
     });
     mockUserFindUnique.mockResolvedValue({
       id: 'user-1',
@@ -113,7 +118,7 @@ describe('POST /api/auth/reset-password', () => {
   it('deactivates sessions inside the password reset transaction and clears cache after commit', async () => {
     const request = new NextRequest('http://localhost/api/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
+      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
     });
 
     const response = await POST(request);
@@ -150,7 +155,7 @@ describe('POST /api/auth/reset-password', () => {
 
     const request = new NextRequest('http://localhost/api/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
+      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
     });
 
     const response = await POST(request);
@@ -172,6 +177,87 @@ describe('POST /api/auth/reset-password', () => {
     expect(mockClearSessionCache).not.toHaveBeenCalled();
   });
 
+  it('redeems a new public token through its stored HMAC only', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
+    const pair = createPasswordResetToken();
+    mockFindFirst.mockResolvedValue({
+      id: 'reset-1',
+      userId: 'user-1',
+      requestId: 'req-forgot',
+      token: pair.storedToken,
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: pair.publicToken, password: 'password123' }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockFindFirst).toHaveBeenCalledWith({
+      where: {
+        token: pair.storedToken,
+        expiresAt: { gt: expect.any(Date) },
+        usedAt: null,
+      },
+    });
+  });
+
+  it('rejects stored-digest replay without querying the database', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
+    const pair = createPasswordResetToken();
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: pair.storedToken, password: 'password123' }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockFindFirst).not.toHaveBeenCalled();
+    expect(mockHash).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before token lookup when the reset secret is missing', async () => {
+    delete process.env['SESSION_SECRET'];
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(mockFindFirst).not.toHaveBeenCalled();
+    expect(mockHash).not.toHaveBeenCalled();
+  });
+
+  it('does not log the public token, stored digest, or secret on lookup failure', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
+    const pair = createPasswordResetToken();
+    mockFindFirst.mockRejectedValue(
+      new Error(`lookup rejected ${pair.publicToken} ${pair.storedToken} test-session-secret`)
+    );
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: pair.publicToken, password: 'password123' }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    const emitted = JSON.stringify(consoleError.mock.calls);
+    expect(emitted).not.toContain(pair.publicToken);
+    expect(emitted).not.toContain(pair.storedToken);
+    expect(emitted).not.toContain('test-session-secret');
+    consoleError.mockRestore();
+  });
+
   it('rejects a valid token for an active orphan account without consuming it', async () => {
     mockUserFindUnique.mockResolvedValue({
       id: 'user-1',
@@ -182,7 +268,7 @@ describe('POST /api/auth/reset-password', () => {
 
     const request = new NextRequest('http://localhost/api/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token: 'legacy-reset-token', password: 'password123' }),
+      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
     });
 
     const response = await POST(request);
@@ -208,7 +294,7 @@ describe('POST /api/auth/reset-password', () => {
 
     const request = new NextRequest('http://localhost/api/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
+      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
     });
 
     const response = await POST(request);
@@ -233,7 +319,7 @@ describe('POST /api/auth/reset-password', () => {
 
     const request = new NextRequest('http://localhost/api/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token: 'reset-token', password: 'password123' }),
+      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
     });
 
     const response = await POST(request);

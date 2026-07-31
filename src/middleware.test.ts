@@ -117,4 +117,12 @@ describe('middleware — setup enforcement', () => {
       expect(res.status).toBe(200);
     });
   });
+
+  it('prevents reset tokens from entering referrers or caches', async () => {
+    const res = await middleware(makeRequest(`/auth/reset-password?token=${'A'.repeat(43)}`));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+  });
 });

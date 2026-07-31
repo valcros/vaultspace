@@ -9,12 +9,16 @@ import bcrypt from 'bcryptjs';
 
 import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
+import {
+  passwordResetTokenMatchesStoredValue,
+  resolvePasswordResetTokenLookup,
+} from '@/lib/auth/passwordResetToken';
 import { bootstrapDb as db } from '@/lib/db';
 import { getRequestContext } from '@/lib/middleware';
 import { z } from 'zod';
 
 const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'Token is required'),
+  token: z.string().min(1, 'Token is required').max(128, 'Invalid reset token'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
@@ -26,17 +30,31 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { token, password } = resetPasswordSchema.parse(body);
+    const tokenLookup = resolvePasswordResetTokenLookup(token);
+
+    if (!tokenLookup) {
+      console.warn(
+        JSON.stringify({
+          component: 'reset-password',
+          event: 'token_validation',
+          outcome: 'rejected',
+          requestId: reqContext.requestId,
+          errorCode: 'INVALID_OR_EXPIRED_TOKEN',
+        })
+      );
+      return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
+    }
 
     // Find valid reset token
     const resetToken = await db.passwordResetToken.findFirst({
       where: {
-        token,
+        token: tokenLookup.storedToken,
         expiresAt: { gt: new Date() },
         usedAt: null,
       },
     });
 
-    if (!resetToken) {
+    if (!resetToken || !passwordResetTokenMatchesStoredValue(token, resetToken.token)) {
       console.warn(
         JSON.stringify({
           component: 'reset-password',
