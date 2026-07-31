@@ -20,16 +20,17 @@
  *   npm run test:integration:rls
  */
 
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { PrismaClient, UserRole } from '@prisma/client';
+import { Prisma, PrismaClient, UserRole } from '@prisma/client';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { withOrgContext, db, setBootstrapContext } from '@/lib/db';
 import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
 import { revokeAndVerifyProviderInboxAccess } from '@/lib/integrations/providerInboxDatabasePrivileges';
 import { getPermissionEngine } from '@/lib/permissions';
 import { createEventBus } from '@/lib/events/EventBus';
+import { inspectPasswordResetProviderCorrelation } from '@/workers/passwordResetReconciler';
 
 const rawPrisma = new PrismaClient({
   datasources: {
@@ -49,6 +50,137 @@ let org1Slug: string;
 let org2Slug: string;
 let room1Slug: string;
 let room2Slug: string;
+
+async function issuePasswordResetWithReviewedLocks(input: {
+  targetUserId: string;
+  actorUserId: string;
+  organizationId: string;
+  mode: 'self' | 'admin';
+  onReadyToLock?: () => void;
+}): Promise<string | null> {
+  return db.$transaction(
+    async (tx) => {
+      await setBootstrapContext(tx);
+
+      const userIds = [...new Set([input.targetUserId, input.actorUserId])].sort();
+      await lockPasswordResetUser(tx, input.targetUserId);
+      await tx.$queryRaw`
+        SELECT id
+        FROM users
+        WHERE id IN (${Prisma.join(userIds)})
+        ORDER BY id
+        FOR UPDATE`;
+      input.onReadyToLock?.();
+      await tx.$queryRaw`
+        SELECT id
+        FROM user_organizations
+        WHERE "userId" IN (${Prisma.join(userIds)})
+        ORDER BY id
+        FOR UPDATE`;
+
+      const actor = await tx.user.findUnique({
+        where: { id: input.actorUserId },
+        select: {
+          isActive: true,
+          organizations: {
+            where: { organizationId: input.organizationId },
+            select: { role: true, isActive: true },
+          },
+        },
+      });
+      const target = await tx.user.findUnique({
+        where: { id: input.targetUserId },
+        select: {
+          isActive: true,
+          organizations: {
+            where: {
+              organizationId: input.organizationId,
+              isActive: true,
+              organization: { isActive: true },
+            },
+            select: { organizationId: true },
+          },
+        },
+      });
+      const actorMembership = actor?.organizations[0];
+      const authorized =
+        Boolean(target?.isActive && target.organizations.length === 1) &&
+        (input.mode === 'self'
+          ? input.actorUserId === input.targetUserId
+          : Boolean(
+              actor?.isActive &&
+              actorMembership?.isActive &&
+              actorMembership.role === UserRole.ADMIN
+            ));
+      if (!authorized) {
+        return null;
+      }
+
+      const now = new Date();
+      const current = await tx.passwordResetToken.findMany({
+        where: {
+          userId: input.targetUserId,
+          usedAt: null,
+          expiresAt: { gt: now },
+        },
+        select: { id: true },
+      });
+      const supersededFlowIds = current.map(({ id }) => id);
+      if (supersededFlowIds.length > 0) {
+        await tx.passwordResetToken.updateMany({
+          where: { id: { in: supersededFlowIds }, usedAt: null },
+          data: { usedAt: now, deliveryStatus: 'SUPERSEDED' },
+        });
+        await tx.passwordResetRecovery.updateMany({
+          where: { flowId: { in: supersededFlowIds }, wipedAt: null },
+          data: {
+            cipherVersion: null,
+            keyId: null,
+            nonce: null,
+            ciphertext: null,
+            authTag: null,
+            wipedAt: now,
+            sendLeaseId: null,
+            sendLeaseExpiresAt: null,
+            enqueueLeaseId: null,
+            enqueueLeaseExpiresAt: null,
+            enqueueStatus: 'SUPERSEDED',
+          },
+        });
+      }
+
+      const flowId = `concurrency-${randomUUID()}`;
+      await tx.passwordResetToken.create({
+        data: {
+          id: flowId,
+          userId: input.targetUserId,
+          token: `prh1:${createHash('sha256').update(flowId).digest('hex')}`,
+          expiresAt: new Date(now.getTime() + 60_000),
+          requestId: `request-${randomUUID()}`,
+          organizationId: input.organizationId,
+          deliveryStatus: 'PENDING',
+          auditOrganizationIds: [input.organizationId],
+          providerCorrelationSchemaVersion: 1,
+        },
+      });
+      await tx.passwordResetRecovery.create({
+        data: {
+          flowId,
+          userId: input.targetUserId,
+          recipientFingerprint: '1'.repeat(64),
+          cipherVersion: 1,
+          keyId: 'integration-test',
+          nonce: Buffer.alloc(12),
+          ciphertext: Buffer.alloc(48),
+          authTag: Buffer.alloc(16),
+          providerOperationId: flowId,
+        },
+      });
+      return flowId;
+    },
+    { maxWait: 5_000, timeout: 30_000 }
+  );
+}
 
 describe('RLS Enforcement', () => {
   beforeAll(async () => {
@@ -487,6 +619,318 @@ describe('RLS Enforcement', () => {
       expect(reachedRollback).toBe(true);
       expect(await rawPrisma.passwordResetToken.findUnique({ where: { id: flowId } })).toBeNull();
       expect(await rawPrisma.event.findUnique({ where: { idempotencyKey } })).toBeNull();
+    });
+
+    it('enforces the creation-only password reset delivery marker in PostgreSQL', async () => {
+      const validToken = `prh1:${'a'.repeat(64)}`;
+      const canonicalScope = Array.from(
+        { length: 64 },
+        (_, index) => `scope-${String(index).padStart(2, '0')}`
+      );
+      let validMutationObserved = false;
+      await expect(
+        db.$transaction(async (tx) => {
+          await setBootstrapContext(tx);
+          const flowId = `rls-contract-valid-${randomUUID()}`;
+          await tx.passwordResetToken.create({
+            data: {
+              id: flowId,
+              userId: user1Id,
+              token: validToken,
+              expiresAt: new Date(Date.now() + 60_000),
+              auditOrganizationIds: canonicalScope,
+              providerCorrelationSchemaVersion: 1,
+            },
+          });
+          const updated = await tx.passwordResetToken.update({
+            where: { id: flowId },
+            data: { deliveryStatus: 'QUEUED' },
+            select: {
+              providerCorrelationSchemaVersion: true,
+              deliveryStatus: true,
+              auditOrganizationIds: true,
+            },
+          });
+          expect(updated).toEqual({
+            providerCorrelationSchemaVersion: 1,
+            deliveryStatus: 'QUEUED',
+            auditOrganizationIds: canonicalScope,
+          });
+          validMutationObserved = true;
+          throw new Error('ROLLBACK_PASSWORD_RESET_CONTRACT_VALID');
+        })
+      ).rejects.toThrow('ROLLBACK_PASSWORD_RESET_CONTRACT_VALID');
+      expect(validMutationObserved).toBe(true);
+
+      await expect(
+        db.$transaction(async (tx) => {
+          await setBootstrapContext(tx);
+          const flowId = `rls-contract-upgrade-${randomUUID()}`;
+          await tx.passwordResetToken.create({
+            data: {
+              id: flowId,
+              userId: user1Id,
+              token: validToken.replace(/a$/, 'b'),
+              expiresAt: new Date(Date.now() + 60_000),
+              auditOrganizationIds: [org1Id],
+            },
+          });
+          await tx.passwordResetToken.update({
+            where: { id: flowId },
+            data: { providerCorrelationSchemaVersion: 1 },
+          });
+        })
+      ).rejects.toThrow(/PASSWORD_RESET_DELIVERY_CONTRACT_MARKER_IMMUTABLE/);
+
+      await expect(
+        db.$transaction(async (tx) => {
+          await setBootstrapContext(tx);
+          const flowId = `rls-contract-clear-${randomUUID()}`;
+          await tx.passwordResetToken.create({
+            data: {
+              id: flowId,
+              userId: user1Id,
+              token: validToken.replace(/a$/, 'c'),
+              expiresAt: new Date(Date.now() + 60_000),
+              auditOrganizationIds: [org1Id],
+              providerCorrelationSchemaVersion: 1,
+            },
+          });
+          await tx.passwordResetToken.update({
+            where: { id: flowId },
+            data: { providerCorrelationSchemaVersion: null },
+          });
+        })
+      ).rejects.toThrow(/PASSWORD_RESET_DELIVERY_CONTRACT_MARKER_IMMUTABLE/);
+
+      await expect(
+        db.$transaction(async (tx) => {
+          await setBootstrapContext(tx);
+          await tx.passwordResetToken.create({
+            data: {
+              id: `rls-contract-invalid-${randomUUID()}`,
+              userId: user1Id,
+              token: `prh1:${'d'.repeat(64)}`,
+              expiresAt: new Date(Date.now() + 60_000),
+              auditOrganizationIds: [` ${org1Id}`],
+              providerCorrelationSchemaVersion: 1,
+            },
+          });
+        })
+      ).rejects.toThrow(/PASSWORD_RESET_DELIVERY_CONTRACT_INVALID/);
+
+      await expect(
+        db.$transaction(async (tx) => {
+          await setBootstrapContext(tx);
+          await tx.passwordResetToken.create({
+            data: {
+              id: `rls-contract-order-${randomUUID()}`,
+              userId: user1Id,
+              token: `prh1:${'e'.repeat(64)}`,
+              expiresAt: new Date(Date.now() + 60_000),
+              auditOrganizationIds: ['scope-z', 'scope-A'],
+              providerCorrelationSchemaVersion: 1,
+            },
+          });
+        })
+      ).rejects.toThrow(/PASSWORD_RESET_DELIVERY_CONTRACT_INVALID/);
+    });
+
+    it('serializes concurrent self-service and admin reset issuance for one account', async () => {
+      const target = await rawPrisma.user.create({
+        data: {
+          email: `reset-target-${randomUUID()}@example.com`,
+          passwordHash: 'test-hash',
+          firstName: 'Reset',
+          lastName: 'Target',
+          isActive: true,
+          organizations: {
+            create: { organizationId: org1Id, role: UserRole.VIEWER, isActive: true },
+          },
+        },
+      });
+
+      const issued = await Promise.all([
+        issuePasswordResetWithReviewedLocks({
+          targetUserId: target.id,
+          actorUserId: target.id,
+          organizationId: org1Id,
+          mode: 'self',
+        }),
+        issuePasswordResetWithReviewedLocks({
+          targetUserId: target.id,
+          actorUserId: user1Id,
+          organizationId: org1Id,
+          mode: 'admin',
+        }),
+      ]);
+
+      expect(issued.every(Boolean)).toBe(true);
+      const rows = await rawPrisma.passwordResetToken.findMany({
+        where: { userId: target.id },
+        select: { usedAt: true, deliveryStatus: true },
+      });
+      expect(rows).toHaveLength(2);
+      expect(rows.filter(({ usedAt }) => usedAt === null)).toHaveLength(1);
+      expect(rows.filter(({ deliveryStatus }) => deliveryStatus === 'SUPERSEDED')).toHaveLength(1);
+    });
+
+    it('serializes two concurrent admin reset issuances for one account', async () => {
+      const target = await rawPrisma.user.create({
+        data: {
+          email: `admin-reset-target-${randomUUID()}@example.com`,
+          passwordHash: 'test-hash',
+          firstName: 'Admin Reset',
+          lastName: 'Target',
+          isActive: true,
+          organizations: {
+            create: { organizationId: org1Id, role: UserRole.VIEWER, isActive: true },
+          },
+        },
+      });
+
+      const issued = await Promise.all([
+        issuePasswordResetWithReviewedLocks({
+          targetUserId: target.id,
+          actorUserId: user1Id,
+          organizationId: org1Id,
+          mode: 'admin',
+        }),
+        issuePasswordResetWithReviewedLocks({
+          targetUserId: target.id,
+          actorUserId: user1Id,
+          organizationId: org1Id,
+          mode: 'admin',
+        }),
+      ]);
+
+      expect(issued.every(Boolean)).toBe(true);
+      const rows = await rawPrisma.passwordResetToken.findMany({
+        where: { userId: target.id },
+        select: { usedAt: true, deliveryStatus: true },
+      });
+      expect(rows).toHaveLength(2);
+      expect(rows.filter(({ usedAt }) => usedAt === null)).toHaveLength(1);
+      expect(rows.filter(({ deliveryStatus }) => deliveryStatus === 'SUPERSEDED')).toHaveLength(1);
+    });
+
+    it('denies admin issuance after a concurrent demotion commits ahead of authorization locks', async () => {
+      const target = await rawPrisma.user.create({
+        data: {
+          email: `demotion-target-${randomUUID()}@example.com`,
+          passwordHash: 'test-hash',
+          firstName: 'Demotion',
+          lastName: 'Target',
+          isActive: true,
+          organizations: {
+            create: { organizationId: org1Id, role: UserRole.VIEWER, isActive: true },
+          },
+        },
+      });
+      let releaseMutation!: () => void;
+      const mutationHeld = new Promise<void>((resolve) => {
+        releaseMutation = resolve;
+      });
+      let mutationLocked!: () => void;
+      const mutationHasLock = new Promise<void>((resolve) => {
+        mutationLocked = resolve;
+      });
+      const demotion = rawPrisma.$transaction(async (tx) => {
+        await tx.userOrganization.updateMany({
+          where: { organizationId: org1Id, userId: user1Id },
+          data: { role: UserRole.VIEWER },
+        });
+        mutationLocked();
+        await mutationHeld;
+      });
+      await mutationHasLock;
+      let issuanceAtMembershipLock!: () => void;
+      const issuanceReady = new Promise<void>((resolve) => {
+        issuanceAtMembershipLock = resolve;
+      });
+      const issuance = issuePasswordResetWithReviewedLocks({
+        targetUserId: target.id,
+        actorUserId: user1Id,
+        organizationId: org1Id,
+        mode: 'admin',
+        onReadyToLock: issuanceAtMembershipLock,
+      });
+      await issuanceReady;
+      releaseMutation();
+
+      await demotion;
+      await expect(issuance).resolves.toBeNull();
+      expect(await rawPrisma.passwordResetToken.count({ where: { userId: target.id } })).toBe(0);
+    });
+
+    it('denies admin issuance after concurrent target-membership deactivation commits', async () => {
+      const target = await rawPrisma.user.create({
+        data: {
+          email: `deactivation-target-${randomUUID()}@example.com`,
+          passwordHash: 'test-hash',
+          firstName: 'Deactivation',
+          lastName: 'Target',
+          isActive: true,
+          organizations: {
+            create: { organizationId: org1Id, role: UserRole.VIEWER, isActive: true },
+          },
+        },
+      });
+      let releaseMutation!: () => void;
+      const mutationHeld = new Promise<void>((resolve) => {
+        releaseMutation = resolve;
+      });
+      let mutationLocked!: () => void;
+      const mutationHasLock = new Promise<void>((resolve) => {
+        mutationLocked = resolve;
+      });
+      const deactivation = rawPrisma.$transaction(async (tx) => {
+        await tx.userOrganization.updateMany({
+          where: { organizationId: org1Id, userId: target.id },
+          data: { isActive: false },
+        });
+        mutationLocked();
+        await mutationHeld;
+      });
+      await mutationHasLock;
+      let issuanceAtMembershipLock!: () => void;
+      const issuanceReady = new Promise<void>((resolve) => {
+        issuanceAtMembershipLock = resolve;
+      });
+      const issuance = issuePasswordResetWithReviewedLocks({
+        targetUserId: target.id,
+        actorUserId: user1Id,
+        organizationId: org1Id,
+        mode: 'admin',
+        onReadyToLock: issuanceAtMembershipLock,
+      });
+      await issuanceReady;
+      releaseMutation();
+
+      await deactivation;
+      await expect(issuance).resolves.toBeNull();
+      expect(await rawPrisma.passwordResetToken.count({ where: { userId: target.id } })).toBe(0);
+    });
+
+    it('returns aggregate-only password reset delivery contract diagnostics', async () => {
+      const diagnostics = await inspectPasswordResetProviderCorrelation(null);
+
+      expect(diagnostics).toEqual(
+        expect.objectContaining({
+          markedFlows: expect.any(Number),
+          markedNonHmacRows: 0,
+          markedInvalidAuditScopeRows: 0,
+          markedAcceptedIncompleteRows: 0,
+          markedRowsWithoutRecovery: 0,
+          markedOperationIdMismatchRows: 0,
+          unmarkedActiveDeliveryRows: expect.any(Number),
+          unmarkedAcceptedAcsRows: expect.any(Number),
+          overLimitActiveMembershipAccounts: 0,
+        })
+      );
+      expect(Object.keys(diagnostics)).not.toEqual(
+        expect.arrayContaining(['providerMessageId', 'providerOperationId'])
+      );
     });
 
     it('should allow organization lookup by slug without context', async () => {

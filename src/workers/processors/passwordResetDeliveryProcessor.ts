@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
-import type { Prisma } from '@prisma/client';
-import type { Job } from 'bullmq';
+import { Prisma } from '@prisma/client';
+import { UnrecoverableError, type Job } from 'bullmq';
 
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { resolvePasswordResetAuditScope } from '@/lib/auth/passwordResetAuditScope';
@@ -21,9 +21,38 @@ import { JOB_NAMES, PASSWORD_RESET_ACCEPTANCE_JOB_OPTIONS, QUEUE_NAMES } from '@
 const SEND_LEASE_MS = 3 * 60 * 1000;
 const PROVIDER_TIMEOUT_MS = 60 * 1000;
 const ACCEPTANCE_WRITE_ATTEMPTS = 3;
+const TRANSIENT_ACCEPTANCE_WRITE_CODES = new Set([
+  'P1001',
+  'P1002',
+  'P1008',
+  'P1017',
+  'P2024',
+  'P2034',
+]);
+
+function acceptancePersistenceErrorCode(error: unknown): string | null {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code;
+  }
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    return error.errorCode ?? null;
+  }
+  return null;
+}
+
+function isTransientAcceptancePersistenceError(error: unknown): boolean {
+  const code = acceptancePersistenceErrorCode(error);
+  return code !== null && TRANSIENT_ACCEPTANCE_WRITE_CODES.has(code);
+}
 
 class FlowNotClaimableError extends Error {}
 class ProviderTimeoutError extends Error {}
+class RetryableAcceptancePersistenceError extends Error {
+  constructor() {
+    super('Password reset acceptance persistence is temporarily unavailable');
+    this.name = 'RetryableAcceptancePersistenceError';
+  }
+}
 
 type ResetAuditOutcome = 'accepted' | 'blocked' | 'cancelled' | 'conflict' | 'failure' | 'unknown';
 
@@ -236,6 +265,7 @@ async function persistProviderAcceptance(
         provider: true,
         providerMessageId: true,
         providerOperationId: true,
+        providerCorrelationSchemaVersion: true,
       },
     });
     const recovery = await tx.passwordResetRecovery.findUnique({
@@ -247,29 +277,34 @@ async function persistProviderAcceptance(
         wipedAt: true,
       },
     });
-    if (!existing) {
+    if (!existing || !recovery) {
       return 'conflict';
     }
+    const providerOperationId = recovery.providerOperationId;
     const alreadyRecorded =
       existing.providerMessageId === payload.providerMessageId &&
-      existing.providerOperationId === payload.providerOperationId &&
-      existing.provider === payload.provider;
+      existing.providerOperationId === providerOperationId &&
+      providerOperationId === payload.flowId &&
+      existing.provider === payload.provider &&
+      existing.providerCorrelationSchemaVersion === 1 &&
+      recovery.sendFence === payload.sendFence;
     if (alreadyRecorded) {
       return 'already-recorded';
     }
     const conflict =
       Boolean(existing.providerMessageId) ||
-      !recovery ||
-      recovery.providerOperationId !== payload.providerOperationId ||
+      existing.providerCorrelationSchemaVersion !== 1 ||
+      existing.provider !== payload.provider ||
+      providerOperationId !== payload.flowId ||
       recovery.sendFence !== payload.sendFence ||
       (existing.providerOperationId !== null &&
-        existing.providerOperationId !== payload.providerOperationId);
+        existing.providerOperationId !== providerOperationId);
     if (conflict) {
       const conflictHash = createHash('sha256')
         .update(
           [
             payload.provider,
-            payload.providerOperationId,
+            providerOperationId,
             payload.providerMessageId,
             payload.sendFence,
           ].join('\0')
@@ -285,13 +320,11 @@ async function persistProviderAcceptance(
         stage: 'provider_acceptance_reconciliation',
         metadata: {
           provider: payload.provider,
-          providerOperationId: payload.providerOperationId,
-          providerMessageId: payload.providerMessageId,
           sendFence: payload.sendFence,
           existingProvider: existing.provider,
-          existingProviderOperationId: existing.providerOperationId,
-          existingProviderMessageId: existing.providerMessageId,
           existingSendFence: recovery?.sendFence ?? null,
+          conflictFingerprint: conflictHash,
+          errorCode: 'PROVIDER_ACCEPTANCE_STATE_CONFLICT',
         },
       });
       return 'conflict';
@@ -302,7 +335,7 @@ async function persistProviderAcceptance(
       data: {
         deliveryStatus: 'PROVIDER_ACCEPTED',
         provider: payload.provider,
-        providerOperationId: payload.providerOperationId,
+        providerOperationId,
         providerMessageId: payload.providerMessageId,
         providerAcceptedAt: new Date(payload.providerAcceptedAt),
         deliveryErrorCode: null,
@@ -341,8 +374,6 @@ async function persistProviderAcceptance(
       stage: 'provider_submission',
       metadata: {
         provider: payload.provider,
-        providerOperationId: payload.providerOperationId,
-        providerMessageId: payload.providerMessageId,
         sendFence: payload.sendFence,
       },
     });
@@ -359,10 +390,17 @@ async function persistProviderAcceptanceWithRetry(
       return await persistProviderAcceptance(payload);
     } catch (error) {
       lastError = error;
+      const retryable = isTransientAcceptancePersistenceError(error);
+      if (!retryable) {
+        throw error;
+      }
       if (attempt < ACCEPTANCE_WRITE_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, attempt * 75));
       }
     }
+  }
+  if (isTransientAcceptancePersistenceError(lastError)) {
+    throw new RetryableAcceptancePersistenceError();
   }
   throw lastError;
 }
@@ -370,14 +408,45 @@ async function persistProviderAcceptanceWithRetry(
 export async function processPasswordResetAcceptanceJob(
   job: Job<PasswordResetAcceptanceJobPayload>
 ): Promise<void> {
-  const outcome = await persistProviderAcceptanceWithRetry(job.data);
+  if (
+    job.data.schemaVersion !== 1 ||
+    !job.data.flowId ||
+    !job.data.provider ||
+    !job.data.providerMessageId ||
+    !job.data.providerAcceptedAt ||
+    !Number.isInteger(job.data.sendFence) ||
+    job.data.sendFence < 1
+  ) {
+    log('error', {
+      event: 'provider_acceptance_job_rejected',
+      outcome: 'invalid_payload',
+      correlationId: job.data.flowId || null,
+      jobId: job.id ?? null,
+    });
+    throw new UnrecoverableError('Invalid password reset acceptance payload');
+  }
+  let outcome: 'recorded' | 'already-recorded' | 'conflict';
+  try {
+    outcome = await persistProviderAcceptanceWithRetry(job.data);
+  } catch (error) {
+    if (error instanceof RetryableAcceptancePersistenceError) {
+      throw error;
+    }
+    log('error', {
+      event: 'provider_acceptance_reconciliation_failed',
+      outcome: 'terminal_persistence_error',
+      correlationId: job.data.flowId,
+      provider: job.data.provider,
+      errorCode: acceptancePersistenceErrorCode(error) ?? 'ACCEPTANCE_PERSISTENCE_NOT_RETRYABLE',
+      jobId: job.id ?? null,
+    });
+    throw new UnrecoverableError('Password reset acceptance persistence is not retryable');
+  }
   log(outcome === 'conflict' ? 'error' : 'info', {
     event: 'provider_acceptance_reconciled',
     outcome,
     correlationId: job.data.flowId,
     provider: job.data.provider,
-    providerOperationId: job.data.providerOperationId,
-    providerMessageId: job.data.providerMessageId,
     sendFence: job.data.sendFence,
     jobId: job.id ?? null,
   });
@@ -456,8 +525,17 @@ export async function processPasswordResetDeliveryJob(
         throw new FlowNotClaimableError();
       }
 
+      const deliveryContractErrorCode =
+        reset?.providerCorrelationSchemaVersion !== 1
+          ? 'DELIVERY_CONTRACT_UNMARKED'
+          : reset.recovery?.providerOperationId !== flowId
+            ? 'DELIVERY_CONTRACT_OPERATION_MISMATCH'
+            : 'FLOW_NOT_CURRENT';
+
       if (
         !reset?.recovery ||
+        reset.providerCorrelationSchemaVersion !== 1 ||
+        reset.recovery.providerOperationId !== flowId ||
         !user?.isActive ||
         user.organizations.length === 0 ||
         reset.usedAt ||
@@ -477,7 +555,10 @@ export async function processPasswordResetDeliveryJob(
         if (reset && !reset.usedAt && reset.deliveryStatus !== 'PROVIDER_ACCEPTED') {
           await tx.passwordResetToken.update({
             where: { id: flowId },
-            data: { deliveryStatus: 'CANCELLED', deliveryErrorCode: 'FLOW_NOT_CURRENT' },
+            data: {
+              deliveryStatus: 'CANCELLED',
+              deliveryErrorCode: deliveryContractErrorCode,
+            },
           });
         }
         if (reset) {
@@ -491,7 +572,7 @@ export async function processPasswordResetDeliveryJob(
             stage: 'delivery_claim',
             metadata: {
               deliveryAttempt,
-              errorCode: 'FLOW_NOT_CURRENT',
+              errorCode: deliveryContractErrorCode,
             },
           });
         }
@@ -566,7 +647,6 @@ export async function processPasswordResetDeliveryJob(
           metadata: {
             previousProvider: reset.provider,
             configuredProvider: provider,
-            providerOperationId: reset.recovery.providerOperationId,
             deliveryAttempt,
             errorCode: 'PROVIDER_CHANGED_DURING_RETRY',
           },
@@ -777,7 +857,6 @@ export async function processPasswordResetDeliveryJob(
         stage: 'provider_submission',
         metadata: {
           provider,
-          providerOperationId: operationId,
           retryable: normalized.retryable,
         },
       },
@@ -791,7 +870,6 @@ export async function processPasswordResetDeliveryJob(
         : 'superseded_by_authoritative_state',
       correlationId: flowId,
       provider,
-      providerOperationId: operationId,
       deliveryAttempt,
       errorCode: normalized.code,
     });
@@ -803,7 +881,6 @@ export async function processPasswordResetDeliveryJob(
     schemaVersion: 1,
     flowId,
     provider,
-    providerOperationId: operationId,
     providerMessageId: result.messageId,
     providerAcceptedAt: acceptedAt.toISOString(),
     sendFence: claimed.recovery.sendFence,
@@ -814,8 +891,6 @@ export async function processPasswordResetDeliveryJob(
     outcome: 'accepted',
     correlationId: flowId,
     provider,
-    providerOperationId: operationId,
-    providerMessageId: result.messageId,
     deliveryAttempt,
   });
 
@@ -839,8 +914,6 @@ export async function processPasswordResetDeliveryJob(
       event: 'provider_acceptance_conflict',
       outcome: 'conflict',
       correlationId: flowId,
-      providerOperationId: operationId,
-      providerMessageId: result.messageId,
     });
   } else if (databaseWrite.status === 'rejected' && reconciliationWrite.status === 'rejected') {
     log('error', {
@@ -848,8 +921,6 @@ export async function processPasswordResetDeliveryJob(
       outcome: 'critical_both_writes_failed',
       correlationId: flowId,
       provider,
-      providerOperationId: operationId,
-      providerMessageId: result.messageId,
       requestId: claimed.reset.requestId,
     });
   } else if (databaseWrite.status === 'rejected') {
@@ -858,8 +929,6 @@ export async function processPasswordResetDeliveryJob(
       outcome: 'database_write_failed_reconciliation_queued',
       correlationId: flowId,
       provider,
-      providerOperationId: operationId,
-      providerMessageId: result.messageId,
       requestId: claimed.reset.requestId,
     });
   } else if (reconciliationWrite.status === 'rejected') {
@@ -868,8 +937,6 @@ export async function processPasswordResetDeliveryJob(
       outcome: 'reconciliation_queue_failed_database_recorded',
       correlationId: flowId,
       provider,
-      providerOperationId: operationId,
-      providerMessageId: result.messageId,
       requestId: claimed.reset.requestId,
     });
   }

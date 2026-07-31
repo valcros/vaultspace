@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -140,6 +141,7 @@ describe('password reset recovery delivery processor', () => {
       requestId: 'request-1',
       organizationId: 'org-1',
       deliveryStatus: 'QUEUED',
+      providerCorrelationSchemaVersion: 1,
       recovery,
     };
     const user = {
@@ -169,9 +171,10 @@ describe('password reset recovery delivery processor', () => {
         deliveryStatus: 'SENDING',
         deliveryAttempts: 1,
         providerAcceptedAt: null,
-        provider: null,
+        provider: 'acs',
         providerMessageId: null,
         providerOperationId: flowId,
+        providerCorrelationSchemaVersion: 1,
       });
     mocks.tokenFindFirst.mockResolvedValue({ id: flowId });
     mocks.recoveryFindUnique.mockImplementation(() => ({
@@ -223,7 +226,6 @@ describe('password reset recovery delivery processor', () => {
         schemaVersion: 1,
         flowId: 'flow-1',
         provider: 'acs',
-        providerOperationId: 'flow-1',
         providerMessageId: 'acs-message-1',
         providerAcceptedAt: new Date().toISOString(),
         sendFence: 1,
@@ -259,6 +261,7 @@ describe('password reset recovery delivery processor', () => {
         jobId: expect.stringContaining(`password-reset-${flowId}-accepted-`),
       })
     );
+    expect(mocks.addJob.mock.calls[0]?.[2]).not.toHaveProperty('providerOperationId');
     expect(mocks.tokenUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -285,6 +288,120 @@ describe('password reset recovery delivery processor', () => {
       mocks.eventCreateMany.mock.invocationCallOrder[0]!
     );
     expect(JSON.stringify(mocks.addJob.mock.calls)).not.toContain(pair.publicToken);
+  });
+
+  it('does not resend when both post-acceptance durability writes fail', async () => {
+    const { flowId } = arrange();
+    mocks.sendEmail.mockResolvedValue({ messageId: 'sensitive-provider-message' });
+    mocks.addJob.mockRejectedValue(new Error('queue unavailable'));
+    mocks.transaction.mockImplementationOnce(async (operation: unknown) => {
+      const tx = {
+        passwordResetToken: {
+          findUnique: mocks.tokenFindUnique,
+          findFirst: mocks.tokenFindFirst,
+          update: mocks.tokenUpdate,
+          updateMany: mocks.tokenUpdateMany,
+        },
+        passwordResetRecovery: {
+          findUnique: mocks.recoveryFindUnique,
+          update: mocks.recoveryUpdate,
+          updateMany: mocks.recoveryUpdateMany,
+        },
+        user: { findUnique: mocks.userFindUnique },
+        $queryRaw: mocks.queryRaw,
+        $executeRaw: mocks.executeRaw,
+        event: { createMany: mocks.eventCreateMany, findUnique: mocks.eventFindUnique },
+      };
+      return (operation as (client: typeof tx) => Promise<unknown>)(tx);
+    });
+    mocks.transaction.mockRejectedValueOnce(new Error('database unavailable after acceptance'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(processPasswordResetDeliveryJob(job(flowId))).resolves.toBeUndefined();
+
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
+    expect(mocks.tokenUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ deliveryStatus: 'PROVIDER_ACCEPTED' }),
+      })
+    );
+    const durabilityLog = consoleError.mock.calls.find((call) =>
+      String(call[0]).includes('critical_both_writes_failed')
+    );
+    expect(durabilityLog).toBeDefined();
+    expect(String(durabilityLog?.[0])).not.toContain('sensitive-provider-message');
+    consoleError.mockRestore();
+  });
+
+  it('keeps provider acceptance durable when reconciliation enqueue fails', async () => {
+    const { flowId } = arrange();
+    const providerMessageSentinel = 'sensitive-provider-message';
+    mocks.sendEmail.mockResolvedValue({ messageId: providerMessageSentinel });
+    mocks.addJob.mockRejectedValue(new Error('queue unavailable'));
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await processPasswordResetDeliveryJob(job(flowId));
+
+    expect(mocks.sendEmail).toHaveBeenCalledOnce();
+    expect(mocks.tokenUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          deliveryStatus: 'PROVIDER_ACCEPTED',
+          providerMessageId: providerMessageSentinel,
+        }),
+      })
+    );
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining('reconciliation_queue_failed_database_recorded')
+    );
+    expect(JSON.stringify(consoleWarn.mock.calls)).not.toContain(providerMessageSentinel);
+    consoleWarn.mockRestore();
+  });
+
+  it('recovers a failed direct acceptance write from the independently queued job without resending', async () => {
+    const { flowId } = arrange();
+    const providerMessageSentinel = 'sensitive-provider-message';
+    mocks.sendEmail.mockResolvedValue({ messageId: providerMessageSentinel });
+    const transactionImplementation = mocks.transaction.getMockImplementation()!;
+    mocks.transaction
+      .mockImplementationOnce(transactionImplementation)
+      .mockRejectedValueOnce(new Error('database unavailable after acceptance'));
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await processPasswordResetDeliveryJob(job(flowId));
+
+    expect(mocks.sendEmail).toHaveBeenCalledOnce();
+    expect(mocks.addJob).toHaveBeenCalledOnce();
+    expect(mocks.tokenUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ deliveryStatus: 'PROVIDER_ACCEPTED' }),
+      })
+    );
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining('database_write_failed_reconciliation_queued')
+    );
+    const queuedPayload = mocks.addJob.mock.calls[0]?.[2];
+    expect(queuedPayload).toEqual(
+      expect.objectContaining({
+        flowId,
+        providerMessageId: providerMessageSentinel,
+      })
+    );
+
+    mocks.transaction.mockImplementation(transactionImplementation);
+    await processPasswordResetAcceptanceJob({ id: 'acceptance-job', data: queuedPayload } as never);
+
+    expect(mocks.sendEmail).toHaveBeenCalledOnce();
+    expect(mocks.tokenUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          deliveryStatus: 'PROVIDER_ACCEPTED',
+          providerMessageId: providerMessageSentinel,
+        }),
+      })
+    );
+    expect(JSON.stringify(consoleWarn.mock.calls)).not.toContain(providerMessageSentinel);
+    consoleWarn.mockRestore();
   });
 
   it('treats a retryable transport failure as acceptance unknown and never throws for retry', async () => {
@@ -388,9 +505,10 @@ describe('password reset recovery delivery processor', () => {
         deliveryStatus: 'SENDING',
         deliveryAttempts: 2,
         providerAcceptedAt: null,
-        provider: null,
+        provider: 'acs',
         providerMessageId: null,
         providerOperationId: flowId,
+        providerCorrelationSchemaVersion: 1,
       });
     mocks.userFindUnique.mockResolvedValue(user);
     mocks.recoveryFindUnique.mockResolvedValue({
@@ -484,6 +602,28 @@ describe('password reset recovery delivery processor', () => {
     expect(mocks.sendEmail).not.toHaveBeenCalled();
   });
 
+  it('cancels a marked flow whose pinned recovery operation does not match the flow', async () => {
+    const { flowId, reset } = arrange();
+    reset.recovery.providerOperationId = 'wrong-operation';
+
+    await processPasswordResetDeliveryJob(job(flowId));
+
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    expect(mocks.tokenUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          deliveryStatus: 'CANCELLED',
+          deliveryErrorCode: 'DELIVERY_CONTRACT_OPERATION_MISMATCH',
+        }),
+      })
+    );
+    expect(mocks.recoveryUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ enqueueStatus: 'CANCELLED', ciphertext: null }),
+      })
+    );
+  });
+
   it('allows a QUEUE_RETRYING flow to be claimed by a fast recovery worker', async () => {
     const { flowId, reset } = arrange();
     reset.deliveryStatus = 'QUEUE_RETRYING';
@@ -555,9 +695,10 @@ describe('password reset recovery delivery processor', () => {
       userId: 'user-1',
       requestId: 'request-1',
       organizationId: 'org-1',
-      provider: null,
+      provider: 'acs',
       providerMessageId: null,
       providerOperationId: 'flow-1',
+      providerCorrelationSchemaVersion: 1,
     });
     mocks.recoveryFindUnique.mockResolvedValue({
       sendFence: 2,
@@ -580,6 +721,31 @@ describe('password reset recovery delivery processor', () => {
     );
   });
 
+  it('records a conflict and refuses acceptance for a mismatched pinned operation', async () => {
+    mocks.tokenFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      provider: 'acs',
+      providerMessageId: null,
+      providerOperationId: 'flow-1',
+      providerCorrelationSchemaVersion: 1,
+    });
+    mocks.recoveryFindUnique.mockResolvedValue({
+      sendFence: 1,
+      providerOperationId: 'wrong-operation',
+      enqueueStatus: 'SENDING',
+      wipedAt: null,
+    });
+
+    await processPasswordResetAcceptanceJob(acceptanceJob());
+
+    expect(mocks.tokenUpdate).not.toHaveBeenCalled();
+    expect(mocks.recoveryUpdate).not.toHaveBeenCalled();
+    expect(mocks.eventCreateMany).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.eventCreateMany.mock.calls)).not.toContain('acs-message-1');
+  });
+
   it('treats the same provider message as idempotent and a different message as a conflict', async () => {
     mocks.tokenFindUnique.mockResolvedValue({
       userId: 'user-1',
@@ -588,6 +754,7 @@ describe('password reset recovery delivery processor', () => {
       provider: 'acs',
       providerMessageId: 'acs-message-1',
       providerOperationId: 'flow-1',
+      providerCorrelationSchemaVersion: 1,
     });
     mocks.recoveryFindUnique.mockResolvedValue({
       sendFence: 1,
@@ -604,5 +771,106 @@ describe('password reset recovery delivery processor', () => {
     );
     expect(mocks.tokenUpdate).not.toHaveBeenCalled();
     expect(mocks.eventCreateMany).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.eventCreateMany.mock.calls)).not.toContain('acs-message-conflict');
+  });
+
+  it('retries only an allowlisted transient acceptance persistence error', async () => {
+    mocks.tokenFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      provider: 'acs',
+      providerMessageId: null,
+      providerOperationId: 'flow-1',
+      providerCorrelationSchemaVersion: 1,
+    });
+    mocks.recoveryFindUnique.mockResolvedValue({
+      sendFence: 1,
+      providerOperationId: 'flow-1',
+      enqueueStatus: 'SENDING',
+      wipedAt: null,
+    });
+    mocks.transaction
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('transaction conflict', {
+          code: 'P2034',
+          clientVersion: '5.22.0',
+        })
+      )
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('transaction conflict', {
+          code: 'P2034',
+          clientVersion: '5.22.0',
+        })
+      );
+
+    await expect(processPasswordResetAcceptanceJob(acceptanceJob())).resolves.toBeUndefined();
+
+    expect(mocks.transaction).toHaveBeenCalledTimes(3);
+    expect(mocks.tokenUpdate).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces exhausted P1001 initialization failures as a bounded retryable error', async () => {
+    const providerMessageSentinel = 'sentinel-provider-message-id';
+    mocks.transaction.mockRejectedValue(
+      new Prisma.PrismaClientInitializationError(
+        `database unavailable near ${providerMessageSentinel}`,
+        '5.22.0',
+        'P1001'
+      )
+    );
+
+    const result = processPasswordResetAcceptanceJob(
+      acceptanceJob({ providerMessageId: providerMessageSentinel })
+    );
+
+    await expect(result).rejects.toMatchObject({
+      name: 'RetryableAcceptancePersistenceError',
+      message: 'Password reset acceptance persistence is temporarily unavailable',
+    });
+    await result.catch((error: Error) => {
+      expect(error.stack).not.toContain(providerMessageSentinel);
+    });
+    expect(mocks.transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects an unsupported acceptance payload schema before touching the database', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(
+      processPasswordResetAcceptanceJob(acceptanceJob({ schemaVersion: 2 }))
+    ).rejects.toMatchObject({
+      name: 'UnrecoverableError',
+      message: 'Invalid password reset acceptance payload',
+    });
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('provider_acceptance_job_rejected')
+    );
+    consoleError.mockRestore();
+  });
+
+  it('marks a non-transient acceptance persistence failure unrecoverable', async () => {
+    const providerMessageSentinel = 'sentinel-provider-message-id';
+    mocks.transaction.mockRejectedValue(
+      new Error(`deterministic schema mismatch near ${providerMessageSentinel}`)
+    );
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = processPasswordResetAcceptanceJob(
+      acceptanceJob({ providerMessageId: providerMessageSentinel })
+    );
+    await expect(result).rejects.toMatchObject({
+      name: 'UnrecoverableError',
+      message: 'Password reset acceptance persistence is not retryable',
+    });
+    await result.catch((error: Error) => {
+      expect(error.stack).not.toContain(providerMessageSentinel);
+    });
+
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(providerMessageSentinel);
+    consoleError.mockRestore();
   });
 });

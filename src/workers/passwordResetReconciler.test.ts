@@ -156,6 +156,49 @@ describe('password reset reconciler', () => {
     expect(mocks.closeJobProvider).toHaveBeenCalledOnce();
   });
 
+  it('gives a stale send lease precedence when the token is also expired', async () => {
+    mocks.recoveryFindMany
+      .mockResolvedValueOnce([{ flowId: 'flow-stale' }])
+      .mockResolvedValueOnce([{ flowId: 'flow-stale', sendFence: 4 }])
+      .mockResolvedValueOnce([]);
+
+    const summary = await reconcilePasswordResetDeliveries();
+
+    expect(summary.staleSendingUnknown).toBe(1);
+    expect(summary.expiredWiped).toBe(0);
+    expect(mocks.tokenUpdate).toHaveBeenCalledOnce();
+    expect(mocks.tokenUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'flow-stale' },
+        data: expect.objectContaining({
+          deliveryStatus: 'ACCEPTANCE_UNKNOWN',
+          deliveryErrorCode: 'STALE_SEND_LEASE',
+        }),
+      })
+    );
+    expect(mocks.recoveryUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { flowId: 'flow-stale' },
+        data: expect.objectContaining({
+          enqueueStatus: 'ACCEPTANCE_UNKNOWN',
+          cipherVersion: null,
+          keyId: null,
+          nonce: null,
+          ciphertext: null,
+          authTag: null,
+        }),
+      })
+    );
+    expect(mocks.eventCreateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ errorCode: 'STALE_SEND_LEASE' }),
+        }),
+      })
+    );
+    expect(mocks.addJob).not.toHaveBeenCalled();
+  });
+
   it('preflights Redis and rolls back runtime recovery and audit mutations', async () => {
     mocks.queryRaw
       .mockResolvedValueOnce([
@@ -190,14 +233,7 @@ describe('password reset reconciler', () => {
         ciphertext: expect.any(Buffer),
       }),
     });
-    expect(mocks.tokenUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          providerFinalStatus: 'PREFLIGHT',
-          providerFinalEventIdFingerprint: '0'.repeat(64),
-        }),
-      })
-    );
+    expect(mocks.tokenUpdate).not.toHaveBeenCalled();
     expect(mocks.recoveryUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { enqueueStatus: 'PREFLIGHT_VERIFIED' } })
     );
@@ -249,6 +285,117 @@ describe('password reset reconciler', () => {
 
     expect(mocks.tokenCreate).not.toHaveBeenCalled();
     expect(mocks.closeJobProvider).toHaveBeenCalledOnce();
+  });
+
+  it('fails preflight for a marked row that violates the writer contract', async () => {
+    mocks.queryRaw.mockResolvedValueOnce([
+      {
+        markedFlows: 1,
+        markedNonHmacRows: 1,
+        markedInvalidAuditScopeRows: 0,
+        markedAcceptedIncompleteRows: 0,
+        markedRowsWithoutRecovery: 0,
+        markedOperationIdMismatchRows: 0,
+        unmarkedActiveDeliveryRows: 0,
+        unmarkedAcceptedAcsRows: 0,
+        overLimitActiveMembershipAccounts: 0,
+        duplicateAcsMessageIdGroups: 0,
+        duplicateAcsOperationIdGroups: 0,
+        configuredProviderRows: 0,
+        postCutoverConfiguredProviderRows: 0,
+        acceptedAcsRowsWithoutMessageId: 0,
+        messageIdRowsWithoutAcceptedAt: 0,
+        correlationRowsWithoutProvider: 0,
+        acsRowsWithoutAuditOrganizationSnapshot: 0,
+        partialProviderFinalProjectionRows: 0,
+      },
+    ]);
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(/unsafe password reset/i);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+  });
+
+  it('fails preflight for a marked flow whose recovery operation is not the flow id', async () => {
+    mocks.queryRaw.mockResolvedValueOnce([
+      {
+        markedFlows: 1,
+        markedNonHmacRows: 0,
+        markedInvalidAuditScopeRows: 0,
+        markedAcceptedIncompleteRows: 0,
+        markedRowsWithoutRecovery: 0,
+        markedOperationIdMismatchRows: 1,
+        unmarkedActiveDeliveryRows: 0,
+        unmarkedAcceptedAcsRows: 0,
+        overLimitActiveMembershipAccounts: 0,
+        duplicateAcsMessageIdGroups: 0,
+        duplicateAcsOperationIdGroups: 0,
+        configuredProviderRows: 0,
+        postCutoverConfiguredProviderRows: 0,
+        acceptedAcsRowsWithoutMessageId: 0,
+        messageIdRowsWithoutAcceptedAt: 0,
+        correlationRowsWithoutProvider: 0,
+        acsRowsWithoutAuditOrganizationSnapshot: 0,
+        partialProviderFinalProjectionRows: 0,
+      },
+    ]);
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(/unsafe password reset/i);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+  });
+
+  it('blocks projection promotion for unmarked ACS acceptance or over-limit accounts', async () => {
+    process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] = 'true';
+    process.env['PASSWORD_RESET_PROVIDER_CORRELATION_CUTOVER_AT'] = '2026-07-31T03:00:00.000Z';
+    mocks.queryRaw.mockResolvedValueOnce([
+      {
+        markedFlows: 0,
+        markedNonHmacRows: 0,
+        markedInvalidAuditScopeRows: 0,
+        markedAcceptedIncompleteRows: 0,
+        markedRowsWithoutRecovery: 0,
+        unmarkedAcceptedAcsRows: 1,
+        overLimitActiveMembershipAccounts: 1,
+        duplicateAcsMessageIdGroups: 0,
+        duplicateAcsOperationIdGroups: 0,
+        configuredProviderRows: 0,
+        postCutoverConfiguredProviderRows: 0,
+        acceptedAcsRowsWithoutMessageId: 0,
+        messageIdRowsWithoutAcceptedAt: 0,
+        correlationRowsWithoutProvider: 0,
+        acsRowsWithoutAuditOrganizationSnapshot: 0,
+        partialProviderFinalProjectionRows: 0,
+      },
+    ]);
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(/unsafe password reset/i);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
+  });
+
+  it('blocks writer activation for an over-limit active membership account', async () => {
+    mocks.queryRaw.mockResolvedValueOnce([
+      {
+        markedFlows: 0,
+        markedNonHmacRows: 0,
+        markedInvalidAuditScopeRows: 0,
+        markedAcceptedIncompleteRows: 0,
+        markedRowsWithoutRecovery: 0,
+        unmarkedActiveDeliveryRows: 0,
+        unmarkedAcceptedAcsRows: 0,
+        overLimitActiveMembershipAccounts: 1,
+        duplicateAcsMessageIdGroups: 0,
+        duplicateAcsOperationIdGroups: 0,
+        configuredProviderRows: 0,
+        postCutoverConfiguredProviderRows: 0,
+        acceptedAcsRowsWithoutMessageId: 0,
+        messageIdRowsWithoutAcceptedAt: 0,
+        correlationRowsWithoutProvider: 0,
+        acsRowsWithoutAuditOrganizationSnapshot: 0,
+        partialProviderFinalProjectionRows: 0,
+      },
+    ]);
+
+    await expect(preflightPasswordResetRecovery()).rejects.toThrow(/unsafe password reset/i);
+    expect(mocks.tokenCreate).not.toHaveBeenCalled();
   });
 
   it('fails preflight for an accepted ACS row without a usable message identifier', async () => {
@@ -372,6 +519,14 @@ describe('password reset reconciler', () => {
     const summary = await reconcilePasswordResetDeliveries();
 
     expect(summary.enqueued).toBe(1);
+    expect(mocks.recoveryFindMany).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          resetToken: expect.objectContaining({ providerCorrelationSchemaVersion: 1 }),
+        }),
+      })
+    );
     expect(mocks.recoveryUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -399,6 +554,26 @@ describe('password reset reconciler', () => {
       })
     );
     expect(mocks.closeJobProvider).toHaveBeenCalledOnce();
+  });
+
+  it('does not enqueue an unmarked recovery candidate', async () => {
+    mocks.recoveryFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const summary = await reconcilePasswordResetDeliveries();
+
+    expect(summary.enqueued).toBe(0);
+    expect(mocks.recoveryFindMany).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          resetToken: expect.objectContaining({ providerCorrelationSchemaVersion: 1 }),
+        }),
+      })
+    );
+    expect(mocks.addJob).not.toHaveBeenCalled();
   });
 
   it('atomically defers and audits queue recovery when Redis remains unavailable', async () => {

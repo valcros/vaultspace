@@ -13,7 +13,7 @@ export class ConsoleEmailProvider implements EmailProvider {
     const messageId = `console-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     console.log('\n========== EMAIL ==========');
-    console.log(`Message ID: ${messageId}`);
+    console.log(`Message ID: ${options.sensitiveContent ? '[REDACTED]' : messageId}`);
     console.log(`Recipients: ${Array.isArray(options.to) ? options.to.length : 1}`);
     console.log(`Subject: ${options.subject}`);
     if (options.replyTo) {

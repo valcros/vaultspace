@@ -237,6 +237,7 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
         expiresAt: { gt: now },
         deliveryStatus: { in: ['PENDING', 'QUEUED', 'FAILED_RETRYING', 'SENDING'] },
         deliveryAttempts: { lt: attempt },
+        providerCorrelationSchemaVersion: null,
         OR: [{ provider: null }, { provider }],
       },
       data: {
@@ -259,12 +260,28 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
           auditOrganizationIds: true,
           provider: true,
           providerOperationId: true,
+          providerCorrelationSchemaVersion: true,
           deliveryStatus: true,
           deliveryAttempts: true,
           usedAt: true,
           expiresAt: true,
         },
       });
+
+      if (existing?.providerCorrelationSchemaVersion === 1) {
+        console.error(
+          JSON.stringify({
+            component: 'email-worker',
+            event: 'provider_submission_skipped',
+            outcome: 'blocked',
+            reason: 'DELIVERY_CONTRACT_LEGACY_PATH_REJECTED',
+            jobId: job.id ?? null,
+            correlationId: passwordReset.flowId,
+            attempt,
+          })
+        );
+        return;
+      }
 
       if (
         existing?.provider &&
@@ -317,7 +334,6 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
                 auditScopeSource: auditScope.source,
                 previousProvider: existing.provider,
                 configuredProvider: provider,
-                providerOperationId: existing.providerOperationId,
                 attempt,
                 errorCode: 'PROVIDER_CHANGED_DURING_RETRY',
               },
@@ -513,9 +529,8 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
     throw deliveryError;
   }
 
-  // The provider has returned acceptance. Log it before lifecycle persistence
-  // so a database failure cannot erase the provider message correlation. Do not
-  // retry a successfully submitted email solely because this later write fails.
+  // The provider has returned acceptance. The raw provider identifier remains
+  // in protected lifecycle storage, not structured logs or tenant audit data.
   console.log(
     JSON.stringify({
       component: 'email-worker',
@@ -524,7 +539,6 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
       template,
       jobId: job.id ?? null,
       correlationId: passwordReset?.flowId ?? null,
-      providerMessageId: result.messageId,
       attempt,
     })
   );
@@ -570,7 +584,6 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
               jobId: job.id ?? null,
               attempt,
               provider,
-              providerMessageId: result.messageId,
             },
           });
         }
@@ -585,7 +598,6 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
             reason: 'FLOW_CHANGED_AFTER_PROVIDER_ACCEPTANCE',
             jobId: job.id ?? null,
             correlationId: passwordReset.flowId,
-            providerMessageId: result.messageId,
             attempt,
           })
         );
@@ -598,7 +610,6 @@ export async function processEmailJob(job: Job<EmailSendJobPayload>): Promise<vo
           outcome: 'failed_after_provider_acceptance',
           jobId: job.id ?? null,
           correlationId: passwordReset.flowId,
-          providerMessageId: result.messageId,
           attempt,
           errorName: lifecycleError instanceof Error ? lifecycleError.name : 'UnknownError',
         })

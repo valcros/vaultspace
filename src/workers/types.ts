@@ -97,12 +97,11 @@ export interface PasswordResetDeliveryJobPayload {
   deliveryAttempt: number;
 }
 
-/** Non-secret provider acceptance bookkeeping recovery. */
+/** Sensitive provider acceptance bookkeeping recovery. Contains no bearer token. */
 export interface PasswordResetAcceptanceJobPayload {
   schemaVersion: 1;
   flowId: string;
   provider: string;
-  providerOperationId: string;
   providerMessageId: string;
   providerAcceptedAt: string;
   sendFence: number;
@@ -214,14 +213,15 @@ export const PASSWORD_RESET_RECOVERY_JOB_OPTIONS = {
   removeOnFail: true,
 } as const;
 
-// Acceptance reconciliation is non-secret and idempotent. Retrying it cannot
-// resubmit email, so it can use ordinary BullMQ retries in addition to DB retry.
+// Acceptance reconciliation is bounded sensitive correlation data and is
+// idempotent. Retrying it cannot resubmit email, so it can use ordinary BullMQ
+// retries in addition to DB retry.
 export const PASSWORD_RESET_ACCEPTANCE_JOB_OPTIONS = {
   attempts: 10,
   backoff: { type: 'exponential', delay: 30_000 },
   removeOnComplete: true,
-  // Retain exhausted non-secret acceptance facts for bounded incident
-  // response. Unlike delivery jobs, this payload contains no bearer token.
+  // Retain exhausted acceptance facts for bounded incident response. This
+  // payload is sensitive correlation data but contains no bearer token.
   removeOnFail: { age: 7 * 24 * 60 * 60, count: 1000 },
 } as const;
 

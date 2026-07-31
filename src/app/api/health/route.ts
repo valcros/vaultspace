@@ -22,6 +22,11 @@ import {
 } from '@/lib/deployment-capabilities';
 import { getPasswordResetTokenWriteMode } from '@/lib/auth/passwordResetToken';
 import { validatePasswordResetRecoveryConfiguration } from '@/lib/auth/passwordResetRecovery';
+import { PASSWORD_RESET_DELIVERY_CONTRACT_VERSION } from '@/lib/auth/passwordResetDeliveryContract';
+
+const HEALTH_RESPONSE_HEADERS = {
+  'Cache-Control': 'no-store, max-age=0',
+};
 
 interface HealthCheck {
   status: 'healthy' | 'unhealthy' | 'degraded';
@@ -45,6 +50,7 @@ interface HealthResponse {
   };
   passwordResetRecovery: {
     writerVersion: 1;
+    deliveryContractVersion: 1;
     configured: boolean;
     activeKeyId: string | null;
     reconcilerEnabled: boolean;
@@ -195,6 +201,7 @@ export async function GET(request: NextRequest) {
   }
   const passwordResetRecovery = {
     writerVersion: 1 as const,
+    deliveryContractVersion: PASSWORD_RESET_DELIVERY_CONTRACT_VERSION,
     configured: recoveryConfiguration !== null,
     activeKeyId: recoveryConfiguration?.activeKeyId ?? null,
     reconcilerEnabled: process.env['PASSWORD_RESET_RECONCILER_ENABLED'] === 'true',
@@ -202,18 +209,21 @@ export async function GET(request: NextRequest) {
 
   // Quick liveness check
   if (!deep) {
-    return NextResponse.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      version,
-      release,
-      revision,
-      mode,
-      capabilities,
-      degraded,
-      passwordResetTokens,
-      passwordResetRecovery,
-    });
+    return NextResponse.json(
+      {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        version,
+        release,
+        revision,
+        mode,
+        capabilities,
+        degraded,
+        passwordResetTokens,
+        passwordResetRecovery,
+      },
+      { headers: HEALTH_RESPONSE_HEADERS }
+    );
   }
 
   // Full readiness check with dependency verification
@@ -262,5 +272,5 @@ export async function GET(request: NextRequest) {
   // Degraded is still 200 (ready to serve, with reduced functionality)
   const statusCode = overallStatus === 'unhealthy' ? 503 : 200;
 
-  return NextResponse.json(response, { status: statusCode });
+  return NextResponse.json(response, { status: statusCode, headers: HEALTH_RESPONSE_HEADERS });
 }

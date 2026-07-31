@@ -349,10 +349,7 @@ describe('processEmailJob — password reset lifecycle', () => {
       expect.objectContaining({
         correlationId: 'flow-1',
         idempotencyKey: 'password-reset-flow-1-accepted-org-1',
-        metadata: expect.objectContaining({
-          outcome: 'accepted',
-          providerMessageId: 'acs-message-1',
-        }),
+        metadata: expect.objectContaining({ outcome: 'accepted' }),
       })
     );
   });
@@ -425,6 +422,43 @@ describe('processEmailJob — password reset lifecycle', () => {
 
     expect(mockEmailSendEmail).not.toHaveBeenCalled();
     expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('never submits a marked delivery-contract flow through the legacy email worker', async () => {
+    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1'],
+      provider: 'acs',
+      providerOperationId: 'flow-1',
+      providerCorrelationSchemaVersion: 1,
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processEmailJob(
+      makeEmailJob({
+        template: 'password-reset',
+        passwordReset: {
+          flowId: 'flow-1',
+          userId: 'user-1',
+          requestId: 'request-1',
+          organizationIds: ['org-1'],
+        },
+      })
+    );
+
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('DELIVERY_CONTRACT_LEGACY_PATH_REJECTED')
+    );
+    consoleError.mockRestore();
   });
 
   it('does not submit when the authoritative claim loses to token invalidation', async () => {
