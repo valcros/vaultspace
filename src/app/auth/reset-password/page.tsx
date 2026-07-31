@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,15 +9,32 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 function ResetPasswordForm() {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const token = searchParams.get('token');
+  const [token, setToken] = React.useState<string | null | undefined>(undefined);
 
   const [password, setPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+
+  React.useEffect(() => {
+    const currentUrl = new URL(window.location.href);
+    const fragmentToken = new URLSearchParams(currentUrl.hash.slice(1)).get('token');
+    const legacyQueryToken = currentUrl.searchParams.get('token');
+    setToken(fragmentToken ?? legacyQueryToken);
+    currentUrl.searchParams.delete('token');
+    currentUrl.hash = '';
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`
+    );
+  }, []);
+
+  if (token === undefined) {
+    return <ResetPasswordFallback />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

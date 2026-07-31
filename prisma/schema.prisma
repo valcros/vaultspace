@@ -1372,7 +1372,8 @@ model PasswordResetToken {
 
   userId String
 
-  // Token
+  // Token lookup value. New flows may store a versioned HMAC digest; legacy
+  // plaintext rows remain readable only through the strict legacy parser.
   token     String   @unique @db.VarChar(255)
   expiresAt DateTime
 

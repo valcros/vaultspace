@@ -130,6 +130,8 @@ export interface JobOptions {
     type: 'exponential' | 'fixed';
     delay: number;
   };
+  removeOnComplete?: boolean | number | { age: number; count?: number; limit?: number };
+  removeOnFail?: boolean | number | { age: number; count?: number; limit?: number };
   /**
    * Deterministic job id for deduplication: backends that support it (BullMQ)
    * drop an add while a job with the same id is still queued. Use for

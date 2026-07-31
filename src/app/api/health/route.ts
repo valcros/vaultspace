@@ -20,6 +20,7 @@ import {
   getDegradedCapabilities,
   type DeploymentCapabilities,
 } from '@/lib/deployment-capabilities';
+import { getPasswordResetTokenWriteMode } from '@/lib/auth/passwordResetToken';
 
 interface HealthCheck {
   status: 'healthy' | 'unhealthy' | 'degraded';
@@ -36,6 +37,11 @@ interface HealthResponse {
   mode: DeploymentMode;
   capabilities: DeploymentCapabilities;
   degraded: (keyof DeploymentCapabilities)[];
+  passwordResetTokens: {
+    readerVersion: 1;
+    writeMode: 'legacy' | 'hmac';
+    activeKeyId: 'session-v1';
+  };
   checks: {
     database: HealthCheck;
     cache: HealthCheck;
@@ -169,6 +175,11 @@ export async function GET(request: NextRequest) {
   const mode = getDeploymentMode();
   const capabilities = resolveCapabilities();
   const degraded = getDegradedCapabilities();
+  const passwordResetTokens = {
+    readerVersion: 1 as const,
+    writeMode: getPasswordResetTokenWriteMode(),
+    activeKeyId: 'session-v1' as const,
+  };
 
   // Quick liveness check
   if (!deep) {
@@ -181,6 +192,7 @@ export async function GET(request: NextRequest) {
       mode,
       capabilities,
       degraded,
+      passwordResetTokens,
     });
   }
 
@@ -221,6 +233,7 @@ export async function GET(request: NextRequest) {
     mode,
     capabilities,
     degraded,
+    passwordResetTokens,
     checks,
   };
 

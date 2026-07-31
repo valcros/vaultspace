@@ -179,6 +179,10 @@ export const PASSWORD_RESET_EMAIL_JOB_OPTIONS = {
     type: 'exponential',
     delay: 60_000,
   },
+  // Reset URLs are bearer credentials. Remove successful payloads immediately
+  // and remove terminal failures immediately after retries are exhausted.
+  removeOnComplete: true,
+  removeOnFail: true,
 } as const;
 
 // =============================================================================

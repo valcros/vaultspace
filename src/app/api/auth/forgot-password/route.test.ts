@@ -71,6 +71,7 @@ describe('POST /api/auth/forgot-password', () => {
     vi.clearAllMocks();
     process.env['APP_URL'] = 'https://vaultspace.example.com';
     process.env['SESSION_SECRET'] = 'test-session-secret';
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
     mocks.findUser.mockResolvedValue({
       id: 'user-1',
       email: 'admin@example.com',
@@ -152,7 +153,7 @@ describe('POST /api/auth/forgot-password', () => {
           userName: 'Ada',
           organizationName: 'Demo Organization',
           resetUrl: expect.stringContaining(
-            'https://vaultspace.example.com/auth/reset-password?token='
+            'https://vaultspace.example.com/auth/reset-password#token='
           ),
           expiresIn: '1 hour',
         }),
@@ -165,6 +166,8 @@ describe('POST /api/auth/forgot-password', () => {
       expect.objectContaining({
         attempts: 5,
         backoff: { type: 'exponential', delay: 60_000 },
+        removeOnComplete: true,
+        removeOnFail: true,
         jobId: expect.stringMatching(/^password-reset-/),
       })
     );
@@ -175,6 +178,14 @@ describe('POST /api/auth/forgot-password', () => {
         requestId: 'req-forgot',
       })
     );
+    const storedToken = mocks.createToken.mock.calls[0]?.[0]?.data?.token as string;
+    const queuedUrl = mocks.addJob.mock.calls[0]?.[2]?.data?.resetUrl as string;
+    const queuedUrlObject = new URL(queuedUrl);
+    const publicToken = new URLSearchParams(queuedUrlObject.hash.slice(1)).get('token');
+    expect(queuedUrlObject.search).toBe('');
+    expect(storedToken).toMatch(/^prh1:[a-f0-9]{64}$/);
+    expect(publicToken).toMatch(/^prt1_[A-Za-z0-9_-]{43}$/);
+    expect(storedToken).not.toContain(publicToken ?? 'missing');
   });
 
   it('keeps the public response neutral when queue insertion fails', async () => {
@@ -317,6 +328,37 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mocks.addJob).not.toHaveBeenCalled();
   });
 
+  it('fails before account lookup or token mutation when the reset secret is missing', async () => {
+    delete process.env['SESSION_SECRET'];
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(mocks.findUser).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.addJob).not.toHaveBeenCalled();
+  });
+
+  it('fails before account lookup when the write mode is invalid', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'HMAC';
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(mocks.findUser).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it('returns the same neutral response without minting a token for an orphan account', async () => {
     mocks.findUser.mockResolvedValue({
       id: 'user-orphan',
@@ -414,5 +456,37 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mocks.createToken).not.toHaveBeenCalled();
     expect(mocks.addJob).not.toHaveBeenCalled();
     expect(mocks.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('does not log or audit the public token, reset URL, or secret on queue failure', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let resetUrl = '';
+    mocks.addJob.mockImplementation(async (_queue, _name, data) => {
+      resetUrl = data.data.resetUrl;
+      throw new Error(`queue rejected ${resetUrl} test-session-secret`);
+    });
+
+    await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    const publicToken = new URLSearchParams(new URL(resetUrl).hash.slice(1)).get('token') ?? '';
+    const emitted = JSON.stringify({
+      logs: [consoleLog.mock.calls, consoleWarn.mock.calls, consoleError.mock.calls],
+      requestAudit: mocks.createSecurityAuditEvent.mock.calls,
+      failureAudit: mocks.captureSecurityAudit.mock.calls,
+      lifecycleWrites: mocks.updateToken.mock.calls,
+    });
+    expect(emitted).not.toContain(publicToken);
+    expect(emitted).not.toContain(resetUrl);
+    expect(emitted).not.toContain('test-session-secret');
+    consoleLog.mockRestore();
+    consoleWarn.mockRestore();
+    consoleError.mockRestore();
   });
 });
