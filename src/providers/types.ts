@@ -148,6 +148,9 @@ export interface JobResult<T = unknown> {
 }
 
 export interface JobProvider {
+  /** Establish and verify the queue backend connection for a named queue. */
+  waitUntilReady(queueName: string): Promise<void>;
+
   /**
    * Add a job to the queue. Queue names carry the normal priority model;
    * options.priority is an explicit BullMQ priority override.
@@ -163,6 +166,9 @@ export interface JobProvider {
    * Cancel a pending job
    */
   cancelJob(queueName: string, jobId: string): Promise<void>;
+
+  /** Release queue/client connections owned by short-lived processes. */
+  close?(): Promise<void>;
 }
 
 // =============================================================================

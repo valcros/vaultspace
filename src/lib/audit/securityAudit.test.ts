@@ -48,6 +48,39 @@ describe('securityAudit', () => {
     });
   });
 
+  it('uses insert-only conflict handling for an idempotent immutable event', async () => {
+    const createMany = vi.fn().mockResolvedValue({ count: 1 });
+    const findUnique = vi.fn();
+
+    await expect(
+      createSecurityAuditEvent({ event: { createMany, findUnique } } as never, {
+        ...input,
+        idempotencyKey: 'password-reset-flow-1-accepted-org-1',
+      })
+    ).resolves.toMatch(/^[0-9a-f-]{36}$/);
+
+    expect(createMany).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        idempotencyKey: 'password-reset-flow-1-accepted-org-1',
+      }),
+      skipDuplicates: true,
+    });
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it('returns the visible existing immutable event after an idempotency conflict', async () => {
+    const createMany = vi.fn().mockResolvedValue({ count: 0 });
+    const findUnique = vi.fn().mockResolvedValue({ id: 'event-existing', organizationId: 'org-1' });
+
+    await expect(
+      createSecurityAuditEvent({ event: { createMany, findUnique } } as never, {
+        ...input,
+        idempotencyKey: 'password-reset-flow-1-accepted-org-1',
+      })
+    ).resolves.toBe('event-existing');
+  });
+
   it('keeps best-effort audit failure diagnostics free of actor and network data', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockWithOrgContext.mockRejectedValue(new Error('database unavailable'));

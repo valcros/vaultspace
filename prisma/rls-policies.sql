@@ -71,7 +71,7 @@ CREATE POLICY org_bootstrap_lookup ON organizations
   FOR SELECT
   USING (
     -- Allow lookup when no org context is set (bootstrap scenario)
-    current_setting('app.current_org_id', true) IS NULL
+    NULLIF(current_setting('app.current_org_id', true), '') IS NULL
     AND "isActive" = true
   );
 
@@ -82,7 +82,7 @@ CREATE POLICY org_bootstrap_lookup ON organizations
 DROP POLICY IF EXISTS org_bootstrap_insert ON organizations;
 CREATE POLICY org_bootstrap_insert ON organizations
   FOR INSERT
-  WITH CHECK (current_setting('app.current_org_id', true) IS NULL);
+  WITH CHECK (NULLIF(current_setting('app.current_org_id', true), '') IS NULL);
 
 -- Users bootstrap: allow email-based lookup before org context is established.
 -- The login flow looks up `users` by email + verifies password BEFORE it knows
@@ -93,14 +93,14 @@ CREATE POLICY org_bootstrap_insert ON organizations
 DROP POLICY IF EXISTS user_bootstrap_lookup ON users;
 CREATE POLICY user_bootstrap_lookup ON users
   FOR SELECT
-  USING (current_setting('app.current_org_id', true) IS NULL);
+  USING (NULLIF(current_setting('app.current_org_id', true), '') IS NULL);
 
 -- Users bootstrap INSERT: allow new account creation during /api/auth/register
 -- (no org context yet because the org is being created in the same transaction).
 DROP POLICY IF EXISTS user_bootstrap_insert ON users;
 CREATE POLICY user_bootstrap_insert ON users
   FOR INSERT
-  WITH CHECK (current_setting('app.current_org_id', true) IS NULL);
+  WITH CHECK (NULLIF(current_setting('app.current_org_id', true), '') IS NULL);
 
 -- Users policy: See users in same org
 DROP POLICY IF EXISTS user_org_isolation ON users;
@@ -121,7 +121,7 @@ CREATE POLICY user_org_isolation ON users
 DROP POLICY IF EXISTS user_org_bootstrap_lookup ON user_organizations;
 CREATE POLICY user_org_bootstrap_lookup ON user_organizations
   FOR SELECT
-  USING (current_setting('app.current_org_id', true) IS NULL);
+  USING (NULLIF(current_setting('app.current_org_id', true), '') IS NULL);
 
 -- User-Organizations bootstrap INSERT: allow linking the new user to the
 -- new (or invited) organization during /api/auth/register. The first
@@ -130,7 +130,7 @@ CREATE POLICY user_org_bootstrap_lookup ON user_organizations
 DROP POLICY IF EXISTS user_org_bootstrap_insert ON user_organizations;
 CREATE POLICY user_org_bootstrap_insert ON user_organizations
   FOR INSERT
-  WITH CHECK (current_setting('app.current_org_id', true) IS NULL);
+  WITH CHECK (NULLIF(current_setting('app.current_org_id', true), '') IS NULL);
 
 -- User-Organizations policy
 DROP POLICY IF EXISTS user_org_mapping_isolation ON user_organizations;
@@ -270,7 +270,7 @@ CREATE POLICY text_org_isolation ON extracted_texts
 DROP POLICY IF EXISTS invitation_bootstrap_lookup ON invitations;
 CREATE POLICY invitation_bootstrap_lookup ON invitations
   FOR SELECT
-  USING (current_setting('app.current_org_id', true) IS NULL);
+  USING (NULLIF(current_setting('app.current_org_id', true), '') IS NULL);
 
 -- Invitations policy
 DROP POLICY IF EXISTS invitation_org_isolation ON invitations;

@@ -4,10 +4,18 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   findUser: vi.fn(),
   createToken: vi.fn(),
+  findSupersededFlows: vi.fn(),
   supersedeTokens: vi.fn(),
   lockUser: vi.fn(),
+  advisoryLockUser: vi.fn(),
   findLockedUser: vi.fn(),
   updateToken: vi.fn(),
+  findTokenState: vi.fn(),
+  updateTokenState: vi.fn(),
+  createRecovery: vi.fn(),
+  updateRecovery: vi.fn(),
+  findRecoveryState: vi.fn(),
+  updateRecoveryState: vi.fn(),
   transaction: vi.fn(),
   addJob: vi.fn(),
   sendEmail: vi.fn(),
@@ -25,7 +33,12 @@ vi.mock('@/lib/db', () => ({
     },
     passwordResetToken: {
       create: mocks.createToken,
+      findMany: mocks.findSupersededFlows,
       updateMany: mocks.updateToken,
+    },
+    passwordResetRecovery: {
+      create: mocks.createRecovery,
+      updateMany: mocks.updateRecovery,
     },
     $transaction: mocks.transaction,
   },
@@ -68,10 +81,14 @@ import { POST } from './route';
 
 describe('POST /api/auth/forgot-password', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     process.env['APP_URL'] = 'https://vaultspace.example.com';
     process.env['SESSION_SECRET'] = 'test-session-secret';
     process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
+    process.env['PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID'] = 'test-key';
+    process.env['PASSWORD_RESET_RECOVERY_KEYS'] = JSON.stringify({
+      'test-key': Buffer.alloc(32, 7).toString('base64'),
+    });
     mocks.findUser.mockResolvedValue({
       id: 'user-1',
       email: 'admin@example.com',
@@ -109,9 +126,20 @@ describe('POST /api/auth/forgot-password', () => {
       ],
     });
     mocks.createToken.mockResolvedValue({ id: 'reset-token-1' });
+    mocks.findSupersededFlows.mockResolvedValue([]);
     mocks.supersedeTokens.mockResolvedValue({ count: 0 });
     mocks.lockUser.mockResolvedValue([]);
+    mocks.advisoryLockUser.mockResolvedValue(1);
     mocks.updateToken.mockResolvedValue({ count: 1 });
+    mocks.findTokenState.mockResolvedValue({
+      deliveryStatus: 'PENDING',
+      providerAcceptedAt: null,
+    });
+    mocks.updateTokenState.mockResolvedValue({});
+    mocks.createRecovery.mockResolvedValue({ flowId: 'flow-1' });
+    mocks.updateRecovery.mockResolvedValue({ count: 1 });
+    mocks.findRecoveryState.mockResolvedValue({ enqueueStatus: 'PENDING', wipedAt: null });
+    mocks.updateRecoveryState.mockResolvedValue({});
     mocks.createSecurityAuditEvent.mockResolvedValue('event-1');
     mocks.captureSecurityAudit.mockResolvedValue('captured');
     mocks.resetByEmail.mockResolvedValue(undefined);
@@ -120,10 +148,20 @@ describe('POST /api/auth/forgot-password', () => {
       operation({
         passwordResetToken: {
           create: mocks.createToken,
+          findMany: mocks.findSupersededFlows,
+          findUnique: mocks.findTokenState,
+          update: mocks.updateTokenState,
           updateMany: mocks.supersedeTokens,
+        },
+        passwordResetRecovery: {
+          create: mocks.createRecovery,
+          findUnique: mocks.findRecoveryState,
+          update: mocks.updateRecoveryState,
+          updateMany: mocks.updateRecovery,
         },
         user: { findUnique: mocks.findLockedUser },
         $queryRaw: mocks.lockUser,
+        $executeRaw: mocks.advisoryLockUser,
       })
     );
     mocks.addJob.mockResolvedValue('job-1');
@@ -132,7 +170,7 @@ describe('POST /api/auth/forgot-password', () => {
     );
   });
 
-  it('queues the supported email.send job for async password reset email', async () => {
+  it('queues a flow-only delivery job and keeps recovery material in PostgreSQL', async () => {
     const request = new NextRequest('http://localhost/api/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email: 'Admin@Example.com' }),
@@ -144,31 +182,13 @@ describe('POST /api/auth/forgot-password', () => {
 
     expect(mocks.addJob).toHaveBeenCalledWith(
       'normal',
-      'email.send',
+      'password-reset.deliver',
+      { schemaVersion: 1, flowId: expect.any(String), deliveryAttempt: 1 },
       expect.objectContaining({
-        to: 'admin@example.com',
-        subject: 'Reset your Demo Organization password',
-        template: 'password-reset',
-        data: expect.objectContaining({
-          userName: 'Ada',
-          organizationName: 'Demo Organization',
-          resetUrl: expect.stringContaining(
-            'https://vaultspace.example.com/auth/reset-password#token='
-          ),
-          expiresIn: '1 hour',
-        }),
-        passwordReset: expect.objectContaining({
-          userId: 'user-1',
-          requestId: 'req-forgot',
-          organizationIds: ['org-1'],
-        }),
-      }),
-      expect.objectContaining({
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 60_000 },
+        attempts: 1,
         removeOnComplete: true,
         removeOnFail: true,
-        jobId: expect.stringMatching(/^password-reset-/),
+        jobId: expect.stringMatching(/^password-reset-.*-delivery-1$/),
       })
     );
     expect(mocks.createSecurityAuditEvent).toHaveBeenCalledWith(
@@ -179,13 +199,17 @@ describe('POST /api/auth/forgot-password', () => {
       })
     );
     const storedToken = mocks.createToken.mock.calls[0]?.[0]?.data?.token as string;
-    const queuedUrl = mocks.addJob.mock.calls[0]?.[2]?.data?.resetUrl as string;
-    const queuedUrlObject = new URL(queuedUrl);
-    const publicToken = new URLSearchParams(queuedUrlObject.hash.slice(1)).get('token');
-    expect(queuedUrlObject.search).toBe('');
     expect(storedToken).toMatch(/^prh1:[a-f0-9]{64}$/);
-    expect(publicToken).toMatch(/^prt1_[A-Za-z0-9_-]{43}$/);
-    expect(storedToken).not.toContain(publicToken ?? 'missing');
+    expect(mocks.createRecovery).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        flowId: expect.any(String),
+        keyId: 'test-key',
+        nonce: expect.any(Buffer),
+        ciphertext: expect.any(Buffer),
+        authTag: expect.any(Buffer),
+      }),
+    });
+    expect(JSON.stringify(mocks.addJob.mock.calls)).not.toContain('prt1_');
   });
 
   it('keeps the public response neutral when queue insertion fails', async () => {
@@ -200,15 +224,20 @@ describe('POST /api/auth/forgot-password', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
-    expect(mocks.updateToken).toHaveBeenCalledWith(
+    expect(mocks.updateTokenState).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ deliveryStatus: 'QUEUE_FAILED' }),
+        data: expect.objectContaining({ deliveryStatus: 'QUEUE_RETRYING' }),
       })
     );
-    expect(mocks.captureSecurityAudit).toHaveBeenCalledWith(
+    expect(mocks.createSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.objectContaining({
         eventType: 'USER_PASSWORD_RESET',
-        metadata: expect.objectContaining({ stage: 'queue', errorCode: 'EMAIL_QUEUE_ERROR' }),
+        metadata: expect.objectContaining({
+          outcome: 'pending',
+          stage: 'queue',
+          errorCode: 'EMAIL_QUEUE_ERROR',
+        }),
       })
     );
   });
@@ -235,6 +264,7 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('audits a synchronous provider rejection while keeping the response neutral', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'legacy';
     mocks.hasCapability.mockImplementation(
       (capability: string) => capability === 'canSendSyncEmail'
     );
@@ -260,12 +290,14 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('does not report provider failure when lifecycle persistence fails after acceptance', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'legacy';
     mocks.hasCapability.mockImplementation(
       (capability: string) => capability === 'canSendSyncEmail'
     );
     mocks.sendEmail.mockResolvedValue({ messageId: 'provider-message-1' });
-    mocks.updateToken
-      .mockResolvedValueOnce({ count: 1 })
+    const issuanceTransaction = mocks.transaction.getMockImplementation();
+    mocks.transaction
+      .mockImplementationOnce(issuanceTransaction!)
       .mockRejectedValueOnce(new Error('database unavailable after acceptance'));
 
     const response = await POST(
@@ -290,7 +322,37 @@ describe('POST /api/auth/forgot-password', () => {
     );
   });
 
+  it('records immutable provider acceptance for synchronous legacy delivery', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'legacy';
+    mocks.hasCapability.mockImplementation(
+      (capability: string) => capability === 'canSendSyncEmail'
+    );
+    mocks.sendEmail.mockResolvedValue({ messageId: 'provider-message-1' });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.createSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        eventType: 'USER_PASSWORD_RESET',
+        idempotencyKey: expect.stringMatching(/^password-reset-.*-accepted-org-1$/),
+        metadata: expect.objectContaining({
+          outcome: 'accepted',
+          stage: 'provider_submission',
+          providerMessageId: 'provider-message-1',
+        }),
+      })
+    );
+  });
+
   it('audits missing email capability while keeping the response neutral', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'legacy';
     mocks.hasCapability.mockReturnValue(false);
 
     const response = await POST(
@@ -359,6 +421,38 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
+  it('fails before account lookup when HMAC recovery keys are unavailable', async () => {
+    delete process.env['PASSWORD_RESET_RECOVERY_KEYS'];
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(mocks.findUser).not.toHaveBeenCalled();
+    expect(mocks.createToken).not.toHaveBeenCalled();
+  });
+
+  it('fails before account lookup when HMAC delivery has no async worker', async () => {
+    mocks.hasCapability.mockImplementation(
+      (capability: string) => capability === 'canSendSyncEmail'
+    );
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(mocks.findUser).not.toHaveBeenCalled();
+    expect(mocks.createToken).not.toHaveBeenCalled();
+  });
+
   it('returns the same neutral response without minting a token for an orphan account', async () => {
     mocks.findUser.mockResolvedValue({
       id: 'user-orphan',
@@ -391,6 +485,7 @@ describe('POST /api/auth/forgot-password', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.lockUser).toHaveBeenCalledTimes(2);
+    expect(mocks.advisoryLockUser).toHaveBeenCalledTimes(1);
     expect(mocks.supersedeTokens).toHaveBeenCalledWith({
       where: { userId: 'user-1', usedAt: null },
       data: { usedAt: expect.any(Date) },
@@ -400,7 +495,29 @@ describe('POST /api/auth/forgot-password', () => {
     );
   });
 
+  it('records immutable cancellation when a newer request supersedes a reset flow', async () => {
+    mocks.findSupersededFlows.mockResolvedValue([{ id: 'old-flow', requestId: 'old-request' }]);
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.createSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        correlationId: 'old-flow',
+        idempotencyKey: 'password-reset-old-flow-superseded-org-1',
+        metadata: expect.objectContaining({ errorCode: 'SUPERSEDED' }),
+      })
+    );
+  });
+
   it('does not synchronously send a flow superseded before the send claim', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'legacy';
     mocks.hasCapability.mockImplementation(
       (capability: string) => capability === 'canSendSyncEmail'
     );
@@ -462,10 +579,8 @@ describe('POST /api/auth/forgot-password', () => {
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    let resetUrl = '';
-    mocks.addJob.mockImplementation(async (_queue, _name, data) => {
-      resetUrl = data.data.resetUrl;
-      throw new Error(`queue rejected ${resetUrl} test-session-secret`);
+    mocks.addJob.mockImplementation(async () => {
+      throw new Error('queue rejected test-session-secret');
     });
 
     await POST(
@@ -475,15 +590,14 @@ describe('POST /api/auth/forgot-password', () => {
       })
     );
 
-    const publicToken = new URLSearchParams(new URL(resetUrl).hash.slice(1)).get('token') ?? '';
     const emitted = JSON.stringify({
       logs: [consoleLog.mock.calls, consoleWarn.mock.calls, consoleError.mock.calls],
       requestAudit: mocks.createSecurityAuditEvent.mock.calls,
       failureAudit: mocks.captureSecurityAudit.mock.calls,
       lifecycleWrites: mocks.updateToken.mock.calls,
     });
-    expect(emitted).not.toContain(publicToken);
-    expect(emitted).not.toContain(resetUrl);
+    expect(emitted).not.toContain('prt1_');
+    expect(JSON.stringify(mocks.addJob.mock.calls)).not.toContain('resetUrl');
     expect(emitted).not.toContain('test-session-secret');
     consoleLog.mockRestore();
     consoleWarn.mockRestore();

@@ -19,10 +19,15 @@ vi.mock('@/lib/auth', () => ({
   deactivateUserOrgSessionsInTx: vi.fn(),
 }));
 
+const mockCreateSecurityAuditEvent = vi.fn();
+vi.mock('@/lib/audit/securityAudit', () => ({
+  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
+}));
+
 // Mock database
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn(),
-  bootstrapDb: { userOrganization: { count: vi.fn() } },
+  bootstrapDb: { userOrganization: { count: vi.fn(), findMany: vi.fn() } },
 }));
 
 import { requireAuth } from '@/lib/middleware';
@@ -39,12 +44,14 @@ const mockDeactivateAllUserSessionsInTx = vi.mocked(deactivateAllUserSessionsInT
 const mockDeactivateUserOrgSessionsInTx = vi.mocked(deactivateUserOrgSessionsInTx);
 const mockWithOrgContext = vi.mocked(withOrgContext);
 const mockBootstrapCount = vi.mocked(bootstrapDb.userOrganization.count);
+const mockBootstrapFindMany = vi.mocked(bootstrapDb.userOrganization.findMany);
 
 describe('GET /api/users/:userId', () => {
   const mockAdminSession = {
     userId: 'admin-1',
     organizationId: 'org-1',
     organization: { role: 'ADMIN' },
+    user: { email: 'admin@example.com' },
   };
 
   beforeEach(() => {
@@ -54,6 +61,7 @@ describe('GET /api/users/:userId', () => {
     );
     mockClearSessionCache.mockResolvedValue(undefined);
     mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1']);
+    mockBootstrapFindMany.mockResolvedValue([{ organizationId: 'org-1' }] as never);
   });
 
   it('returns 401 for unauthenticated requests', async () => {
@@ -86,6 +94,8 @@ describe('GET /api/users/:userId', () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
         userOrganization: { findFirst: vi.fn().mockResolvedValue(null) },
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
@@ -206,6 +216,7 @@ describe('DELETE /api/users/:userId', () => {
     userId: 'admin-1',
     organizationId: 'org-1',
     organization: { role: 'ADMIN' },
+    user: { email: 'admin@example.com' },
   };
 
   beforeEach(() => {
@@ -261,6 +272,8 @@ describe('DELETE /api/users/:userId', () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
         userOrganization: { findFirst: vi.fn().mockResolvedValue(null) },
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
@@ -282,6 +295,13 @@ describe('DELETE /api/users/:userId', () => {
     const mockDocVersionUpdateMany = vi.fn().mockResolvedValue({ count: 3 });
     const mockPermissionDeleteMany = vi.fn().mockResolvedValue({ count: 2 });
     const mockRoleDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
+    const mockResetFindMany = vi
+      .fn()
+      .mockResolvedValue([{ id: 'reset-global', requestId: 'request-global' }]);
+    mockBootstrapFindMany.mockResolvedValue([
+      { organizationId: 'org-1' },
+      { organizationId: 'org-2' },
+    ] as never);
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
@@ -294,9 +314,16 @@ describe('DELETE /api/users/:userId', () => {
           update: mockUserOrgUpdate,
         },
         user: { update: mockUserUpdate },
+        passwordResetToken: {
+          findMany: mockResetFindMany,
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        passwordResetRecovery: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
         documentVersion: { updateMany: mockDocVersionUpdateMany },
         permission: { deleteMany: mockPermissionDeleteMany },
         roleAssignment: { deleteMany: mockRoleDeleteMany },
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
@@ -361,6 +388,14 @@ describe('DELETE /api/users/:userId', () => {
     // Verify sessions were invalidated atomically and cache was cleared after commit
     expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-2');
     expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 'org-2',
+        correlationId: 'reset-global',
+        idempotencyKey: 'password-reset-reset-global-account-deactivated-org-2',
+      })
+    );
   });
 
   it('returns 500 when database error occurs', async () => {
@@ -395,6 +430,7 @@ describe('PATCH /api/users/:userId', () => {
     mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1']);
     mockDeactivateUserOrgSessionsInTx.mockResolvedValue(['org-token-1']);
     mockBootstrapCount.mockResolvedValue(1);
+    mockBootstrapFindMany.mockResolvedValue([{ organizationId: 'org-1' }] as never);
   });
 
   function useTx(tx: Record<string, unknown>) {
@@ -427,8 +463,13 @@ describe('PATCH /api/users/:userId', () => {
       },
       user: { update: vi.fn().mockResolvedValue({}) },
       event: { create: vi.fn().mockResolvedValue({}) },
-      passwordResetToken: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      passwordResetToken: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      passwordResetRecovery: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       $queryRaw: vi.fn().mockResolvedValue([]),
+      $executeRaw: vi.fn().mockResolvedValue(1),
     };
   }
 
@@ -452,7 +493,11 @@ describe('PATCH /api/users/:userId', () => {
   });
 
   it('returns 404 when the target is not a member of the org', async () => {
-    useTx({ userOrganization: { findFirst: vi.fn().mockResolvedValue(null) } });
+    useTx({
+      userOrganization: { findFirst: vi.fn().mockResolvedValue(null) },
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      $executeRaw: vi.fn().mockResolvedValue(1),
+    });
     const response = await PATCH(patchReq({ firstName: 'X' }), ctx);
     expect(response.status).toBe(404);
   });
@@ -554,12 +599,102 @@ describe('PATCH /api/users/:userId', () => {
 
   it('invalidates outstanding reset tokens when the login email changes', async () => {
     const tx = memberTx();
+    tx.passwordResetToken.findMany.mockResolvedValue([{ id: 'reset-1', requestId: 'request-1' }]);
     useTx(tx);
     const response = await PATCH(patchReq({ email: 'moved@example.com' }), ctx);
     expect(response.status).toBe(200);
     expect(tx.passwordResetToken.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['reset-1'] } },
+      data: { usedAt: expect.any(Date), deliveryStatus: 'CANCELLED' },
+    });
+    expect(tx.passwordResetRecovery.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { flowId: { in: ['reset-1'] }, wipedAt: null },
+        data: expect.objectContaining({ enqueueStatus: 'EMAIL_CHANGED', ciphertext: null }),
+      })
+    );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ correlationId: 'reset-1' })
+    );
+  });
+
+  it('audits email-change reset cancellation in every account organization', async () => {
+    mockBootstrapFindMany.mockResolvedValue([
+      { organizationId: 'org-1' },
+      { organizationId: 'org-2' },
+    ] as never);
+    const tx = memberTx();
+    tx.passwordResetToken.findMany.mockResolvedValue([
+      { id: 'reset-other-org', requestId: 'request-other-org' },
+    ]);
+    useTx(tx);
+
+    const response = await PATCH(patchReq({ email: 'moved@example.com' }), ctx);
+
+    expect(response.status).toBe(200);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        organizationId: 'org-2',
+        requestId: 'request-other-org',
+        correlationId: 'reset-other-org',
+        idempotencyKey: 'password-reset-reset-other-org-email_changed-org-2',
+        metadata: expect.objectContaining({
+          errorCode: 'EMAIL_CHANGED',
+          initiatingOrganizationId: 'org-1',
+        }),
+      })
+    );
+  });
+
+  it('cancels account-global reset flows when the final active membership is deactivated', async () => {
+    mockBootstrapCount.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+    mockBootstrapFindMany.mockResolvedValue([
+      { organizationId: 'org-1' },
+      { organizationId: 'org-2' },
+    ] as never);
+    const tx = memberTx({ isActive: true });
+    tx.passwordResetToken.findMany.mockResolvedValue([
+      { id: 'reset-global', requestId: 'request-global' },
+    ]);
+    useTx(tx);
+
+    const response = await PATCH(patchReq({ isActive: false }), ctx);
+
+    expect(response.status).toBe(200);
+    expect(tx.passwordResetToken.findMany).toHaveBeenCalledWith({
       where: { userId: 'user-2', usedAt: null },
-      data: { usedAt: expect.any(Date) },
+      select: { id: true, requestId: true },
+    });
+    expect(tx.passwordResetRecovery.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          enqueueStatus: 'MEMBERSHIP_DEACTIVATED',
+          ciphertext: null,
+        }),
+      })
+    );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        organizationId: 'org-2',
+        idempotencyKey: 'password-reset-reset-global-membership_deactivated-org-2',
+      })
+    );
+  });
+
+  it('preserves account-global reset flows when another active membership remains', async () => {
+    mockBootstrapCount.mockResolvedValue(2);
+    const tx = memberTx({ isActive: true });
+    useTx(tx);
+
+    const response = await PATCH(patchReq({ isActive: false }), ctx);
+
+    expect(response.status).toBe(200);
+    expect(tx.passwordResetToken.findMany).toHaveBeenCalledWith({
+      where: { userId: 'user-2', organizationId: 'org-1', usedAt: null },
+      select: { id: true, requestId: true },
     });
   });
 

@@ -7,8 +7,11 @@ const mockUserFindUnique = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockLockedUserFindUnique = vi.fn();
 const mockLockUser = vi.fn();
+const mockAdvisoryLockUser = vi.fn();
 const mockTokenUpdate = vi.fn();
 const mockTokenUpdateMany = vi.fn();
+const mockTokenFindMany = vi.fn();
+const mockRecoveryUpdateMany = vi.fn();
 const mockTransaction = vi.fn();
 const mockDeactivateAllUserSessionsInTx = vi.fn();
 const mockClearSessionCache = vi.fn();
@@ -45,6 +48,10 @@ vi.mock('@/lib/db', () => {
       findFirst: (...args: unknown[]) => mockFindFirst(...args),
       update: (...args: unknown[]) => mockTokenUpdate(...args),
       updateMany: (...args: unknown[]) => mockTokenUpdateMany(...args),
+      findMany: (...args: unknown[]) => mockTokenFindMany(...args),
+    },
+    passwordResetRecovery: {
+      updateMany: (...args: unknown[]) => mockRecoveryUpdateMany(...args),
     },
     user: {
       findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
@@ -93,18 +100,24 @@ describe('POST /api/auth/reset-password', () => {
       organizations: [{ role: 'ADMIN', organizationId: 'org-1' }],
     });
     mockLockUser.mockResolvedValue([]);
+    mockAdvisoryLockUser.mockResolvedValue(1);
     mockTokenUpdate.mockResolvedValue(undefined);
     // The conditional claim (first updateMany) matched exactly one row.
     mockTokenUpdateMany.mockResolvedValue({ count: 1 });
+    mockTokenFindMany.mockResolvedValue([]);
+    mockRecoveryUpdateMany.mockResolvedValue({ count: 1 });
 
     mockTransaction.mockImplementation(async (callback) => {
       const tx = {
         user: { findUnique: mockLockedUserFindUnique, update: mockUserUpdate },
         $queryRaw: mockLockUser,
+        $executeRaw: mockAdvisoryLockUser,
         passwordResetToken: {
           update: mockTokenUpdate,
           updateMany: mockTokenUpdateMany,
+          findMany: mockTokenFindMany,
         },
+        passwordResetRecovery: { updateMany: mockRecoveryUpdateMany },
         session: {
           findMany: vi.fn(),
           updateMany: vi.fn(),
@@ -126,6 +139,7 @@ describe('POST /api/auth/reset-password', () => {
 
     expect(response.status).toBe(200);
     expect(mockLockUser).toHaveBeenCalledTimes(2);
+    expect(mockAdvisoryLockUser).toHaveBeenCalledTimes(1);
     expect(body.success).toBe(true);
     expect(mockTransaction).toHaveBeenCalledTimes(1);
     // The claim (first updateMany) must be gated on the token id AND still-unused
@@ -143,6 +157,34 @@ describe('POST /api/auth/reset-password', () => {
         eventType: 'USER_PASSWORD_RESET',
         correlationId: 'reset-1',
         requestId: 'req-reset',
+      })
+    );
+  });
+
+  it('audits every sibling flow superseded by successful redemption', async () => {
+    mockTokenFindMany.mockResolvedValue([{ id: 'reset-sibling', requestId: 'req-sibling' }]);
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 'org-1',
+        requestId: 'req-sibling',
+        correlationId: 'reset-sibling',
+        idempotencyKey: 'password-reset-reset-sibling-superseded-org-1',
+        metadata: expect.objectContaining({
+          outcome: 'cancelled',
+          stage: 'redemption_supersession',
+          replacementFlowId: 'reset-1',
+          errorCode: 'SUPERSEDED',
+        }),
       })
     );
   });

@@ -20,9 +20,13 @@
  *   npm run test:integration:rls
  */
 
+import { randomUUID } from 'crypto';
+
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { PrismaClient, UserRole } from '@prisma/client';
-import { withOrgContext, db } from '@/lib/db';
+import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
+import { withOrgContext, db, setBootstrapContext } from '@/lib/db';
+import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
 import { getPermissionEngine } from '@/lib/permissions';
 import { createEventBus } from '@/lib/events/EventBus';
 
@@ -150,14 +154,19 @@ describe('RLS Enforcement', () => {
 
   describe('SEC-005: RLS database posture', () => {
     it('runs as a non-bypass database role with forced RLS on tenant tables', async () => {
-      const [role] = await db.$queryRaw<Array<{ current_user: string; bypasses_rls: boolean }>>`
-        SELECT current_user, rolbypassrls AS bypasses_rls
+      const [role] = await db.$queryRaw<
+        Array<{ current_user: string; bypasses_rls: boolean; is_superuser: boolean }>
+      >`
+        SELECT current_user,
+               rolbypassrls AS bypasses_rls,
+               rolsuper AS is_superuser
         FROM pg_roles
         WHERE rolname = current_user
       `;
 
       expect(role?.current_user).toBe('vaultspace_app');
       expect(role?.bypasses_rls).toBe(false);
+      expect(role?.is_superuser).toBe(false);
 
       const protectedTables = await db.$queryRaw<
         Array<{ table_name: string; rls_enabled: boolean; rls_forced: boolean }>
@@ -323,6 +332,96 @@ describe('RLS Enforcement', () => {
   });
 
   describe('PRE-RLS Bootstrap patterns', () => {
+    it('normalizes a reused runtime connection before cross-organization reset work', async () => {
+      await withOrgContext(org2Id, async (tx) => {
+        await tx.organization.findUnique({ where: { id: org2Id } });
+      });
+
+      const result = await db.$transaction(async (tx) => {
+        await setBootstrapContext(tx);
+        await lockPasswordResetUser(tx, user1Id);
+        const [role] = await tx.$queryRaw<Array<{ rolbypassrls: boolean }>>`
+          SELECT rolbypassrls
+          FROM pg_roles
+          WHERE rolname = current_user`;
+        const user = await tx.user.findUnique({
+          where: { id: user1Id },
+          select: {
+            id: true,
+            organizations: { select: { organizationId: true } },
+          },
+        });
+        return { role, user };
+      });
+
+      expect(result.role?.rolbypassrls).toBe(false);
+      expect(result.user?.id).toBe(user1Id);
+      expect(result.user?.organizations).toEqual(
+        expect.arrayContaining([expect.objectContaining({ organizationId: org1Id })])
+      );
+    });
+
+    it('permits runtime-role recovery mutations and immutable audit insertion, then rolls them back', async () => {
+      const flowId = `rls-reset-${randomUUID()}`;
+      const idempotencyKey = `password-reset-${flowId}-preflight-${org1Id}`;
+      let reachedRollback = false;
+
+      await expect(
+        db.$transaction(async (tx) => {
+          await setBootstrapContext(tx);
+          await lockPasswordResetUser(tx, user1Id);
+          await tx.passwordResetToken.create({
+            data: {
+              id: flowId,
+              userId: user1Id,
+              token: `preflight-${randomUUID()}`,
+              expiresAt: new Date(Date.now() + 60_000),
+              requestId: `preflight-${randomUUID()}`,
+              organizationId: org1Id,
+              deliveryStatus: 'PENDING',
+            },
+          });
+          await tx.passwordResetRecovery.create({
+            data: {
+              flowId,
+              userId: user1Id,
+              recipientFingerprint: '0'.repeat(64),
+              cipherVersion: 1,
+              keyId: 'preflight',
+              nonce: Buffer.alloc(12),
+              ciphertext: Buffer.alloc(48),
+              authTag: Buffer.alloc(16),
+              providerOperationId: flowId,
+            },
+          });
+          await tx.passwordResetRecovery.update({
+            where: { flowId },
+            data: { enqueueStatus: 'PREFLIGHT_VERIFIED' },
+          });
+          await tx.$executeRaw`SELECT set_config('app.current_org_id', ${org1Id}, true)`;
+          const eventId = await createSecurityAuditEvent(tx, {
+            organizationId: org1Id,
+            eventType: 'USER_PASSWORD_RESET',
+            actorType: 'SYSTEM',
+            requestId: `preflight-${flowId}`,
+            correlationId: flowId,
+            idempotencyKey,
+            description: 'Runtime-role password reset recovery preflight',
+            metadata: { outcome: 'preflight', stage: 'runtime_role_verification' },
+          });
+          expect(
+            await tx.event.findUnique({ where: { id: eventId }, select: { id: true } })
+          ).toEqual({ id: eventId });
+          reachedRollback = true;
+          throw new Error('ROLLBACK_PASSWORD_RESET_PREFLIGHT');
+        })
+      ).rejects.toThrow('ROLLBACK_PASSWORD_RESET_PREFLIGHT');
+
+      expect(reachedRollback).toBe(true);
+      expect(await rawPrisma.passwordResetToken.findUnique({ where: { id: flowId } })).toBeNull();
+      expect(await rawPrisma.event.findUnique({ where: { idempotencyKey } })).toBeNull();
+    });
+
     it('should allow organization lookup by slug without context', async () => {
       // This simulates the bootstrap pattern where we need to resolve
       // an organization before we can establish context

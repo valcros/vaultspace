@@ -194,7 +194,7 @@ function createCacheProvider(): CacheProvider {
   return new InMemoryCacheProvider();
 }
 
-function createJobProvider(): JobProvider {
+export function createJobProvider(): JobProvider {
   const redisUrl = process.env['REDIS_URL'];
 
   if (redisUrl) {
@@ -206,6 +206,7 @@ function createJobProvider(): JobProvider {
 
   // Fallback stub for development without Redis
   return {
+    waitUntilReady: async () => {},
     addJob: async () => `job-${Date.now()}`,
     getJobStatus: async () => 'pending',
     cancelJob: async () => {},
