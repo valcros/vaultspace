@@ -322,6 +322,7 @@ REVOKE UPDATE, DELETE ON events FROM vaultspace_app;
 -- separate ingress/processor trust boundary and is never available to the
 -- ordinary application role, even if a broad all-tables grant ran earlier.
 REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
+REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_app;
 
 -- ============================================================================
 -- STEP 4: Application role privileges
@@ -340,6 +341,8 @@ REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
 --   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO vaultspace_app;
 --   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
+--   REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_app;
+--   GRANT EXECUTE ON FUNCTION password_reset_provider_correlation_preflight_counts() TO vaultspace_app;
 
 -- ============================================================================
 -- VERIFICATION QUERIES (or run `npm run rls:audit`)

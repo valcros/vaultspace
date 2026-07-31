@@ -101,6 +101,33 @@ describe.runIf(testEnabled)('provider event inbox PostgreSQL contract', () => {
     await expect(preflightProviderEventInbox()).resolves.toBeUndefined();
   });
 
+  it('denies protected correlation tables and functions to the ingress role', async () => {
+    await expect(
+      providerIngressDb.$queryRawUnsafe(
+        'SELECT 1 FROM password_reset_provider_correlations LIMIT 1'
+      )
+    ).rejects.toThrow();
+    await expect(
+      providerIngressDb.$queryRawUnsafe(
+        'SELECT * FROM password_reset_provider_correlation_preflight_counts()'
+      )
+    ).rejects.toThrow();
+
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION password_reset_provider_correlation_preflight_counts() TO ${INGRESS_ROLE}`
+    );
+    try {
+      await expect(preflightProviderEventInbox()).rejects.toThrow(
+        /protected correlation functions/i
+      );
+    } finally {
+      await admin.$executeRawUnsafe(
+        `REVOKE EXECUTE ON FUNCTION password_reset_provider_correlation_preflight_counts() FROM ${INGRESS_ROLE}`
+      );
+    }
+    await expect(preflightProviderEventInbox()).resolves.toBeUndefined();
+  });
+
   it('serializes concurrent same-ID inserts and conflict observations', async () => {
     const eventIdFingerprint = randomUUID().replaceAll('-', '').padEnd(64, '0');
     const data = receipt(eventIdFingerprint);

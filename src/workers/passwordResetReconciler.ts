@@ -47,6 +47,53 @@ export interface PasswordResetProviderCorrelationPreflight {
   correlationRowsWithoutProvider: number;
   acsRowsWithoutAuditOrganizationSnapshot: number;
   partialProviderFinalProjectionRows: number;
+  eligibleAcceptedAcsRows: number;
+  registeredCorrelationRows: number;
+  missingCorrelationRows: number;
+  orphanCorrelationRows: number;
+  divergentCorrelationRows: number;
+  invalidCorrelationRows: number;
+  ownerMismatchRows: number;
+  invalidFunctionPostureRows: number;
+  missingRequiredTriggerRows: number;
+  missingRequiredConstraintRows: number;
+  missingRequiredIndexRows: number;
+  unexpectedRegistryAclRows: number;
+  unexpectedSensitiveFunctionAclRows: number;
+  runtimeRegistryAccessRows: number;
+  runtimeSensitiveFunctionAccessRows: number;
+  runtimeCountFunctionDeniedRows: number;
+}
+
+const PROVIDER_CORRELATION_REGISTRY_COUNT_KEYS = [
+  'eligibleAcceptedAcsRows',
+  'registeredCorrelationRows',
+  'missingCorrelationRows',
+  'orphanCorrelationRows',
+  'divergentCorrelationRows',
+  'invalidCorrelationRows',
+  'ownerMismatchRows',
+  'invalidFunctionPostureRows',
+  'missingRequiredTriggerRows',
+  'missingRequiredConstraintRows',
+  'missingRequiredIndexRows',
+  'unexpectedRegistryAclRows',
+  'unexpectedSensitiveFunctionAclRows',
+  'runtimeRegistryAccessRows',
+  'runtimeSensitiveFunctionAccessRows',
+  'runtimeCountFunctionDeniedRows',
+] as const;
+
+type ProviderCorrelationRegistryCounts = Pick<
+  PasswordResetProviderCorrelationPreflight,
+  (typeof PROVIDER_CORRELATION_REGISTRY_COUNT_KEYS)[number]
+>;
+
+function sameProviderCorrelationRegistryCounts(
+  left: ProviderCorrelationRegistryCounts,
+  right: ProviderCorrelationRegistryCounts
+): boolean {
+  return PROVIDER_CORRELATION_REGISTRY_COUNT_KEYS.every((key) => left[key] === right[key]);
 }
 
 /**
@@ -82,6 +129,8 @@ export async function inspectPasswordResetProviderCorrelation(
     WITH scoped_tokens AS (
       SELECT tokens.*, ${cutoverAt}::timestamp AS "projectionCutoverAt"
       FROM password_reset_tokens tokens
+    ), registry_counts AS (
+      SELECT * FROM public.password_reset_provider_correlation_preflight_counts()
     )
     SELECT
       COUNT(*) FILTER (
@@ -252,7 +301,31 @@ export async function inspectPasswordResetProviderCorrelation(
           "providerFinalRecordedAt",
           "providerFinalEventIdFingerprint"
         ) BETWEEN 1 AND 4
-      )::int AS "partialProviderFinalProjectionRows"
+      )::int AS "partialProviderFinalProjectionRows",
+      (SELECT "eligibleAcceptedAcsRows" FROM registry_counts)
+        AS "eligibleAcceptedAcsRows",
+      (SELECT "registeredCorrelationRows" FROM registry_counts)
+        AS "registeredCorrelationRows",
+      (SELECT "missingCorrelationRows" FROM registry_counts) AS "missingCorrelationRows",
+      (SELECT "orphanCorrelationRows" FROM registry_counts) AS "orphanCorrelationRows",
+      (SELECT "divergentCorrelationRows" FROM registry_counts) AS "divergentCorrelationRows",
+      (SELECT "invalidCorrelationRows" FROM registry_counts) AS "invalidCorrelationRows",
+      (SELECT "ownerMismatchRows" FROM registry_counts) AS "ownerMismatchRows",
+      (SELECT "invalidFunctionPostureRows" FROM registry_counts)
+        AS "invalidFunctionPostureRows",
+      (SELECT "missingRequiredTriggerRows" FROM registry_counts)
+        AS "missingRequiredTriggerRows",
+      (SELECT "missingRequiredConstraintRows" FROM registry_counts)
+        AS "missingRequiredConstraintRows",
+      (SELECT "missingRequiredIndexRows" FROM registry_counts) AS "missingRequiredIndexRows",
+      (SELECT "unexpectedRegistryAclRows" FROM registry_counts) AS "unexpectedRegistryAclRows",
+      (SELECT "unexpectedSensitiveFunctionAclRows" FROM registry_counts)
+        AS "unexpectedSensitiveFunctionAclRows",
+      (SELECT "runtimeRegistryAccessRows" FROM registry_counts) AS "runtimeRegistryAccessRows",
+      (SELECT "runtimeSensitiveFunctionAccessRows" FROM registry_counts)
+        AS "runtimeSensitiveFunctionAccessRows",
+      (SELECT "runtimeCountFunctionDeniedRows" FROM registry_counts)
+        AS "runtimeCountFunctionDeniedRows"
     FROM scoped_tokens`;
 
   if (!result) {
@@ -722,6 +795,20 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
       providerCorrelation.messageIdRowsWithoutAcceptedAt > 0 ||
       providerCorrelation.correlationRowsWithoutProvider > 0 ||
       providerCorrelation.partialProviderFinalProjectionRows > 0 ||
+      providerCorrelation.missingCorrelationRows > 0 ||
+      providerCorrelation.orphanCorrelationRows > 0 ||
+      providerCorrelation.divergentCorrelationRows > 0 ||
+      providerCorrelation.invalidCorrelationRows > 0 ||
+      providerCorrelation.ownerMismatchRows > 0 ||
+      providerCorrelation.invalidFunctionPostureRows > 0 ||
+      providerCorrelation.missingRequiredTriggerRows > 0 ||
+      providerCorrelation.missingRequiredConstraintRows > 0 ||
+      providerCorrelation.missingRequiredIndexRows > 0 ||
+      providerCorrelation.unexpectedRegistryAclRows > 0 ||
+      providerCorrelation.unexpectedSensitiveFunctionAclRows > 0 ||
+      providerCorrelation.runtimeRegistryAccessRows > 0 ||
+      providerCorrelation.runtimeSensitiveFunctionAccessRows > 0 ||
+      providerCorrelation.runtimeCountFunctionDeniedRows > 0 ||
       (process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] === 'true' &&
         (providerCorrelation.acsRowsWithoutAuditOrganizationSnapshot > 0 ||
           providerCorrelation.unmarkedAcceptedAcsRows > 0));
@@ -775,12 +862,13 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
           data: {
             id: flowId,
             userId: membership.userId,
-            token: `preflight-${randomUUID()}`,
+            token: `prh1:${randomUUID().replaceAll('-', '').padEnd(64, '0')}`,
             expiresAt: new Date(Date.now() + 60_000),
             requestId: flowId,
             organizationId: membership.organizationId,
             deliveryStatus: 'PENDING',
             auditOrganizationIds: [membership.organizationId],
+            providerCorrelationSchemaVersion: 1,
           },
         });
         await tx.passwordResetRecovery.create({
@@ -794,6 +882,7 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
             ciphertext: Buffer.alloc(48),
             authTag: Buffer.alloc(16),
             providerOperationId: flowId,
+            sendFence: 1,
           },
         });
         const recovery = await tx.passwordResetRecovery.update({
@@ -803,6 +892,32 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
         });
         if (recovery.enqueueStatus !== 'PREFLIGHT_VERIFIED') {
           throw new Error('Password reset preflight recovery update was not visible');
+        }
+
+        await tx.passwordResetToken.update({
+          where: { id: flowId },
+          data: {
+            deliveryStatus: 'PROVIDER_ACCEPTED',
+            provider: 'acs',
+            providerOperationId: flowId,
+            providerMessageId: `preflight-message-${randomUUID()}`,
+            providerAcceptedAt: new Date(),
+          },
+        });
+        const [canaryCounts] = await tx.$queryRaw<ProviderCorrelationRegistryCounts[]>`
+          SELECT * FROM public.password_reset_provider_correlation_preflight_counts()`;
+        if (
+          !canaryCounts ||
+          canaryCounts.eligibleAcceptedAcsRows !==
+            providerCorrelation.eligibleAcceptedAcsRows + 1 ||
+          canaryCounts.registeredCorrelationRows !==
+            providerCorrelation.registeredCorrelationRows + 1 ||
+          canaryCounts.missingCorrelationRows !== 0 ||
+          canaryCounts.orphanCorrelationRows !== 0 ||
+          canaryCounts.divergentCorrelationRows !== 0 ||
+          canaryCounts.invalidCorrelationRows !== 0
+        ) {
+          throw new Error('Password reset provider correlation canary was not registered');
         }
 
         await tx.$executeRaw`SELECT set_config('app.current_org_id', ${membership.organizationId}, true)`;
@@ -834,6 +949,10 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
     }
     if (!completed) {
       throw new Error('Password reset preflight did not complete its runtime probes');
+    }
+    const afterRollback = await inspectPasswordResetProviderCorrelation(projectionCutoverAt);
+    if (!sameProviderCorrelationRegistryCounts(providerCorrelation, afterRollback)) {
+      throw new Error('Password reset provider correlation preflight rollback was not clean');
     }
   } finally {
     await jobProvider.close?.();

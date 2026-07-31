@@ -21,6 +21,7 @@ import { JOB_NAMES, PASSWORD_RESET_ACCEPTANCE_JOB_OPTIONS, QUEUE_NAMES } from '@
 const SEND_LEASE_MS = 3 * 60 * 1000;
 const PROVIDER_TIMEOUT_MS = 60 * 1000;
 const ACCEPTANCE_WRITE_ATTEMPTS = 3;
+const PASSWORD_RESET_ACCEPTANCE_PROVIDERS = new Set(['acs', 'smtp', 'console']);
 const TRANSIENT_ACCEPTANCE_WRITE_CODES = new Set([
   'P1001',
   'P1002',
@@ -47,11 +48,46 @@ function isTransientAcceptancePersistenceError(error: unknown): boolean {
 
 class FlowNotClaimableError extends Error {}
 class ProviderTimeoutError extends Error {}
+type ProviderCorrelationPersistenceCode =
+  | 'PASSWORD_RESET_PROVIDER_CORRELATION_INVALID'
+  | 'PASSWORD_RESET_PROVIDER_CORRELATION_CONFLICT'
+  | 'PASSWORD_RESET_PROVIDER_CORRELATION_SOURCE_IMMUTABLE';
+
+const PROVIDER_CORRELATION_PERSISTENCE_CODES: readonly ProviderCorrelationPersistenceCode[] = [
+  'PASSWORD_RESET_PROVIDER_CORRELATION_INVALID',
+  'PASSWORD_RESET_PROVIDER_CORRELATION_CONFLICT',
+  'PASSWORD_RESET_PROVIDER_CORRELATION_SOURCE_IMMUTABLE',
+];
+
+class ProviderCorrelationPersistenceError extends Error {
+  constructor(public readonly code: ProviderCorrelationPersistenceCode) {
+    super('Password reset provider correlation persistence conflict');
+    this.name = 'ProviderCorrelationPersistenceError';
+  }
+}
+
+class RetryableProviderCorrelationAuditError extends Error {
+  constructor() {
+    super('Password reset provider correlation audit persistence is temporarily unavailable');
+    this.name = 'RetryableProviderCorrelationAuditError';
+  }
+}
+
 class RetryableAcceptancePersistenceError extends Error {
   constructor() {
     super('Password reset acceptance persistence is temporarily unavailable');
     this.name = 'RetryableAcceptancePersistenceError';
   }
+}
+
+function providerCorrelationPersistenceCode(
+  error: unknown
+): ProviderCorrelationPersistenceCode | null {
+  if (error instanceof ProviderCorrelationPersistenceError) {
+    return error.code;
+  }
+  const message = error instanceof Error ? error.message : '';
+  return PROVIDER_CORRELATION_PERSISTENCE_CODES.find((code) => message.includes(code)) ?? null;
 }
 
 type ResetAuditOutcome = 'accepted' | 'blocked' | 'cancelled' | 'conflict' | 'failure' | 'unknown';
@@ -123,6 +159,41 @@ async function createFlowAuditEvents(
       },
     });
   }
+}
+
+async function recordProviderCorrelationConflict(input: {
+  payload: PasswordResetAcceptanceJobPayload;
+  errorCode: ProviderCorrelationPersistenceCode | 'PROVIDER_ACCEPTANCE_STATE_CONFLICT';
+}): Promise<boolean> {
+  return bootstrapDb.$transaction(async (tx) => {
+    await setBootstrapContext(tx);
+    const reset = await tx.passwordResetToken.findUnique({
+      where: { id: input.payload.flowId },
+      select: {
+        userId: true,
+        requestId: true,
+        organizationId: true,
+        auditOrganizationIds: true,
+      },
+    });
+    if (!reset) {
+      return false;
+    }
+    await createFlowAuditEvents(tx, {
+      flowId: input.payload.flowId,
+      reset,
+      idempotencySuffix: `provider-correlation-conflict-${input.errorCode.toLowerCase()}-${input.payload.sendFence}`,
+      description: 'Password reset provider acceptance conflicted with protected correlation state',
+      outcome: 'conflict',
+      stage: 'provider_acceptance_reconciliation',
+      metadata: {
+        provider: input.payload.provider,
+        sendFence: input.payload.sendFence,
+        errorCode: input.errorCode,
+      },
+    });
+    return true;
+  });
 }
 
 async function transitionClaimedFlow(input: {
@@ -265,7 +336,9 @@ async function persistProviderAcceptance(
         provider: true,
         providerMessageId: true,
         providerOperationId: true,
+        providerAcceptedAt: true,
         providerCorrelationSchemaVersion: true,
+        deliveryStatus: true,
       },
     });
     const recovery = await tx.passwordResetRecovery.findUnique({
@@ -287,6 +360,8 @@ async function persistProviderAcceptance(
       providerOperationId === payload.flowId &&
       existing.provider === payload.provider &&
       existing.providerCorrelationSchemaVersion === 1 &&
+      existing.deliveryStatus === 'PROVIDER_ACCEPTED' &&
+      existing.providerAcceptedAt !== null &&
       recovery.sendFence === payload.sendFence;
     if (alreadyRecorded) {
       return 'already-recorded';
@@ -300,33 +375,6 @@ async function persistProviderAcceptance(
       (existing.providerOperationId !== null &&
         existing.providerOperationId !== providerOperationId);
     if (conflict) {
-      const conflictHash = createHash('sha256')
-        .update(
-          [
-            payload.provider,
-            providerOperationId,
-            payload.providerMessageId,
-            payload.sendFence,
-          ].join('\0')
-        )
-        .digest('hex')
-        .slice(0, 16);
-      await createFlowAuditEvents(tx, {
-        flowId: payload.flowId,
-        reset: existing,
-        idempotencySuffix: `acceptance-conflict-${conflictHash}`,
-        description: 'Password reset provider acceptance conflicted with durable flow state',
-        outcome: 'conflict',
-        stage: 'provider_acceptance_reconciliation',
-        metadata: {
-          provider: payload.provider,
-          sendFence: payload.sendFence,
-          existingProvider: existing.provider,
-          existingSendFence: recovery?.sendFence ?? null,
-          conflictFingerprint: conflictHash,
-          errorCode: 'PROVIDER_ACCEPTANCE_STATE_CONFLICT',
-        },
-      });
       return 'conflict';
     }
 
@@ -390,6 +438,10 @@ async function persistProviderAcceptanceWithRetry(
       return await persistProviderAcceptance(payload);
     } catch (error) {
       lastError = error;
+      const correlationCode = providerCorrelationPersistenceCode(error);
+      if (correlationCode) {
+        throw new ProviderCorrelationPersistenceError(correlationCode);
+      }
       const retryable = isTransientAcceptancePersistenceError(error);
       if (!retryable) {
         throw error;
@@ -411,7 +463,7 @@ export async function processPasswordResetAcceptanceJob(
   if (
     job.data.schemaVersion !== 1 ||
     !job.data.flowId ||
-    !job.data.provider ||
+    !PASSWORD_RESET_ACCEPTANCE_PROVIDERS.has(job.data.provider) ||
     !job.data.providerMessageId ||
     !job.data.providerAcceptedAt ||
     !Number.isInteger(job.data.sendFence) ||
@@ -421,6 +473,9 @@ export async function processPasswordResetAcceptanceJob(
       event: 'provider_acceptance_job_rejected',
       outcome: 'invalid_payload',
       correlationId: job.data.flowId || null,
+      reason: PASSWORD_RESET_ACCEPTANCE_PROVIDERS.has(job.data.provider)
+        ? 'INVALID_SHAPE'
+        : 'UNSUPPORTED_PROVIDER',
       jobId: job.id ?? null,
     });
     throw new UnrecoverableError('Invalid password reset acceptance payload');
@@ -432,6 +487,36 @@ export async function processPasswordResetAcceptanceJob(
     if (error instanceof RetryableAcceptancePersistenceError) {
       throw error;
     }
+    if (error instanceof ProviderCorrelationPersistenceError) {
+      let auditRecorded: boolean;
+      try {
+        auditRecorded = await recordProviderCorrelationConflict({
+          payload: job.data,
+          errorCode: error.code,
+        });
+      } catch {
+        log('error', {
+          event: 'provider_acceptance_reconciliation_failed',
+          outcome: 'audit_retry_required',
+          correlationId: job.data.flowId,
+          provider: job.data.provider,
+          errorCode: error.code,
+          auditRecorded: false,
+          jobId: job.id ?? null,
+        });
+        throw new RetryableProviderCorrelationAuditError();
+      }
+      log('error', {
+        event: 'provider_acceptance_reconciliation_failed',
+        outcome: 'terminal_correlation_conflict',
+        correlationId: job.data.flowId,
+        provider: job.data.provider,
+        errorCode: error.code,
+        auditRecorded,
+        jobId: job.id ?? null,
+      });
+      throw new UnrecoverableError('Password reset provider correlation persistence conflict');
+    }
     log('error', {
       event: 'provider_acceptance_reconciliation_failed',
       outcome: 'terminal_persistence_error',
@@ -441,6 +526,35 @@ export async function processPasswordResetAcceptanceJob(
       jobId: job.id ?? null,
     });
     throw new UnrecoverableError('Password reset acceptance persistence is not retryable');
+  }
+  if (outcome === 'conflict') {
+    let auditRecorded: boolean;
+    try {
+      auditRecorded = await recordProviderCorrelationConflict({
+        payload: job.data,
+        errorCode: 'PROVIDER_ACCEPTANCE_STATE_CONFLICT',
+      });
+    } catch {
+      log('error', {
+        event: 'provider_acceptance_reconciliation_failed',
+        outcome: 'audit_retry_required',
+        correlationId: job.data.flowId,
+        provider: job.data.provider,
+        errorCode: 'PROVIDER_ACCEPTANCE_STATE_CONFLICT',
+        auditRecorded: false,
+        jobId: job.id ?? null,
+      });
+      throw new RetryableProviderCorrelationAuditError();
+    }
+    log('error', {
+      event: 'provider_acceptance_reconciliation_failed',
+      outcome: 'terminal_state_conflict',
+      correlationId: job.data.flowId,
+      provider: job.data.provider,
+      errorCode: 'PROVIDER_ACCEPTANCE_STATE_CONFLICT',
+      auditRecorded,
+      jobId: job.id ?? null,
+    });
   }
   log(outcome === 'conflict' ? 'error' : 'info', {
     event: 'provider_acceptance_reconciled',
@@ -909,12 +1023,43 @@ export async function processPasswordResetDeliveryJob(
     persistProviderAcceptanceWithRetry(acceptance),
   ]);
 
-  if (databaseWrite.status === 'fulfilled' && databaseWrite.value === 'conflict') {
+  const correlationConflictCode =
+    databaseWrite.status === 'rejected' &&
+    databaseWrite.reason instanceof ProviderCorrelationPersistenceError
+      ? databaseWrite.reason.code
+      : databaseWrite.status === 'fulfilled' && databaseWrite.value === 'conflict'
+        ? ('PROVIDER_ACCEPTANCE_STATE_CONFLICT' as const)
+        : null;
+  if (correlationConflictCode) {
+    let auditRecorded = false;
+    try {
+      auditRecorded = await recordProviderCorrelationConflict({
+        payload: acceptance,
+        errorCode: correlationConflictCode,
+      });
+    } catch {
+      auditRecorded = false;
+    }
     log('error', {
       event: 'provider_acceptance_conflict',
-      outcome: 'conflict',
+      outcome: 'terminal_correlation_conflict',
       correlationId: flowId,
+      provider,
+      sendFence: acceptance.sendFence,
+      errorCode: correlationConflictCode,
+      auditRecorded,
+      reconciliationQueued: reconciliationWrite.status === 'fulfilled',
     });
+    if (!auditRecorded && reconciliationWrite.status === 'rejected') {
+      log('error', {
+        event: 'provider_acceptance_durability',
+        outcome: 'critical_conflict_audit_and_reconciliation_failed',
+        correlationId: flowId,
+        provider,
+        requestId: claimed.reset.requestId,
+        errorCode: correlationConflictCode,
+      });
+    }
   } else if (databaseWrite.status === 'rejected' && reconciliationWrite.status === 'rejected') {
     log('error', {
       event: 'provider_acceptance_durability',

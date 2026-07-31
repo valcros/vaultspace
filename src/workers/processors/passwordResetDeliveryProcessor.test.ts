@@ -713,9 +713,11 @@ describe('password reset recovery delivery processor', () => {
     expect(mocks.eventCreateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          idempotencyKey: expect.stringMatching(
-            /^password-reset-flow-1-acceptance-conflict-[a-f0-9]{16}-org-1$/
-          ),
+          idempotencyKey:
+            'password-reset-flow-1-provider-correlation-conflict-provider_acceptance_state_conflict-1-org-1',
+          metadata: expect.objectContaining({
+            errorCode: 'PROVIDER_ACCEPTANCE_STATE_CONFLICT',
+          }),
         }),
       })
     );
@@ -754,7 +756,9 @@ describe('password reset recovery delivery processor', () => {
       provider: 'acs',
       providerMessageId: 'acs-message-1',
       providerOperationId: 'flow-1',
+      providerAcceptedAt: new Date('2026-07-31T00:00:00.000Z'),
       providerCorrelationSchemaVersion: 1,
+      deliveryStatus: 'PROVIDER_ACCEPTED',
     });
     mocks.recoveryFindUnique.mockResolvedValue({
       sendFence: 1,
@@ -772,6 +776,126 @@ describe('password reset recovery delivery processor', () => {
     expect(mocks.tokenUpdate).not.toHaveBeenCalled();
     expect(mocks.eventCreateMany).toHaveBeenCalledOnce();
     expect(JSON.stringify(mocks.eventCreateMany.mock.calls)).not.toContain('acs-message-conflict');
+  });
+
+  it('terminalizes a protected registry conflict without exposing the provider identifier', async () => {
+    const providerMessageSentinel = 'sentinel-provider-message-id';
+    mocks.tokenFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1'],
+    });
+    const transactionImplementation = mocks.transaction.getMockImplementation()!;
+    mocks.transaction
+      .mockRejectedValueOnce(
+        new Error(`PASSWORD_RESET_PROVIDER_CORRELATION_CONFLICT near ${providerMessageSentinel}`)
+      )
+      .mockImplementation(transactionImplementation);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = processPasswordResetAcceptanceJob(
+      acceptanceJob({ providerMessageId: providerMessageSentinel })
+    );
+
+    await expect(result).rejects.toMatchObject({
+      name: 'UnrecoverableError',
+      message: 'Password reset provider correlation persistence conflict',
+    });
+    await result.catch((error: Error) => {
+      expect(error.stack).not.toContain(providerMessageSentinel);
+    });
+    expect(mocks.eventCreateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            errorCode: 'PASSWORD_RESET_PROVIDER_CORRELATION_CONFLICT',
+          }),
+        }),
+      })
+    );
+    expect(JSON.stringify(mocks.eventCreateMany.mock.calls)).not.toContain(providerMessageSentinel);
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(providerMessageSentinel);
+    consoleError.mockRestore();
+  });
+
+  it('retries a failed categorical conflict audit without calling the provider', async () => {
+    const providerMessageSentinel = 'sentinel-provider-message-id';
+    mocks.transaction
+      .mockRejectedValueOnce(
+        new Error(`PASSWORD_RESET_PROVIDER_CORRELATION_CONFLICT near ${providerMessageSentinel}`)
+      )
+      .mockRejectedValueOnce(new Error(`audit unavailable near ${providerMessageSentinel}`));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = processPasswordResetAcceptanceJob(
+      acceptanceJob({ providerMessageId: providerMessageSentinel })
+    );
+
+    await expect(result).rejects.toMatchObject({
+      name: 'RetryableProviderCorrelationAuditError',
+      message: 'Password reset provider correlation audit persistence is temporarily unavailable',
+    });
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('audit_retry_required'));
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(providerMessageSentinel);
+    consoleError.mockRestore();
+  });
+
+  it('reports that no tenant audit was recorded when the conflicted flow no longer exists', async () => {
+    const transactionImplementation = mocks.transaction.getMockImplementation()!;
+    mocks.transaction
+      .mockRejectedValueOnce(new Error('PASSWORD_RESET_PROVIDER_CORRELATION_CONFLICT'))
+      .mockImplementation(transactionImplementation);
+    mocks.tokenFindUnique.mockResolvedValue(null);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(processPasswordResetAcceptanceJob(acceptanceJob())).rejects.toMatchObject({
+      name: 'UnrecoverableError',
+    });
+
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('"auditRecorded":false'));
+    expect(mocks.eventCreateMany).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('rejects an unknown provider label without logging the supplied value', async () => {
+    const providerSentinel = 'sentinel-provider-message-used-as-provider';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(
+      processPasswordResetAcceptanceJob(acceptanceJob({ provider: providerSentinel }))
+    ).rejects.toMatchObject({ name: 'UnrecoverableError' });
+
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('UNSUPPORTED_PROVIDER'));
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(providerSentinel);
+    consoleError.mockRestore();
+  });
+
+  it('reports critical durability when conflict audit and reconciliation enqueue both fail', async () => {
+    const { flowId } = arrange();
+    const providerMessageSentinel = 'sensitive-provider-message';
+    mocks.sendEmail.mockResolvedValue({ messageId: providerMessageSentinel });
+    mocks.addJob.mockRejectedValue(new Error('queue unavailable'));
+    const transactionImplementation = mocks.transaction.getMockImplementation()!;
+    mocks.transaction
+      .mockImplementationOnce(transactionImplementation)
+      .mockRejectedValueOnce(
+        new Error(`PASSWORD_RESET_PROVIDER_CORRELATION_CONFLICT near ${providerMessageSentinel}`)
+      )
+      .mockRejectedValueOnce(new Error(`audit unavailable near ${providerMessageSentinel}`));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processPasswordResetDeliveryJob(job(flowId));
+
+    expect(mocks.sendEmail).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('critical_conflict_audit_and_reconciliation_failed')
+    );
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(providerMessageSentinel);
+    consoleError.mockRestore();
   });
 
   it('retries only an allowlisted transient acceptance persistence error', async () => {

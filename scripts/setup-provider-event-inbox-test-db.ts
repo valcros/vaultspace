@@ -97,6 +97,12 @@ async function main(): Promise<void> {
     await admin.$executeRawUnsafe(
       `REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM ${INHERITED_ROLE};`
     );
+    await admin.$executeRawUnsafe(
+      `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM ${INGRESS_ROLE};`
+    );
+    await admin.$executeRawUnsafe(
+      `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM ${INHERITED_ROLE};`
+    );
     await admin.$executeRawUnsafe(`REVOKE CREATE ON SCHEMA public FROM PUBLIC, ${INGRESS_ROLE};`);
     await admin.$executeRawUnsafe(
       `REVOKE CREATE ON DATABASE ${databaseName} FROM PUBLIC, ${INGRESS_ROLE};`
