@@ -128,6 +128,66 @@ describe.runIf(testEnabled)('provider event inbox PostgreSQL contract', () => {
     await expect(preflightProviderEventInbox()).resolves.toBeUndefined();
   });
 
+  it('rejects provider-final forgery by the ingress identity after a hostile table grant', async () => {
+    const existingFlowId = `${runPrefix}-final-existing-${randomUUID()}`;
+    const insertedFlowId = `${runPrefix}-final-insert-${randomUUID()}`;
+    const finalEvidence = {
+      providerFinalStatus: 'Delivered',
+      providerFinalOutcome: 'SUCCESS',
+      providerFinalEventAt: new Date('2026-07-31T12:00:00.000Z'),
+      providerFinalRecordedAt: new Date('2026-07-31T12:00:01.000Z'),
+      providerFinalEventIdFingerprint: 'a'.repeat(64),
+    } as const;
+
+    await expect(
+      providerIngressDb.$queryRawUnsafe('SELECT 1 FROM password_reset_tokens LIMIT 1')
+    ).rejects.toThrow();
+    await admin.passwordResetToken.create({
+      data: {
+        id: existingFlowId,
+        userId: `${runPrefix}-final-user-${randomUUID()}`,
+        token: `${runPrefix}-final-token-${randomUUID()}`,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    await admin.$executeRawUnsafe(
+      `GRANT SELECT, INSERT, UPDATE ON TABLE password_reset_tokens TO ${INGRESS_ROLE}`
+    );
+    try {
+      await expect(
+        providerIngressDb.passwordResetToken.create({
+          data: {
+            id: insertedFlowId,
+            userId: `${runPrefix}-final-user-${randomUUID()}`,
+            token: `${runPrefix}-final-token-${randomUUID()}`,
+            expiresAt: new Date(Date.now() + 60_000),
+            ...finalEvidence,
+          },
+        })
+      ).rejects.toThrow(/PASSWORD_RESET_PROVIDER_FINAL_EVIDENCE_OWNER_REQUIRED/);
+      await expect(
+        providerIngressDb.passwordResetToken.update({
+          where: { id: existingFlowId },
+          data: finalEvidence,
+        })
+      ).rejects.toThrow(/PASSWORD_RESET_PROVIDER_FINAL_EVIDENCE_OWNER_REQUIRED/);
+    } finally {
+      await admin.$executeRawUnsafe(
+        `REVOKE ALL ON TABLE password_reset_tokens FROM ${INGRESS_ROLE}`
+      );
+      await admin.passwordResetToken.deleteMany({
+        where: { id: { in: [existingFlowId, insertedFlowId] } },
+      });
+    }
+
+    const [posture] = await admin.$queryRaw<Array<{ canSelect: boolean; canInsert: boolean }>>`
+      SELECT
+        has_table_privilege(${INGRESS_ROLE}, 'public.password_reset_tokens', 'SELECT') AS "canSelect",
+        has_table_privilege(${INGRESS_ROLE}, 'public.password_reset_tokens', 'INSERT') AS "canInsert"`;
+    expect(posture).toEqual({ canSelect: false, canInsert: false });
+  });
+
   it('serializes concurrent same-ID inserts and conflict observations', async () => {
     const eventIdFingerprint = randomUUID().replaceAll('-', '').padEnd(64, '0');
     const data = receipt(eventIdFingerprint);

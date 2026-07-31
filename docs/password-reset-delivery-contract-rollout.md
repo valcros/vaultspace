@@ -103,3 +103,31 @@ The schema is backward compatible because the marker is nullable. An old writer 
 To roll back application code, first gate both issuance routes. Keep only the version 1 worker active while marked delivery and acceptance jobs drain. Run reconciliation until every marked active delivery is terminal, no active or delayed queue work remains, and no send lease can later become stale. Stop the version 1 worker, deploy the old web and worker revisions with issuance still gated, verify their health and exclusive queue ownership, then reopen issuance. Leave the migrations, markers, and provider-correlation registry in place. Do not clear markers, rewrite or delete registry rows, backfill markers, or drop database guards during an application rollback.
 
 Promotion to provider-final projection is a later reviewed change. This registry rollout does not consume provider inbox receipts, write provider-final projection fields, enable the projection feature flag, or create tenant final-delivery audit events.
+
+## Provider-final evidence envelope prerequisite
+
+Chunk 4C2a1 installs only an inert database envelope around the existing nullable provider-final fields. Before installing the guard, the migration takes a bounded lock and requires every provider-final field on every password-reset row to be null. A partial or apparently complete preexisting tuple is an incident because no approved projector existed to establish its provenance. The migration fails and rolls back rather than accepting that data as provider evidence.
+
+After installation, the five provider-final fields must remain either all null or form one complete tuple. `Delivered` maps to `SUCCESS`. `Suppressed`, `Bounced`, `Quarantined`, `FilteredSpam`, `Expanded`, and `Failed` map to `FAILURE`. Treating `Expanded` as failure is VaultSpace's conservative policy because expansion does not establish delivery to the intended individual mailbox. It is not a claim that Microsoft labels expansion itself as a delivery failure. The provider event and database recording timestamps are both required, but no ordering is imposed between their separate clocks. The event fingerprint must be exactly 64 lowercase hexadecimal characters.
+
+Ordinary runtime and ingress identities cannot create the first non-null tuple, even if a broad table grant is accidentally present. Only the exact owner of `password_reset_tokens` may make the atomic null-to-complete transition. Once complete, the tuple cannot be changed or cleared through ordinary database writes, including owner writes. Exact no-op assignments and unrelated password-reset lifecycle updates remain permitted.
+
+This prerequisite adds no projection configuration, inbox consumer, correlation lookup, tenant audit writer, scheduled command, runtime function grant, feature activation, provider call, queue operation, or live rollout behavior. Those capabilities remain split into separately reviewed chunks:
+
+1. Separate ingress-owned evidence and conflict transitions from projector-owned processing state.
+2. Add a protected, database-disabled atomic projector and tenant audit contract.
+3. Add a dormant application runner and categorical diagnostics.
+4. Approve and execute database grants, cutover configuration, feature enablement, canaries, and live rollout as a distinct operational change.
+
+### Envelope migration timeout recovery
+
+The envelope migration is one PostgreSQL transaction with a 10-second lock timeout and a 120-second statement timeout. A timeout or dirty-data precondition failure rolls back the constraint, trigger, function, grants, and all other migration work together.
+
+If the migration fails:
+
+1. Do not enable provider-final projection and do not modify the failed migration.
+2. Reconcile the database state. If all three artifacts, `password_reset_provider_final_evidence_complete_check`, `password_reset_provider_final_evidence_guard`, and `guard_password_reset_provider_final_evidence()`, are absent, verify rollback before resolving the migration as rolled back. If all three are present with the reviewed constraint, trigger, owner, invoker, fixed-search-path, and ACL posture, treat an apparent client failure as a committed migration-state reconciliation case. Treat mixed or nonconforming posture as an incident.
+3. If the failure reports preexisting final evidence, inspect it through approved database operations without copying provider identifiers, reset tokens, recipients, or tenant mappings into logs, tickets, chat, or shell history.
+4. If the failure is a lock timeout, inspect the blocking transaction. Do not terminate unrelated production work without separate approval.
+5. Use `prisma migrate resolve --rolled-back 20260731070000_guard_password_reset_provider_final_evidence` only after full rollback is verified.
+6. Resolve the blocker through an approved incident or maintenance procedure, then rerun the unchanged migration and its PostgreSQL 15 verification.
