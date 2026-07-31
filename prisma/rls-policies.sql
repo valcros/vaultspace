@@ -318,6 +318,11 @@ ALTER TABLE invitations FORCE ROW LEVEL SECURITY;
 -- the database layer, complementing the EventBus design.
 REVOKE UPDATE, DELETE ON events FROM vaultspace_app;
 
+-- Provider delivery evidence is global, not tenant-scoped. It is owned by a
+-- separate ingress/processor trust boundary and is never available to the
+-- ordinary application role, even if a broad all-tables grant ran earlier.
+REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
+
 -- ============================================================================
 -- STEP 4: Application role privileges
 -- ============================================================================
@@ -334,6 +339,7 @@ REVOKE UPDATE, DELETE ON events FROM vaultspace_app;
 --   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO vaultspace_app;
 --   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO vaultspace_app;
 --   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO vaultspace_app;
+--   REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
 
 -- ============================================================================
 -- VERIFICATION QUERIES (or run `npm run rls:audit`)
