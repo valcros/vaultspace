@@ -17,6 +17,13 @@ import {
   requirePasswordResetTokenSecret,
 } from '@/lib/auth/passwordResetToken';
 import {
+  canonicalizePasswordResetAuditScope,
+  PASSWORD_RESET_AUDIT_SCOPE_WARNING_SIZE,
+  PASSWORD_RESET_DELIVERY_CONTRACT_VERSION,
+  PasswordResetAuditScopeError,
+  passwordResetAuditScopeCardinalityBucket,
+} from '@/lib/auth/passwordResetDeliveryContract';
+import {
   encryptPasswordResetRecoveryToken,
   PasswordResetRecoveryError,
   validatePasswordResetRecoveryConfiguration,
@@ -159,200 +166,267 @@ export async function POST(request: NextRequest) {
       return neutralResponse(startedAt);
     }
 
-    // A reset is an account-global security mutation, but the immutable Event
-    // model is tenant-scoped. Do not mint an unaudited reset for an orphaned
-    // active account that has no active organization membership.
-    if (user.organizations.length === 0) {
-      console.warn(
-        JSON.stringify({
-          component: 'forgot-password',
-          event: 'request_accepted',
-          outcome: 'neutral_orphan_account',
-          requestId: reqContext.requestId,
-          errorCode: 'NO_ACTIVE_ORGANIZATION',
-        })
-      );
-      return neutralResponse(startedAt);
-    }
-
     try {
-      const flowId = randomUUID();
-      const tokenPair = createPasswordResetToken();
-      const resetToken = tokenPair.publicToken;
-      const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
-      const recoveryEnvelope =
-        tokenPair.format === 'hmac'
-          ? encryptPasswordResetRecoveryToken(resetToken, normalizedEmail, {
-              flowId,
-              userId: user.id,
-              storedToken: tokenPair.storedToken,
-              expiresAt,
-            })
-          : null;
-
-      const issuance = await db.$transaction(async (tx) => {
-        await lockPasswordResetUser(tx, user.id);
-        // Serialize self-service and administrator issuance for this account.
-        // Every issuance path takes the same global user lock, supersedes older
-        // unused links, and only then creates the new flow.
-        await tx.$queryRaw`
+      const issuance = await db.$transaction(
+        async (tx) => {
+          await lockPasswordResetUser(tx, user.id);
+          // Serialize self-service and administrator issuance for this account.
+          // Every issuance path takes the same global user lock, supersedes older
+          // unused links, and only then creates the new flow.
+          await tx.$queryRaw`
           SELECT 1 FROM users
           WHERE id = ${user.id}
           FOR UPDATE`;
 
-        // Lock membership and organization eligibility before resolving the
-        // authoritative recipient and audit targets. The initial email lookup
-        // is candidate discovery only and may be stale by the time this lock is
-        // acquired.
-        await tx.$queryRaw`
+          // Lock membership and organization eligibility before resolving the
+          // authoritative recipient and audit targets. The initial email lookup
+          // is candidate discovery only and may be stale by the time this lock is
+          // acquired.
+          await tx.$queryRaw`
           SELECT 1
           FROM user_organizations uo
           JOIN organizations o ON o.id = uo."organizationId"
           WHERE uo."userId" = ${user.id}
           FOR UPDATE OF uo, o`;
-        const lockedUser = await tx.user.findUnique({
-          where: { id: user.id },
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            isActive: true,
-            organizations: {
-              where: { isActive: true, organization: { isActive: true } },
-              include: {
-                organization: {
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                    emailSenderName: true,
-                    emailSenderAddress: true,
+          const lockedUser = await tx.user.findUnique({
+            where: { id: user.id },
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              isActive: true,
+              organizations: {
+                where: { isActive: true, organization: { isActive: true } },
+                include: {
+                  organization: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      emailSenderName: true,
+                      emailSenderAddress: true,
+                    },
                   },
                 },
+                orderBy: { createdAt: 'asc' },
               },
-              orderBy: { createdAt: 'asc' },
             },
-          },
-        });
-        if (
-          !lockedUser ||
-          !lockedUser.isActive ||
-          lockedUser.email.toLowerCase() !== normalizedEmail ||
-          lockedUser.organizations.length === 0
-        ) {
-          return null;
-        }
+          });
+          if (
+            !lockedUser ||
+            !lockedUser.isActive ||
+            lockedUser.email.toLowerCase() !== normalizedEmail
+          ) {
+            return null;
+          }
+          if (lockedUser.organizations.length === 0) {
+            return {
+              blocked: true as const,
+              errorCode: 'PASSWORD_RESET_AUDIT_SCOPE_EMPTY' as const,
+              cardinality: 0,
+            };
+          }
 
-        const lockedMemberships = lockedUser.organizations;
-        const hostnameOrg = reqContext.customDomain.orgSlug
-          ? lockedMemberships.find(
-              (membership) => membership.organization.slug === reqContext.customDomain.orgSlug
-            )
-          : undefined;
-        const lockedSenderOrg =
-          hostnameOrg ?? (lockedMemberships.length === 1 ? lockedMemberships[0] : undefined);
+          const lockedMemberships = lockedUser.organizations;
+          let auditOrganizationIds: string[];
+          try {
+            auditOrganizationIds = canonicalizePasswordResetAuditScope(
+              lockedMemberships.map((membership) => membership.organization.id)
+            );
+          } catch (error) {
+            if (!(error instanceof PasswordResetAuditScopeError)) {
+              throw error;
+            }
+            for (const membership of lockedMemberships) {
+              await createSecurityAuditEvent(tx, {
+                organizationId: membership.organization.id,
+                eventType: 'USER_PASSWORD_RESET',
+                actorType: 'SYSTEM',
+                requestId: reqContext.requestId,
+                correlationId: reqContext.requestId,
+                idempotencyKey: `password-reset-${reqContext.requestId}-scope-rejected-${membership.organization.id}`,
+                description: 'Password reset request was rejected by the delivery contract',
+                metadata: {
+                  outcome: 'blocked',
+                  stage: 'request_validation',
+                  targetUserId: lockedUser.id,
+                  initiation: 'SELF_SERVICE',
+                  errorCode: error.code,
+                  auditScopeCardinalityBucket: passwordResetAuditScopeCardinalityBucket(
+                    error.cardinality
+                  ),
+                },
+                ipAddress,
+                userAgent,
+              });
+            }
+            return {
+              blocked: true as const,
+              errorCode: error.code,
+              cardinality: error.cardinality,
+            };
+          }
+          if (auditOrganizationIds.length > PASSWORD_RESET_AUDIT_SCOPE_WARNING_SIZE) {
+            console.warn(
+              JSON.stringify({
+                component: 'forgot-password',
+                event: 'audit_scope_validation',
+                outcome: 'accepted_above_warning_threshold',
+                requestId: reqContext.requestId,
+                auditScopeCardinalityBucket: passwordResetAuditScopeCardinalityBucket(
+                  auditOrganizationIds.length
+                ),
+              })
+            );
+          }
+          const hostnameOrg = reqContext.customDomain.orgSlug
+            ? lockedMemberships.find(
+                (membership) => membership.organization.slug === reqContext.customDomain.orgSlug
+              )
+            : undefined;
+          const lockedSenderOrg =
+            hostnameOrg ?? (lockedMemberships.length === 1 ? lockedMemberships[0] : undefined);
+          const flowId = randomUUID();
+          const tokenPair = createPasswordResetToken();
+          const resetToken = tokenPair.publicToken;
+          const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+          const recoveryEnvelope =
+            tokenPair.format === 'hmac'
+              ? encryptPasswordResetRecoveryToken(resetToken, normalizedEmail, {
+                  flowId,
+                  userId: lockedUser.id,
+                  storedToken: tokenPair.storedToken,
+                  expiresAt,
+                })
+              : null;
 
-        const supersededResetFlows = await tx.passwordResetToken.findMany({
-          where: { userId: lockedUser.id, usedAt: null },
-          select: { id: true, requestId: true },
-        });
-        await tx.passwordResetToken.updateMany({
-          where: { userId: lockedUser.id, usedAt: null },
-          data: { usedAt: new Date() },
-        });
-        await tx.passwordResetRecovery.updateMany({
-          where: { resetToken: { userId: lockedUser.id, usedAt: { not: null } }, wipedAt: null },
-          data: {
-            cipherVersion: null,
-            keyId: null,
-            nonce: null,
-            ciphertext: null,
-            authTag: null,
-            wipedAt: new Date(),
-            enqueueStatus: 'SUPERSEDED',
-          },
-        });
-        await tx.passwordResetToken.create({
-          data: {
-            id: flowId,
-            userId: lockedUser.id,
-            token: tokenPair.storedToken,
-            expiresAt,
-            requestId: reqContext.requestId,
-            organizationId: lockedSenderOrg?.organization.id ?? null,
-            deliveryStatus: 'PENDING',
-            auditOrganizationIds: lockedMemberships
-              .map((membership) => membership.organization.id)
-              .sort(),
-          },
-        });
-        if (recoveryEnvelope) {
-          await tx.passwordResetRecovery.create({
+          const supersededResetFlows = await tx.passwordResetToken.findMany({
+            where: { userId: lockedUser.id, usedAt: null },
+            select: { id: true, requestId: true },
+          });
+          await tx.passwordResetToken.updateMany({
+            where: { userId: lockedUser.id, usedAt: null },
+            data: { usedAt: new Date() },
+          });
+          await tx.passwordResetRecovery.updateMany({
+            where: { resetToken: { userId: lockedUser.id, usedAt: { not: null } }, wipedAt: null },
             data: {
-              flowId,
+              cipherVersion: null,
+              keyId: null,
+              nonce: null,
+              ciphertext: null,
+              authTag: null,
+              wipedAt: new Date(),
+              enqueueStatus: 'SUPERSEDED',
+            },
+          });
+          await tx.passwordResetToken.create({
+            data: {
+              id: flowId,
               userId: lockedUser.id,
-              recipientFingerprint: recoveryEnvelope.recipientFingerprint,
-              cipherVersion: recoveryEnvelope.cipherVersion,
-              keyId: recoveryEnvelope.keyId,
-              nonce: recoveryEnvelope.nonce,
-              ciphertext: recoveryEnvelope.ciphertext,
-              authTag: recoveryEnvelope.authTag,
-              providerOperationId: flowId,
+              token: tokenPair.storedToken,
+              expiresAt,
+              requestId: reqContext.requestId,
+              organizationId: lockedSenderOrg?.organization.id ?? null,
+              deliveryStatus: 'PENDING',
+              auditOrganizationIds,
+              providerCorrelationSchemaVersion: recoveryEnvelope
+                ? PASSWORD_RESET_DELIVERY_CONTRACT_VERSION
+                : null,
             },
           });
-        }
+          if (recoveryEnvelope) {
+            await tx.passwordResetRecovery.create({
+              data: {
+                flowId,
+                userId: lockedUser.id,
+                recipientFingerprint: recoveryEnvelope.recipientFingerprint,
+                cipherVersion: recoveryEnvelope.cipherVersion,
+                keyId: recoveryEnvelope.keyId,
+                nonce: recoveryEnvelope.nonce,
+                ciphertext: recoveryEnvelope.ciphertext,
+                authTag: recoveryEnvelope.authTag,
+                providerOperationId: flowId,
+              },
+            });
+          }
 
-        for (const membership of lockedMemberships) {
-          await createSecurityAuditEvent(tx, {
-            organizationId: membership.organization.id,
-            eventType: 'USER_PASSWORD_RESET',
-            actorType: 'SYSTEM',
-            requestId: reqContext.requestId,
-            correlationId: flowId,
-            description: 'Password reset requested for an organization member',
-            metadata: {
-              outcome: 'accepted',
-              stage: 'request',
-              targetUserId: lockedUser.id,
-              initiation: 'SELF_SERVICE',
-            },
-            ipAddress,
-            userAgent,
-          });
-          for (const superseded of supersededResetFlows) {
+          for (const membership of lockedMemberships) {
             await createSecurityAuditEvent(tx, {
               organizationId: membership.organization.id,
               eventType: 'USER_PASSWORD_RESET',
               actorType: 'SYSTEM',
-              requestId: superseded.requestId ?? `recovery-${superseded.id}`,
-              correlationId: superseded.id,
-              idempotencyKey: `password-reset-${superseded.id}-superseded-${membership.organization.id}`,
-              description: 'Password reset flow was superseded by a newer request',
+              requestId: reqContext.requestId,
+              correlationId: flowId,
+              description: 'Password reset requested for an organization member',
               metadata: {
-                outcome: 'cancelled',
-                stage: 'request_supersession',
+                outcome: 'accepted',
+                stage: 'request',
                 targetUserId: lockedUser.id,
-                replacementFlowId: flowId,
-                errorCode: 'SUPERSEDED',
+                initiation: 'SELF_SERVICE',
               },
               ipAddress,
               userAgent,
             });
+            for (const superseded of supersededResetFlows) {
+              await createSecurityAuditEvent(tx, {
+                organizationId: membership.organization.id,
+                eventType: 'USER_PASSWORD_RESET',
+                actorType: 'SYSTEM',
+                requestId: superseded.requestId ?? `recovery-${superseded.id}`,
+                correlationId: superseded.id,
+                idempotencyKey: `password-reset-${superseded.id}-superseded-${membership.organization.id}`,
+                description: 'Password reset flow was superseded by a newer request',
+                metadata: {
+                  outcome: 'cancelled',
+                  stage: 'request_supersession',
+                  targetUserId: lockedUser.id,
+                  replacementFlowId: flowId,
+                  errorCode: 'SUPERSEDED',
+                },
+                ipAddress,
+                userAgent,
+              });
+            }
           }
-        }
 
-        return { user: lockedUser, memberships: lockedMemberships, senderOrg: lockedSenderOrg };
-      });
+          return {
+            blocked: false as const,
+            user: lockedUser,
+            memberships: lockedMemberships,
+            senderOrg: lockedSenderOrg,
+            flowId,
+            resetToken,
+            recoverable: recoveryEnvelope !== null,
+          };
+        },
+        { maxWait: 5_000, timeout: 30_000 }
+      );
 
       if (!issuance) {
         structuredLog({
           event: 'locked_eligibility_check',
           outcome: 'neutral_stale_candidate',
           requestId: reqContext.requestId,
-          correlationId: flowId,
         });
         return neutralResponse(startedAt);
       }
+      if (issuance.blocked === true) {
+        structuredLog({
+          event: 'audit_scope_validation',
+          outcome: 'blocked',
+          requestId: reqContext.requestId,
+          routeType: 'self_service',
+          reasonCode: issuance.errorCode,
+          auditScopeCardinalityBucket: passwordResetAuditScopeCardinalityBucket(
+            issuance.cardinality
+          ),
+        });
+        return neutralResponse(startedAt);
+      }
+      const flowId = issuance.flowId;
+      const resetToken = issuance.resetToken;
+      const recoverable = issuance.recoverable;
 
       const deliveryUser = issuance.user;
       const memberships = issuance.memberships;
@@ -395,7 +469,7 @@ export async function POST(request: NextRequest) {
 
       if (hasCapability('canSendAsyncEmail')) {
         try {
-          const jobId = recoveryEnvelope
+          const jobId = recoverable
             ? await providers.job.addJob(
                 QUEUE_NAMES.NORMAL,
                 JOB_NAMES.PASSWORD_RESET_DELIVER,
@@ -446,7 +520,7 @@ export async function POST(request: NextRequest) {
                 data: { queueJobId: jobId },
               });
             }
-            if (recoveryEnvelope) {
+            if (recoverable) {
               await db.passwordResetRecovery.updateMany({
                 where: { flowId, enqueueStatus: 'PENDING', wipedAt: null },
                 data: { enqueueStatus: 'QUEUED' },
@@ -475,7 +549,7 @@ export async function POST(request: NextRequest) {
             })
           );
         } catch (error) {
-          if (recoveryEnvelope) {
+          if (recoverable) {
             await db.$transaction(async (tx) => {
               await tx.$queryRaw`
                 SELECT 1 FROM password_reset_tokens
@@ -550,7 +624,7 @@ export async function POST(request: NextRequest) {
           }
           structuredLog({
             event: 'email_queue',
-            outcome: recoveryEnvelope ? 'pending_recovery' : 'failed',
+            outcome: recoverable ? 'pending_recovery' : 'failed',
             requestId: reqContext.requestId,
             correlationId: flowId,
             errorCode: 'EMAIL_QUEUE_ERROR',
@@ -558,6 +632,9 @@ export async function POST(request: NextRequest) {
           });
         }
       } else if (hasCapability('canSendSyncEmail')) {
+        if (recoverable) {
+          throw new Error('PASSWORD_RESET_RECOVERY_REQUIRES_ASYNC_EMAIL');
+        }
         const sendClaim = await db.passwordResetToken.updateMany({
           where: {
             id: flowId,
@@ -604,7 +681,7 @@ export async function POST(request: NextRequest) {
               deliveryErrorCode: deliveryError.code,
             },
           });
-          if (recoveryEnvelope) {
+          if (recoverable) {
             await db.passwordResetRecovery.updateMany({
               where: { flowId, wipedAt: null },
               data: {
@@ -645,7 +722,6 @@ export async function POST(request: NextRequest) {
             outcome: 'accepted',
             requestId: reqContext.requestId,
             correlationId: flowId,
-            providerMessageId: result.messageId,
           })
         );
         try {
@@ -688,8 +764,6 @@ export async function POST(request: NextRequest) {
                   stage: 'provider_submission',
                   targetUserId: deliveryUser.id,
                   provider,
-                  providerOperationId: flowId,
-                  providerMessageId: result.messageId,
                 },
               });
             }
@@ -700,7 +774,6 @@ export async function POST(request: NextRequest) {
             outcome: 'failed_after_provider_acceptance',
             requestId: reqContext.requestId,
             correlationId: flowId,
-            providerMessageId: result.messageId,
             errorName: lifecycleError instanceof Error ? lifecycleError.name : 'UnknownError',
           });
         }
@@ -709,7 +782,7 @@ export async function POST(request: NextRequest) {
           where: { id: flowId, usedAt: null },
           data: { deliveryStatus: 'NOT_CONFIGURED', deliveryErrorCode: 'EMAIL_NOT_CONFIGURED' },
         });
-        if (recoveryEnvelope) {
+        if (recoverable) {
           await db.passwordResetRecovery.updateMany({
             where: { flowId, wipedAt: null },
             data: {

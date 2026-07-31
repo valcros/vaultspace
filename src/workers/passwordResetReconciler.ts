@@ -29,6 +29,15 @@ interface ReconciliationSummary {
 class PasswordResetPreflightRollback extends Error {}
 
 export interface PasswordResetProviderCorrelationPreflight {
+  markedFlows: number;
+  markedNonHmacRows: number;
+  markedInvalidAuditScopeRows: number;
+  markedAcceptedIncompleteRows: number;
+  markedRowsWithoutRecovery: number;
+  markedOperationIdMismatchRows: number;
+  unmarkedActiveDeliveryRows: number;
+  unmarkedAcceptedAcsRows: number;
+  overLimitActiveMembershipAccounts: number;
   duplicateAcsMessageIdGroups: number;
   duplicateAcsOperationIdGroups: number;
   configuredProviderRows: number;
@@ -75,6 +84,97 @@ export async function inspectPasswordResetProviderCorrelation(
       FROM password_reset_tokens tokens
     )
     SELECT
+      COUNT(*) FILTER (
+        WHERE "providerCorrelationSchemaVersion" = 1
+      )::int AS "markedFlows",
+      COUNT(*) FILTER (
+        WHERE "providerCorrelationSchemaVersion" = 1
+          AND token !~ '^prh1:[0-9a-f]{64}$'
+      )::int AS "markedNonHmacRows",
+      COUNT(*) FILTER (
+        WHERE "providerCorrelationSchemaVersion" = 1
+          AND (
+            cardinality("auditOrganizationIds") NOT BETWEEN 1 AND 64
+            OR EXISTS (
+              SELECT 1
+              FROM unnest("auditOrganizationIds") AS scope(scope_id)
+              WHERE scope_id IS NULL
+                 OR scope_id = ''
+                 OR scope_id <> BTRIM(scope_id)
+                 OR length(scope_id) > 100
+                 OR scope_id !~ '^[A-Za-z0-9_-]+$'
+            )
+            OR cardinality("auditOrganizationIds") <> (
+              SELECT COUNT(DISTINCT scope_id)
+              FROM unnest("auditOrganizationIds") AS scope(scope_id)
+            )
+            OR "auditOrganizationIds" IS DISTINCT FROM (
+              SELECT array_agg(scope_id ORDER BY scope_id COLLATE "C")
+              FROM unnest("auditOrganizationIds") AS scope(scope_id)
+            )
+          )
+      )::int AS "markedInvalidAuditScopeRows",
+      COUNT(*) FILTER (
+        WHERE "providerCorrelationSchemaVersion" = 1
+          AND "deliveryStatus" = 'PROVIDER_ACCEPTED'
+          AND (
+            NULLIF(BTRIM(provider), '') IS NULL
+            OR NULLIF(BTRIM("providerOperationId"), '') IS NULL
+            OR NULLIF(BTRIM("providerMessageId"), '') IS NULL
+            OR "providerAcceptedAt" IS NULL
+          )
+      )::int AS "markedAcceptedIncompleteRows",
+      COUNT(*) FILTER (
+        WHERE "providerCorrelationSchemaVersion" = 1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM password_reset_recoveries recovery
+            WHERE recovery."flowId" = scoped_tokens.id
+          )
+      )::int AS "markedRowsWithoutRecovery",
+      COUNT(*) FILTER (
+        WHERE "providerCorrelationSchemaVersion" = 1
+          AND EXISTS (
+            SELECT 1
+            FROM password_reset_recoveries recovery
+            WHERE recovery."flowId" = scoped_tokens.id
+              AND recovery."providerOperationId" IS DISTINCT FROM scoped_tokens.id
+          )
+      )::int AS "markedOperationIdMismatchRows",
+      COUNT(*) FILTER (
+        WHERE "providerCorrelationSchemaVersion" IS NULL
+          AND "usedAt" IS NULL
+          AND "expiresAt" > CURRENT_TIMESTAMP
+          AND "deliveryStatus" IN (
+            'PENDING',
+            'QUEUED',
+            'QUEUE_RETRYING',
+            'SENDING',
+            'FAILED_RETRYING',
+            'RECOVERY_BLOCKED_CONFIGURATION'
+          )
+      )::int AS "unmarkedActiveDeliveryRows",
+      COUNT(*) FILTER (
+        WHERE provider = 'acs'
+          AND "providerAcceptedAt" IS NOT NULL
+          AND "providerCorrelationSchemaVersion" IS DISTINCT FROM 1
+          AND ("projectionCutoverAt" IS NULL OR "createdAt" >= "projectionCutoverAt")
+      )::int AS "unmarkedAcceptedAcsRows",
+      (
+        SELECT COUNT(*)::int
+        FROM (
+          SELECT memberships."userId"
+          FROM user_organizations memberships
+          JOIN organizations organizations
+            ON organizations.id = memberships."organizationId"
+          JOIN users users ON users.id = memberships."userId"
+          WHERE memberships."isActive" = true
+            AND organizations."isActive" = true
+            AND users."isActive" = true
+          GROUP BY memberships."userId"
+          HAVING COUNT(*) > 64
+        ) over_limit_accounts
+      ) AS "overLimitActiveMembershipAccounts",
       (
         SELECT COUNT(*)::int
         FROM (
@@ -365,7 +465,11 @@ export async function reconcilePasswordResetDeliveries(options?: {
 
   const [expired, staleSending] = await Promise.all([
     bootstrapDb.passwordResetRecovery.findMany({
-      where: { wipedAt: null, resetToken: { expiresAt: { lte: now } } },
+      where: {
+        wipedAt: null,
+        enqueueStatus: { not: 'SENDING' },
+        resetToken: { expiresAt: { lte: now } },
+      },
       select: { flowId: true },
       take: BATCH_SIZE,
     }),
@@ -382,29 +486,10 @@ export async function reconcilePasswordResetDeliveries(options?: {
   ]);
 
   if (!dryRun) {
-    for (const item of expired) {
-      if (
-        await terminalizeRecoveryFlow({
-          flowId: item.flowId,
-          deliveryStatus: 'EXPIRED',
-          enqueueStatus: 'EXPIRED',
-          errorCode: 'TOKEN_EXPIRED',
-          auditOutcome: 'expired',
-          expectedTokenStatuses: [
-            'PENDING',
-            'QUEUED',
-            'QUEUE_RETRYING',
-            'SENDING',
-            'RECOVERY_BLOCKED_CONFIGURATION',
-          ],
-        })
-      ) {
-        summary.expiredWiped += 1;
-      }
-    }
     for (const item of staleSending) {
       // Lease expiry proves only that VaultSpace lost certainty. It never proves
-      // the provider did not accept the original submission.
+      // the provider did not accept the original submission. This transition
+      // has precedence over token expiry for accepted-but-unpersisted sends.
       if (
         await terminalizeRecoveryFlow({
           flowId: item.flowId,
@@ -417,6 +502,25 @@ export async function reconcilePasswordResetDeliveries(options?: {
         })
       ) {
         summary.staleSendingUnknown += 1;
+      }
+    }
+    for (const item of expired) {
+      if (
+        await terminalizeRecoveryFlow({
+          flowId: item.flowId,
+          deliveryStatus: 'EXPIRED',
+          enqueueStatus: 'EXPIRED',
+          errorCode: 'TOKEN_EXPIRED',
+          auditOutcome: 'expired',
+          expectedTokenStatuses: [
+            'PENDING',
+            'QUEUED',
+            'QUEUE_RETRYING',
+            'RECOVERY_BLOCKED_CONFIGURATION',
+          ],
+        })
+      ) {
+        summary.expiredWiped += 1;
       }
     }
   } else {
@@ -441,6 +545,7 @@ export async function reconcilePasswordResetDeliveries(options?: {
         usedAt: null,
         expiresAt: { gt: now },
         providerAcceptedAt: null,
+        providerCorrelationSchemaVersion: 1,
         deliveryStatus: {
           in: ['PENDING', 'QUEUED', 'QUEUE_RETRYING', 'RECOVERY_BLOCKED_CONFIGURATION'],
         },
@@ -602,6 +707,13 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
     const projectionCutoverAt = resolvePasswordResetProviderProjectionCutover();
     const providerCorrelation = await inspectPasswordResetProviderCorrelation(projectionCutoverAt);
     const blockingAnomaly =
+      providerCorrelation.markedNonHmacRows > 0 ||
+      providerCorrelation.markedInvalidAuditScopeRows > 0 ||
+      providerCorrelation.markedAcceptedIncompleteRows > 0 ||
+      providerCorrelation.markedRowsWithoutRecovery > 0 ||
+      providerCorrelation.markedOperationIdMismatchRows > 0 ||
+      providerCorrelation.unmarkedActiveDeliveryRows > 0 ||
+      providerCorrelation.overLimitActiveMembershipAccounts > 0 ||
       providerCorrelation.duplicateAcsMessageIdGroups > 0 ||
       providerCorrelation.duplicateAcsOperationIdGroups > 0 ||
       (process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] === 'true' &&
@@ -611,7 +723,8 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
       providerCorrelation.correlationRowsWithoutProvider > 0 ||
       providerCorrelation.partialProviderFinalProjectionRows > 0 ||
       (process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] === 'true' &&
-        providerCorrelation.acsRowsWithoutAuditOrganizationSnapshot > 0);
+        (providerCorrelation.acsRowsWithoutAuditOrganizationSnapshot > 0 ||
+          providerCorrelation.unmarkedAcceptedAcsRows > 0));
     const warning =
       providerCorrelation.configuredProviderRows > 0 ||
       providerCorrelation.acsRowsWithoutAuditOrganizationSnapshot > 0;
@@ -670,33 +783,6 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
             auditOrganizationIds: [membership.organizationId],
           },
         });
-        const projectionEventAt = new Date();
-        const projection = await tx.passwordResetToken.update({
-          where: { id: flowId },
-          data: {
-            providerFinalStatus: 'PREFLIGHT',
-            providerFinalOutcome: 'UNKNOWN',
-            providerFinalEventAt: projectionEventAt,
-            providerFinalRecordedAt: projectionEventAt,
-            providerFinalEventIdFingerprint: '0'.repeat(64),
-          },
-          select: {
-            providerFinalStatus: true,
-            providerFinalOutcome: true,
-            providerFinalEventAt: true,
-            providerFinalRecordedAt: true,
-            providerFinalEventIdFingerprint: true,
-          },
-        });
-        if (
-          projection.providerFinalStatus !== 'PREFLIGHT' ||
-          projection.providerFinalOutcome !== 'UNKNOWN' ||
-          projection.providerFinalEventAt?.getTime() !== projectionEventAt.getTime() ||
-          projection.providerFinalRecordedAt?.getTime() !== projectionEventAt.getTime() ||
-          projection.providerFinalEventIdFingerprint !== '0'.repeat(64)
-        ) {
-          throw new Error('Password reset preflight provider projection was not visible');
-        }
         await tx.passwordResetRecovery.create({
           data: {
             flowId,

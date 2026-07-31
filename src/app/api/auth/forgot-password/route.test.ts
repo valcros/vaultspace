@@ -203,7 +203,10 @@ describe('POST /api/auth/forgot-password', () => {
     const storedToken = mocks.createToken.mock.calls[0]?.[0]?.data?.token as string;
     expect(storedToken).toMatch(/^prh1:[a-f0-9]{64}$/);
     expect(mocks.createToken).toHaveBeenCalledWith({
-      data: expect.objectContaining({ auditOrganizationIds: ['org-1'] }),
+      data: expect.objectContaining({
+        auditOrganizationIds: ['org-1'],
+        providerCorrelationSchemaVersion: 1,
+      }),
     });
     expect(mocks.createRecovery).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -264,6 +267,53 @@ describe('POST /api/auth/forgot-password', () => {
         expect.objectContaining({ organizationId, correlationId: expect.any(String) })
       );
     }
+  });
+
+  it('rejects an over-limit locked scope before supersession, token creation, or delivery', async () => {
+    const organizations = Array.from({ length: 65 }, (_, index) => ({
+      role: 'MEMBER',
+      organization: {
+        id: `org-${String(index).padStart(2, '0')}`,
+        name: `Organization ${index}`,
+        slug: `organization-${index}`,
+        emailSenderName: null,
+        emailSenderAddress: null,
+      },
+    }));
+    mocks.findLockedUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@example.com',
+      firstName: 'Ada',
+      isActive: true,
+      organizations,
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ success: true });
+    expect(mocks.findSupersededFlows).not.toHaveBeenCalled();
+    expect(mocks.supersedeTokens).not.toHaveBeenCalled();
+    expect(mocks.createToken).not.toHaveBeenCalled();
+    expect(mocks.createRecovery).not.toHaveBeenCalled();
+    expect(mocks.addJob).not.toHaveBeenCalled();
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    const operationsLog = consoleError.mock.calls.find((call) =>
+      String(call[0]).includes('audit_scope_validation')
+    );
+    expect(operationsLog).toBeDefined();
+    expect(String(operationsLog?.[0])).toContain('PASSWORD_RESET_AUDIT_SCOPE_TOO_LARGE');
+    expect(String(operationsLog?.[0])).toContain('65_PLUS');
+    expect(String(operationsLog?.[0])).not.toContain('admin@example.com');
+    expect(String(operationsLog?.[0])).not.toContain('user-1');
+    expect(String(operationsLog?.[0])).not.toContain('org-00');
+    consoleError.mockRestore();
   });
 
   it('keeps the public response neutral when queue insertion fails', async () => {
@@ -410,7 +460,6 @@ describe('POST /api/auth/forgot-password', () => {
           outcome: 'accepted',
           stage: 'provider_submission',
           provider: 'acs',
-          providerMessageId: 'provider-message-1',
         }),
       })
     );
@@ -526,6 +575,14 @@ describe('POST /api/auth/forgot-password', () => {
       isActive: true,
       organizations: [],
     });
+    mocks.findLockedUser.mockResolvedValue({
+      id: 'user-orphan',
+      email: 'orphan@example.com',
+      firstName: 'Orphan',
+      isActive: true,
+      organizations: [],
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const response = await POST(
       new NextRequest('http://localhost/api/auth/forgot-password', {
@@ -536,8 +593,17 @@ describe('POST /api/auth/forgot-password', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.createToken).not.toHaveBeenCalled();
     expect(mocks.addJob).not.toHaveBeenCalled();
+    const operationsLog = consoleError.mock.calls.find((call) =>
+      String(call[0]).includes('audit_scope_validation')
+    );
+    expect(String(operationsLog?.[0])).toContain('PASSWORD_RESET_AUDIT_SCOPE_EMPTY');
+    expect(String(operationsLog?.[0])).toContain('"auditScopeCardinalityBucket":"0"');
+    expect(String(operationsLog?.[0])).not.toContain('orphan@example.com');
+    expect(String(operationsLog?.[0])).not.toContain('user-orphan');
+    consoleError.mockRestore();
   });
 
   it('serializes issuance and supersedes older links before minting a new one', async () => {

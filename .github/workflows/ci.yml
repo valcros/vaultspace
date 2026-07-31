@@ -432,6 +432,9 @@ jobs:
           build-args: |
             DEPLOYMENT_MODE=azure
             APP_RELEASE=${{ github.sha }}
+          labels: |
+            org.vaultspace.password-reset-delivery-contract-version=1
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
@@ -446,6 +449,9 @@ jobs:
             ${{ env.ACR_SERVER }}/vaultspace-worker:latest
           build-args: |
             DEPLOYMENT_MODE=azure
+          labels: |
+            org.vaultspace.password-reset-delivery-contract-version=1
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=worker
           cache-to: type=gha,mode=max,scope=worker
 

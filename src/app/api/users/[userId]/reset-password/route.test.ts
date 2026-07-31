@@ -40,7 +40,7 @@ vi.mock('@/lib/db', () => {
       ? Promise.all(operation)
       : (operation as (client: typeof bootstrapClient) => Promise<unknown>)(bootstrapClient)
   );
-  return { withOrgContext: vi.fn(), bootstrapDb: bootstrapClient };
+  return { setBootstrapContext: vi.fn(), bootstrapDb: bootstrapClient };
 });
 vi.mock('@/providers', () => ({
   getConfiguredEmailProviderName: () => 'acs',
@@ -73,12 +73,11 @@ vi.mock('@/workers/types', () => ({
 }));
 
 import { requireAuth } from '@/lib/middleware';
-import { withOrgContext, bootstrapDb } from '@/lib/db';
+import { bootstrapDb } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { hasCapability } from '@/lib/deployment-capabilities';
 
 const mockRequireAuth = vi.mocked(requireAuth);
-const mockWithOrgContext = vi.mocked(withOrgContext);
 const mockInvalidateToken = vi.mocked(bootstrapDb.passwordResetToken.updateMany);
 const mockFindTokenState = vi.mocked(bootstrapDb.passwordResetToken.findUnique);
 const mockUpdateTokenState = vi.mocked(bootstrapDb.passwordResetToken.update);
@@ -164,22 +163,45 @@ describe('POST /api/users/:userId/reset-password', () => {
   });
 
   function resetTx(userOverride: Record<string, unknown> = {}, recentToken: unknown = null) {
+    const targetMembership = {
+      id: 'uo-2',
+      userId: 'user-2',
+      organizationId: 'org-1',
+      isActive: true,
+      role: 'VIEWER',
+      user: {
+        id: 'user-2',
+        email: 'user@example.com',
+        firstName: 'Existing',
+        isActive: true,
+        ...userOverride,
+      },
+      organization: {
+        id: 'org-1',
+        name: 'Acme',
+        isActive: true,
+        emailSenderName: 'Acme Data Room',
+        emailSenderAddress: 'dataroom@acme.example',
+      },
+    };
     return {
       userOrganization: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: 'uo-2',
-          userId: 'user-2',
-          organizationId: 'org-1',
-          isActive: true,
-          user: {
-            id: 'user-2',
-            email: 'user@example.com',
-            firstName: 'Existing',
-            isActive: true,
-            ...userOverride,
-          },
-          organization: { isActive: true },
-        }),
+        findFirst: vi.fn().mockImplementation(({ where }) =>
+          Promise.resolve(
+            where.userId === 'admin-1'
+              ? {
+                  id: 'uo-admin',
+                  userId: 'admin-1',
+                  organizationId: 'org-1',
+                  isActive: true,
+                  role: 'ADMIN',
+                  user: { id: 'admin-1', email: 'admin@example.com', isActive: true },
+                  organization: { id: 'org-1', isActive: true },
+                }
+              : targetMembership
+          )
+        ),
+        findMany: vi.fn().mockResolvedValue([{ organizationId: 'org-1' }]),
       },
       passwordResetToken: {
         findFirst: vi.fn().mockResolvedValue(recentToken),
@@ -203,10 +225,19 @@ describe('POST /api/users/:userId/reset-password', () => {
       $executeRaw: vi.fn().mockResolvedValue(1),
     };
   }
-  const useTx = (tx: Record<string, unknown>) =>
-    mockWithOrgContext.mockImplementation(async (_orgId, callback) =>
-      callback(tx as unknown as Parameters<typeof callback>[0])
-    );
+  const useTx = (tx: Record<string, unknown>) => {
+    let invocation = 0;
+    vi.mocked(bootstrapDb.$transaction).mockImplementation(async (operation: unknown) => {
+      if (Array.isArray(operation)) {
+        return Promise.all(operation) as never;
+      }
+      invocation += 1;
+      const client = invocation === 1 ? tx : bootstrapDb;
+      return (operation as (client: typeof bootstrapDb) => Promise<unknown>)(
+        client as typeof bootstrapDb
+      ) as never;
+    });
+  };
   const req = () =>
     new NextRequest('http://localhost/api/users/user-2/reset-password', { method: 'POST' });
   const ctx = { params: Promise.resolve({ userId: 'user-2' }) };
@@ -229,8 +260,7 @@ describe('POST /api/users/:userId/reset-password', () => {
     useTx(tx);
     const res = await POST(req(), ctx);
     expect(res.status).toBe(503);
-    // withOrgContext is never entered — token/tx work is skipped entirely.
-    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(bootstrapDb.$transaction).not.toHaveBeenCalled();
     expect(tx.passwordResetToken.create).not.toHaveBeenCalled();
   });
 
@@ -241,7 +271,7 @@ describe('POST /api/users/:userId/reset-password', () => {
 
     expect(res.status).toBe(500);
     expect(mockGetProviders).not.toHaveBeenCalled();
-    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(bootstrapDb.$transaction).not.toHaveBeenCalled();
     expect(mockAddJob).not.toHaveBeenCalled();
   });
 
@@ -252,7 +282,7 @@ describe('POST /api/users/:userId/reset-password', () => {
 
     expect(res.status).toBe(500);
     expect(mockGetProviders).not.toHaveBeenCalled();
-    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(bootstrapDb.$transaction).not.toHaveBeenCalled();
   });
 
   it('fails before transaction work when HMAC delivery has no async worker', async () => {
@@ -261,17 +291,81 @@ describe('POST /api/users/:userId/reset-password', () => {
     const res = await POST(req(), ctx);
 
     expect(res.status).toBe(503);
-    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(bootstrapDb.$transaction).not.toHaveBeenCalled();
   });
 
   it('returns 404 when the target is not a member of the org', async () => {
-    useTx({
-      userOrganization: { findFirst: vi.fn().mockResolvedValue(null) },
-      $executeRaw: vi.fn().mockResolvedValue(1),
-    });
+    const tx = resetTx();
+    tx.userOrganization.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve(
+        where.userId === 'admin-1'
+          ? {
+              isActive: true,
+              role: 'ADMIN',
+              user: { id: 'admin-1', email: 'admin@example.com', isActive: true },
+              organization: { id: 'org-1', isActive: true },
+            }
+          : null
+      )
+    );
+    useTx(tx);
     const res = await POST(req(), ctx);
     expect(res.status).toBe(404);
     expect(mockAddJob).not.toHaveBeenCalled();
+  });
+
+  it('revalidates the initiating administrator role under lock', async () => {
+    const tx = resetTx();
+    tx.userOrganization.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve(
+        where.userId === 'admin-1'
+          ? {
+              isActive: true,
+              role: 'VIEWER',
+              user: { id: 'admin-1', email: 'admin@example.com', isActive: true },
+              organization: { id: 'org-1', isActive: true },
+            }
+          : null
+      )
+    );
+    useTx(tx);
+
+    const response = await POST(req(), ctx);
+
+    expect(response.status).toBe(403);
+    expect(tx.passwordResetToken.create).not.toHaveBeenCalled();
+    expect(mockAddJob).not.toHaveBeenCalled();
+  });
+
+  it('returns 422 for an over-limit locked scope without superseding or delivering', async () => {
+    const tx = resetTx();
+    tx.userOrganization.findMany.mockResolvedValue(
+      Array.from({ length: 65 }, (_, index) => ({
+        organizationId: `org-${String(index).padStart(2, '0')}`,
+      }))
+    );
+    useTx(tx);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(req(), ctx);
+
+    expect(response.status).toBe(422);
+    expect(tx.passwordResetToken.findFirst).not.toHaveBeenCalled();
+    expect(tx.passwordResetToken.findMany).not.toHaveBeenCalled();
+    expect(tx.passwordResetToken.updateMany).not.toHaveBeenCalled();
+    expect(tx.passwordResetToken.create).not.toHaveBeenCalled();
+    expect(tx.passwordResetRecovery.create).not.toHaveBeenCalled();
+    expect(mockAddJob).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    const operationsLog = consoleError.mock.calls.find((call) =>
+      String(call[0]).includes('audit_scope_validation')
+    );
+    expect(String(operationsLog?.[0])).toContain('PASSWORD_RESET_AUDIT_SCOPE_TOO_LARGE');
+    expect(String(operationsLog?.[0])).toContain('65_PLUS');
+    expect(String(operationsLog?.[0])).not.toContain('admin@example.com');
+    expect(String(operationsLog?.[0])).not.toContain('user-2');
+    expect(String(operationsLog?.[0])).not.toContain('org-00');
+    consoleError.mockRestore();
   });
 
   it('refuses a globally deactivated account (400) without a token', async () => {
@@ -285,13 +379,25 @@ describe('POST /api/users/:userId/reset-password', () => {
 
   it('refuses a deactivated MEMBERSHIP (400) even if the global account is active', async () => {
     const tx = resetTx();
-    tx.userOrganization.findFirst = vi.fn().mockResolvedValue({
-      id: 'uo-2',
-      userId: 'user-2',
-      organizationId: 'org-1',
-      isActive: false, // membership disabled in this org
-      user: { id: 'user-2', email: 'user@example.com', firstName: 'X', isActive: true },
-    });
+    tx.userOrganization.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve(
+        where.userId === 'admin-1'
+          ? {
+              isActive: true,
+              role: 'ADMIN',
+              user: { id: 'admin-1', email: 'admin@example.com', isActive: true },
+              organization: { id: 'org-1', isActive: true },
+            }
+          : {
+              id: 'uo-2',
+              userId: 'user-2',
+              organizationId: 'org-1',
+              isActive: false,
+              user: { id: 'user-2', email: 'user@example.com', firstName: 'X', isActive: true },
+              organization: { id: 'org-1', isActive: true },
+            }
+      )
+    );
     useTx(tx);
     const res = await POST(req(), ctx);
     expect(res.status).toBe(400);
@@ -308,11 +414,11 @@ describe('POST /api/users/:userId/reset-password', () => {
   });
 
   it('returns 202 and preserves a recoverable token when the queue is unavailable', async () => {
-    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+    const tx = resetTx();
+    tx.userOrganization.findMany.mockResolvedValue([
       { organizationId: 'org-2' },
       { organizationId: 'org-1' },
-    ] as never);
-    const tx = resetTx();
+    ]);
     useTx(tx);
     mockAddJob.mockRejectedValue(new Error('queue down'));
     mockInvalidateToken.mockResolvedValue({ count: 1 } as never);
@@ -345,10 +451,10 @@ describe('POST /api/users/:userId/reset-password', () => {
     useTx(tx);
     mockHasCapability.mockImplementation((cap) => cap === 'canSendSyncEmail');
     mockSendEmail.mockRejectedValue({ statusCode: 503 });
-    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+    tx.userOrganization.findMany.mockResolvedValue([
       { organizationId: 'org-2' },
       { organizationId: 'org-1' },
-    ] as never);
+    ]);
 
     const res = await POST(req(), ctx);
 
@@ -384,10 +490,10 @@ describe('POST /api/users/:userId/reset-password', () => {
     useTx(tx);
     mockHasCapability.mockImplementation((cap) => cap === 'canSendSyncEmail');
     mockSendEmail.mockRejectedValue({ statusCode: 400 });
-    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+    tx.userOrganization.findMany.mockResolvedValue([
       { organizationId: 'org-2' },
       { organizationId: 'org-1' },
-    ] as never);
+    ]);
 
     const res = await POST(req(), ctx);
 
@@ -437,10 +543,10 @@ describe('POST /api/users/:userId/reset-password', () => {
     const tx = resetTx();
     useTx(tx);
     mockSendEmail.mockResolvedValue({ messageId: 'provider-message-1' });
-    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+    tx.userOrganization.findMany.mockResolvedValue([
       { organizationId: 'org-2' },
       { organizationId: 'org-1' },
-    ] as never);
+    ]);
 
     const response = await POST(req(), ctx);
 
@@ -458,7 +564,6 @@ describe('POST /api/users/:userId/reset-password', () => {
           outcome: 'accepted',
           stage: 'provider_submission',
           provider: 'acs',
-          providerMessageId: 'provider-message-1',
         }),
       })
     );
@@ -475,12 +580,11 @@ describe('POST /api/users/:userId/reset-password', () => {
   it('queues a legacy reset with the full deterministic captured audit scope', async () => {
     process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'legacy';
     mockHasCapability.mockImplementation((cap) => cap === 'canSendAsyncEmail');
-    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+    const tx = resetTx();
+    tx.userOrganization.findMany.mockResolvedValue([
       { organizationId: 'org-2' },
       { organizationId: 'org-1' },
-      { organizationId: 'org-2' },
-    ] as never);
-    const tx = resetTx();
+    ]);
     useTx(tx);
 
     const response = await POST(req(), ctx);
@@ -512,6 +616,7 @@ describe('POST /api/users/:userId/reset-password', () => {
         expiresAt: expect.any(Date),
         requestId: 'req-admin-reset',
         organizationId: 'org-1',
+        providerCorrelationSchemaVersion: 1,
       }),
     });
     // Audit records the request but NEVER the token itself (metadata + text).
@@ -574,7 +679,7 @@ describe('POST /api/users/:userId/reset-password', () => {
     const res = await POST(req(), ctx);
 
     expect(res.status).toBe(200);
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
     expect(tx.passwordResetToken.updateMany).toHaveBeenCalledWith({
       where: { userId: 'user-2', usedAt: null },
       data: { usedAt: expect.any(Date) },
@@ -589,10 +694,10 @@ describe('POST /api/users/:userId/reset-password', () => {
     tx.passwordResetToken.findMany.mockResolvedValue([
       { id: 'old-flow', requestId: 'old-request' },
     ]);
-    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+    tx.userOrganization.findMany.mockResolvedValue([
       { organizationId: 'org-1' },
       { organizationId: 'org-2' },
-    ] as never);
+    ]);
     useTx(tx);
 
     const response = await POST(req(), ctx);
@@ -652,33 +757,30 @@ describe('POST /api/users/:userId/reset-password', () => {
 
   it('delivers only to the post-lock account email', async () => {
     const tx = resetTx();
-    tx.userOrganization.findFirst
-      .mockResolvedValueOnce({
-        id: 'uo-2',
-        userId: 'user-2',
-        organizationId: 'org-1',
-        isActive: true,
-        user: {
-          id: 'user-2',
-          email: 'old-address@example.com',
-          firstName: 'Existing',
-          isActive: true,
-        },
-        organization: { isActive: true },
-      })
-      .mockResolvedValueOnce({
-        id: 'uo-2',
-        userId: 'user-2',
-        organizationId: 'org-1',
-        isActive: true,
-        user: {
-          id: 'user-2',
-          email: 'new-address@example.com',
-          firstName: 'Existing',
-          isActive: true,
-        },
-        organization: { isActive: true },
-      });
+    tx.userOrganization.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve(
+        where.userId === 'admin-1'
+          ? {
+              isActive: true,
+              role: 'ADMIN',
+              user: { id: 'admin-1', email: 'admin@example.com', isActive: true },
+              organization: { id: 'org-1', isActive: true },
+            }
+          : {
+              id: 'uo-2',
+              userId: 'user-2',
+              organizationId: 'org-1',
+              isActive: true,
+              user: {
+                id: 'user-2',
+                email: 'new-address@example.com',
+                firstName: 'Existing',
+                isActive: true,
+              },
+              organization: { id: 'org-1', name: 'Acme', isActive: true },
+            }
+      )
+    );
     useTx(tx);
 
     const res = await POST(req(), ctx);
@@ -721,33 +823,30 @@ describe('POST /api/users/:userId/reset-password', () => {
 
   it('does not mint when the account is deactivated before the locked re-read', async () => {
     const tx = resetTx();
-    tx.userOrganization.findFirst
-      .mockResolvedValueOnce({
-        id: 'uo-2',
-        userId: 'user-2',
-        organizationId: 'org-1',
-        isActive: true,
-        user: {
-          id: 'user-2',
-          email: 'user@example.com',
-          firstName: 'Existing',
-          isActive: true,
-        },
-        organization: { isActive: true },
-      })
-      .mockResolvedValueOnce({
-        id: 'uo-2',
-        userId: 'user-2',
-        organizationId: 'org-1',
-        isActive: true,
-        user: {
-          id: 'user-2',
-          email: 'user@example.com',
-          firstName: 'Existing',
-          isActive: false,
-        },
-        organization: { isActive: true },
-      });
+    tx.userOrganization.findFirst.mockImplementation(({ where }) =>
+      Promise.resolve(
+        where.userId === 'admin-1'
+          ? {
+              isActive: true,
+              role: 'ADMIN',
+              user: { id: 'admin-1', email: 'admin@example.com', isActive: true },
+              organization: { id: 'org-1', isActive: true },
+            }
+          : {
+              id: 'uo-2',
+              userId: 'user-2',
+              organizationId: 'org-1',
+              isActive: true,
+              user: {
+                id: 'user-2',
+                email: 'user@example.com',
+                firstName: 'Existing',
+                isActive: false,
+              },
+              organization: { id: 'org-1', isActive: true },
+            }
+      )
+    );
     useTx(tx);
 
     const res = await POST(req(), ctx);

@@ -1400,6 +1400,11 @@ model PasswordResetToken {
   // changes before the provider reports its final outcome.
   auditOrganizationIds String[] @default([])
 
+  // Creation-time assertion that this flow was issued through the reviewed
+  // HMAC recovery and async delivery contract. It is not provider evidence;
+  // future ACS eligibility additionally requires the accepted provider tuple.
+  providerCorrelationSchemaVersion Int?
+
   // Provider final-delivery evidence is a separate state machine from the
   // VaultSpace submission/recovery lifecycle in deliveryStatus.
   providerFinalStatus             String?   @db.VarChar(32)
