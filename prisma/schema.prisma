@@ -1406,7 +1406,9 @@ model PasswordResetToken {
   providerCorrelationSchemaVersion Int?
 
   // Provider final-delivery evidence is a separate state machine from the
-  // VaultSpace submission/recovery lifecycle in deliveryStatus.
+  // VaultSpace submission/recovery lifecycle in deliveryStatus. PostgreSQL
+  // requires an atomic complete tuple, allows its first write only from the
+  // exact table owner, and makes the completed evidence immutable.
   providerFinalStatus             String?   @db.VarChar(32)
   providerFinalOutcome            String?   @db.VarChar(16)
   providerFinalEventAt            DateTime?
