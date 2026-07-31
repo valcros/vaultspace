@@ -163,6 +163,29 @@ export async function preflightProviderEventInbox(): Promise<void> {
         );
       }
 
+      const [protectedFunctionAccess] = await tx.$queryRaw<
+        Array<{ executable_function_count: number }>
+      >`
+        SELECT count(*)::int AS executable_function_count
+        FROM pg_proc function
+        JOIN pg_namespace namespace ON namespace.oid = function.pronamespace
+        WHERE namespace.nspname = 'public'
+          AND function.proname IN (
+            'password_reset_provider_correlation_source_valid',
+            'password_reset_provider_correlation_eligible',
+            'register_password_reset_provider_correlation',
+            'prevent_password_reset_provider_correlation_change',
+            'prevent_registered_password_reset_identity_change',
+            'password_reset_provider_correlation_preflight_counts'
+          )
+          AND has_function_privilege(current_user, function.oid, 'EXECUTE')`;
+      if (!protectedFunctionAccess || protectedFunctionAccess.executable_function_count > 0) {
+        throw new ProviderInboxPreflightError(
+          'PROVIDER_INBOX_PREFLIGHT_PROTECTED_FUNCTION_GRANTS_INVALID',
+          'Provider inbox database role can execute protected correlation functions'
+        );
+      }
+
       const [ownership] = await tx.$queryRaw<Array<{ table_owner: string }>>`
         SELECT owner.rolname AS table_owner
         FROM pg_class c

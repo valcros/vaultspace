@@ -79,6 +79,7 @@ describe('provider event inbox preflight', () => {
         },
       ])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ executable_function_count: 0 }])
       .mockResolvedValueOnce([{ table_owner: 'test' }])
       .mockResolvedValueOnce([
         { grantee: 'test', privilege_type: 'SELECT', is_owner: true },

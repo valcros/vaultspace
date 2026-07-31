@@ -69,6 +69,25 @@ import {
   reconcilePasswordResetDeliveries,
 } from './passwordResetReconciler';
 
+const safeRegistryCounts = {
+  eligibleAcceptedAcsRows: 0,
+  registeredCorrelationRows: 0,
+  missingCorrelationRows: 0,
+  orphanCorrelationRows: 0,
+  divergentCorrelationRows: 0,
+  invalidCorrelationRows: 0,
+  ownerMismatchRows: 0,
+  invalidFunctionPostureRows: 0,
+  missingRequiredTriggerRows: 0,
+  missingRequiredConstraintRows: 0,
+  missingRequiredIndexRows: 0,
+  unexpectedRegistryAclRows: 0,
+  unexpectedSensitiveFunctionAclRows: 0,
+  runtimeRegistryAccessRows: 0,
+  runtimeSensitiveFunctionAccessRows: 0,
+  runtimeCountFunctionDeniedRows: 0,
+};
+
 describe('password reset reconciler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -203,6 +222,7 @@ describe('password reset reconciler', () => {
     mocks.queryRaw
       .mockResolvedValueOnce([
         {
+          ...safeRegistryCounts,
           duplicateAcsMessageIdGroups: 0,
           duplicateAcsOperationIdGroups: 0,
           configuredProviderRows: 0,
@@ -215,6 +235,26 @@ describe('password reset reconciler', () => {
       ])
       .mockResolvedValueOnce([
         { current_user: 'vaultspace_app', bypasses_rls: false, is_superuser: false },
+      ])
+      .mockResolvedValueOnce([
+        {
+          ...safeRegistryCounts,
+          eligibleAcceptedAcsRows: 1,
+          registeredCorrelationRows: 1,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          ...safeRegistryCounts,
+          duplicateAcsMessageIdGroups: 0,
+          duplicateAcsOperationIdGroups: 0,
+          configuredProviderRows: 0,
+          acceptedAcsRowsWithoutMessageId: 0,
+          messageIdRowsWithoutAcceptedAt: 0,
+          correlationRowsWithoutProvider: 0,
+          acsRowsWithoutAuditOrganizationSnapshot: 0,
+          partialProviderFinalProjectionRows: 0,
+        },
       ]);
 
     await preflightPasswordResetRecovery();
@@ -233,7 +273,14 @@ describe('password reset reconciler', () => {
         ciphertext: expect.any(Buffer),
       }),
     });
-    expect(mocks.tokenUpdate).not.toHaveBeenCalled();
+    expect(mocks.tokenUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          deliveryStatus: 'PROVIDER_ACCEPTED',
+          provider: 'acs',
+        }),
+      })
+    );
     expect(mocks.recoveryUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { enqueueStatus: 'PREFLIGHT_VERIFIED' } })
     );
@@ -245,6 +292,7 @@ describe('password reset reconciler', () => {
     mocks.queryRaw
       .mockResolvedValueOnce([
         {
+          ...safeRegistryCounts,
           duplicateAcsMessageIdGroups: 0,
           duplicateAcsOperationIdGroups: 0,
           configuredProviderRows: 0,
@@ -420,6 +468,7 @@ describe('password reset reconciler', () => {
     mocks.queryRaw
       .mockResolvedValueOnce([
         {
+          ...safeRegistryCounts,
           duplicateAcsMessageIdGroups: 0,
           duplicateAcsOperationIdGroups: 0,
           configuredProviderRows: 2,
@@ -432,6 +481,26 @@ describe('password reset reconciler', () => {
       ])
       .mockResolvedValueOnce([
         { current_user: 'vaultspace_app', bypasses_rls: false, is_superuser: false },
+      ])
+      .mockResolvedValueOnce([
+        {
+          ...safeRegistryCounts,
+          eligibleAcceptedAcsRows: 1,
+          registeredCorrelationRows: 1,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          ...safeRegistryCounts,
+          duplicateAcsMessageIdGroups: 0,
+          duplicateAcsOperationIdGroups: 0,
+          configuredProviderRows: 2,
+          acceptedAcsRowsWithoutMessageId: 0,
+          messageIdRowsWithoutAcceptedAt: 0,
+          correlationRowsWithoutProvider: 0,
+          acsRowsWithoutAuditOrganizationSnapshot: 0,
+          partialProviderFinalProjectionRows: 0,
+        },
       ]);
 
     await expect(preflightPasswordResetRecovery()).resolves.toBeUndefined();

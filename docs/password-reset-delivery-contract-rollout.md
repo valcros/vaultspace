@@ -6,6 +6,8 @@
 
 Future ACS projection eligibility must independently require the persisted provider value `acs` and the complete provider acceptance tuple. Unmarked historical rows are never upgraded or backfilled into version 1.
 
+Accepted ACS tuples for marked version 1 flows are also registered in `password_reset_provider_correlations`. The registry is durable correlation evidence. It does not claim that the provider delivered the message to the recipient.
+
 ## Writer contract
 
 Version 1 writers must satisfy all of these conditions before superseding an older flow, creating a token or recovery row, enqueueing a job, or calling a provider:
@@ -39,6 +41,22 @@ After provider acceptance, the worker starts the database write and bounded sens
 
 Only explicitly allowlisted transient Prisma errors receive bounded acceptance-persistence retries. Deterministic same-flow conflicts are terminal categorical outcomes. Raw provider message and operation identifiers remain only in protected token storage and the bounded sensitive acceptance reconciliation payload. Structured logs and tenant audit metadata use the flow ID as `correlationId` and do not contain those raw identifiers.
 
+## Protected provider-correlation registry
+
+The registry is append-only and is written by a database trigger when a marked version 1 flow records a complete ACS `PROVIDER_ACCEPTED` tuple. This trigger preserves compatibility during rolling deployment because both the prior version 1 worker and the current worker pass through the same database boundary.
+
+The migration takes bounded locks on the token and recovery tables, installs the trigger first, and then backfills only rows that are currently `PROVIDER_ACCEPTED` and already satisfy the complete reviewed version 1 ACS contract. It does not mark, reinterpret, or register legacy rows. Marked complete non-ACS acceptances remain outside this ACS-only registry. Marked `PROVIDER_ACCEPTED` rows for any provider still require a complete provider tuple because incomplete marked acceptance is a preexisting version 1 delivery-contract anomaly. The migration aborts on incomplete marked acceptance, invalid ACS source state, divergent source state, or duplicate ACS provider identifiers.
+
+The ordinary application role cannot select, insert, update, delete, truncate, reference, or trigger the registry directly. It may execute only `password_reset_provider_correlation_preflight_counts()`, which returns aggregate counts without provider identifiers. Installations that use a runtime role other than `vaultspace_app` must pass that exact role to the database privilege repair helper. The helper revokes obsolete non-owner function grants before granting only `EXECUTE` on the exact zero-argument aggregate function to the configured role. The posture function accepts that narrow grant only for its current non-owner session while rejecting grants to other roles, protected-name overloads, direct registry access, sensitive-function execution, and grant options. The Event Grid ingress role has no registry or registry-function access. Trigger functions run with a fixed `pg_catalog` search path and are not executable by `PUBLIC` or runtime roles.
+
+Once registered, the tuple, hashed bearer token, and attribution fields are immutable. Foreign keys prevent deletion or operation-ID changes in the parent token and recovery rows. Lifecycle fields remain mutable: cancellation, redemption, supersession, or expiry after registration does not make the preserved acceptance evidence divergent. Repeating the exact database acceptance write is idempotent. Normal application retries recognize the already-recorded source tuple without mutating it. A missing registry row remains an anomaly and is never silently repaired by an unrelated no-op update. A different tuple is a terminal conflict, is not retried as a send, and produces a categorical authentication audit event in a separate transaction.
+
+Registry rows are retained indefinitely in this chunk. No automated purge, retention exception, provider-inbox consumption, final-delivery projection, or final-delivery audit is enabled. Any later deletion policy requires a separately reviewed migration and operational runbook.
+
+The registry activation time is a forward trust boundary, not a claim of complete historical ACS acceptance evidence. Rows that completed a later lifecycle transition before this migration, including pre-migration cancelled flows, are intentionally not backfilled. A future projector or report must use a cutover no earlier than successful registry activation and must not infer pre-cutover non-delivery from the absence of a registry row.
+
+The exact catalog-rendering assertions in this chunk are certified by the PostgreSQL 15 migration and integration suite. VaultSpace remains generally compatible with PostgreSQL 15 or later, but operators using a newer major version must validate this migration and its zero-anomaly preflight in a disposable copy before production rollout until the security-posture CI matrix covers that major version.
+
 ## Deployment sequence
 
 The ordinary staging deployment workflow cannot perform the first version 1 activation. Its pre-mutation boundary deliberately requires the currently serving web, worker, and configured password-reset reconciler images to already declare version 1, share one source revision, and match the live uncached health identity. This prevents a normal deployment or automatic rollback from crossing the compatibility boundary with a historical image.
@@ -56,10 +74,32 @@ The initial activation therefore requires a separately approved, operator-contro
 9. Verify that no marked-contract anomaly or unmarked active delivery remains. Reopen both issuance routes only after the preflight succeeds and both new revisions are healthy.
 10. Before any future provider-final projection promotion, additionally require zero post-cutover unmarked accepted ACS rows and complete the separately reviewed projection gates.
 
+### Registry migration sequence
+
+1. Keep provider-final projection disabled.
+2. Apply the registry migration before deploying the worker revision that treats registry conflicts categorically. The migration trigger protects acceptances from the already deployed version 1 worker.
+3. Require the migration backfill proof and all registry posture counts to be zero for missing, orphaned, divergent, invalid, ownership, trigger, constraint, index, ACL, and runtime-access anomalies.
+4. Deploy matched web, worker, and reconciler artifacts through the existing digest-pinned deployment boundary.
+5. Run the password-reset preflight. Its acceptance canary must add one registry row inside a transaction, and the forced rollback must restore the original aggregate counts.
+6. Verify that normal password resets remain successful and that no raw provider message identifier appears in structured logs or authentication audit metadata.
+
+### Registry migration timeout recovery
+
+The registry migration is one PostgreSQL transaction with a 10-second lock timeout and a 120-second statement timeout. Either timeout rolls back the table, indexes, constraints, functions, triggers, grants, and backfill together. A timeout must not leave a partial registry installation.
+
+If the migration times out:
+
+1. Keep provider-final projection disabled and keep password-reset issuance gated.
+2. Confirm the migration transaction rolled back. Verify that `password_reset_provider_correlations` and the new recovery unique constraint are both absent, or that the migration is fully installed with every preflight posture count at zero. Treat any other state as an incident.
+3. Inspect database activity and lock waiters to identify the writer or long-running transaction that blocked the bounded table locks. Do not terminate an unrelated production session without separate operator approval.
+4. Drain or stop the identified password-reset writers using the approved deployment controls, then wait for their transactions to finish.
+5. If Prisma recorded the attempt as failed, use `prisma migrate resolve --rolled-back 20260731060000_add_password_reset_provider_correlation_registry` only after the database rollback has been verified.
+6. Re-run the unchanged migration and its preflight. Do not edit an already deployed migration or increase the timeouts as the first response to lock contention.
+
 ## Mixed-version and rollback rules
 
 The schema is backward compatible because the marker is nullable. An old writer can operate after the schema migration, but its rows remain unmarked and are ineligible for version 1 behavior. Do not run old and new workers concurrently against durable password-reset jobs. Issuance must remain gated whenever queue ownership moves between worker contracts.
 
-To roll back application code, first gate both issuance routes. Keep only the version 1 worker active while marked delivery and acceptance jobs drain. Run reconciliation until every marked active delivery is terminal, no active or delayed queue work remains, and no send lease can later become stale. Stop the version 1 worker, deploy the old web and worker revisions with issuance still gated, verify their health and exclusive queue ownership, then reopen issuance. Leave the migration and marker data in place. Do not clear markers, backfill markers, or drop the database guard during an application rollback.
+To roll back application code, first gate both issuance routes. Keep only the version 1 worker active while marked delivery and acceptance jobs drain. Run reconciliation until every marked active delivery is terminal, no active or delayed queue work remains, and no send lease can later become stale. Stop the version 1 worker, deploy the old web and worker revisions with issuance still gated, verify their health and exclusive queue ownership, then reopen issuance. Leave the migrations, markers, and provider-correlation registry in place. Do not clear markers, rewrite or delete registry rows, backfill markers, or drop database guards during an application rollback.
 
-Promotion to provider-final projection is a later reviewed change. Version 1 rollout does not create a provider-correlation registry, change inbox processing, write provider-final projection fields, or create tenant final-delivery audit events.
+Promotion to provider-final projection is a later reviewed change. This registry rollout does not consume provider inbox receipts, write provider-final projection fields, enable the projection feature flag, or create tenant final-delivery audit events.

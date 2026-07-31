@@ -18,7 +18,10 @@
  *     npx tsx scripts/rls-fix.ts
  */
 import { PrismaClient } from '@prisma/client';
-import { revokeAndVerifyProviderInboxAccess } from '../src/lib/integrations/providerInboxDatabasePrivileges';
+import {
+  revokeAndVerifyPasswordResetProviderCorrelationAccess,
+  revokeAndVerifyProviderInboxAccess,
+} from '../src/lib/integrations/providerInboxDatabasePrivileges';
 
 const APP_ROLE = 'vaultspace_app';
 
@@ -124,6 +127,8 @@ async function main() {
   // be able to read, create, modify, or delete its rows.
   await revokeAndVerifyProviderInboxAccess(prisma, APP_ROLE);
   console.log(`  REVOKED AND VERIFIED ALL: provider_event_inbox from ${APP_ROLE}`);
+  await revokeAndVerifyPasswordResetProviderCorrelationAccess(prisma, APP_ROLE);
+  console.log(`  PROTECTED AND VERIFIED: password_reset_provider_correlations for ${APP_ROLE}`);
 
   console.log('\n=== Step 5: Verify ===');
   const verify = await prisma.$queryRawUnsafe<

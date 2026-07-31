@@ -8,7 +8,10 @@
  */
 import { execFileSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
-import { revokeAndVerifyProviderInboxAccess } from '../src/lib/integrations/providerInboxDatabasePrivileges';
+import {
+  revokeAndVerifyPasswordResetProviderCorrelationAccess,
+  revokeAndVerifyProviderInboxAccess,
+} from '../src/lib/integrations/providerInboxDatabasePrivileges';
 
 const APP_ROLE = 'vaultspace_app';
 const REQUIRED_ALLOW_FLAG = 'true';
@@ -130,6 +133,7 @@ async function main() {
     );
     await admin.$executeRawUnsafe(`REVOKE UPDATE, DELETE ON events FROM ${APP_ROLE};`);
     await revokeAndVerifyProviderInboxAccess(admin, APP_ROLE);
+    await revokeAndVerifyPasswordResetProviderCorrelationAccess(admin, APP_ROLE);
 
     const verification = await admin.$queryRawUnsafe<
       Array<{ rolname: string; rolbypassrls: boolean; rolsuper: boolean }>

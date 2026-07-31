@@ -1415,7 +1415,8 @@ model PasswordResetToken {
 
   // Present only for HMAC reset flows that can be recovered without placing
   // the bearer token in Redis. Legacy rows deliberately have no recovery row.
-  recovery PasswordResetRecovery?
+  recovery            PasswordResetRecovery?
+  providerCorrelation PasswordResetProviderCorrelation?
 
   @@index([token])
   @@index([userId])
@@ -1459,12 +1460,36 @@ model PasswordResetRecovery {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  resetToken PasswordResetToken @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  resetToken          PasswordResetToken                @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  providerCorrelation PasswordResetProviderCorrelation?
 
+  @@unique([flowId, providerOperationId], map: "password_reset_recoveries_flow_operation_key")
   @@index([enqueueStatus, nextEnqueueAt, enqueueLeaseExpiresAt], map: "prr_enqueue_due_lease_idx")
   @@index([sendLeaseExpiresAt], map: "prr_send_lease_idx")
   @@index([wipedAt, createdAt], map: "prr_wipe_created_idx")
   @@map("password_reset_recoveries")
+}
+
+// Immutable, organization-independent matching authority for ACS provider
+// acceptances created under the reviewed version-1 delivery contract. Runtime
+// and Event Grid ingress roles have no direct access to this protected table.
+model PasswordResetProviderCorrelation {
+  flowId                   String   @id
+  provider                 String   @db.VarChar(32)
+  providerOperationId      String   @db.VarChar(255)
+  providerMessageId        String   @db.VarChar(255)
+  providerAcceptedAt       DateTime
+  correlationSchemaVersion Int
+  recordedAt               DateTime @default(now())
+
+  resetToken PasswordResetToken    @relation(fields: [flowId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  recovery   PasswordResetRecovery @relation(fields: [flowId, providerOperationId], references: [flowId, providerOperationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([flowId, providerOperationId], map: "password_reset_provider_correlations_flow_operation_key")
+  @@unique([provider, providerOperationId], map: "password_reset_provider_correlations_provider_operation_key")
+  @@unique([provider, providerMessageId], map: "password_reset_provider_correlations_provider_message_key")
+  @@index([recordedAt], map: "password_reset_provider_correlations_recorded_idx")
+  @@map("password_reset_provider_correlations")
 }
 
 // Organization-independent, authenticated provider-event receipt ledger.
