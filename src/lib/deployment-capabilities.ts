@@ -5,6 +5,8 @@
  * Used to gracefully degrade functionality when optional services are unavailable.
  */
 
+import { resolveEmailProviderConfiguration } from '@/providers/email/config';
+
 // Note: Capabilities are determined by infrastructure availability, not deployment mode.
 // Both Azure and standalone modes use the same capability resolution logic.
 
@@ -83,25 +85,11 @@ function hasGotenberg(): boolean {
 /**
  * Check if SMTP is configured.
  */
-function hasSmtp(): boolean {
-  return !!(process.env['SMTP_HOST'] || process.env['SMTP_URL']);
-}
-
-/**
- * Check if Azure Communication Services email is configured.
- * Matches the resolution logic in src/providers/index.ts.
- */
-function hasAcsEmail(): boolean {
-  return (
-    process.env['EMAIL_PROVIDER']?.toLowerCase() === 'acs' && !!process.env['ACS_CONNECTION_STRING']
-  );
-}
-
 /**
  * Check whether any email transport is configured (SMTP or ACS).
  */
 function hasEmail(): boolean {
-  return hasSmtp() || hasAcsEmail();
+  return resolveEmailProviderConfiguration().deliverable;
 }
 
 /**

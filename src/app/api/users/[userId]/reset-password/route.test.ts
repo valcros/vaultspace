@@ -42,7 +42,10 @@ vi.mock('@/lib/db', () => {
   );
   return { withOrgContext: vi.fn(), bootstrapDb: bootstrapClient };
 });
-vi.mock('@/providers', () => ({ getProviders: vi.fn() }));
+vi.mock('@/providers', () => ({
+  getConfiguredEmailProviderName: () => 'acs',
+  getProviders: vi.fn(),
+}));
 vi.mock('@/lib/deployment-capabilities', () => ({ hasCapability: vi.fn() }));
 const mockCreateSecurityAuditEvent = vi.fn();
 const mockCaptureSecurityAudit = vi.fn();
@@ -114,7 +117,7 @@ describe('POST /api/users/:userId/reset-password', () => {
     mockHasCapability.mockImplementation((cap) => cap === 'canSendAsyncEmail');
     mockGetProviders.mockReturnValue({
       job: { addJob: mockAddJob },
-      email: { sendEmail: mockSendEmail },
+      email: { providerName: 'acs', sendEmail: mockSendEmail },
     } as unknown as ReturnType<typeof getProviders>);
     mockAddJob.mockResolvedValue('job-1');
     mockCreateSecurityAuditEvent.mockResolvedValue('event-1');
@@ -305,6 +308,10 @@ describe('POST /api/users/:userId/reset-password', () => {
   });
 
   it('returns 202 and preserves a recoverable token when the queue is unavailable', async () => {
+    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+      { organizationId: 'org-2' },
+      { organizationId: 'org-1' },
+    ] as never);
     const tx = resetTx();
     useTx(tx);
     mockAddJob.mockRejectedValue(new Error('queue down'));
@@ -322,6 +329,14 @@ describe('POST /api/users/:userId/reset-password', () => {
     expect(mockInvalidateToken).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ usedAt: expect.any(Date) }) })
     );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 'org-2',
+        idempotencyKey: expect.stringMatching(/queue-recovery-pending-org-2$/),
+        metadata: expect.objectContaining({ auditScopeSource: 'captured_snapshot' }),
+      })
+    );
   });
 
   it('records retryable synchronous submission failure as acceptance unknown', async () => {
@@ -330,10 +345,19 @@ describe('POST /api/users/:userId/reset-password', () => {
     useTx(tx);
     mockHasCapability.mockImplementation((cap) => cap === 'canSendSyncEmail');
     mockSendEmail.mockRejectedValue({ statusCode: 503 });
+    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+      { organizationId: 'org-2' },
+      { organizationId: 'org-1' },
+    ] as never);
 
     const res = await POST(req(), ctx);
 
     expect(res.status).toBe(502);
+    expect(mockInvalidateToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: 'acs', providerOperationId: expect.any(String) }),
+      })
+    );
     expect(mockInvalidateToken).toHaveBeenLastCalledWith({
       where: { id: expect.any(String), usedAt: null },
       data: expect.objectContaining({
@@ -344,8 +368,10 @@ describe('POST /api/users/:userId/reset-password', () => {
     expect(mockInvalidateToken.mock.calls.at(-1)?.[0]?.data).not.toHaveProperty('usedAt');
     expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
       expect.objectContaining({
+        organizationId: 'org-2',
         metadata: expect.objectContaining({
           stage: 'provider_submission',
+          auditScopeSource: 'captured_snapshot',
           retryable: true,
         }),
       })
@@ -358,6 +384,10 @@ describe('POST /api/users/:userId/reset-password', () => {
     useTx(tx);
     mockHasCapability.mockImplementation((cap) => cap === 'canSendSyncEmail');
     mockSendEmail.mockRejectedValue({ statusCode: 400 });
+    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+      { organizationId: 'org-2' },
+      { organizationId: 'org-1' },
+    ] as never);
 
     const res = await POST(req(), ctx);
 
@@ -369,6 +399,13 @@ describe('POST /api/users/:userId/reset-password', () => {
         deliveryErrorCode: 'EMAIL_HTTP_400',
       }),
     });
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledTimes(2);
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-2',
+        metadata: expect.objectContaining({ auditScopeSource: 'captured_snapshot' }),
+      })
+    );
   });
 
   it('keeps an accepted synchronous reset valid when lifecycle persistence fails', async () => {
@@ -400,10 +437,19 @@ describe('POST /api/users/:userId/reset-password', () => {
     const tx = resetTx();
     useTx(tx);
     mockSendEmail.mockResolvedValue({ messageId: 'provider-message-1' });
+    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+      { organizationId: 'org-2' },
+      { organizationId: 'org-1' },
+    ] as never);
 
     const response = await POST(req(), ctx);
 
     expect(response.status).toBe(200);
+    expect(mockInvalidateToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: 'acs', providerOperationId: expect.any(String) }),
+      })
+    );
     expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
@@ -411,9 +457,42 @@ describe('POST /api/users/:userId/reset-password', () => {
         metadata: expect.objectContaining({
           outcome: 'accepted',
           stage: 'provider_submission',
+          provider: 'acs',
           providerMessageId: 'provider-message-1',
         }),
       })
+    );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 'org-2',
+        idempotencyKey: expect.stringMatching(/^password-reset-.*-accepted-org-2$/),
+        metadata: expect.objectContaining({ auditScopeSource: 'captured_snapshot' }),
+      })
+    );
+  });
+
+  it('queues a legacy reset with the full deterministic captured audit scope', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'legacy';
+    mockHasCapability.mockImplementation((cap) => cap === 'canSendAsyncEmail');
+    vi.mocked(bootstrapDb.userOrganization.findMany).mockResolvedValue([
+      { organizationId: 'org-2' },
+      { organizationId: 'org-1' },
+      { organizationId: 'org-2' },
+    ] as never);
+    const tx = resetTx();
+    useTx(tx);
+
+    const response = await POST(req(), ctx);
+
+    expect(response.status).toBe(200);
+    expect(mockAddJob).toHaveBeenCalledWith(
+      'normal',
+      'email.send',
+      expect.objectContaining({
+        passwordReset: expect.objectContaining({ organizationIds: ['org-1', 'org-2'] }),
+      }),
+      expect.any(Object)
     );
   });
 
@@ -519,6 +598,9 @@ describe('POST /api/users/:userId/reset-password', () => {
     const response = await POST(req(), ctx);
 
     expect(response.status).toBe(200);
+    expect(tx.passwordResetToken.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ auditOrganizationIds: ['org-1', 'org-2'] }),
+    });
     expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({

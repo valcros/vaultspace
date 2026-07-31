@@ -63,11 +63,13 @@ vi.mock('@/lib/middleware', () => ({
 }));
 
 vi.mock('@/providers', () => ({
+  getConfiguredEmailProviderName: () => 'acs',
   getProviders: () => ({
     job: {
       addJob: mocks.addJob,
     },
     email: {
+      providerName: 'acs',
       sendEmail: mocks.sendEmail,
     },
   }),
@@ -200,6 +202,9 @@ describe('POST /api/auth/forgot-password', () => {
     );
     const storedToken = mocks.createToken.mock.calls[0]?.[0]?.data?.token as string;
     expect(storedToken).toMatch(/^prh1:[a-f0-9]{64}$/);
+    expect(mocks.createToken).toHaveBeenCalledWith({
+      data: expect.objectContaining({ auditOrganizationIds: ['org-1'] }),
+    });
     expect(mocks.createRecovery).toHaveBeenCalledWith({
       data: expect.objectContaining({
         flowId: expect.any(String),
@@ -210,6 +215,55 @@ describe('POST /api/auth/forgot-password', () => {
       }),
     });
     expect(JSON.stringify(mocks.addJob.mock.calls)).not.toContain('prt1_');
+  });
+
+  it('snapshots the same deterministic multi-organization scope used for request auditing', async () => {
+    mocks.findLockedUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'admin@example.com',
+      firstName: 'Ada',
+      isActive: true,
+      organizations: [
+        {
+          role: 'MEMBER',
+          organization: {
+            id: 'org-2',
+            name: 'Second Organization',
+            slug: 'second',
+            emailSenderName: null,
+            emailSenderAddress: null,
+          },
+        },
+        {
+          role: 'ADMIN',
+          organization: {
+            id: 'org-1',
+            name: 'Demo Organization',
+            slug: 'demo',
+            emailSenderName: null,
+            emailSenderAddress: null,
+          },
+        },
+      ],
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'admin@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.createToken).toHaveBeenCalledWith({
+      data: expect.objectContaining({ auditOrganizationIds: ['org-1', 'org-2'] }),
+    });
+    for (const organizationId of ['org-1', 'org-2']) {
+      expect(mocks.createSecurityAuditEvent).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ organizationId, correlationId: expect.any(String) })
+      );
+    }
   });
 
   it('keeps the public response neutral when queue insertion fails', async () => {
@@ -281,6 +335,11 @@ describe('POST /api/auth/forgot-password', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
+    expect(mocks.updateToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: 'acs', providerOperationId: expect.any(String) }),
+      })
+    );
     expect(mocks.captureSecurityAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'USER_PASSWORD_RESET',
@@ -337,6 +396,11 @@ describe('POST /api/auth/forgot-password', () => {
     );
 
     expect(response.status).toBe(200);
+    expect(mocks.updateToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: 'acs', providerOperationId: expect.any(String) }),
+      })
+    );
     expect(mocks.createSecurityAuditEvent).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
@@ -345,6 +409,7 @@ describe('POST /api/auth/forgot-password', () => {
         metadata: expect.objectContaining({
           outcome: 'accepted',
           stage: 'provider_submission',
+          provider: 'acs',
           providerMessageId: 'provider-message-1',
         }),
       })

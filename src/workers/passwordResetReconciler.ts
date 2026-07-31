@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
+import { resolvePasswordResetAuditScope } from '@/lib/auth/passwordResetAuditScope';
 import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
 import { bootstrapDb, setBootstrapContext } from '@/lib/db';
 import { createJobProvider } from '@/providers';
@@ -26,6 +27,139 @@ interface ReconciliationSummary {
 }
 
 class PasswordResetPreflightRollback extends Error {}
+
+export interface PasswordResetProviderCorrelationPreflight {
+  duplicateAcsMessageIdGroups: number;
+  duplicateAcsOperationIdGroups: number;
+  configuredProviderRows: number;
+  postCutoverConfiguredProviderRows: number;
+  acceptedAcsRowsWithoutMessageId: number;
+  messageIdRowsWithoutAcceptedAt: number;
+  correlationRowsWithoutProvider: number;
+  acsRowsWithoutAuditOrganizationSnapshot: number;
+  partialProviderFinalProjectionRows: number;
+}
+
+/**
+ * The cutover distinguishes projection-eligible rows from historical delivery
+ * records whose correlation metadata predates this contract. Projection must
+ * never be enabled without an explicit, deployment-owned boundary.
+ */
+export function resolvePasswordResetProviderProjectionCutover(): Date | null {
+  const configured = process.env['PASSWORD_RESET_PROVIDER_CORRELATION_CUTOVER_AT']?.trim();
+  if (!configured) {
+    if (process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] === 'true') {
+      throw new Error(
+        'PASSWORD_RESET_PROVIDER_CORRELATION_CUTOVER_AT is required when provider-final projection is enabled'
+      );
+    }
+    return null;
+  }
+  const cutoverAt = new Date(configured);
+  if (Number.isNaN(cutoverAt.getTime())) {
+    throw new Error('PASSWORD_RESET_PROVIDER_CORRELATION_CUTOVER_AT must be a valid timestamp');
+  }
+  return cutoverAt;
+}
+
+/**
+ * Inspect only aggregate correlation invariants. Provider identifiers are
+ * deliberately excluded from the result and logs.
+ */
+export async function inspectPasswordResetProviderCorrelation(
+  cutoverAt: Date | null = resolvePasswordResetProviderProjectionCutover()
+): Promise<PasswordResetProviderCorrelationPreflight> {
+  const [result] = await bootstrapDb.$queryRaw<PasswordResetProviderCorrelationPreflight[]>`
+    WITH scoped_tokens AS (
+      SELECT tokens.*, ${cutoverAt}::timestamp AS "projectionCutoverAt"
+      FROM password_reset_tokens tokens
+    )
+    SELECT
+      (
+        SELECT COUNT(*)::int
+        FROM (
+          SELECT "providerMessageId"
+          FROM scoped_tokens
+          WHERE provider = 'acs'
+            AND cardinality("auditOrganizationIds") > 0
+            AND ("projectionCutoverAt" IS NULL OR "createdAt" >= "projectionCutoverAt")
+            AND NULLIF(BTRIM("providerMessageId"), '') IS NOT NULL
+          GROUP BY "providerMessageId"
+          HAVING COUNT(*) > 1
+        ) duplicate_ids
+      ) AS "duplicateAcsMessageIdGroups",
+      (
+        SELECT COUNT(*)::int
+        FROM (
+          SELECT "providerOperationId"
+          FROM scoped_tokens
+          WHERE provider = 'acs'
+            AND cardinality("auditOrganizationIds") > 0
+            AND ("projectionCutoverAt" IS NULL OR "createdAt" >= "projectionCutoverAt")
+            AND NULLIF(BTRIM("providerOperationId"), '') IS NOT NULL
+          GROUP BY "providerOperationId"
+          HAVING COUNT(*) > 1
+        ) duplicate_operations
+      ) AS "duplicateAcsOperationIdGroups",
+      COUNT(*) FILTER (
+        WHERE provider = 'configured'
+          AND (
+            NULLIF(BTRIM("providerOperationId"), '') IS NOT NULL
+            OR NULLIF(BTRIM("providerMessageId"), '') IS NOT NULL
+            OR "deliveryStatus" IN ('SENDING', 'ACCEPTANCE_UNKNOWN', 'PROVIDER_ACCEPTED')
+          )
+      )::int AS "configuredProviderRows",
+      COUNT(*) FILTER (
+        WHERE provider = 'configured'
+          AND "projectionCutoverAt" IS NOT NULL
+          AND "createdAt" >= "projectionCutoverAt"
+      )::int AS "postCutoverConfiguredProviderRows",
+      COUNT(*) FILTER (
+        WHERE provider = 'acs'
+          AND cardinality("auditOrganizationIds") > 0
+          AND ("projectionCutoverAt" IS NULL OR "createdAt" >= "projectionCutoverAt")
+          AND "providerAcceptedAt" IS NOT NULL
+          AND NULLIF(BTRIM("providerMessageId"), '') IS NULL
+      )::int AS "acceptedAcsRowsWithoutMessageId",
+      COUNT(*) FILTER (
+        WHERE cardinality("auditOrganizationIds") > 0
+          AND ("projectionCutoverAt" IS NULL OR "createdAt" >= "projectionCutoverAt")
+          AND NULLIF(BTRIM("providerMessageId"), '') IS NOT NULL
+          AND "providerAcceptedAt" IS NULL
+      )::int AS "messageIdRowsWithoutAcceptedAt",
+      COUNT(*) FILTER (
+        WHERE cardinality("auditOrganizationIds") > 0
+          AND ("projectionCutoverAt" IS NULL OR "createdAt" >= "projectionCutoverAt")
+          AND NULLIF(BTRIM(provider), '') IS NULL
+          AND (
+            NULLIF(BTRIM("providerOperationId"), '') IS NOT NULL
+            OR NULLIF(BTRIM("providerMessageId"), '') IS NOT NULL
+            OR "deliveryStatus" = 'ACCEPTANCE_UNKNOWN'
+          )
+      )::int AS "correlationRowsWithoutProvider",
+      COUNT(*) FILTER (
+        WHERE provider = 'acs'
+          AND cardinality("auditOrganizationIds") = 0
+          AND ("projectionCutoverAt" IS NULL OR "createdAt" >= "projectionCutoverAt")
+      )::int AS "acsRowsWithoutAuditOrganizationSnapshot",
+      COUNT(*) FILTER (
+        WHERE cardinality("auditOrganizationIds") > 0
+          AND ("projectionCutoverAt" IS NULL OR "createdAt" >= "projectionCutoverAt")
+          AND num_nonnulls(
+          "providerFinalStatus",
+          "providerFinalOutcome",
+          "providerFinalEventAt",
+          "providerFinalRecordedAt",
+          "providerFinalEventIdFingerprint"
+        ) BETWEEN 1 AND 4
+      )::int AS "partialProviderFinalProjectionRows"
+    FROM scoped_tokens`;
+
+  if (!result) {
+    throw new Error('Password reset provider correlation preflight returned no result');
+  }
+  return result;
+}
 
 function wipe(now: Date) {
   return {
@@ -67,6 +201,7 @@ async function terminalizeRecoveryFlow(input: {
         userId: true,
         requestId: true,
         organizationId: true,
+        auditOrganizationIds: true,
         deliveryStatus: true,
         providerAcceptedAt: true,
       },
@@ -98,21 +233,10 @@ async function terminalizeRecoveryFlow(input: {
       data: { ...wipe(new Date()), enqueueStatus: input.enqueueStatus },
     });
 
-    const user = await tx.user.findUnique({
-      where: { id: reset.userId },
-      select: {
-        organizations: {
-          select: { organizationId: true },
-        },
-      },
+    const auditScope = await resolvePasswordResetAuditScope(tx, reset, {
+      allowLegacyCurrentMembershipFallback: true,
     });
-    const organizationIds = new Set(
-      (user?.organizations ?? []).map((membership) => membership.organizationId)
-    );
-    if (reset.organizationId) {
-      organizationIds.add(reset.organizationId);
-    }
-    for (const organizationId of organizationIds) {
+    for (const organizationId of auditScope.organizationIds) {
       await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
       await createSecurityAuditEvent(tx, {
         organizationId,
@@ -129,6 +253,7 @@ async function terminalizeRecoveryFlow(input: {
           deliveryStatus: input.deliveryStatus,
           errorCode: input.errorCode,
           sendFence: recovery.sendFence,
+          auditScopeSource: auditScope.source,
         },
       });
     }
@@ -158,6 +283,7 @@ async function deferQueueRecovery(input: {
         userId: true,
         requestId: true,
         organizationId: true,
+        auditOrganizationIds: true,
         deliveryStatus: true,
         providerAcceptedAt: true,
       },
@@ -193,21 +319,10 @@ async function deferQueueRecovery(input: {
       },
     });
 
-    const user = await tx.user.findUnique({
-      where: { id: reset.userId },
-      select: {
-        organizations: {
-          select: { organizationId: true },
-        },
-      },
+    const auditScope = await resolvePasswordResetAuditScope(tx, reset, {
+      allowLegacyCurrentMembershipFallback: true,
     });
-    const organizationIds = new Set(
-      (user?.organizations ?? []).map((membership) => membership.organizationId)
-    );
-    if (reset.organizationId) {
-      organizationIds.add(reset.organizationId);
-    }
-    for (const organizationId of organizationIds) {
+    for (const organizationId of auditScope.organizationIds) {
       await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
       await createSecurityAuditEvent(tx, {
         organizationId,
@@ -225,6 +340,7 @@ async function deferQueueRecovery(input: {
           errorCode: 'EMAIL_QUEUE_ERROR',
           enqueueAttempt: input.enqueueAttempt,
           nextEnqueueAt: input.nextEnqueueAt.toISOString(),
+          auditScopeSource: auditScope.source,
         },
       });
     }
@@ -483,6 +599,34 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
   const jobProvider = createJobProvider();
   try {
     await jobProvider.waitUntilReady(QUEUE_NAMES.NORMAL);
+    const projectionCutoverAt = resolvePasswordResetProviderProjectionCutover();
+    const providerCorrelation = await inspectPasswordResetProviderCorrelation(projectionCutoverAt);
+    const blockingAnomaly =
+      providerCorrelation.duplicateAcsMessageIdGroups > 0 ||
+      providerCorrelation.duplicateAcsOperationIdGroups > 0 ||
+      (process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] === 'true' &&
+        providerCorrelation.postCutoverConfiguredProviderRows > 0) ||
+      providerCorrelation.acceptedAcsRowsWithoutMessageId > 0 ||
+      providerCorrelation.messageIdRowsWithoutAcceptedAt > 0 ||
+      providerCorrelation.correlationRowsWithoutProvider > 0 ||
+      providerCorrelation.partialProviderFinalProjectionRows > 0 ||
+      (process.env['ACS_EMAIL_DELIVERY_PROJECTION_ENABLED'] === 'true' &&
+        providerCorrelation.acsRowsWithoutAuditOrganizationSnapshot > 0);
+    const warning =
+      providerCorrelation.configuredProviderRows > 0 ||
+      providerCorrelation.acsRowsWithoutAuditOrganizationSnapshot > 0;
+    console.log(
+      JSON.stringify({
+        component: 'password-reset-reconciler',
+        event: 'provider_correlation_preflight',
+        outcome: blockingAnomaly ? 'failed' : warning ? 'warning' : 'success',
+        projectionCutoverAt: projectionCutoverAt?.toISOString() ?? null,
+        ...providerCorrelation,
+      })
+    );
+    if (blockingAnomaly) {
+      throw new Error('Unsafe password reset provider correlation state detected');
+    }
     let completed = false;
     try {
       await bootstrapDb.$transaction(async (tx) => {
@@ -523,8 +667,36 @@ export async function preflightPasswordResetRecovery(): Promise<void> {
             requestId: flowId,
             organizationId: membership.organizationId,
             deliveryStatus: 'PENDING',
+            auditOrganizationIds: [membership.organizationId],
           },
         });
+        const projectionEventAt = new Date();
+        const projection = await tx.passwordResetToken.update({
+          where: { id: flowId },
+          data: {
+            providerFinalStatus: 'PREFLIGHT',
+            providerFinalOutcome: 'UNKNOWN',
+            providerFinalEventAt: projectionEventAt,
+            providerFinalRecordedAt: projectionEventAt,
+            providerFinalEventIdFingerprint: '0'.repeat(64),
+          },
+          select: {
+            providerFinalStatus: true,
+            providerFinalOutcome: true,
+            providerFinalEventAt: true,
+            providerFinalRecordedAt: true,
+            providerFinalEventIdFingerprint: true,
+          },
+        });
+        if (
+          projection.providerFinalStatus !== 'PREFLIGHT' ||
+          projection.providerFinalOutcome !== 'UNKNOWN' ||
+          projection.providerFinalEventAt?.getTime() !== projectionEventAt.getTime() ||
+          projection.providerFinalRecordedAt?.getTime() !== projectionEventAt.getTime() ||
+          projection.providerFinalEventIdFingerprint !== '0'.repeat(64)
+        ) {
+          throw new Error('Password reset preflight provider projection was not visible');
+        }
         await tx.passwordResetRecovery.create({
           data: {
             flowId,

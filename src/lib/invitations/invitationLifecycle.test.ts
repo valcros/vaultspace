@@ -40,7 +40,10 @@ function makeDb(rows: LifecycleLink[]) {
 }
 
 function makeEmail() {
-  return { sendEmail: vi.fn().mockResolvedValue({ messageId: 'm1' }) };
+  return {
+    providerName: 'console' as const,
+    sendEmail: vi.fn().mockResolvedValue({ messageId: 'm1' }),
+  };
 }
 
 const base = {
@@ -99,7 +102,10 @@ describe('runInvitationLifecycle', () => {
 
   it('under-sends (does not double-send) when the email throws after the guard advanced', async () => {
     const { db, updates } = makeDb([link({ remindersSent: 0 })]);
-    const email = { sendEmail: vi.fn().mockRejectedValue(new Error('smtp down')) };
+    const email = {
+      providerName: 'smtp' as const,
+      sendEmail: vi.fn().mockRejectedValue(new Error('smtp down')),
+    };
 
     const summary = await runInvitationLifecycle({ db, email, ...base });
 

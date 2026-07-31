@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import type { Job } from 'bullmq';
 
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
+import { resolvePasswordResetAuditScope } from '@/lib/auth/passwordResetAuditScope';
 import {
   decryptPasswordResetRecoveryToken,
   PasswordResetRecoveryError,
@@ -10,7 +11,7 @@ import {
 import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
 import { bootstrapDb, setBootstrapContext } from '@/lib/db';
 import { getProviders } from '@/providers';
-import { normalizeEmailError, type EmailProviderName } from '@/providers/email/errors';
+import { normalizeEmailError } from '@/providers/email/errors';
 import type {
   PasswordResetAcceptanceJobPayload,
   PasswordResetDeliveryJobPayload,
@@ -30,6 +31,7 @@ interface ResetAuditSource {
   userId: string;
   requestId: string | null;
   organizationId: string | null;
+  auditOrganizationIds: string[];
 }
 
 function log(level: 'info' | 'warn' | 'error', fields: Record<string, unknown>): void {
@@ -58,13 +60,6 @@ function wipedRecoveryData(now = new Date()) {
   };
 }
 
-function providerName(): EmailProviderName {
-  const configured = process.env['EMAIL_PROVIDER']?.trim().toLowerCase();
-  return configured === 'acs' || configured === 'smtp' || configured === 'console'
-    ? configured
-    : 'unknown';
-}
-
 async function createFlowAuditEvents(
   tx: Prisma.TransactionClient,
   input: {
@@ -77,21 +72,10 @@ async function createFlowAuditEvents(
     metadata?: Record<string, unknown>;
   }
 ): Promise<void> {
-  const user = await tx.user.findUnique({
-    where: { id: input.reset.userId },
-    select: {
-      organizations: {
-        select: { organizationId: true },
-      },
-    },
+  const auditScope = await resolvePasswordResetAuditScope(tx, input.reset, {
+    allowLegacyCurrentMembershipFallback: true,
   });
-  const organizationIds = new Set(
-    (user?.organizations ?? []).map((membership) => membership.organizationId)
-  );
-  if (input.reset.organizationId) {
-    organizationIds.add(input.reset.organizationId);
-  }
-  for (const organizationId of organizationIds) {
+  for (const organizationId of auditScope.organizationIds) {
     await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
     await createSecurityAuditEvent(tx, {
       organizationId,
@@ -105,6 +89,7 @@ async function createFlowAuditEvents(
         outcome: input.outcome,
         stage: input.stage,
         targetUserId: input.reset.userId,
+        auditScopeSource: auditScope.source,
         ...input.metadata,
       },
     });
@@ -145,6 +130,7 @@ async function transitionClaimedFlow(input: {
         userId: true,
         requestId: true,
         organizationId: true,
+        auditOrganizationIds: true,
         deliveryStatus: true,
         deliveryAttempts: true,
         providerAcceptedAt: true,
@@ -246,6 +232,7 @@ async function persistProviderAcceptance(
         userId: true,
         requestId: true,
         organizationId: true,
+        auditOrganizationIds: true,
         provider: true,
         providerMessageId: true,
         providerOperationId: true,
@@ -418,6 +405,9 @@ export async function processPasswordResetDeliveryJob(
     return;
   }
 
+  const emailProvider = getProviders().email;
+  const provider = emailProvider.providerName;
+
   const leaseId = randomUUID();
   const claimed = await bootstrapDb
     .$transaction(async (tx) => {
@@ -513,6 +503,76 @@ export async function processPasswordResetDeliveryJob(
         : user.organizations.length === 1
           ? user.organizations[0]
           : undefined;
+      const retryableTokenStatuses = [
+        'PENDING',
+        'QUEUED',
+        'QUEUE_RETRYING',
+        'FAILED_RETRYING',
+        'RECOVERY_BLOCKED_CONFIGURATION',
+      ];
+      const retryableRecoveryStatuses = [
+        'PENDING',
+        'ENQUEUE_CLAIMED',
+        'QUEUED',
+        'QUEUE_RETRYING',
+        'RECOVERY_BLOCKED_CONFIGURATION',
+      ];
+      if (
+        reset.provider &&
+        reset.provider !== provider &&
+        retryableTokenStatuses.includes(reset.deliveryStatus) &&
+        retryableRecoveryStatuses.includes(reset.recovery.enqueueStatus)
+      ) {
+        const recoveryTransition = await tx.passwordResetRecovery.updateMany({
+          where: {
+            flowId,
+            deliveryAttempt,
+            wipedAt: null,
+            enqueueStatus: { in: retryableRecoveryStatuses },
+          },
+          data: {
+            ...wipedRecoveryData(now),
+            enqueueStatus: 'PROVIDER_CONFIGURATION_MISMATCH',
+          },
+        });
+        if (recoveryTransition.count !== 1) {
+          throw new FlowNotClaimableError();
+        }
+        const tokenTransition = await tx.passwordResetToken.updateMany({
+          where: {
+            id: flowId,
+            provider: reset.provider,
+            usedAt: null,
+            expiresAt: { gt: now },
+            deliveryStatus: { in: retryableTokenStatuses },
+            deliveryAttempts: { lt: deliveryAttempt },
+          },
+          data: {
+            deliveryStatus: 'PROVIDER_CONFIGURATION_MISMATCH',
+            deliveryErrorCode: 'PROVIDER_CHANGED_DURING_RETRY',
+            lastDeliveryAttemptAt: now,
+          },
+        });
+        if (tokenTransition.count !== 1) {
+          throw new FlowNotClaimableError();
+        }
+        await createFlowAuditEvents(tx, {
+          flowId,
+          reset,
+          idempotencySuffix: `provider-mismatch-${deliveryAttempt}`,
+          description: 'Password reset email retry was blocked after the provider changed',
+          outcome: 'blocked',
+          stage: 'provider_submission',
+          metadata: {
+            previousProvider: reset.provider,
+            configuredProvider: provider,
+            providerOperationId: reset.recovery.providerOperationId,
+            deliveryAttempt,
+            errorCode: 'PROVIDER_CHANGED_DURING_RETRY',
+          },
+        });
+        return { outcome: 'provider_mismatch' as const, previousProvider: reset.provider };
+      }
       const recoveryClaim = await tx.passwordResetRecovery.updateMany({
         where: {
           flowId,
@@ -520,13 +580,7 @@ export async function processPasswordResetDeliveryJob(
           wipedAt: null,
           sendLeaseId: null,
           enqueueStatus: {
-            in: [
-              'PENDING',
-              'ENQUEUE_CLAIMED',
-              'QUEUED',
-              'QUEUE_RETRYING',
-              'RECOVERY_BLOCKED_CONFIGURATION',
-            ],
+            in: retryableRecoveryStatuses,
           },
         },
         data: {
@@ -546,21 +600,17 @@ export async function processPasswordResetDeliveryJob(
           usedAt: null,
           expiresAt: { gt: now },
           deliveryStatus: {
-            in: [
-              'PENDING',
-              'QUEUED',
-              'QUEUE_RETRYING',
-              'FAILED_RETRYING',
-              'RECOVERY_BLOCKED_CONFIGURATION',
-            ],
+            in: retryableTokenStatuses,
           },
           deliveryAttempts: { lt: deliveryAttempt },
+          OR: [{ provider: null }, { provider }],
         },
         data: {
           deliveryStatus: 'SENDING',
           deliveryAttempts: deliveryAttempt,
           lastDeliveryAttemptAt: now,
           deliveryErrorCode: null,
+          provider,
           providerOperationId: reset.recovery.providerOperationId,
         },
       });
@@ -598,6 +648,19 @@ export async function processPasswordResetDeliveryJob(
       event: 'delivery_flow_cancelled',
       outcome: 'cancelled',
       correlationId: flowId,
+      deliveryAttempt,
+      jobId: job.id ?? null,
+    });
+    return;
+  }
+  if (claimed.outcome === 'provider_mismatch') {
+    log('error', {
+      event: 'provider_submission_skipped',
+      outcome: 'blocked',
+      reason: 'PROVIDER_CHANGED_DURING_RETRY',
+      correlationId: flowId,
+      previousProvider: claimed.previousProvider,
+      configuredProvider: provider,
       deliveryAttempt,
       jobId: job.id ?? null,
     });
@@ -675,12 +738,11 @@ export async function processPasswordResetDeliveryJob(
   const resetUrl = new URL('/auth/reset-password', process.env['APP_URL']);
   resetUrl.hash = new URLSearchParams({ token: publicToken }).toString();
   const operationId = claimed.recovery.providerOperationId;
-  const provider = providerName();
   let result: { messageId: string };
 
   try {
     result = await withProviderTimeout(
-      getProviders().email.sendEmail({
+      emailProvider.sendEmail({
         to: claimed.user.email,
         subject: `Reset your ${orgName} password`,
         html: `<p>Hi ${claimed.user.firstName || 'User'},</p><p>Click <a href="${resetUrl.toString()}">here</a> to reset your password.</p><p>This link expires in 1 hour.</p><p>If you didn't request this, please ignore this email.</p>`,

@@ -1395,6 +1395,19 @@ model PasswordResetToken {
   deliveryAttempts      Int       @default(0)
   lastDeliveryAttemptAt DateTime?
 
+  // Immutable tenant scope captured when the reset is issued. Later delivery
+  // evidence is audited to this same organization set even if membership
+  // changes before the provider reports its final outcome.
+  auditOrganizationIds String[] @default([])
+
+  // Provider final-delivery evidence is a separate state machine from the
+  // VaultSpace submission/recovery lifecycle in deliveryStatus.
+  providerFinalStatus             String?   @db.VarChar(32)
+  providerFinalOutcome            String?   @db.VarChar(16)
+  providerFinalEventAt            DateTime?
+  providerFinalRecordedAt         DateTime?
+  providerFinalEventIdFingerprint String?   @db.VarChar(64)
+
   // Present only for HMAC reset flows that can be recovered without placing
   // the bearer token in Redis. Legacy rows deliberately have no recovery row.
   recovery PasswordResetRecovery?
@@ -1404,6 +1417,7 @@ model PasswordResetToken {
   @@index([expiresAt])
   @@index([organizationId, createdAt])
   @@index([deliveryStatus, createdAt])
+  @@index([provider, providerMessageId])
   @@map("password_reset_tokens")
 }
 

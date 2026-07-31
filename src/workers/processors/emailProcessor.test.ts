@@ -4,8 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockEmailSendEmail = vi.fn().mockResolvedValue({ messageId: 'msg-1' });
 
 vi.mock('@/providers', () => ({
+  getConfiguredEmailProviderName: () => 'acs',
   getProviders: () => ({
-    email: { sendEmail: mockEmailSendEmail },
+    email: { providerName: 'acs', sendEmail: mockEmailSendEmail },
   }),
 }));
 
@@ -294,6 +295,12 @@ describe('processEmailJob — password reset lifecycle', () => {
       })
     );
     mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1'],
+      provider: null,
+      providerOperationId: null,
       deliveryStatus: 'QUEUED',
       deliveryAttempts: 0,
       usedAt: null,
@@ -328,9 +335,15 @@ describe('processEmailJob — password reset lifecycle', () => {
       }),
       data: expect.objectContaining({
         deliveryStatus: 'PROVIDER_ACCEPTED',
+        provider: 'acs',
         providerMessageId: 'acs-message-1',
       }),
     });
+    expect(mockResetUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: 'acs', providerOperationId: 'flow-1' }),
+      })
+    );
     expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
@@ -344,11 +357,16 @@ describe('processEmailJob — password reset lifecycle', () => {
     );
   });
 
-  it('does not submit a reset email again after provider acceptance', async () => {
-    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+  it('uses the captured token scope for asynchronous provider acceptance', async () => {
     mockResetFindUnique.mockResolvedValue({
-      deliveryStatus: 'PROVIDER_ACCEPTED',
-      deliveryAttempts: 1,
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1', 'org-2'],
+      provider: null,
+      providerOperationId: null,
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
       usedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
     });
@@ -360,17 +378,59 @@ describe('processEmailJob — password reset lifecycle', () => {
           flowId: 'flow-1',
           userId: 'user-1',
           requestId: 'request-1',
-          organizationIds: ['org-1'],
+          organizationIds: ['untrusted-payload-org'],
         },
       })
     );
 
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledTimes(2);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 'org-1',
+        metadata: expect.objectContaining({ auditScopeSource: 'captured_snapshot' }),
+      })
+    );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ organizationId: 'org-2' })
+    );
+    expect(JSON.stringify(mockCreateSecurityAuditEvent.mock.calls)).not.toContain(
+      'untrusted-payload-org'
+    );
+  });
+
+  it('does not submit a reset email again after provider acceptance', async () => {
+    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mockResetFindUnique.mockResolvedValue({
+      provider: 'smtp',
+      deliveryStatus: 'PROVIDER_ACCEPTED',
+      deliveryAttempts: 1,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const retryJob = makeEmailJob({
+      template: 'password-reset',
+      passwordReset: {
+        flowId: 'flow-1',
+        userId: 'user-1',
+        requestId: 'request-1',
+        organizationIds: ['org-1'],
+      },
+    });
+    Object.assign(retryJob, { attemptsMade: 1 });
+
+    await processEmailJob(retryJob);
+
     expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
   });
 
   it('does not submit when the authoritative claim loses to token invalidation', async () => {
     mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
     mockResetFindUnique.mockResolvedValue({
+      provider: 'smtp',
       deliveryStatus: 'QUEUED',
       deliveryAttempts: 0,
       usedAt: new Date(),
@@ -390,11 +450,13 @@ describe('processEmailJob — password reset lifecycle', () => {
     );
 
     expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
   });
 
   it('does not submit an expired reset flow', async () => {
     mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
     mockResetFindUnique.mockResolvedValue({
+      provider: 'smtp',
       deliveryStatus: 'QUEUED',
       deliveryAttempts: 0,
       usedAt: null,
@@ -414,7 +476,38 @@ describe('processEmailJob — password reset lifecycle', () => {
     );
 
     expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['ACCEPTANCE_UNKNOWN', 'FAILED_PERMANENT', 'CANCELLED'])(
+    'does not relabel a terminal %s flow after a provider change',
+    async (deliveryStatus) => {
+      mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+      mockResetFindUnique.mockResolvedValue({
+        provider: 'smtp',
+        deliveryStatus,
+        deliveryAttempts: 1,
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const staleJob = makeEmailJob({
+        template: 'password-reset',
+        passwordReset: {
+          flowId: 'flow-1',
+          userId: 'user-1',
+          requestId: 'request-1',
+          organizationIds: ['org-1'],
+        },
+      });
+      Object.assign(staleJob, { attemptsMade: 1 });
+
+      await processEmailJob(staleJob);
+
+      expect(mockEmailSendEmail).not.toHaveBeenCalled();
+      expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
+      expect(mockCreateSecurityAuditEvent).not.toHaveBeenCalled();
+    }
+  );
 
   it('does not retry after provider acceptance when lifecycle persistence fails', async () => {
     mockResetUpdateMany
@@ -469,6 +562,105 @@ describe('processEmailJob — password reset lifecycle', () => {
     });
     expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'USER_PASSWORD_RESET' })
+    );
+  });
+
+  it('uses the captured token scope for asynchronous terminal failure', async () => {
+    mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1', 'org-2'],
+      provider: null,
+      providerOperationId: null,
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    mockEmailSendEmail.mockRejectedValue({ responseCode: 550 });
+
+    await expect(
+      processEmailJob(
+        makeEmailJob({
+          template: 'password-reset',
+          passwordReset: {
+            flowId: 'flow-1',
+            userId: 'user-1',
+            requestId: 'request-1',
+            organizationIds: ['untrusted-payload-org'],
+          },
+        })
+      )
+    ).rejects.toThrow('SMTP_PERMANENT_REJECTION');
+
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledTimes(2);
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-1',
+        metadata: expect.objectContaining({
+          auditScopeSource: 'captured_snapshot',
+          provider: 'acs',
+        }),
+      })
+    );
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-2' })
+    );
+    expect(JSON.stringify(mockCaptureSecurityAudit.mock.calls)).not.toContain(
+      'untrusted-payload-org'
+    );
+  });
+
+  it('blocks and audits a retry when the configured provider changed', async () => {
+    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+    mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1', 'org-2'],
+      provider: 'smtp',
+      providerOperationId: 'flow-1',
+      deliveryStatus: 'FAILED_RETRYING',
+      deliveryAttempts: 1,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const retryJob = makeEmailJob({
+      template: 'password-reset',
+      passwordReset: {
+        flowId: 'flow-1',
+        userId: 'user-1',
+        requestId: 'request-1',
+        organizationIds: ['org-1'],
+      },
+    });
+    Object.assign(retryJob, { attemptsMade: 1 });
+
+    await processEmailJob(retryJob);
+
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ provider: 'smtp', deliveryStatus: 'FAILED_RETRYING' }),
+        data: expect.objectContaining({
+          deliveryStatus: 'PROVIDER_CONFIGURATION_MISMATCH',
+          deliveryErrorCode: 'PROVIDER_CHANGED_DURING_RETRY',
+        }),
+      })
+    );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledTimes(2);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 'org-2',
+        metadata: expect.objectContaining({
+          previousProvider: 'smtp',
+          configuredProvider: 'acs',
+          errorCode: 'PROVIDER_CHANGED_DURING_RETRY',
+        }),
+      })
     );
   });
 });
