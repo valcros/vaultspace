@@ -5,6 +5,8 @@
  * This enables swappable implementations without changing business logic.
  */
 
+import type { EmailProviderName } from './email/errors';
+
 // =============================================================================
 // Storage Provider
 // =============================================================================
@@ -61,6 +63,10 @@ export interface EmailOptions {
   from?: string;
   /** Sender display name (used by the SMTP provider). */
   fromName?: string;
+  /** Stable non-secret provider operation id used to make retries idempotent. */
+  operationId?: string;
+  /** Prevent development providers from printing message bodies containing secrets. */
+  sensitiveContent?: boolean;
 }
 
 export interface EmailAttachment {
@@ -70,6 +76,9 @@ export interface EmailAttachment {
 }
 
 export interface EmailProvider {
+  /** Immutable identity of this instantiated transport. */
+  readonly providerName: EmailProviderName;
+
   /**
    * Send an email
    */
@@ -126,6 +135,8 @@ export interface JobOptions {
     type: 'exponential' | 'fixed';
     delay: number;
   };
+  removeOnComplete?: boolean | number | { age: number; count?: number; limit?: number };
+  removeOnFail?: boolean | number | { age: number; count?: number; limit?: number };
   /**
    * Deterministic job id for deduplication: backends that support it (BullMQ)
    * drop an add while a job with the same id is still queued. Use for
@@ -142,6 +153,9 @@ export interface JobResult<T = unknown> {
 }
 
 export interface JobProvider {
+  /** Establish and verify the queue backend connection for a named queue. */
+  waitUntilReady(queueName: string): Promise<void>;
+
   /**
    * Add a job to the queue. Queue names carry the normal priority model;
    * options.priority is an explicit BullMQ priority override.
@@ -157,6 +171,9 @@ export interface JobProvider {
    * Cancel a pending job
    */
   cancelJob(queueName: string, jobId: string): Promise<void>;
+
+  /** Release queue/client connections owned by short-lived processes. */
+  close?(): Promise<void>;
 }
 
 // =============================================================================

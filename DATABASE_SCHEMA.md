@@ -2180,7 +2180,7 @@ await db.document.deleteMany({
 1. **Schema changes** → Update `prisma/schema.prisma`
 2. **Create migration** → `npx prisma migrate dev --name <migration_name>`
 3. **Review generated SQL** → Check `prisma/migrations/<timestamp>_<name>/migration.sql`
-4. **Deploy** → `npx prisma migrate deploy` (in production)
+4. **Deploy** → `MIGRATION_DATABASE_URL=<dedicated-migration-owner-url> npm run db:migrate` in production. The reviewed wrapper establishes the required startup lock and statement timeouts; do not invoke bare `prisma migrate deploy` for production deployment.
 
 ### Migration Naming Conventions
 

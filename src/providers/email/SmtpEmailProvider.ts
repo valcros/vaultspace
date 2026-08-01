@@ -7,6 +7,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 
 import type { EmailOptions, EmailProvider } from '../types';
+import { normalizeEmailError } from './errors';
 
 export interface SmtpConfig {
   host: string;
@@ -18,6 +19,7 @@ export interface SmtpConfig {
 }
 
 export class SmtpEmailProvider implements EmailProvider {
+  readonly providerName = 'smtp' as const;
   private transporter: Transporter;
   private from: string;
 
@@ -42,21 +44,29 @@ export class SmtpEmailProvider implements EmailProvider {
     // Per-org sender override; combine an optional display name into the header.
     const fromAddress = options.from ?? this.from;
     const from = options.fromName ? `${options.fromName} <${fromAddress}>` : fromAddress;
-    const result = await this.transporter.sendMail({
-      from,
-      to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
-      subject: options.subject,
-      html: options.html,
-      text: options.text,
-      replyTo: options.replyTo,
-      attachments: options.attachments?.map((a) => ({
-        filename: a.filename,
-        content: a.content,
-        contentType: a.contentType,
-      })),
-    });
+    try {
+      const result = await this.transporter.sendMail({
+        from,
+        to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
+        subject: options.subject,
+        html: options.html,
+        text: options.text,
+        replyTo: options.replyTo,
+        messageId: options.operationId ? `<${options.operationId}@vaultspace.local>` : undefined,
+        headers: options.operationId
+          ? { 'X-VaultSpace-Operation-Id': options.operationId }
+          : undefined,
+        attachments: options.attachments?.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+          contentType: a.contentType,
+        })),
+      });
 
-    return { messageId: result.messageId };
+      return { messageId: result.messageId };
+    } catch (error) {
+      throw normalizeEmailError(error, 'smtp');
+    }
   }
 
   /**

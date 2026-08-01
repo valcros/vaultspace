@@ -95,9 +95,9 @@ jobs:
         run: npx prisma generate
 
       - name: Run migrations
-        run: npx prisma migrate deploy
+        run: npm run db:migrate
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          MIGRATION_DATABASE_URL: postgresql://test:test@localhost:5432/test
 
       - name: Verify degraded capabilities (no Redis)
         run: |
@@ -186,9 +186,9 @@ jobs:
         run: npx prisma generate
 
       - name: Run migrations
-        run: npx prisma migrate deploy
+        run: npm run db:migrate
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          MIGRATION_DATABASE_URL: postgresql://test:test@localhost:5432/test
 
       - name: Verify full capabilities with Redis
         run: |

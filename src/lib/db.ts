@@ -36,6 +36,7 @@ if (process.env['NODE_ENV'] !== 'production') {
 
 declare global {
   var prismaBootstrap: PrismaClient | undefined;
+  var prismaProviderIngress: PrismaClient | undefined;
 }
 
 /**
@@ -64,6 +65,28 @@ export const bootstrapDb =
 
 if (process.env['NODE_ENV'] !== 'production') {
   globalThis.prismaBootstrap = bootstrapDb;
+}
+
+/** Dedicated least-privilege client for the organization-independent provider
+ * receipt inbox. Production must use a database role limited to that table.
+ */
+export const providerIngressDb =
+  globalThis.prismaProviderIngress ??
+  new PrismaClient({
+    // Route and preflight callers emit reviewed categorical diagnostics. Do not
+    // let Prisma print raw ingress database errors before those callers redact them.
+    log: [],
+    datasources: {
+      db: {
+        url:
+          process.env['EVENT_GRID_INGRESS_DATABASE_URL'] ||
+          (process.env['NODE_ENV'] === 'production' ? '' : process.env['DATABASE_URL'] || ''),
+      },
+    },
+  });
+
+if (process.env['NODE_ENV'] !== 'production') {
+  globalThis.prismaProviderIngress = providerIngressDb;
 }
 
 /**
@@ -108,6 +131,20 @@ export async function withOrgContext<T>(
     await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
     return operation(tx);
   }, options);
+}
+
+/**
+ * Establish the deterministic no-organization state used by pre-context
+ * bootstrap policies inside an interactive transaction.
+ *
+ * PostgreSQL custom settings can read back as an empty string after a prior
+ * transaction-local value has been reset on a pooled connection. Bootstrap
+ * policies therefore treat both NULL and the empty string as no context.
+ */
+export async function setBootstrapContext(
+  tx: Pick<Prisma.TransactionClient, '$executeRaw'>
+): Promise<void> {
+  await tx.$executeRaw`SELECT set_config('app.current_org_id', '', true)`;
 }
 
 /**

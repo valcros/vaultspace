@@ -33,6 +33,7 @@ export interface EventPayload {
   folderId?: string;
   documentId?: string;
   requestId?: string;
+  correlationId?: string;
   sessionId?: string;
   description?: string;
   metadata?: Record<string, unknown>;
@@ -49,6 +50,7 @@ export interface EventContext {
   ipAddress?: string;
   userAgent?: string;
   sessionId?: string;
+  correlationId?: string;
 }
 
 /**
@@ -90,6 +92,7 @@ export class EventBus {
       folderId: options.folderId,
       documentId: options.documentId,
       requestId: this.context.requestId,
+      correlationId: this.context.correlationId,
       sessionId: this.context.sessionId,
       description: options.description,
       metadata: (options.metadata ?? {}) as PrismaTypes.InputJsonValue,
@@ -142,6 +145,7 @@ export class EventBus {
               folderId: e.folderId,
               documentId: e.documentId,
               requestId: this.context.requestId,
+              correlationId: this.context.correlationId,
               sessionId: this.context.sessionId,
               description: e.description,
               metadata: (e.metadata ?? {}) as PrismaTypes.InputJsonValue,
@@ -169,6 +173,7 @@ export class EventBus {
               folderId: e.folderId,
               documentId: e.documentId,
               requestId: this.context.requestId,
+              correlationId: this.context.correlationId,
               sessionId: this.context.sessionId,
               description: e.description,
               metadata: (e.metadata ?? {}) as PrismaTypes.InputJsonValue,
@@ -196,6 +201,7 @@ export function createEventBus(
     ipAddress?: string;
     userAgent?: string;
     sessionId?: string;
+    correlationId?: string;
   } = {}
 ): EventBus {
   return new EventBus({
@@ -207,6 +213,7 @@ export function createEventBus(
     ipAddress: options.ipAddress,
     userAgent: options.userAgent,
     sessionId: options.sessionId,
+    correlationId: options.correlationId,
   });
 }
 

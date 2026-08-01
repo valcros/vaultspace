@@ -4,21 +4,42 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockEmailSendEmail = vi.fn().mockResolvedValue({ messageId: 'msg-1' });
 
 vi.mock('@/providers', () => ({
+  getConfiguredEmailProviderName: () => 'acs',
   getProviders: () => ({
-    email: { sendEmail: mockEmailSendEmail },
+    email: { providerName: 'acs', sendEmail: mockEmailSendEmail },
   }),
 }));
 
 // ------ DB mocks --------------------------------------------------------------
 const mockDocumentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+const mockResetFindUnique = vi.fn();
+const mockResetUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+const mockExecuteRaw = vi.fn().mockResolvedValue(1);
+const mockEventCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+const mockEventFindUnique = vi.fn().mockResolvedValue({ id: 'event-1', organizationId: 'org-1' });
+const mockTransaction = vi.fn();
 const mockWithOrgContext = vi.fn(
   async (_organizationId: string, operation: (tx: unknown) => Promise<unknown>) =>
     operation({ document: { updateMany: mockDocumentUpdateMany } })
 );
 
 vi.mock('@/lib/db', () => ({
+  bootstrapDb: {
+    passwordResetToken: {
+      findUnique: (...args: unknown[]) => mockResetFindUnique(...args),
+      updateMany: (...args: unknown[]) => mockResetUpdateMany(...args),
+    },
+    $transaction: (...args: unknown[]) => mockTransaction(...args),
+  },
   withOrgContext: (organizationId: string, operation: (tx: unknown) => Promise<unknown>) =>
     mockWithOrgContext(organizationId, operation),
+}));
+
+const mockCaptureSecurityAudit = vi.fn().mockResolvedValue('captured');
+const mockCreateSecurityAuditEvent = vi.fn().mockResolvedValue('event-1');
+vi.mock('@/lib/audit/securityAudit', () => ({
+  captureSecurityAudit: (...args: unknown[]) => mockCaptureSecurityAudit(...args),
+  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
 }));
 
 // ------ EmailNotificationService mock ---------------------------------------
@@ -51,6 +72,8 @@ function makeEmailJob(overrides: Record<string, unknown> = {}) {
     },
     id: 'job-1',
     name: 'email.send',
+    attemptsMade: 0,
+    opts: { attempts: 5 },
   } as never;
 }
 
@@ -73,6 +96,13 @@ function makeNotificationJob(overrides: Record<string, unknown> = {}) {
 describe('processEmailJob — template rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockEmailSendEmail.mockResolvedValue({ messageId: 'msg-1' });
   });
 
@@ -189,6 +219,13 @@ describe('processEmailJob — template rendering', () => {
 describe('processEmailJob — raw HTML fallback', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockEmailSendEmail.mockResolvedValue({ messageId: 'msg-1' });
   });
 
@@ -232,17 +269,446 @@ describe('processEmailJob — raw HTML fallback', () => {
 describe('processEmailJob — send failure', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockEmailSendEmail.mockRejectedValue(new Error('SMTP unreachable'));
   });
 
-  it('re-throws so BullMQ can retry', async () => {
-    await expect(processEmailJob(makeEmailJob())).rejects.toThrow('SMTP unreachable');
+  it('re-throws a normalized retryable error so BullMQ can retry', async () => {
+    await expect(processEmailJob(makeEmailJob())).rejects.toThrow('EMAIL_PROVIDER_ERROR');
+  });
+});
+
+describe('processEmailJob — password reset lifecycle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
+    mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1'],
+      provider: null,
+      providerOperationId: null,
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    mockResetUpdateMany.mockResolvedValue({ count: 1 });
+    mockEmailSendEmail.mockResolvedValue({ messageId: 'acs-message-1' });
+  });
+
+  it('propagates the flow id and stores provider acceptance', async () => {
+    await processEmailJob(
+      makeEmailJob({
+        template: 'password-reset',
+        passwordReset: {
+          flowId: 'flow-1',
+          userId: 'user-1',
+          requestId: 'request-1',
+          organizationIds: ['org-1'],
+        },
+      })
+    );
+
+    expect(mockEmailSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ operationId: 'flow-1', sensitiveContent: true })
+    );
+    expect(mockResetUpdateMany).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({
+        id: 'flow-1',
+        usedAt: null,
+        deliveryStatus: 'SENDING',
+        deliveryAttempts: 1,
+      }),
+      data: expect.objectContaining({
+        deliveryStatus: 'PROVIDER_ACCEPTED',
+        provider: 'acs',
+        providerMessageId: 'acs-message-1',
+      }),
+    });
+    expect(mockResetUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: 'acs', providerOperationId: 'flow-1' }),
+      })
+    );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        correlationId: 'flow-1',
+        idempotencyKey: 'password-reset-flow-1-accepted-org-1',
+        metadata: expect.objectContaining({ outcome: 'accepted' }),
+      })
+    );
+  });
+
+  it('uses the captured token scope for asynchronous provider acceptance', async () => {
+    mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1', 'org-2'],
+      provider: null,
+      providerOperationId: null,
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await processEmailJob(
+      makeEmailJob({
+        template: 'password-reset',
+        passwordReset: {
+          flowId: 'flow-1',
+          userId: 'user-1',
+          requestId: 'request-1',
+          organizationIds: ['untrusted-payload-org'],
+        },
+      })
+    );
+
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledTimes(2);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 'org-1',
+        metadata: expect.objectContaining({ auditScopeSource: 'captured_snapshot' }),
+      })
+    );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ organizationId: 'org-2' })
+    );
+    expect(JSON.stringify(mockCreateSecurityAuditEvent.mock.calls)).not.toContain(
+      'untrusted-payload-org'
+    );
+  });
+
+  it('does not submit a reset email again after provider acceptance', async () => {
+    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mockResetFindUnique.mockResolvedValue({
+      provider: 'smtp',
+      deliveryStatus: 'PROVIDER_ACCEPTED',
+      deliveryAttempts: 1,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const retryJob = makeEmailJob({
+      template: 'password-reset',
+      passwordReset: {
+        flowId: 'flow-1',
+        userId: 'user-1',
+        requestId: 'request-1',
+        organizationIds: ['org-1'],
+      },
+    });
+    Object.assign(retryJob, { attemptsMade: 1 });
+
+    await processEmailJob(retryJob);
+
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('never submits a marked delivery-contract flow through the legacy email worker', async () => {
+    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1'],
+      provider: 'acs',
+      providerOperationId: 'flow-1',
+      providerCorrelationSchemaVersion: 1,
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processEmailJob(
+      makeEmailJob({
+        template: 'password-reset',
+        passwordReset: {
+          flowId: 'flow-1',
+          userId: 'user-1',
+          requestId: 'request-1',
+          organizationIds: ['org-1'],
+        },
+      })
+    );
+
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('DELIVERY_CONTRACT_LEGACY_PATH_REJECTED')
+    );
+    consoleError.mockRestore();
+  });
+
+  it('does not submit when the authoritative claim loses to token invalidation', async () => {
+    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mockResetFindUnique.mockResolvedValue({
+      provider: 'smtp',
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
+      usedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await processEmailJob(
+      makeEmailJob({
+        template: 'password-reset',
+        passwordReset: {
+          flowId: 'flow-1',
+          userId: 'user-1',
+          requestId: 'request-1',
+          organizationIds: ['org-1'],
+        },
+      })
+    );
+
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not submit an expired reset flow', async () => {
+    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mockResetFindUnique.mockResolvedValue({
+      provider: 'smtp',
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
+      usedAt: null,
+      expiresAt: new Date(Date.now() - 1),
+    });
+
+    await processEmailJob(
+      makeEmailJob({
+        template: 'password-reset',
+        passwordReset: {
+          flowId: 'flow-1',
+          userId: 'user-1',
+          requestId: 'request-1',
+          organizationIds: ['org-1'],
+        },
+      })
+    );
+
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['ACCEPTANCE_UNKNOWN', 'FAILED_PERMANENT', 'CANCELLED'])(
+    'does not relabel a terminal %s flow after a provider change',
+    async (deliveryStatus) => {
+      mockResetUpdateMany.mockResolvedValueOnce({ count: 0 });
+      mockResetFindUnique.mockResolvedValue({
+        provider: 'smtp',
+        deliveryStatus,
+        deliveryAttempts: 1,
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const staleJob = makeEmailJob({
+        template: 'password-reset',
+        passwordReset: {
+          flowId: 'flow-1',
+          userId: 'user-1',
+          requestId: 'request-1',
+          organizationIds: ['org-1'],
+        },
+      });
+      Object.assign(staleJob, { attemptsMade: 1 });
+
+      await processEmailJob(staleJob);
+
+      expect(mockEmailSendEmail).not.toHaveBeenCalled();
+      expect(mockResetUpdateMany).toHaveBeenCalledTimes(1);
+      expect(mockCreateSecurityAuditEvent).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not retry after provider acceptance when lifecycle persistence fails', async () => {
+    mockResetUpdateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockRejectedValueOnce(new Error('database unavailable'));
+
+    await expect(
+      processEmailJob(
+        makeEmailJob({
+          template: 'password-reset',
+          passwordReset: {
+            flowId: 'flow-1',
+            userId: 'user-1',
+            requestId: 'request-1',
+            organizationIds: ['org-1'],
+          },
+        })
+      )
+    ).resolves.toBeUndefined();
+
+    expect(mockEmailSendEmail).toHaveBeenCalledOnce();
+  });
+
+  it('stops retrying a permanent mailbox rejection and records a terminal audit event', async () => {
+    mockEmailSendEmail.mockRejectedValue({ responseCode: 550 });
+
+    await expect(
+      processEmailJob(
+        makeEmailJob({
+          template: 'password-reset',
+          passwordReset: {
+            flowId: 'flow-1',
+            userId: 'user-1',
+            requestId: 'request-1',
+            organizationIds: ['org-1'],
+          },
+        })
+      )
+    ).rejects.toThrow('SMTP_PERMANENT_REJECTION');
+
+    expect(mockResetUpdateMany).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({
+        id: 'flow-1',
+        usedAt: null,
+        deliveryStatus: 'SENDING',
+        deliveryAttempts: 1,
+      }),
+      data: expect.objectContaining({
+        deliveryStatus: 'FAILED_PERMANENT',
+        deliveryErrorCode: 'SMTP_PERMANENT_REJECTION',
+      }),
+    });
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'USER_PASSWORD_RESET' })
+    );
+  });
+
+  it('uses the captured token scope for asynchronous terminal failure', async () => {
+    mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1', 'org-2'],
+      provider: null,
+      providerOperationId: null,
+      deliveryStatus: 'QUEUED',
+      deliveryAttempts: 0,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    mockEmailSendEmail.mockRejectedValue({ responseCode: 550 });
+
+    await expect(
+      processEmailJob(
+        makeEmailJob({
+          template: 'password-reset',
+          passwordReset: {
+            flowId: 'flow-1',
+            userId: 'user-1',
+            requestId: 'request-1',
+            organizationIds: ['untrusted-payload-org'],
+          },
+        })
+      )
+    ).rejects.toThrow('SMTP_PERMANENT_REJECTION');
+
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledTimes(2);
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-1',
+        metadata: expect.objectContaining({
+          auditScopeSource: 'captured_snapshot',
+          provider: 'acs',
+        }),
+      })
+    );
+    expect(mockCaptureSecurityAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-2' })
+    );
+    expect(JSON.stringify(mockCaptureSecurityAudit.mock.calls)).not.toContain(
+      'untrusted-payload-org'
+    );
+  });
+
+  it('blocks and audits a retry when the configured provider changed', async () => {
+    mockResetUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+    mockResetFindUnique.mockResolvedValue({
+      userId: 'user-1',
+      requestId: 'request-1',
+      organizationId: 'org-1',
+      auditOrganizationIds: ['org-1', 'org-2'],
+      provider: 'smtp',
+      providerOperationId: 'flow-1',
+      deliveryStatus: 'FAILED_RETRYING',
+      deliveryAttempts: 1,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const retryJob = makeEmailJob({
+      template: 'password-reset',
+      passwordReset: {
+        flowId: 'flow-1',
+        userId: 'user-1',
+        requestId: 'request-1',
+        organizationIds: ['org-1'],
+      },
+    });
+    Object.assign(retryJob, { attemptsMade: 1 });
+
+    await processEmailJob(retryJob);
+
+    expect(mockEmailSendEmail).not.toHaveBeenCalled();
+    expect(mockResetUpdateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ provider: 'smtp', deliveryStatus: 'FAILED_RETRYING' }),
+        data: expect.objectContaining({
+          deliveryStatus: 'PROVIDER_CONFIGURATION_MISMATCH',
+          deliveryErrorCode: 'PROVIDER_CHANGED_DURING_RETRY',
+        }),
+      })
+    );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledTimes(2);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 'org-2',
+        metadata: expect.objectContaining({
+          previousProvider: 'smtp',
+          configuredProvider: 'acs',
+          errorCode: 'PROVIDER_CHANGED_DURING_RETRY',
+        }),
+      })
+    );
   });
 });
 
 describe('processEmailJob — recipient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransaction.mockImplementation((operation) =>
+      operation({
+        passwordResetToken: { updateMany: mockResetUpdateMany },
+        $executeRaw: mockExecuteRaw,
+        event: { createMany: mockEventCreateMany, findUnique: mockEventFindUnique },
+      })
+    );
     mockEmailSendEmail.mockResolvedValue({ messageId: 'msg-1' });
   });
 
