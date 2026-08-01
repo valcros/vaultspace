@@ -229,12 +229,15 @@ make update
 4. Starts all containers (`docker compose up -d`)
 5. Waits for `/api/health?deep=true` to return `healthy` or `degraded`
 
-Database migrations run automatically on startup via `docker-entrypoint.sh`.
+Database migrations run automatically on startup via `docker-entrypoint.sh`. The
+entrypoint invokes the reviewed `db:migrate` wrapper with the admin connection,
+which establishes the migration-only PostgreSQL startup lock and statement
+timeouts before Prisma submits a migration statement.
 You do not need to run `prisma migrate` manually. If you need to run migrations
 independently:
 
 ```bash
-docker compose run --rm --entrypoint="" app npx prisma migrate deploy
+docker compose run --rm --entrypoint="" app sh -c 'MIGRATION_DATABASE_URL="$DATABASE_URL_ADMIN" npm run db:migrate'
 ```
 
 ---
@@ -343,7 +346,7 @@ Common causes:
 
 ### Migration failed on startup
 
-The entrypoint runs `prisma migrate deploy` automatically. If it fails:
+The entrypoint runs the reviewed `db:migrate` wrapper automatically. If it fails:
 
 ```bash
 docker compose logs app | grep -i migrat
@@ -352,7 +355,7 @@ docker compose logs app | grep -i migrat
 To run migrations manually after fixing the issue:
 
 ```bash
-docker compose run --rm --entrypoint="" app npx prisma migrate deploy
+docker compose run --rm --entrypoint="" app sh -c 'MIGRATION_DATABASE_URL="$DATABASE_URL_ADMIN" npm run db:migrate'
 ```
 
 ### ClamAV or Gotenberg not reachable

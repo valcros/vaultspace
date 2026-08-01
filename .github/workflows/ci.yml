@@ -101,9 +101,9 @@ jobs:
         run: npx prisma generate
 
       - name: Run database migrations
-        run: npx prisma migrate deploy
+        run: npm run db:migrate
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          MIGRATION_DATABASE_URL: postgresql://test:test@localhost:5432/test
 
       - name: Run tests
         run: npm run test
@@ -154,9 +154,9 @@ jobs:
         run: npx prisma generate
 
       - name: Run database migrations
-        run: npx prisma migrate deploy
+        run: npm run db:migrate
         env:
-          DATABASE_URL: ${{ env.DATABASE_URL_ADMIN }}
+          MIGRATION_DATABASE_URL: ${{ env.DATABASE_URL_ADMIN }}
 
       - name: Apply RLS policies and app role
         run: npm run db:setup:rls-test
@@ -213,7 +213,9 @@ jobs:
         run: npx prisma generate
 
       - name: Run database migrations
-        run: npx prisma migrate deploy
+        run: npm run db:migrate
+        env:
+          MIGRATION_DATABASE_URL: ${{ env.DATABASE_URL }}
 
       - name: Create isolated provider inbox role
         run: npm run db:setup:provider-event-inbox-test
@@ -465,7 +467,7 @@ jobs:
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
+          POSTGRES_DB: vaultspace_password_reset_e2e_ci
         ports:
           - 5432:5432
         options: >-
@@ -485,7 +487,8 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      DATABASE_URL: postgresql://test:test@localhost:5432/vaultspace_password_reset_e2e_ci
+      DATABASE_URL_ADMIN: postgresql://test:test@localhost:5432/vaultspace_password_reset_e2e_ci
       REDIS_URL: redis://localhost:6379
       SESSION_SECRET: e2e-ci-test-secret-32-chars-long!
       DEPLOYMENT_MODE: standalone
@@ -496,6 +499,9 @@ jobs:
       PLAYWRIGHT_BASE_URL: http://localhost:3000
       PLAYWRIGHT_ADMIN_EMAIL: admin@demo.vaultspace.app
       PLAYWRIGHT_ADMIN_PASSWORD: Demo123!
+      PLAYWRIGHT_PASSWORD_RESET_E2E_ENABLED: 'true'
+      PASSWORD_RESET_E2E_MANAGED_LIFECYCLE: 'true'
+      PASSWORD_RESET_E2E_CONTROL_DATABASE_URL: postgresql://test:test@localhost:5432/postgres
       # Override the dev command to avoid hot-reload overhead in CI
       PLAYWRIGHT_WEB_SERVER_COMMAND: npm run dev:standalone
 
@@ -515,10 +521,15 @@ jobs:
         run: npx prisma generate
 
       - name: Run database migrations
-        run: npx prisma migrate deploy
+        run: npm run db:migrate
+        env:
+          MIGRATION_DATABASE_URL: ${{ env.DATABASE_URL }}
 
       - name: Seed database with demo data
         run: npx prisma db seed
+
+      - name: Mark disposable password-reset browser database
+        run: npm run db:setup:password-reset-e2e
 
       - name: Install Playwright browsers
         run: npx playwright install chromium firefox --with-deps
@@ -526,6 +537,16 @@ jobs:
       - name: Run E2E tests
         run: npx playwright test tests/e2e/a11y.test.ts tests/e2e/security.test.ts tests/e2e/room-interactions.test.ts
         timeout-minutes: 12
+
+      - name: Build standalone browser test target
+        run: npm run build
+
+      - name: Run password-reset first-dashboard browser test
+        run: npm run test:e2e:password-reset
+        env:
+          PORT: 3000
+          PLAYWRIGHT_WEB_SERVER_COMMAND: node .next/standalone/server.js
+        timeout-minutes: 8
 
       - name: Upload Playwright report on failure
         uses: actions/upload-artifact@v4

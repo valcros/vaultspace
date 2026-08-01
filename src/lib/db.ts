@@ -73,7 +73,9 @@ if (process.env['NODE_ENV'] !== 'production') {
 export const providerIngressDb =
   globalThis.prismaProviderIngress ??
   new PrismaClient({
-    log: process.env['NODE_ENV'] === 'development' ? ['error', 'warn'] : ['error'],
+    // Route and preflight callers emit reviewed categorical diagnostics. Do not
+    // let Prisma print raw ingress database errors before those callers redact them.
+    log: [],
     datasources: {
       db: {
         url:
