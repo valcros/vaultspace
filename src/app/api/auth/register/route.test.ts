@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const mockCreateSecurityAuditEvent = vi.fn().mockResolvedValue('event-1');
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
 
 // Mock bcrypt
 vi.mock('bcryptjs', () => ({
@@ -25,8 +25,8 @@ vi.mock('@/lib/middleware', () => ({
   setSessionCookie: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('@/lib/audit/securityAudit', () => ({
-  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
+vi.mock('@/lib/audit/accessAudit', () => ({
+  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
 // Mock db
@@ -42,12 +42,7 @@ vi.mock('@/lib/db', () => {
     $transaction: (...args: unknown[]) => mockTransaction(...args),
     session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
   };
-  return {
-    db: client,
-    bootstrapDb: client,
-    withOrgContext: async (_orgId: string, operation: (tx: unknown) => Promise<unknown>) =>
-      operation({ session: { create: (...args: unknown[]) => mockSessionCreate(...args) } }),
-  };
+  return { db: client, bootstrapDb: client };
 });
 
 import { POST } from './route';
@@ -96,7 +91,6 @@ describe('POST /api/auth/register', () => {
             }),
           },
           userOrganization: { create: vi.fn().mockResolvedValue({}) },
-          session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
           organization: {
             create: vi
               .fn()
@@ -120,8 +114,7 @@ describe('POST /api/auth/register', () => {
       expect(mockSessionCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' }),
       });
-      expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
-        expect.any(Object),
+      expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
         expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
       );
     });
@@ -203,7 +196,6 @@ describe('POST /api/auth/register', () => {
               }),
             },
             userOrganization: { create: vi.fn().mockResolvedValue({}) },
-            session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
             organization: {
               findUnique: vi
                 .fn()
@@ -234,18 +226,6 @@ describe('POST /api/auth/register', () => {
 
       const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
       expect(res.status).toBe(500);
-    });
-
-    it('keeps registration, session, and authoritative audit in one transaction', async () => {
-      mockCreateSecurityAuditEvent.mockRejectedValueOnce(new Error('audit unavailable'));
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-
-      const res = await POST(makeRequest(validBody));
-
-      expect(res.status).toBe(500);
-      expect(mockTransaction).toHaveBeenCalledOnce();
-      expect(mockSessionCreate).toHaveBeenCalledOnce();
-      expect(mockCreateSecurityAuditEvent).toHaveBeenCalledOnce();
     });
   });
 

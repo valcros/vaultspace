@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 const mockCompare = vi.fn();
 const mockFindUnique = vi.fn();
-const mockCreateSecurityAuditEvent = vi.fn().mockResolvedValue('event-1');
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
 const mockSessionCreate = vi.fn();
 const mockUserUpdate = vi.fn();
 
@@ -39,8 +39,8 @@ vi.mock('@/lib/middleware', () => ({
   setSessionCookie: vi.fn(),
 }));
 
-vi.mock('@/lib/audit/securityAudit', () => ({
-  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
+vi.mock('@/lib/audit/accessAudit', () => ({
+  captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
 import { POST } from './route';
@@ -72,7 +72,7 @@ describe('POST /api/auth/login', () => {
     mockCompare.mockResolvedValue(true);
     mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
     mockUserUpdate.mockResolvedValue({});
-    mockCreateSecurityAuditEvent.mockResolvedValue('event-1');
+    mockCaptureAccessAudit.mockResolvedValue('disabled');
   });
 
   it('returns 500 instead of using a weak fallback when SESSION_SECRET is missing', async () => {
@@ -137,8 +137,7 @@ describe('POST /api/auth/login', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
-      expect.any(Object),
+    expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'USER_LOGIN',
         actorType: 'ADMIN',
@@ -156,7 +155,7 @@ describe('POST /api/auth/login', () => {
     });
   });
 
-  it('rolls back login when the authoritative audit write fails', async () => {
+  it('keeps a successful login available when the bounded audit write fails', async () => {
     process.env['SESSION_SECRET'] = 'test-session-secret';
     mockFindUnique.mockResolvedValue({
       id: 'user-1',
@@ -178,7 +177,7 @@ describe('POST /api/auth/login', () => {
         },
       ],
     });
-    mockCreateSecurityAuditEvent.mockRejectedValue(new Error('audit unavailable'));
+    mockCaptureAccessAudit.mockResolvedValue('failed');
 
     const response = await POST(
       new NextRequest('http://localhost/api/auth/login', {
@@ -187,6 +186,6 @@ describe('POST /api/auth/login', () => {
       })
     );
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(200);
   });
 });

@@ -9,7 +9,7 @@ import { cookies } from 'next/headers';
 import { randomUUID } from 'crypto';
 
 import { invalidateSession } from '@/lib/auth';
-import { captureSecurityAudit } from '@/lib/audit/securityAudit';
+import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { bootstrapDb } from '@/lib/db';
 import { clearSessionCookie, getRequestContext } from '@/lib/middleware';
@@ -69,7 +69,7 @@ export async function POST(request?: NextRequest) {
 
     if (auditContext) {
       const reqContext = request ? getRequestContext(request) : null;
-      await captureSecurityAudit({
+      await captureAccessAudit({
         organizationId: auditContext.organizationId,
         eventType: 'USER_LOGOUT',
         actorType: auditContext.actorType,

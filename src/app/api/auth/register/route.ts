@@ -9,7 +9,7 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { bootstrapDb as db } from '@/lib/db';
-import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
+import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
@@ -83,14 +83,7 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
-    const sessionToken = randomBytes(32).toString('base64url');
-    const expiresAt = new Date(
-      Date.now() + SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000
-    );
-
-    // Identity creation, invitation acceptance, initial session, and the
-    // authoritative login event are atomic. An audit failure cannot strand an
-    // accepted invitation or newly created account behind a 500 response.
+    // Create user and organization in transaction (Issue 4b: invitation acceptance inside tx)
     const result = await db.$transaction(async (tx) => {
       // Mark invitation as accepted inside transaction (Issue 4b)
       if (validatedInvitationId) {
@@ -114,9 +107,7 @@ export async function POST(request: NextRequest) {
       });
 
       // If no invite, create a new organization
-      let resolvedOrganizationId = organizationId;
-      let resolvedRole = role;
-      if (!resolvedOrganizationId) {
+      if (!organizationId) {
         const slug = `org-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         const org = await tx.organization.create({
           data: {
@@ -125,58 +116,64 @@ export async function POST(request: NextRequest) {
             isActive: true,
           },
         });
-        resolvedOrganizationId = org.id;
-        resolvedRole = 'ADMIN';
+        organizationId = org.id;
+        role = 'ADMIN';
       }
 
       // Add user to organization
       await tx.userOrganization.create({
         data: {
           userId: user.id,
-          organizationId: resolvedOrganizationId,
-          role: resolvedRole,
+          organizationId: organizationId!,
+          role,
           isActive: true,
         },
       });
 
       const organization = await tx.organization.findUnique({
-        where: { id: resolvedOrganizationId },
+        where: { id: organizationId! },
         select: { id: true, name: true, slug: true },
-      });
-
-      const authSession = await tx.session.create({
-        data: {
-          userId: user.id,
-          organizationId: resolvedOrganizationId,
-          token: sessionToken,
-          expiresAt,
-          ipAddress,
-          userAgent,
-        },
-      });
-
-      await createSecurityAuditEvent(tx, {
-        organizationId: resolvedOrganizationId,
-        eventType: 'USER_LOGIN',
-        actorType: resolvedRole === 'ADMIN' ? 'ADMIN' : 'VIEWER',
-        actorId: user.id,
-        actorEmail: user.email,
-        requestId: reqContext.requestId,
-        description: 'User registered and signed in',
-        metadata: {
-          outcome: 'success',
-          authSessionId: authSession.id,
-          authenticationMethod: 'REGISTRATION',
-        },
-        ipAddress,
-        userAgent,
       });
 
       return { user, organization };
     });
 
+    // Generate session token
+    const sessionToken = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(
+      Date.now() + SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000
+    );
+
+    // Create session
+    const authSession = await db.session.create({
+      data: {
+        userId: result.user.id,
+        organizationId: organizationId!,
+        token: sessionToken,
+        expiresAt,
+        ipAddress,
+        userAgent,
+      },
+    });
+
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
+
+    await captureAccessAudit({
+      organizationId: organizationId!,
+      eventType: 'USER_LOGIN',
+      actorType: role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+      actorId: result.user.id,
+      actorEmail: result.user.email,
+      requestId: reqContext.requestId,
+      description: 'User registered and signed in',
+      metadata: {
+        authSessionId: authSession.id,
+        authenticationMethod: 'REGISTRATION',
+      },
+      ipAddress,
+      userAgent,
+    });
 
     return NextResponse.json({
       user: {
