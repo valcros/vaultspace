@@ -114,6 +114,27 @@ describe('deployment-capabilities', () => {
       expect(caps.canSendAsyncEmail).toBe(true);
     });
 
+    it('uses the same trimmed ACS selection as the provider factory', async () => {
+      process.env['EMAIL_PROVIDER'] = ' ACS ';
+      process.env['ACS_CONNECTION_STRING'] =
+        'endpoint=https://example.communication.azure.com/;accesskey=fake';
+      process.env['SMTP_HOST'] = 'smtp.example.com';
+
+      const { resolveCapabilities } = await import('./deployment-capabilities');
+
+      expect(resolveCapabilities().canSendSyncEmail).toBe(true);
+    });
+
+    it('does not fall back to SMTP when selected ACS credentials are missing', async () => {
+      process.env['EMAIL_PROVIDER'] = 'acs';
+      delete process.env['ACS_CONNECTION_STRING'];
+      process.env['SMTP_HOST'] = 'smtp.example.com';
+
+      const { resolveCapabilities } = await import('./deployment-capabilities');
+
+      expect(resolveCapabilities().canSendSyncEmail).toBe(false);
+    });
+
     it('does not treat EMAIL_PROVIDER=acs without connection string as configured', async () => {
       delete process.env['SMTP_HOST'];
       delete process.env['SMTP_URL'];

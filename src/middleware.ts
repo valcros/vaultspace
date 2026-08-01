@@ -115,7 +115,14 @@ function addSecurityHeaders(response: NextResponse, pathname: string): NextRespo
   // Security headers
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-XSS-Protection', '1; mode=block');
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  const isPasswordResetRoute = pathname === '/auth/reset-password';
+  response.headers.set(
+    'Referrer-Policy',
+    isPasswordResetRoute ? 'no-referrer' : 'strict-origin-when-cross-origin'
+  );
+  if (isPasswordResetRoute) {
+    response.headers.set('Cache-Control', 'private, no-store');
+  }
 
   // X-Frame-Options: SAMEORIGIN for preview routes to allow iframe embedding
   // DENY for all other routes to prevent clickjacking

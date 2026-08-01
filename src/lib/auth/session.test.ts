@@ -92,9 +92,18 @@ describe('auth session invalidation', () => {
   });
 
   it('treats cache cleanup failures as non-fatal once sessions are deactivated', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockCacheDelete.mockRejectedValue(new Error('cache unavailable'));
 
     await expect(clearSessionCache(['token-1'])).resolves.toBeUndefined();
+    const log = JSON.parse(String(consoleError.mock.calls[0]?.[0]));
+    expect(log).toMatchObject({
+      component: 'session-cache',
+      outcome: 'partial_failure',
+      requestedCount: 1,
+      failureCount: 1,
+    });
+    expect(JSON.stringify(log)).not.toContain('token-1');
   });
 
   it('does not trust stale cached sessions once the database session is inactive', async () => {
@@ -152,16 +161,45 @@ describe('validateSession read-through cache', () => {
     vi.clearAllMocks();
   });
 
-  it('returns a valid cached snapshot without touching the database', async () => {
+  it('returns a valid cached snapshot only after verifying live database state', async () => {
     mockCacheGet.mockResolvedValue(completeSnapshot());
+    mockSessionFindUnique.mockResolvedValue({
+      isActive: true,
+      userId: 'user-1',
+      organizationId: 'org-1',
+      expiresAt: futureDate(),
+    });
 
     const result = await validateSession('session-token');
 
     expect(result.userId).toBe('user-1');
     expect(result.organization.role).toBe('ADMIN');
     expect(result.expiresAt).toBeInstanceOf(Date);
-    expect(mockSessionFindUnique).not.toHaveBeenCalled();
+    expect(mockSessionFindUnique).toHaveBeenCalledWith({
+      where: { id: 'session-1' },
+      select: {
+        isActive: true,
+        userId: true,
+        organizationId: true,
+        expiresAt: true,
+      },
+    });
     expect(mockUserOrganizationFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('rejects a complete cached snapshot after the database session is revoked', async () => {
+    mockCacheGet.mockResolvedValue(completeSnapshot());
+    mockSessionFindUnique.mockResolvedValueOnce({
+      isActive: false,
+      userId: 'user-1',
+      organizationId: 'org-1',
+      expiresAt: futureDate(),
+    });
+    mockSessionFindUnique.mockResolvedValueOnce(null);
+    mockCacheDelete.mockResolvedValue(undefined);
+
+    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockCacheDelete).toHaveBeenCalledWith('session:session-token');
   });
 
   it('falls through to full DB validation on a version mismatch', async () => {

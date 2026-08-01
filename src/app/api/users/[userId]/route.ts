@@ -16,6 +16,8 @@ import {
 import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { bootstrapDb, withOrgContext } from '@/lib/db';
+import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
+import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -110,6 +112,16 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
     // Use RLS context for all org-scoped operations
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Match password-reset issuance/redemption lock order so account
+      // deactivation cannot race a newly minted flow or deadlock with it.
+      await lockPasswordResetUser(tx, userId);
+      await tx.$queryRaw`SELECT 1 FROM users WHERE id = ${userId} FOR UPDATE`;
+      await tx.$queryRaw`
+        SELECT 1
+        FROM user_organizations uo
+        JOIN organizations o ON o.id = uo."organizationId"
+        WHERE uo."userId" = ${userId}
+        FOR UPDATE OF uo, o`;
       // Verify user is in organization
       const userOrg = await tx.userOrganization.findFirst({
         where: {
@@ -124,6 +136,16 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       if (!userOrg) {
         return { error: 'User not found in organization', status: 404 };
       }
+
+      const accountOrganizationIds = new Set(
+        (
+          await bootstrapDb.userOrganization.findMany({
+            where: { userId },
+            select: { organizationId: true },
+          })
+        ).map((membership) => membership.organizationId)
+      );
+      accountOrganizationIds.add(session.organizationId);
 
       // 1. Soft delete the user by deactivating and redacting PII
       await tx.user.update({
@@ -141,6 +163,54 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
         where: { id: userOrg.id },
         data: { isActive: false },
       });
+
+      const cancelledResetFlows = await tx.passwordResetToken.findMany({
+        where: { userId, usedAt: null },
+        select: { id: true, requestId: true },
+      });
+      if (cancelledResetFlows.length > 0) {
+        const flowIds = cancelledResetFlows.map((flow) => flow.id);
+        await tx.passwordResetToken.updateMany({
+          where: { id: { in: flowIds } },
+          data: { usedAt: new Date(), deliveryStatus: 'CANCELLED' },
+        });
+        await tx.passwordResetRecovery.updateMany({
+          where: { flowId: { in: flowIds }, wipedAt: null },
+          data: {
+            cipherVersion: null,
+            keyId: null,
+            nonce: null,
+            ciphertext: null,
+            authTag: null,
+            wipedAt: new Date(),
+            enqueueStatus: 'ACCOUNT_DEACTIVATED',
+          },
+        });
+        for (const organizationId of accountOrganizationIds) {
+          await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+          for (const flow of cancelledResetFlows) {
+            await createSecurityAuditEvent(tx, {
+              organizationId,
+              eventType: 'USER_PASSWORD_RESET',
+              actorType: 'ADMIN',
+              actorId: session.userId,
+              actorEmail: session.user.email,
+              requestId: flow.requestId ?? `recovery-${flow.id}`,
+              correlationId: flow.id,
+              idempotencyKey: `password-reset-${flow.id}-account-deactivated-${organizationId}`,
+              description: 'Password reset flow was cancelled when the account was deactivated',
+              metadata: {
+                outcome: 'cancelled',
+                stage: 'account_lifecycle',
+                targetUserId: userId,
+                errorCode: 'ACCOUNT_DEACTIVATED',
+                initiatingOrganizationId: session.organizationId,
+              },
+            });
+          }
+        }
+        await tx.$executeRaw`SELECT set_config('app.current_org_id', ${session.organizationId}, true)`;
+      }
 
       // 3. Preserve audit events as append-only records. The user row was redacted above.
 
@@ -260,6 +330,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const orgMembershipCount = await bootstrapDb.userOrganization.count({ where: { userId } });
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Security-sensitive identity changes use the same global lock order as
+      // reset issuance, delivery, redemption, and deletion.
+      await lockPasswordResetUser(tx, userId);
+      await tx.$queryRaw`SELECT 1 FROM users WHERE id = ${userId} FOR UPDATE`;
+      await tx.$queryRaw`
+        SELECT 1
+        FROM user_organizations uo
+        JOIN organizations o ON o.id = uo."organizationId"
+        WHERE uo."userId" = ${userId}
+        FOR UPDATE OF uo, o`;
       // Target must be a member of the caller's org (404 else — existence hiding).
       const userOrg = await tx.userOrganization.findFirst({
         where: { userId, organizationId: session.organizationId },
@@ -270,6 +350,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       const emailChanged = normalizedEmail !== undefined && normalizedEmail !== userOrg.user.email;
+      const activeMembershipCount =
+        isActive === false
+          ? await bootstrapDb.userOrganization.count({
+              where: {
+                userId,
+                isActive: true,
+                organization: { isActive: true },
+              },
+            })
+          : null;
+      const finalActiveMembershipDeactivated =
+        isActive === false && userOrg.isActive && activeMembershipCount !== null
+          ? activeMembershipCount <= 1
+          : false;
 
       // Cross-tenant protection: an org admin must not change a shared login
       // identity (global email) or 2FA for a user who belongs to OTHER orgs —
@@ -364,11 +458,71 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       // the OLD address. reset-password resolves tokens by userId (not email), so
       // an old-link holder could otherwise claim the account after the identity
       // moved. Consume all unused reset tokens in the same transaction.
-      if (emailChanged) {
-        await tx.passwordResetToken.updateMany({
-          where: { userId, usedAt: null },
-          data: { usedAt: new Date() },
+      if (emailChanged || isActive === false) {
+        const resetWhere =
+          emailChanged || finalActiveMembershipDeactivated
+            ? { userId, usedAt: null }
+            : { userId, organizationId: session.organizationId, usedAt: null };
+        const cancelledResetFlows = await tx.passwordResetToken.findMany({
+          where: resetWhere,
+          select: { id: true, requestId: true },
         });
+        if (cancelledResetFlows.length > 0) {
+          const flowIds = cancelledResetFlows.map((flow) => flow.id);
+          const cancellationCode = emailChanged ? 'EMAIL_CHANGED' : 'MEMBERSHIP_DEACTIVATED';
+          await tx.passwordResetToken.updateMany({
+            where: { id: { in: flowIds } },
+            data: { usedAt: new Date(), deliveryStatus: 'CANCELLED' },
+          });
+          await tx.passwordResetRecovery.updateMany({
+            where: { flowId: { in: flowIds }, wipedAt: null },
+            data: {
+              cipherVersion: null,
+              keyId: null,
+              nonce: null,
+              ciphertext: null,
+              authTag: null,
+              wipedAt: new Date(),
+              enqueueStatus: cancellationCode,
+            },
+          });
+          const auditOrganizationIds =
+            emailChanged || finalActiveMembershipDeactivated
+              ? new Set(
+                  (
+                    await bootstrapDb.userOrganization.findMany({
+                      where: { userId },
+                      select: { organizationId: true },
+                    })
+                  ).map((membership) => membership.organizationId)
+                )
+              : new Set([session.organizationId]);
+          auditOrganizationIds.add(session.organizationId);
+          for (const organizationId of auditOrganizationIds) {
+            await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+            for (const flow of cancelledResetFlows) {
+              await createSecurityAuditEvent(tx, {
+                organizationId,
+                eventType: 'USER_PASSWORD_RESET',
+                actorType: 'ADMIN',
+                actorId: session.userId,
+                actorEmail: session.user.email,
+                requestId: flow.requestId ?? `recovery-${flow.id}`,
+                correlationId: flow.id,
+                idempotencyKey: `password-reset-${flow.id}-${cancellationCode.toLowerCase()}-${organizationId}`,
+                description: 'Password reset flow was cancelled by a user security change',
+                metadata: {
+                  outcome: 'cancelled',
+                  stage: 'account_lifecycle',
+                  targetUserId: userId,
+                  errorCode: cancellationCode,
+                  initiatingOrganizationId: session.organizationId,
+                },
+              });
+            }
+          }
+          await tx.$executeRaw`SELECT set_config('app.current_org_id', ${session.organizationId}, true)`;
+        }
       }
 
       // Per-org membership fields (role / active).

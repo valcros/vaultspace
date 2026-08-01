@@ -81,6 +81,7 @@ interface ActivityResponse {
 const eventIcons: Record<string, React.ElementType> = {
   USER_LOGIN: LogIn,
   USER_LOGOUT: LogOut,
+  USER_PASSWORD_RESET: Shield,
   USER_INVITED: Users,
   USER_CREATED: Users,
   USER_DELETED: Users,
@@ -102,6 +103,7 @@ const eventIcons: Record<string, React.ElementType> = {
 const eventLabels: Record<string, string> = {
   USER_LOGIN: 'signed in',
   USER_LOGOUT: 'signed out',
+  USER_PASSWORD_RESET: 'updated a password reset flow',
   USER_INVITED: 'invited a user',
   USER_CREATED: 'created a user',
   USER_DELETED: 'deleted a user',
@@ -298,6 +300,7 @@ export default function SettingsActivityPage() {
                 <SelectItem value="all">All Events</SelectItem>
                 <SelectItem value="USER_LOGIN">User Login</SelectItem>
                 <SelectItem value="USER_LOGOUT">User Logout</SelectItem>
+                <SelectItem value="USER_PASSWORD_RESET">Password Reset</SelectItem>
                 <SelectItem value="USER_INVITED">User Invited</SelectItem>
                 <SelectItem value="SETTINGS_UPDATED">Settings Updated</SelectItem>
                 <SelectItem value="PERMISSION_GRANTED">Permission Granted</SelectItem>

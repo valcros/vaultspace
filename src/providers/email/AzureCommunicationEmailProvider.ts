@@ -7,6 +7,7 @@
 import { EmailClient, KnownEmailSendStatus } from '@azure/communication-email';
 
 import type { EmailOptions, EmailProvider } from '../types';
+import { EmailDeliveryError, normalizeEmailError } from './errors';
 
 export interface AzureCommunicationEmailConfig {
   connectionString: string;
@@ -14,6 +15,7 @@ export interface AzureCommunicationEmailConfig {
 }
 
 export class AzureCommunicationEmailProvider implements EmailProvider {
+  readonly providerName = 'acs' as const;
   private client: EmailClient;
   private senderAddress: string;
 
@@ -49,13 +51,23 @@ export class AzureCommunicationEmailProvider implements EmailProvider {
       })),
     };
 
-    const poller = await this.client.beginSend(message);
-    const result = await poller.pollUntilDone();
+    try {
+      const poller = options.operationId
+        ? await this.client.beginSend(message, { operationId: options.operationId })
+        : await this.client.beginSend(message);
+      const result = await poller.pollUntilDone();
 
-    if (result.status !== KnownEmailSendStatus.Succeeded) {
-      throw new Error(`Email send failed with status: ${result.status}`);
+      if (result.status !== KnownEmailSendStatus.Succeeded) {
+        throw new EmailDeliveryError({
+          code: 'ACS_SEND_NOT_ACCEPTED',
+          provider: 'acs',
+          retryable: true,
+        });
+      }
+
+      return { messageId: result.id };
+    } catch (error) {
+      throw normalizeEmailError(error, 'acs');
     }
-
-    return { messageId: result.id };
   }
 }

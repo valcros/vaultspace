@@ -1207,8 +1207,10 @@ model Event {
   documentId String?
 
   // Request/Session tracking
-  requestId String? @db.VarChar(100)
-  sessionId String?
+  requestId      String? @db.VarChar(100)
+  correlationId  String? @db.VarChar(100)
+  sessionId      String?
+  idempotencyKey String? @unique @db.VarChar(255)
 
   // Details
   description String? @db.Text
@@ -1233,6 +1235,7 @@ model Event {
   @@index([documentId])
   @@index([createdAt])
   @@index([requestId])
+  @@index([correlationId])
   @@index([sessionId])
   @@index([organizationId, createdAt])
   @@index([organizationId, eventType, createdAt])
@@ -1370,17 +1373,170 @@ model PasswordResetToken {
 
   userId String
 
-  // Token
+  // Token lookup value. New flows may store a versioned HMAC digest; legacy
+  // plaintext rows remain readable only through the strict legacy parser.
   token     String   @unique @db.VarChar(255)
   expiresAt DateTime
 
   // Usage tracking
   usedAt DateTime?
 
+  // Non-secret, durable delivery lifecycle. The token value itself must never
+  // be copied into logs or audit metadata; this row id is the reset flow id.
+  requestId             String?   @db.VarChar(100)
+  organizationId        String?
+  deliveryStatus        String    @default("PENDING") @db.VarChar(32)
+  queueJobId            String?   @db.VarChar(255)
+  provider              String?   @db.VarChar(32)
+  providerOperationId   String?   @db.VarChar(255)
+  providerMessageId     String?   @db.VarChar(255)
+  providerAcceptedAt    DateTime?
+  deliveryErrorCode     String?   @db.VarChar(100)
+  deliveryAttempts      Int       @default(0)
+  lastDeliveryAttemptAt DateTime?
+
+  // Immutable tenant scope captured when the reset is issued. Later delivery
+  // evidence is audited to this same organization set even if membership
+  // changes before the provider reports its final outcome.
+  auditOrganizationIds String[] @default([])
+
+  // Creation-time assertion that this flow was issued through the reviewed
+  // HMAC recovery and async delivery contract. It is not provider evidence;
+  // future ACS eligibility additionally requires the accepted provider tuple.
+  providerCorrelationSchemaVersion Int?
+
+  // Provider final-delivery evidence is a separate state machine from the
+  // VaultSpace submission/recovery lifecycle in deliveryStatus. PostgreSQL
+  // requires an atomic complete tuple, allows its first write only from the
+  // exact table owner, and makes the completed evidence immutable.
+  providerFinalStatus             String?   @db.VarChar(32)
+  providerFinalOutcome            String?   @db.VarChar(16)
+  providerFinalEventAt            DateTime?
+  providerFinalRecordedAt         DateTime?
+  providerFinalEventIdFingerprint String?   @db.VarChar(64)
+
+  // Present only for HMAC reset flows that can be recovered without placing
+  // the bearer token in Redis. Legacy rows deliberately have no recovery row.
+  recovery            PasswordResetRecovery?
+  providerCorrelation PasswordResetProviderCorrelation?
+
   @@index([token])
   @@index([userId])
   @@index([expiresAt])
+  @@index([organizationId, createdAt])
+  @@index([deliveryStatus, createdAt])
+  @@index([provider, providerMessageId])
   @@map("password_reset_tokens")
+}
+
+// Encrypted, short-lived delivery recovery material for HMAC reset flows.
+// Ciphertext is a bearer credential and is wiped at every terminal lifecycle
+// transition. Delivery leases fence PostgreSQL, Redis, and provider work.
+model PasswordResetRecovery {
+  flowId String @id
+  userId String
+
+  recipientFingerprint String    @db.VarChar(64)
+  cipherVersion        Int?
+  keyId                String?   @db.VarChar(64)
+  nonce                Bytes?
+  ciphertext           Bytes?
+  authTag              Bytes?
+  encryptedAt          DateTime  @default(now())
+  wipedAt              DateTime?
+
+  enqueueStatus         String    @default("PENDING") @db.VarChar(32)
+  enqueueAttempts       Int       @default(0)
+  nextEnqueueAt         DateTime  @default(now())
+  enqueueLeaseId        String?   @db.VarChar(64)
+  enqueueLeaseExpiresAt DateTime?
+
+  deliveryAttempt     Int       @default(1)
+  sendLeaseId         String?   @db.VarChar(64)
+  sendLeaseExpiresAt  DateTime?
+  sendFence           Int       @default(0)
+  providerOperationId String    @db.VarChar(255)
+
+  acceptanceAttempts Int       @default(0)
+  nextAcceptanceAt   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  resetToken          PasswordResetToken                @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  providerCorrelation PasswordResetProviderCorrelation?
+
+  @@unique([flowId, providerOperationId], map: "password_reset_recoveries_flow_operation_key")
+  @@index([enqueueStatus, nextEnqueueAt, enqueueLeaseExpiresAt], map: "prr_enqueue_due_lease_idx")
+  @@index([sendLeaseExpiresAt], map: "prr_send_lease_idx")
+  @@index([wipedAt, createdAt], map: "prr_wipe_created_idx")
+  @@map("password_reset_recoveries")
+}
+
+// Immutable, organization-independent matching authority for ACS provider
+// acceptances created under the reviewed version-1 delivery contract. Runtime
+// and Event Grid ingress roles have no direct access to this protected table.
+model PasswordResetProviderCorrelation {
+  flowId                   String   @id
+  provider                 String   @db.VarChar(32)
+  providerOperationId      String   @db.VarChar(255)
+  providerMessageId        String   @db.VarChar(255)
+  providerAcceptedAt       DateTime
+  correlationSchemaVersion Int
+  recordedAt               DateTime @default(now())
+
+  resetToken PasswordResetToken    @relation(fields: [flowId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  recovery   PasswordResetRecovery @relation(fields: [flowId, providerOperationId], references: [flowId, providerOperationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([flowId, providerOperationId], map: "password_reset_provider_correlations_flow_operation_key")
+  @@unique([provider, providerOperationId], map: "password_reset_provider_correlations_provider_operation_key")
+  @@unique([provider, providerMessageId], map: "password_reset_provider_correlations_provider_message_key")
+  @@index([recordedAt], map: "password_reset_provider_correlations_recorded_idx")
+  @@map("password_reset_provider_correlations")
+}
+
+// Organization-independent, authenticated provider-event receipt ledger.
+// First-seen evidence is immutable; later workers may update only processing,
+// lease, and conflict metadata. Raw provider payloads and recipient PII are not
+// stored in this table.
+model ProviderEventInbox {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  provider                String    @db.VarChar(32)
+  eventType               String    @db.VarChar(100)
+  eventIdFingerprint      String    @db.VarChar(64)
+  payloadFingerprint      String    @db.VarChar(64)
+  payloadFingerprintKeyId String    @db.VarChar(64)
+  topicFingerprint        String    @db.VarChar(64)
+  providerMessageId       String?   @db.VarChar(255)
+  providerStatus          String?   @db.VarChar(32)
+  dataVersion             String    @db.VarChar(16)
+  metadataVersion         String    @db.VarChar(16)
+  eventAt                 DateTime
+  deliveryAttemptAt       DateTime?
+  receivedAt              DateTime  @default(now())
+
+  processingStatus         String    @default("PENDING") @db.VarChar(32)
+  processingAttempts       Int       @default(0)
+  nextProcessingAt         DateTime  @default(now())
+  processingLeaseId        String?   @db.VarChar(64)
+  processingLeaseExpiresAt DateTime?
+  processedAt              DateTime?
+  lastErrorCode            String?   @db.VarChar(100)
+  quarantineReasonCodes    String[]  @default([]) @db.VarChar(100)
+
+  conflictCount                     Int       @default(0)
+  firstConflictAt                   DateTime?
+  conflictingPayloadFingerprint     String?   @db.VarChar(64)
+  lastConflictAt                    DateTime?
+  lastConflictingPayloadFingerprint String?   @db.VarChar(64)
+
+  @@unique([provider, eventIdFingerprint])
+  @@index([processingStatus, nextProcessingAt, processingLeaseExpiresAt])
+  @@index([provider, providerMessageId])
+  @@index([receivedAt])
+  @@map("provider_event_inbox")
 }
 
 // EmailVerificationToken (Email Verification)

@@ -71,11 +71,8 @@ export class BullMQJobProvider implements JobProvider {
         connection: this.connectionOptions,
         prefix: this.prefix,
         defaultJobOptions: {
-          attempts: 3,
-          backoff: {
-            type: 'exponential',
-            delay: 5000,
-          },
+          // Retry policy is explicit per job type. Applying a generic retry
+          // here can duplicate work in processors that are not idempotent.
           removeOnComplete: {
             age: 3600, // Keep completed jobs for 1 hour
             count: 1000,
@@ -91,6 +88,10 @@ export class BullMQJobProvider implements JobProvider {
     return this.queues.get(queueName)!;
   }
 
+  async waitUntilReady(queueName: string): Promise<void> {
+    await this.getQueue(queueName).waitUntilReady();
+  }
+
   /**
    * Add a job to the queue
    */
@@ -100,11 +101,18 @@ export class BullMQJobProvider implements JobProvider {
     data: T,
     options?: JobOptions
   ): Promise<string> {
+    if (options?.jobId?.includes(':')) {
+      throw new Error('BullMQ custom job IDs must not contain a colon');
+    }
     const queue = this.getQueue(queueName);
     const jobOptions = {
-      delay: options?.delay,
-      attempts: options?.attempts,
-      backoff: options?.backoff,
+      ...(options?.delay !== undefined ? { delay: options.delay } : {}),
+      ...(options?.attempts !== undefined ? { attempts: options.attempts } : {}),
+      ...(options?.backoff !== undefined ? { backoff: options.backoff } : {}),
+      ...(options?.removeOnComplete !== undefined
+        ? { removeOnComplete: options.removeOnComplete }
+        : {}),
+      ...(options?.removeOnFail !== undefined ? { removeOnFail: options.removeOnFail } : {}),
       ...(options?.priority ? { priority: PRIORITY_MAP[options.priority] } : {}),
       // BullMQ drops adds sharing a jobId while that job is still queued —
       // stops thumbnail-miss stampedes re-enqueueing the same preview work.
