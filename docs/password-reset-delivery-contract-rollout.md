@@ -8,6 +8,18 @@ Future ACS projection eligibility must independently require the persisted provi
 
 Accepted ACS tuples for marked version 1 flows are also registered in `password_reset_provider_correlations`. The registry is durable correlation evidence. It does not claim that the provider delivered the message to the recipient.
 
+## Provider inbox ownership prerequisite
+
+The provider-correlation registry and provider-event inbox preserve different evidence. The registry preserves an accepted provider operation and message correlation for eligible password-reset flows. The inbox preserves authenticated delivery-event receipt and conflict evidence. Neither evidence store by itself establishes the provider-final projection for a specific password-reset flow, recipient access to a reset, or successful password change. The inbox may preserve an authenticated ACS `Delivered` report, but correlation eligibility and the atomic provider-final projection remain separate reviewed requirements.
+
+The reviewed source change includes the state-ownership migration `20260731080000_separate_provider_inbox_state_ownership` and `npm run worker:provider-event-preflight`. They are available for a separately approved deployment, but this document change does not apply the migration, make grants, enable ingestion, or authorize a live environment. Keep `ACS_EVENT_GRID_INGESTION_ENABLED=false` and `ACS_EMAIL_DELIVERY_PROJECTION_ENABLED=false`. No projector database identity, projector function, projector runner, correlation lookup, tenant-audit writer, scheduled processing, or projection activation is provided by this prerequisite. In particular, an application worker must not use the migration-owner credential as a convenience projector credential.
+
+When deployed and verified, the migration lets the isolated ingress identity create only normalized `PENDING` or `QUARANTINED` receipts and record constrained monotonic conflict observations. It cannot mutate first-seen evidence, attempts, schedules, processed state, or ordinary processing diagnostics. The conflict observation preserves those fields while clearing a lease and preserving immutable first-conflict evidence. The dedicated table owner is a migration identity, not an application runtime identity; even owner writes cannot rewrite evidence or reverse a terminal conflict.
+
+Before any later provider-final projector work, require a clean PostgreSQL 15 migration chain, the exact guard-function source digest and trigger posture, focused preflight and route suites, and disposable marker-gated PostgreSQL 15 integration tests. The state-ownership migration is intentionally one Prisma-visible `DO` statement so a rejected predecessor state preserves PostgreSQL `P0001` with the named guard category instead of Prisma 5.22 masking it as `25P02`. The dedicated migration connection must establish `lock_timeout = 10s` and `statement_timeout = 120s` before submitting that statement; the migration's in-statement settings cannot retroactively bound the whole command. Demonstrate those connection settings, the exact `P0001` dirty-data failure, clean rollback, and lock-timeout behavior through the pinned Prisma deployment path before any production approval. In the real environment, require the dedicated ingress preflight to succeed under the exact ingress identity, including its forced rollback with no canary rows, and require no owner or ACL anomaly. Verify that route diagnostics contain no raw provider, recipient, authentication, connection, or raw database-error data. Disposable test success is necessary evidence, not authorization for production activation.
+
+An application rollback leaves the inbox migration, constraints, trigger, function, and evidence intact. Keep ingestion and projection disabled. Do not run an obsolete preflight that expects ingress processing transitions to succeed against this schema boundary; deploy a compatible reviewed artifact instead. Do not clear conflict evidence, reset conflict counts, rewrite first-conflict facts, restore general ingress processing writes, grant inbox access to `vaultspace_app`, make ingress the table owner, or drop the guard to accommodate old code.
+
 ## Writer contract
 
 Version 1 writers must satisfy all of these conditions before superseding an older flow, creating a token or recovery row, enqueueing a job, or calling a provider:
@@ -114,7 +126,7 @@ Ordinary runtime and ingress identities cannot create the first non-null tuple, 
 
 This prerequisite adds no projection configuration, inbox consumer, correlation lookup, tenant audit writer, scheduled command, runtime function grant, feature activation, provider call, queue operation, or live rollout behavior. Those capabilities remain split into separately reviewed chunks:
 
-1. Separate ingress-owned evidence and conflict transitions from projector-owned processing state.
+1. Use the implemented ingress-owned evidence and conflict-transition boundary as the prerequisite for a later separately reviewed protected projector path.
 2. Add a protected, database-disabled atomic projector and tenant audit contract.
 3. Add a dormant application runner and categorical diagnostics.
 4. Approve and execute database grants, cutover configuration, feature enablement, canaries, and live rollout as a distinct operational change.

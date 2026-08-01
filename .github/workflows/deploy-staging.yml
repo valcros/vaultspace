@@ -388,9 +388,9 @@ jobs:
         run: |
           npm ci
           npx prisma generate
-          npx prisma migrate deploy
+          npm run db:migrate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       # The worker must be compatible with enriched reset jobs before the new
       # web revision can enqueue them. Single-revision mode also prevents an old

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
@@ -81,6 +82,20 @@ function request(body: unknown, headers: Record<string, string> = {}) {
         'aeg-event-type': 'Notification',
         ...headers,
       },
+    }
+  );
+}
+
+function databaseGuardError(
+  primaryMessage: string,
+  options: { prismaCode?: string; sqlState?: string; errorMessage?: string } = {}
+): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError(
+    options.errorMessage ?? 'private database exception detail',
+    {
+      code: options.prismaCode ?? 'P2010',
+      clientVersion: '5.22.0',
+      meta: { code: options.sqlState ?? 'P0001', message: primaryMessage },
     }
   );
 }
@@ -322,6 +337,75 @@ describe('ACS Event Grid shadow ingestion', () => {
     mocks.transaction.mockRejectedValue(new Error('database unavailable'));
     const response = await POST(request([deliveryEvent()]));
     expect(response.status).toBe(503);
+  });
+
+  it('logs an exact allowlisted guard category without exposing it to Event Grid', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      mocks.transaction.mockRejectedValue(
+        databaseGuardError(
+          'ERROR: PROVIDER_EVENT_CONFLICT_INTENT_INVALID\nDETAIL: private-recipient@example.com provider-message-1 Bearer a.b.c'
+        )
+      );
+      const response = await POST(request([deliveryEvent()]));
+      expect(response.status).toBe(503);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      await expect(response.json()).resolves.toEqual({ error: 'Service unavailable' });
+      expect(errorSpy).toHaveBeenCalledOnce();
+      const logged = JSON.parse(String(errorSpy.mock.calls[0]?.[0]));
+      expect(logged).toMatchObject({
+        event: 'request_rejected',
+        outcome: 'rejected',
+        status: 503,
+        errorCode: 'EVENT_GRID_DATABASE_GUARD_REJECTED',
+        databaseGuardRule: 'PROVIDER_EVENT_CONFLICT_INTENT_INVALID',
+      });
+      const serialized = JSON.stringify({ response: { error: 'Service unavailable' }, logged });
+      expect(serialized).not.toContain('private-recipient');
+      expect(serialized).not.toContain('provider-message-1');
+      expect(serialized).not.toContain('Bearer');
+      expect(serialized).not.toContain('private database exception');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('keeps malformed, unknown, and context-only database categories generic', async () => {
+    const cases = [
+      databaseGuardError('ERROR: PROVIDER_EVENT_CONFLICT_INTENT_INVALID_SUFFIX'),
+      databaseGuardError('ERROR: UNKNOWN_DATABASE_RULE'),
+      databaseGuardError(
+        'ERROR: UNKNOWN_DATABASE_RULE\nDETAIL: PROVIDER_EVENT_CONFLICT_INTENT_INVALID'
+      ),
+      databaseGuardError(
+        'unrecognized database failure\nERROR: PROVIDER_EVENT_CONFLICT_INTENT_INVALID'
+      ),
+      databaseGuardError('ERROR:\nPROVIDER_EVENT_CONFLICT_INTENT_INVALID'),
+      databaseGuardError('ERROR: PROVIDER_EVENT_CONFLICT_INTENT_INVALID', { sqlState: '23514' }),
+      databaseGuardError('ERROR: PROVIDER_EVENT_CONFLICT_INTENT_INVALID', { prismaCode: 'P2002' }),
+      new Error('PROVIDER_EVENT_CONFLICT_INTENT_INVALID private-recipient@example.com'),
+    ];
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      for (const error of cases) {
+        mocks.transaction.mockRejectedValueOnce(error);
+        const response = await POST(request([deliveryEvent()]));
+        expect(response.status).toBe(503);
+        await expect(response.json()).resolves.toEqual({ error: 'Service unavailable' });
+      }
+      const logged = errorSpy.mock.calls.map(([line]) => JSON.parse(String(line)));
+      expect(logged).toHaveLength(cases.length);
+      for (const entry of logged) {
+        expect(entry).toMatchObject({
+          errorCode: 'EVENT_GRID_INGESTION_UNAVAILABLE',
+          status: 503,
+        });
+        expect(entry).not.toHaveProperty('databaseGuardRule');
+      }
+      expect(JSON.stringify(logged)).not.toContain('private-recipient');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('authenticates before enforcing the declared body limit', async () => {

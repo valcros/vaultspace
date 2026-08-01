@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 
 import {
@@ -34,6 +35,14 @@ const KNOWN_STATUSES = new Set([
   'FilteredSpam',
   'Expanded',
   'Failed',
+]);
+const DATABASE_GUARD_RULES = new Set([
+  'PROVIDER_EVENT_INGRESS_INITIAL_STATE_INVALID',
+  'PROVIDER_EVENT_FIRST_SEEN_EVIDENCE_IMMUTABLE',
+  'PROVIDER_EVENT_CONFLICT_TERMINAL',
+  'PROVIDER_EVENT_CONFLICT_MONOTONICITY_INVALID',
+  'PROVIDER_EVENT_FIRST_CONFLICT_IMMUTABLE',
+  'PROVIDER_EVENT_CONFLICT_INTENT_INVALID',
 ]);
 
 class IngestionRequestError extends Error {
@@ -75,6 +84,19 @@ function log(level: 'info' | 'warn' | 'error', fields: Record<string, unknown>):
     // eslint-disable-next-line no-console -- structured operational event without request payload data
     console.log(line);
   }
+}
+
+function databaseGuardRule(error: unknown): string | undefined {
+  if (
+    !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+    error.code !== 'P2010' ||
+    error.meta?.['code'] !== 'P0001' ||
+    typeof error.meta?.['message'] !== 'string'
+  ) {
+    return undefined;
+  }
+  const primaryRule = error.meta['message'].match(/^ERROR:[ \t]*([A-Z][A-Z0-9_]*)(?:\r?\n|$)/)?.[1];
+  return primaryRule && DATABASE_GUARD_RULES.has(primaryRule) ? primaryRule : undefined;
 }
 
 async function readBoundedBody(request: NextRequest): Promise<string> {
@@ -397,6 +419,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (error) {
+    const guardRule = databaseGuardRule(error);
     const handled =
       error instanceof EventGridAuthenticationError ||
       error instanceof IngestionRequestError ||
@@ -407,13 +430,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : error instanceof IngestionRequestError
           ? error.status
           : 503;
-    const code = handled && 'code' in error ? error.code : 'EVENT_GRID_INGESTION_UNAVAILABLE';
+    const code = guardRule
+      ? 'EVENT_GRID_DATABASE_GUARD_REJECTED'
+      : handled && 'code' in error
+        ? error.code
+        : 'EVENT_GRID_INGESTION_UNAVAILABLE';
     log(status >= 500 ? 'error' : 'warn', {
       event: 'request_rejected',
       outcome: 'rejected',
       requestId,
       errorCode: code,
       status,
+      ...(guardRule ? { databaseGuardRule: guardRule } : {}),
     });
     return NextResponse.json(
       { error: status >= 500 ? 'Service unavailable' : 'Request rejected' },

@@ -287,7 +287,7 @@ describe('staging deployment workflow boundary', () => {
     const gate = deployWorkflow.indexOf('- name: Verify password reset delivery contract boundary');
     expect(gate).toBeGreaterThan(0);
     for (const mutation of [
-      'npx prisma migrate deploy',
+      'npm run db:migrate',
       'DEPLOYMENT_MUTATED=true',
       '--mode single',
       '--revision-weight',
@@ -317,6 +317,29 @@ describe('staging deployment workflow boundary', () => {
     expect(deployWorkflow).toContain('post_deploy_gate=');
     expect(deployWorkflow).toContain('recovery_gate=');
     expect(deployWorkflow).toContain('RECOVERY_ACTIVE_WEB_REVISIONS');
+  });
+
+  it('keeps reviewed migration startup controls on every documented deployment path', () => {
+    const migrationPaths = [
+      '.github/workflows/ci.yml',
+      '.github/workflows/deploy-staging.yml',
+      '.github/workflows/standalone-validation.yml',
+      'docker-entrypoint.sh',
+      'docs/INSTALL.md',
+      'DATABASE_SCHEMA.md',
+      'DEPLOYMENT.md',
+      'CLAUDE.md',
+    ];
+    for (const migrationPath of migrationPaths) {
+      const source = readFileSync(`${repositoryRoot}/${migrationPath}`, 'utf8');
+      expect(source).not.toContain('npx prisma migrate deploy');
+    }
+    expect(deployWorkflow).toContain('MIGRATION_DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    expect(deployWorkflow).toContain('npm run db:migrate');
+    const entrypoint = readFileSync(`${repositoryRoot}/docker-entrypoint.sh`, 'utf8');
+    expect(entrypoint).not.toContain('db push --accept-data-loss');
+    expect(entrypoint).toContain('PRISMA_FORCE_SCHEMA_SYNC is not permitted in production');
+    expect(entrypoint).toContain('DATABASE_URL_ADMIN is required for production migrations');
   });
 
   it('documents that ordinary deployment cannot perform the first contract activation', () => {
