@@ -190,6 +190,18 @@ async function stageStandaloneAssets() {
   if (await pathExists(join(root, 'public'))) {
     await cp(join(root, 'public'), join(standalone, 'public'), { recursive: true });
   }
+  // The Next standalone tracer does not reliably include the Prisma query
+  // engine binary. Production copies it into the standalone runtime (see
+  // Dockerfile). Mirror that here so the standalone server opens its first
+  // database connection instead of crashing on a missing/mismatched engine
+  // (a native segfault on Linux that does not reproduce on macOS).
+  const standaloneModules = join(standalone, 'node_modules');
+  for (const dependency of ['.prisma', '@prisma', 'prisma']) {
+    const source = join(root, 'node_modules', dependency);
+    if (await pathExists(source)) {
+      await cp(source, join(standaloneModules, dependency), { recursive: true });
+    }
+  }
 }
 
 async function unusedLoopbackPort() {
