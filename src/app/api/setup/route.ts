@@ -9,7 +9,8 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { db } from '@/lib/db';
-import { setSessionCookie } from '@/lib/middleware';
+import { captureAccessAudit } from '@/lib/audit/accessAudit';
+import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
 
@@ -27,6 +28,9 @@ const setupSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const reqContext = getRequestContext(request);
+    const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
+    const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
     // Check if setup has already been completed
     const existingOrg = await db.organization.findFirst();
     if (existingOrg) {
@@ -109,19 +113,35 @@ export async function POST(request: NextRequest) {
     );
 
     // Create session
-    await db.session.create({
+    const authSession = await db.session.create({
       data: {
         userId: result.user.id,
         organizationId: result.organization.id,
         token: sessionToken,
         expiresAt,
-        ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-        userAgent: request.headers.get('user-agent') ?? null,
+        ipAddress,
+        userAgent,
       },
     });
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
+
+    await captureAccessAudit({
+      organizationId: result.organization.id,
+      eventType: 'USER_LOGIN',
+      actorType: 'ADMIN',
+      actorId: result.user.id,
+      actorEmail: result.user.email,
+      requestId: reqContext.requestId,
+      description: 'Initial administrator signed in',
+      metadata: {
+        authSessionId: authSession.id,
+        authenticationMethod: 'INITIAL_SETUP',
+      },
+      ipAddress,
+      userAgent,
+    });
 
     return NextResponse.json({
       success: true,

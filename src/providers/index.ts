@@ -16,7 +16,9 @@ import type {
 import { InMemoryCacheProvider } from './cache/InMemoryCacheProvider';
 import { RedisCacheProvider } from './cache/RedisCacheProvider';
 import { AzureCommunicationEmailProvider } from './email/AzureCommunicationEmailProvider';
+import { resolveEmailProviderConfiguration } from './email/config';
 import { ConsoleEmailProvider } from './email/ConsoleEmailProvider';
+import type { EmailProviderName } from './email/errors';
 import { SmtpEmailProvider } from './email/SmtpEmailProvider';
 import { BullMQJobProvider } from './job/BullMQJobProvider';
 import { LocalStorageProvider } from './storage/LocalStorageProvider';
@@ -139,21 +141,25 @@ function createStorageProvider(): StorageProvider {
   }
 }
 
-export function createEmailProvider(): EmailProvider {
-  const provider = process.env['EMAIL_PROVIDER'] ?? 'console';
-  const isDev = process.env['NODE_ENV'] !== 'production';
+/**
+ * Return the actual provider selected by createEmailProvider(). Persist this
+ * value with provider correlation data so a later configuration change cannot
+ * change the provenance of an already-submitted message.
+ */
+export function getConfiguredEmailProviderName(): EmailProviderName {
+  return resolveEmailProviderConfiguration().name;
+}
 
-  // Always use console in dev if no email provider configured
-  if (isDev && !process.env['SMTP_HOST'] && !process.env['ACS_CONNECTION_STRING']) {
-    return new ConsoleEmailProvider();
-  }
+export function createEmailProvider(): EmailProvider {
+  const configuration = resolveEmailProviderConfiguration();
+  const provider = configuration.name;
 
   switch (provider) {
     case 'acs': {
-      const connectionString = process.env['ACS_CONNECTION_STRING'];
-      const senderAddress = process.env['ACS_SENDER_ADDRESS'] ?? 'noreply@vaultspace.org';
+      const connectionString = process.env['ACS_CONNECTION_STRING']?.trim();
+      const senderAddress = process.env['ACS_SENDER_ADDRESS']?.trim() || 'noreply@vaultspace.org';
 
-      if (!connectionString) {
+      if (!configuration.deliverable || !connectionString) {
         throw new Error('ACS email requires ACS_CONNECTION_STRING');
       }
 
@@ -163,8 +169,11 @@ export function createEmailProvider(): EmailProvider {
       });
     }
     case 'smtp': {
+      if (!configuration.deliverable) {
+        throw new Error('SMTP email requires SMTP_HOST');
+      }
       return new SmtpEmailProvider({
-        host: process.env['SMTP_HOST'] ?? 'localhost',
+        host: process.env['SMTP_HOST']!.trim(),
         port: parseInt(process.env['SMTP_PORT'] ?? '587', 10),
         secure: process.env['SMTP_TLS'] === 'true',
         user: process.env['SMTP_USER'],
@@ -194,7 +203,7 @@ function createCacheProvider(): CacheProvider {
   return new InMemoryCacheProvider();
 }
 
-function createJobProvider(): JobProvider {
+export function createJobProvider(): JobProvider {
   const redisUrl = process.env['REDIS_URL'];
 
   if (redisUrl) {
@@ -206,6 +215,7 @@ function createJobProvider(): JobProvider {
 
   // Fallback stub for development without Redis
   return {
+    waitUntilReady: async () => {},
     addJob: async () => `job-${Date.now()}`,
     getJobStatus: async () => 'pending',
     cancelJob: async () => {},

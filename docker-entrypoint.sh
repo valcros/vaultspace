@@ -8,12 +8,17 @@ set -e
 #   DATABASE_URL        -- application runtime (low-privilege, NOBYPASSRLS app role)
 #   DATABASE_URL_ADMIN  -- migrations and RLS DDL (table owner / DDL-capable role)
 #
-# DATABASE_URL_ADMIN is required when DATABASE_URL points at a non-owner role
-# (the recommended production posture). When DATABASE_URL_ADMIN is unset the
-# entrypoint falls back to DATABASE_URL for backward compatibility — useful for
-# local dev where a single role does both.
+# DATABASE_URL_ADMIN is required for a reviewed production migration. The
+# fallback remains only for local single-role compatibility; setting a runtime
+# URL into MIGRATION_DATABASE_URL does not satisfy the inbox migration-owner
+# requirement and the migration's final posture proof rejects that drift.
 
 echo "[entrypoint] VaultSpace starting..."
+
+if [ "$NODE_ENV" = "production" ] && [ -z "${DATABASE_URL_ADMIN:-}" ]; then
+  echo "[entrypoint] FATAL: DATABASE_URL_ADMIN is required for production migrations"
+  exit 1
+fi
 
 ADMIN_DB_URL="${DATABASE_URL_ADMIN:-$DATABASE_URL}"
 
@@ -22,11 +27,11 @@ if [ "$NODE_ENV" = "production" ]; then
   echo "[entrypoint] Running database migrations as admin role..."
 
   if [ "$PRISMA_FORCE_SCHEMA_SYNC" = "true" ]; then
-    echo "[entrypoint] Force-syncing schema (PRISMA_FORCE_SCHEMA_SYNC=true)..."
-    DATABASE_URL="$ADMIN_DB_URL" node ./node_modules/prisma/build/index.js db push --accept-data-loss
-  else
-    DATABASE_URL="$ADMIN_DB_URL" node ./node_modules/prisma/build/index.js migrate deploy
+    echo "[entrypoint] FATAL: PRISMA_FORCE_SCHEMA_SYNC is not permitted in production"
+    echo "[entrypoint] Run the reviewed migration procedure; db push cannot establish migration evidence boundaries."
+    exit 1
   fi
+  MIGRATION_DATABASE_URL="$ADMIN_DB_URL" node scripts/run-prisma-migrate-deploy.mjs
 
   # Apply RLS policies in production (REQUIRED for multi-tenant security)
   if [ "$ENABLE_RLS" != "false" ]; then

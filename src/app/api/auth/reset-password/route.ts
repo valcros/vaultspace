@@ -8,39 +8,84 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
 import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
+import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
+import {
+  lockPasswordResetUser,
+  passwordResetTokenMatchesStoredValue,
+  resolvePasswordResetTokenLookup,
+} from '@/lib/auth/passwordResetToken';
 import { bootstrapDb as db } from '@/lib/db';
+import { getRequestContext } from '@/lib/middleware';
 import { z } from 'zod';
 
 const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'Token is required'),
+  token: z.string().min(1, 'Token is required').max(128, 'Invalid reset token'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 export async function POST(request: NextRequest) {
+  const reqContext = getRequestContext(request);
+  const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
+  const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
+
   try {
     const body = await request.json();
     const { token, password } = resetPasswordSchema.parse(body);
+    const tokenLookup = resolvePasswordResetTokenLookup(token);
+
+    if (!tokenLookup) {
+      console.warn(
+        JSON.stringify({
+          component: 'reset-password',
+          event: 'token_validation',
+          outcome: 'rejected',
+          requestId: reqContext.requestId,
+          errorCode: 'INVALID_OR_EXPIRED_TOKEN',
+        })
+      );
+      return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
+    }
 
     // Find valid reset token
     const resetToken = await db.passwordResetToken.findFirst({
       where: {
-        token,
+        token: tokenLookup.storedToken,
         expiresAt: { gt: new Date() },
         usedAt: null,
       },
     });
 
-    if (!resetToken) {
+    if (!resetToken || !passwordResetTokenMatchesStoredValue(token, resetToken.token)) {
+      console.warn(
+        JSON.stringify({
+          component: 'reset-password',
+          event: 'token_validation',
+          outcome: 'rejected',
+          requestId: reqContext.requestId,
+          errorCode: 'INVALID_OR_EXPIRED_TOKEN',
+        })
+      );
       return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
     }
 
     // Verify the user is active
     const user = await db.user.findUnique({
       where: { id: resetToken.userId },
-      select: { id: true, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        isActive: true,
+        organizations: {
+          where: { isActive: true, organization: { isActive: true } },
+          select: { role: true, organizationId: true },
+        },
+      },
     });
 
-    if (!user || !user.isActive) {
+    // Account-global password changes must have at least one active tenant in
+    // which the completion can be audited. This also blocks legacy tokens or
+    // tokens minted before a user's final membership was deactivated.
+    if (!user || !user.isActive || user.organizations.length === 0) {
       return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
     }
 
@@ -60,6 +105,42 @@ export async function POST(request: NextRequest) {
     // 1 means we lost the race and the transaction commits without touching the
     // password.
     const sessionTokens = await db.$transaction(async (tx) => {
+      await lockPasswordResetUser(tx, resetToken.userId);
+      // Use the same account lock as every issuance path. This prevents an old
+      // token redemption and replacement-token issuance from interleaving
+      // their token claims in opposite lock order.
+      await tx.$queryRaw`
+        SELECT 1 FROM users
+        WHERE id = ${resetToken.userId}
+        FOR UPDATE`;
+
+      await tx.$queryRaw`
+        SELECT 1
+        FROM user_organizations uo
+        JOIN organizations o ON o.id = uo."organizationId"
+        WHERE uo."userId" = ${resetToken.userId}
+        FOR UPDATE OF uo, o`;
+
+      // Re-read account and membership eligibility under the locks. If a
+      // concurrent deactivation won before us, no token or password mutation
+      // occurs.
+      const lockedUser = await tx.user.findUnique({
+        where: { id: resetToken.userId },
+        select: {
+          id: true,
+          email: true,
+          isActive: true,
+          organizations: {
+            where: { isActive: true, organization: { isActive: true } },
+            select: { role: true, organizationId: true },
+          },
+        },
+      });
+
+      if (!lockedUser || !lockedUser.isActive || lockedUser.organizations.length === 0) {
+        return null;
+      }
+
       const claim = await tx.passwordResetToken.updateMany({
         where: {
           id: resetToken.id,
@@ -72,6 +153,18 @@ export async function POST(request: NextRequest) {
       if (claim.count !== 1) {
         return null;
       }
+      await tx.passwordResetRecovery.updateMany({
+        where: { flowId: resetToken.id, wipedAt: null },
+        data: {
+          cipherVersion: null,
+          keyId: null,
+          nonce: null,
+          ciphertext: null,
+          authTag: null,
+          wipedAt: new Date(),
+          enqueueStatus: 'REDEEMED',
+        },
+      });
 
       await tx.user.update({
         where: { id: resetToken.userId },
@@ -79,6 +172,14 @@ export async function POST(request: NextRequest) {
       });
 
       // Invalidate any other outstanding reset tokens for this user.
+      const supersededResetFlows = await tx.passwordResetToken.findMany({
+        where: {
+          userId: resetToken.userId,
+          id: { not: resetToken.id },
+          usedAt: null,
+        },
+        select: { id: true, requestId: true },
+      });
       await tx.passwordResetToken.updateMany({
         where: {
           userId: resetToken.userId,
@@ -87,8 +188,67 @@ export async function POST(request: NextRequest) {
         },
         data: { usedAt: new Date() },
       });
+      await tx.passwordResetRecovery.updateMany({
+        where: {
+          resetToken: { userId: resetToken.userId, usedAt: { not: null } },
+          wipedAt: null,
+        },
+        data: {
+          cipherVersion: null,
+          keyId: null,
+          nonce: null,
+          ciphertext: null,
+          authTag: null,
+          wipedAt: new Date(),
+          enqueueStatus: 'SUPERSEDED',
+        },
+      });
 
-      return deactivateAllUserSessionsInTx(tx, resetToken.userId);
+      const sessionTokens = await deactivateAllUserSessionsInTx(tx, resetToken.userId);
+
+      for (const membership of lockedUser.organizations) {
+        await createSecurityAuditEvent(tx, {
+          organizationId: membership.organizationId,
+          eventType: 'USER_PASSWORD_RESET',
+          actorType: membership.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+          actorId: lockedUser.id,
+          actorEmail: lockedUser.email,
+          requestId: reqContext.requestId,
+          correlationId: resetToken.id,
+          description: 'User completed a password reset',
+          metadata: {
+            outcome: 'success',
+            stage: 'completed',
+            invalidatedSessionCount: sessionTokens.length,
+            initiationRequestId: resetToken.requestId ?? null,
+          },
+          ipAddress,
+          userAgent,
+        });
+        for (const superseded of supersededResetFlows) {
+          await createSecurityAuditEvent(tx, {
+            organizationId: membership.organizationId,
+            eventType: 'USER_PASSWORD_RESET',
+            actorType: membership.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+            actorId: lockedUser.id,
+            actorEmail: lockedUser.email,
+            requestId: superseded.requestId ?? `recovery-${superseded.id}`,
+            correlationId: superseded.id,
+            idempotencyKey: `password-reset-${superseded.id}-superseded-${membership.organizationId}`,
+            description: 'Password reset flow was superseded by successful password redemption',
+            metadata: {
+              outcome: 'cancelled',
+              stage: 'redemption_supersession',
+              replacementFlowId: resetToken.id,
+              errorCode: 'SUPERSEDED',
+            },
+            ipAddress,
+            userAgent,
+          });
+        }
+      }
+
+      return sessionTokens;
     });
 
     if (sessionTokens === null) {
@@ -96,6 +256,18 @@ export async function POST(request: NextRequest) {
     }
 
     await clearSessionCache(sessionTokens);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        component: 'reset-password',
+        event: 'password_reset_completed',
+        outcome: 'success',
+        requestId: reqContext.requestId,
+        correlationId: resetToken.id,
+        invalidatedSessionCount: sessionTokens.length,
+      })
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -106,7 +278,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error('[ResetPasswordAPI] Error:', error);
+    console.error(
+      JSON.stringify({
+        component: 'reset-password',
+        event: 'request_processing',
+        outcome: 'failed',
+        requestId: reqContext.requestId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      })
+    );
     return NextResponse.json({ error: 'Failed to reset password' }, { status: 500 });
   }
 }

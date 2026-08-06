@@ -2,6 +2,12 @@ name: Deploy to Staging
 
 on:
   workflow_dispatch:
+    inputs:
+      allow_reset_mode_downgrade:
+        description: Allow an intentional HMAC-to-legacy password-reset writer downgrade
+        required: false
+        type: boolean
+        default: false
   workflow_run:
     workflows: ['CI']
     branches: [main]
@@ -34,7 +40,7 @@ jobs:
     # PR whose source branch is named "main" could match the workflow_run
     # branches filter and start this privileged (staging-credentialed) job.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository)
@@ -51,7 +57,16 @@ jobs:
       WAKER_JOB_APP: ${{ vars.WAKER_JOB_APP }}
       WAKER_CONTAINER_NAME: ${{ vars.WAKER_CONTAINER_NAME }}
       LIFECYCLE_JOB_APP: ${{ vars.LIFECYCLE_JOB_APP }}
+      RESET_RECONCILER_JOB_APP: ${{ vars.RESET_RECONCILER_JOB_APP }}
+      DESIRED_RESET_WRITE_MODE: ${{ vars.PASSWORD_RESET_TOKEN_WRITE_MODE }}
+      ALLOW_RESET_MODE_DOWNGRADE: ${{ inputs.allow_reset_mode_downgrade || 'false' }}
       APP_URL: ${{ vars.APP_URL }}
+      DEPLOYMENT_MUTATED: 'false'
+      WEB_MUTATED: 'false'
+      JOBS_MUTATED: 'false'
+      FORWARD_WORKER_VERIFIED: 'false'
+      RESET_FLOW_ONLY_POSSIBLE: 'false'
+      TARGET_RESET_WRITE_MODE: 'legacy'
       # For workflow_run triggers, deploy the exact commit CI validated, not the
       # branch head at event time (they can differ if another push lands mid-run).
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -90,6 +105,111 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Validate Container Apps CLI support
+        run: |
+          EXTENSION_VERSION=$(az extension show --name containerapp --query version --output tsv 2>/dev/null || true)
+          if [ -z "$EXTENSION_VERSION" ]; then
+            az extension add --name containerapp --upgrade --allow-preview true
+            EXTENSION_VERSION=$(az extension show --name containerapp --query version --output tsv)
+          fi
+          az containerapp revision set-mode --help >/dev/null
+          az containerapp ingress traffic set --help >/dev/null
+          echo "Container Apps extension: $EXTENSION_VERSION"
+
+      # Capture the deployable artifacts currently serving staging. If any
+      # later mutation fails, the final recovery step restores these images and
+      # routes web traffic to the restored release. Database migrations remain
+      # applied because they are additive and intentionally not rolled back.
+      - name: Capture staging before-state
+        id: before_state
+        run: |
+          TRAFFIC_JSON=$(az containerapp ingress traffic show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          HIGHEST_WEIGHT=$(echo "$TRAFFIC_JSON" | jq '[.[].weight] | max')
+          HIGHEST_COUNT=$(echo "$TRAFFIC_JSON" | jq --argjson weight "$HIGHEST_WEIGHT" \
+            '[.[] | select(.weight == $weight)] | length')
+          if [ "$HIGHEST_COUNT" != "1" ]; then
+            echo "ERROR: no unambiguous highest-weight staging web revision exists"
+            echo "$TRAFFIC_JSON"
+            exit 1
+          fi
+          PREVIOUS_WEB_REVISION=$(echo "$TRAFFIC_JSON" | jq -r --argjson weight "$HIGHEST_WEIGHT" \
+            '.[] | select(.weight == $weight) | .revisionName // empty')
+          if [ -z "$PREVIOUS_WEB_REVISION" ]; then
+            PREVIOUS_WEB_REVISION=$(az containerapp show \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestRevisionName \
+              --output tsv)
+          fi
+          PREVIOUS_WEB_IMAGE=$(az containerapp revision show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$PREVIOUS_WEB_REVISION" \
+            --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+
+          HEALTHY_WORKER_REVISIONS=$(az containerapp revision list \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "[?properties.active && properties.runningState=='Running'].name" \
+            --output tsv)
+          if [ "$(echo "$HEALTHY_WORKER_REVISIONS" | sed '/^$/d' | wc -l | tr -d ' ')" != "1" ]; then
+            echo "ERROR: expected one unambiguous active, running worker revision"
+            exit 1
+          fi
+          PREVIOUS_WORKER_REVISION="$HEALTHY_WORKER_REVISIONS"
+          PREVIOUS_WORKER_IMAGE=$(az containerapp revision show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$PREVIOUS_WORKER_REVISION" \
+            --query "properties.template.containers[?name=='$WORKER_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+          PREVIOUS_WAKER_IMAGE=$(az containerapp job show \
+            --name "$WAKER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.template.containers[0].image \
+            --output tsv)
+          PREVIOUS_LIFECYCLE_IMAGE=$(az containerapp job show \
+            --name "$LIFECYCLE_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.template.containers[0].image \
+            --output tsv)
+          PREVIOUS_RESET_RECONCILER_IMAGE=""
+          if [ -n "$RESET_RECONCILER_JOB_APP" ]; then
+            PREVIOUS_RESET_RECONCILER_IMAGE=$(az containerapp job show \
+              --name "$RESET_RECONCILER_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.template.containers[0].image \
+              --output tsv)
+          fi
+
+          for value in \
+            "$PREVIOUS_WEB_REVISION" \
+            "$PREVIOUS_WORKER_REVISION" \
+            "$PREVIOUS_WEB_IMAGE" \
+            "$PREVIOUS_WORKER_IMAGE" \
+            "$PREVIOUS_WAKER_IMAGE" \
+            "$PREVIOUS_LIFECYCLE_IMAGE"; do
+            if [ -z "$value" ]; then
+              echo "ERROR: staging before-state is incomplete"
+              exit 1
+            fi
+          done
+
+          {
+            echo "PREVIOUS_WEB_REVISION=$PREVIOUS_WEB_REVISION"
+            echo "PREVIOUS_WORKER_REVISION=$PREVIOUS_WORKER_REVISION"
+            echo "PREVIOUS_WEB_IMAGE=$PREVIOUS_WEB_IMAGE"
+            echo "PREVIOUS_WEB_RELEASE=${PREVIOUS_WEB_IMAGE##*:}"
+            echo "PREVIOUS_WORKER_IMAGE=$PREVIOUS_WORKER_IMAGE"
+            echo "PREVIOUS_WAKER_IMAGE=$PREVIOUS_WAKER_IMAGE"
+            echo "PREVIOUS_LIFECYCLE_IMAGE=$PREVIOUS_LIFECYCLE_IMAGE"
+            echo "PREVIOUS_RESET_RECONCILER_IMAGE=$PREVIOUS_RESET_RECONCILER_IMAGE"
+          } >> "$GITHUB_ENV"
+
       # Safety net for build-once: images are published by CI's "Build & Push
       # Images" job. Confirm BOTH exist for this SHA before doing anything with
       # side effects (migrations run below), so a manual dispatch against a SHA
@@ -110,8 +230,153 @@ jobs:
       # No build here: the CI "Build & Push Images" job already built and pushed
       # web + worker images to ACR tagged by this commit SHA before the deploy
       # was triggered. We just point the Container Apps at that SHA tag below.
-      # (The Container Apps pull from ACR with their own registry credentials, so
-      # no Docker/ACR login is needed in this job.)
+      # The registry login below is read-only from the deployment perspective
+      # and is used to inspect labels and resolve immutable manifest digests.
+
+      # This read-only, fail-closed boundary runs before migrations or any Azure
+      # mutation. It proves that the target pair and the complete rollback set
+      # use the same reviewed writer contract, then pins every critical image by
+      # digest so mutable tags cannot change the deployment after verification.
+      - name: Verify password reset delivery contract boundary
+        run: |
+          set -euo pipefail
+
+          ACR_NAME="${ACR_SERVER%%.*}"
+          az acr login --name "$ACR_NAME"
+          docker buildx version
+
+          inspect_image_metadata() {
+            local reference="$1"
+            local repository
+            local root_digest
+            local runnable_digest
+            local raw_manifest
+            local labels
+
+            repository="${reference%@*}"
+            if [[ "${repository##*/}" == *:* ]]; then
+              repository="${repository%:*}"
+            fi
+
+            root_digest=$(docker buildx imagetools inspect "$reference" --format '{{.Manifest.Digest}}')
+            raw_manifest=$(docker buildx imagetools inspect "$reference" --raw)
+            if printf '%s' "$raw_manifest" | jq -e '.manifests | type == "array"' >/dev/null; then
+              runnable_digest=$(printf '%s' "$raw_manifest" | jq -er '
+                [.manifests[] |
+                  select(.platform.os == "linux" and .platform.architecture == "amd64") |
+                  .digest] |
+                unique |
+                if length == 1 then .[0]
+                else error("expected exactly one linux/amd64 runnable image manifest")
+                end')
+            else
+              runnable_digest="$root_digest"
+            fi
+
+            labels=$(docker buildx imagetools inspect \
+              "$repository@$runnable_digest" \
+              --format '{{json .Image.Config.Labels}}')
+            jq -cn \
+              --arg reference "$reference" \
+              --arg digest "$root_digest" \
+              --arg runnableDigest "$runnable_digest" \
+              --argjson labels "$labels" \
+              '{
+                reference: $reference,
+                digest: $digest,
+                runnableDigest: $runnableDigest,
+                labels: $labels
+              }'
+          }
+
+          TARGET_WEB_METADATA=$(inspect_image_metadata "$ACR_SERVER/vaultspace-web:$DEPLOY_SHA")
+          TARGET_WORKER_METADATA=$(inspect_image_metadata "$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA")
+          PREVIOUS_WEB_METADATA=$(inspect_image_metadata "$PREVIOUS_WEB_IMAGE")
+          PREVIOUS_WORKER_METADATA=$(inspect_image_metadata "$PREVIOUS_WORKER_IMAGE")
+          PREVIOUS_RESET_RECONCILER_METADATA=null
+          if [ -n "$PREVIOUS_RESET_RECONCILER_IMAGE" ]; then
+            PREVIOUS_RESET_RECONCILER_METADATA=$(inspect_image_metadata "$PREVIOUS_RESET_RECONCILER_IMAGE")
+          fi
+
+          ACTIVE_WEB_REVISIONS=$(az containerapp revision list \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query '[?properties.active].name' \
+            --output json)
+          TRAFFIC_JSON=$(az containerapp ingress traffic show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          LATEST_WEB_REVISION=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName \
+            --output tsv)
+          CURRENT_REVISION_IMAGE=$(az containerapp revision show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$PREVIOUS_WEB_REVISION" \
+            --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+
+          HEADER_FILE="$RUNNER_TEMP/password-reset-contract-headers-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          BODY_FILE="$RUNNER_TEMP/password-reset-contract-body-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          HEALTH_URL="$APP_URL/api/health?deployment_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${DEPLOY_SHA}"
+          curl -fsS --max-time 15 \
+            -H "Cache-Control: no-cache" \
+            -H "Pragma: no-cache" \
+            -D "$HEADER_FILE" \
+            -o "$BODY_FILE" \
+            "$HEALTH_URL"
+          CACHE_CONTROL=$(awk \
+            'BEGIN { IGNORECASE=1 } /^cache-control:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); value=$0 } END { print value }' \
+            "$HEADER_FILE")
+          HEALTH_BODY=$(<"$BODY_FILE")
+
+          VERIFICATION_INPUT=$(jq -cn \
+            --arg expectedRevision "$DEPLOY_SHA" \
+            --argjson targetWeb "$TARGET_WEB_METADATA" \
+            --argjson targetWorker "$TARGET_WORKER_METADATA" \
+            --argjson rollbackWeb "$PREVIOUS_WEB_METADATA" \
+            --argjson rollbackWorker "$PREVIOUS_WORKER_METADATA" \
+            --argjson rollbackReconciler "$PREVIOUS_RESET_RECONCILER_METADATA" \
+            --argjson activeWebRevisions "$ACTIVE_WEB_REVISIONS" \
+            --argjson traffic "$TRAFFIC_JSON" \
+            --arg latestRevisionName "$LATEST_WEB_REVISION" \
+            --arg capturedRevision "$PREVIOUS_WEB_REVISION" \
+            --arg capturedImage "$PREVIOUS_WEB_IMAGE" \
+            --arg currentRevisionImage "$CURRENT_REVISION_IMAGE" \
+            --arg cacheControl "$CACHE_CONTROL" \
+            --argjson healthBody "$HEALTH_BODY" \
+            '{
+              target: {
+                expectedRevision: $expectedRevision,
+                web: $targetWeb,
+                worker: $targetWorker
+              },
+              rollback: {
+                web: $rollbackWeb,
+                worker: $rollbackWorker,
+                reconciler: $rollbackReconciler
+              },
+              serving: {
+                activeWebRevisions: $activeWebRevisions,
+                traffic: $traffic,
+                latestRevisionName: $latestRevisionName,
+                capturedRevision: $capturedRevision,
+                capturedImage: $capturedImage,
+                currentRevisionImage: $currentRevisionImage
+              },
+              health: {
+                cacheControl: $cacheControl,
+                body: $healthBody
+              }
+            }')
+          PINNED_IMAGES=$(printf '%s' "$VERIFICATION_INPUT" | \
+            node scripts/verify-password-reset-deployment-contract.mjs)
+          printf '%s\n' "$PINNED_IMAGES" | \
+            jq -r 'to_entries[] | "\(.key)=\(.value)"' >> "$GITHUB_ENV"
+          echo "Password reset delivery contract boundary verified at version 1"
 
       - name: Setup Node.js for migrations
         uses: actions/setup-node@v4
@@ -123,17 +388,22 @@ jobs:
         run: |
           npm ci
           npx prisma generate
-          npx prisma migrate deploy
+          npm run db:migrate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MIGRATION_DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-      - name: Update Container App - Web
+      # The worker must be compatible with enriched reset jobs before the new
+      # web revision can enqueue them. Single-revision mode also prevents an old
+      # worker replica from continuing to consume the same Redis queues.
+      - name: Mark Container App mutation start
+        run: echo "DEPLOYMENT_MUTATED=true" >> "$GITHUB_ENV"
+
+      - name: Set Worker to single-revision mode
         run: |
-          az containerapp update \
-            --name $WEB_CONTAINER_APP \
+          az containerapp revision set-mode \
+            --name $WORKER_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
-            --container-name $WEB_CONTAINER_NAME \
-            --image $ACR_SERVER/vaultspace-web:$DEPLOY_SHA
+            --mode single
 
       - name: Update Container App - Worker
         # ENABLE_RLS=false is asserted on every deploy: the worker connects as the
@@ -148,22 +418,420 @@ jobs:
             --name $WORKER_CONTAINER_APP \
             --resource-group $RESOURCE_GROUP \
             --container-name $WORKER_CONTAINER_NAME \
-            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA \
+            --image "$TARGET_WORKER_IMAGE_PINNED" \
             --set-env-vars ENABLE_RLS=false
 
-      - name: Update Container App Job - Delayed Waker
+      - name: Verify Worker revision and image
         run: |
+          EXPECTED_IMAGE="$TARGET_WORKER_IMAGE_PINNED"
+          WORKER_MIN_REPLICAS=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.template.scale.minReplicas || `0`' \
+            --output tsv)
+
+          for ATTEMPT in $(seq 1 20); do
+            WORKER_REVISION=$(az containerapp show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestRevisionName \
+              --output tsv)
+            REVISION_JSON=$(az containerapp revision show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision "$WORKER_REVISION" \
+              --output json)
+            WORKER_IMAGE=$(echo "$REVISION_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
+              '.properties.template.containers[] | select(.name==$c) | .image')
+            WORKER_ACTIVE=$(echo "$REVISION_JSON" | jq -r '.properties.active')
+            WORKER_PROVISIONING=$(echo "$REVISION_JSON" | jq -r '.properties.provisioningState')
+            WORKER_RUNNING=$(echo "$REVISION_JSON" | jq -r '.properties.runningState')
+            WORKER_REPLICAS=$(echo "$REVISION_JSON" | jq -r '.properties.replicas // 0')
+            ACTIVE_WORKER_COUNT=$(az containerapp revision list \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "length([?properties.active])" \
+              --output tsv)
+
+            READY_REPLICAS=true
+            if [ "$WORKER_MIN_REPLICAS" -gt 0 ] && [ "$WORKER_REPLICAS" -lt "$WORKER_MIN_REPLICAS" ]; then
+              READY_REPLICAS=false
+            fi
+
+            if [ "$WORKER_IMAGE" = "$EXPECTED_IMAGE" ] && \
+               [ "$WORKER_ACTIVE" = "true" ] && \
+               [ "$WORKER_PROVISIONING" = "Provisioned" ] && \
+               [ "$WORKER_RUNNING" = "Running" ] && \
+               [ "$READY_REPLICAS" = "true" ] && \
+               [ "$ACTIVE_WORKER_COUNT" = "1" ]; then
+              echo "✓ Worker revision $WORKER_REVISION is ready on $EXPECTED_IMAGE"
+              break
+            fi
+
+            echo "Worker not ready (attempt $ATTEMPT/20): image=$WORKER_IMAGE active=$WORKER_ACTIVE provisioning=$WORKER_PROVISIONING running=$WORKER_RUNNING replicas=$WORKER_REPLICAS minReplicas=$WORKER_MIN_REPLICAS activeRevisions=$ACTIVE_WORKER_COUNT"
+            if [ "$ATTEMPT" = "20" ]; then
+              echo "ERROR: worker revision did not become ready"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "FORWARD_WORKER_VERIFIED=true" >> "$GITHUB_ENV"
+
+      # Resolve current and desired reset writer modes independently. An empty
+      # repository variable preserves the current mode. HMAC cutover is allowed
+      # only from a recovery-aware web release, which keeps rollback safe after
+      # flow-only jobs have entered Redis.
+      - name: Validate password reset cutover compatibility
+        run: |
+          CURRENT_HEALTH=$(curl -fsS --max-time 15 "$APP_URL/api/health")
+          HEALTH_MODE=$(echo "$CURRENT_HEALTH" | jq -r '.passwordResetTokens.writeMode // "unknown"')
+          WEB_APP_JSON=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          WORKER_APP_JSON=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          WEB_ENV=$(echo "$WEB_APP_JSON" | jq -c --arg c "$WEB_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.env // [])')
+          WORKER_ENV=$(echo "$WORKER_APP_JSON" | jq -c --arg c "$WORKER_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.env // [])')
+          CONFIGURED_MODE=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_TOKEN_WRITE_MODE") | .value // empty')
+          MODE_SECRET_REF=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_TOKEN_WRITE_MODE") | .secretRef // empty')
+          if [ -n "$CONFIGURED_MODE" ]; then
+            CURRENT_MODE="$CONFIGURED_MODE"
+          elif [ -n "$MODE_SECRET_REF" ]; then
+            if [ "$HEALTH_MODE" = "unknown" ]; then
+              echo "ERROR: secret-backed reset write mode cannot be resolved from the current health contract"
+              exit 1
+            fi
+            CURRENT_MODE="$HEALTH_MODE"
+          elif [ "$HEALTH_MODE" != "unknown" ]; then
+            CURRENT_MODE="$HEALTH_MODE"
+          else
+            CURRENT_MODE="legacy"
+          fi
+          if [ "$HEALTH_MODE" != "unknown" ] && [ "$HEALTH_MODE" != "$CURRENT_MODE" ]; then
+            echo "ERROR: current reset write mode disagrees with Container App configuration"
+            exit 1
+          fi
+          TARGET_MODE="${DESIRED_RESET_WRITE_MODE:-$CURRENT_MODE}"
+          if [ "$TARGET_MODE" != "legacy" ] && [ "$TARGET_MODE" != "hmac" ]; then
+            echo "ERROR: unsupported password reset token write mode"
+            exit 1
+          fi
+          if echo "$WORKER_ENV" | jq -e '.[] | select(.name=="DATABASE_URL_ADMIN")' >/dev/null; then
+            echo "ERROR: runtime worker must not receive DATABASE_URL_ADMIN"
+            exit 1
+          fi
+          if [ "$CURRENT_MODE" = "hmac" ] && [ "$TARGET_MODE" = "legacy" ]; then
+            if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ] || [ "$ALLOW_RESET_MODE_DOWNGRADE" != "true" ]; then
+              echo "ERROR: HMAC-to-legacy reset writer downgrade requires manual dispatch approval"
+              exit 1
+            fi
+          fi
+          echo "PREVIOUS_RESET_WRITE_MODE=$CURRENT_MODE" >> "$GITHUB_ENV"
+          echo "TARGET_RESET_WRITE_MODE=$TARGET_MODE" >> "$GITHUB_ENV"
+
+          if [ "$TARGET_MODE" = "hmac" ]; then
+            CURRENT_WRITER_VERSION=$(echo "$CURRENT_HEALTH" | jq -r '.passwordResetRecovery.writerVersion // 0')
+            CURRENT_RECOVERY_CONFIGURED=$(echo "$CURRENT_HEALTH" | jq -r '.passwordResetRecovery.configured // false')
+            CURRENT_RECONCILER_ENABLED=$(echo "$CURRENT_HEALTH" | jq -r '.passwordResetRecovery.reconcilerEnabled // false')
+            if [ "$CURRENT_WRITER_VERSION" != "1" ]; then
+              echo "ERROR: HMAC cutover requires an expand-first recovery-aware web release"
+              exit 1
+            fi
+            if [ "$CURRENT_RECOVERY_CONFIGURED" != "true" ] || \
+               [ "$CURRENT_RECONCILER_ENABLED" != "true" ] || \
+               [ -z "$RESET_RECONCILER_JOB_APP" ]; then
+              echo "ERROR: HMAC cutover requires configured recovery and the enabled reconciler job"
+              exit 1
+            fi
+            WEB_KEYS_REF=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
+            WORKER_KEYS_REF=$(echo "$WORKER_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
+            if [ -z "$WEB_KEYS_REF" ] || [ -z "$WORKER_KEYS_REF" ]; then
+              echo "ERROR: web and worker reset recovery keys must use secret references"
+              exit 1
+            fi
+            WEB_KEYS_VAULT_URL=$(echo "$WEB_APP_JSON" | jq -r --arg ref "$WEB_KEYS_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            WORKER_KEYS_VAULT_URL=$(echo "$WORKER_APP_JSON" | jq -r --arg ref "$WORKER_KEYS_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            if [ -z "$WEB_KEYS_VAULT_URL" ] || [ "$WEB_KEYS_VAULT_URL" != "$WORKER_KEYS_VAULT_URL" ]; then
+              echo "ERROR: web and worker recovery keys must reference the same Key Vault secret"
+              exit 1
+            fi
+            WEB_ACTIVE_VALUE=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .value // empty')
+            WORKER_ACTIVE_VALUE=$(echo "$WORKER_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .value // empty')
+            WEB_ACTIVE_REF=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .secretRef // empty')
+            WORKER_ACTIVE_REF=$(echo "$WORKER_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .secretRef // empty')
+            if [ -n "$WEB_ACTIVE_VALUE" ] && [ -n "$WORKER_ACTIVE_VALUE" ]; then
+              if [ "$WEB_ACTIVE_VALUE" != "$WORKER_ACTIVE_VALUE" ]; then
+                echo "ERROR: web and worker active reset recovery key IDs do not match"
+                exit 1
+              fi
+            elif [ -n "$WEB_ACTIVE_REF" ] && [ -n "$WORKER_ACTIVE_REF" ]; then
+              WEB_ACTIVE_VAULT_URL=$(echo "$WEB_APP_JSON" | jq -r --arg ref "$WEB_ACTIVE_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+              WORKER_ACTIVE_VAULT_URL=$(echo "$WORKER_APP_JSON" | jq -r --arg ref "$WORKER_ACTIVE_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+              if [ -z "$WEB_ACTIVE_VAULT_URL" ] || [ "$WEB_ACTIVE_VAULT_URL" != "$WORKER_ACTIVE_VAULT_URL" ]; then
+                echo "ERROR: secret-backed active key IDs must reference the same Key Vault secret"
+                exit 1
+              fi
+            else
+              echo "ERROR: web and worker active reset recovery key settings do not match"
+              exit 1
+            fi
+          fi
+
+      - name: Update Container App Job - Password Reset Reconciler
+        if: env.RESET_RECONCILER_JOB_APP != ''
+        run: |
+          echo "JOBS_MUTATED=true" >> "$GITHUB_ENV"
+          az containerapp job update \
+            --name "$RESET_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$TARGET_WORKER_IMAGE_PINNED"
+
+      - name: Validate password reset reconciler before Web cutover
+        if: env.RESET_RECONCILER_JOB_APP != ''
+        run: |
+          JOB_JSON=$(az containerapp job show \
+            --name "$RESET_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          IMAGE=$(echo "$JOB_JSON" | jq -r '.properties.template.containers[0].image')
+          ARGS=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].args // []) | join(" ")')
+          TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
+          CRON=$(echo "$JOB_JSON" | jq -r '.properties.configuration.scheduleTriggerConfig.cronExpression // empty')
+          COMPLETIONS=$(echo "$JOB_JSON" | jq -r '.properties.configuration.replicaCompletionCount // 1')
+          PARALLELISM=$(echo "$JOB_JSON" | jq -r '.properties.configuration.parallelism // 1')
+          TIMEOUT=$(echo "$JOB_JSON" | jq -r '.properties.configuration.replicaTimeout // 1800')
+          ENV=$(echo "$JOB_JSON" | jq -c '.properties.template.containers[0].env // []')
+          WEB_APP_JSON=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          WORKER_APP_JSON=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          WEB_RUNTIME_ENV=$(echo "$WEB_APP_JSON" | jq -c --arg c "$WEB_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.env // [])')
+          WORKER_RUNTIME_ENV=$(echo "$WORKER_APP_JSON" | jq -c --arg c "$WORKER_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | (.env // [])')
+
+          if [ "$IMAGE" != "$TARGET_WORKER_IMAGE_PINNED" ]; then
+            echo "ERROR: password reset reconciler image mismatch"
+            exit 1
+          fi
+          if ! echo "$ARGS" | grep -q "worker:password-reset-reconcile"; then
+            echo "ERROR: password reset reconciler command mismatch"
+            exit 1
+          fi
+          if [ "$TRIGGER" != "Schedule" ]; then
+            echo "ERROR: password reset reconciler must use a Schedule trigger"
+            exit 1
+          fi
+          if ! echo "$CRON" | grep -Eq '^(\*|\*/[1-5]) \* \* \* \*$'; then
+            echo "ERROR: password reset reconciler must run at least every five minutes"
+            exit 1
+          fi
+          if [ "$COMPLETIONS" != "1" ] || [ "$PARALLELISM" != "1" ] || [ "$TIMEOUT" -gt 600 ]; then
+            echo "ERROR: password reset reconciler requires one completion, parallelism one, and timeout at most 600 seconds"
+            exit 1
+          fi
+
+          for key in DATABASE_URL REDIS_URL; do
+            SECRET_REF=$(echo "$ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
+            if [ -z "$SECRET_REF" ]; then
+              echo "ERROR: password reset reconciler requires secret-backed $key"
+              exit 1
+            fi
+            WEB_SECRET_REF=$(echo "$WEB_RUNTIME_ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
+            WORKER_SECRET_REF=$(echo "$WORKER_RUNTIME_ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
+            JOB_SECRET_URL=$(echo "$JOB_JSON" | jq -r --arg ref "$SECRET_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            WEB_SECRET_URL=$(echo "$WEB_APP_JSON" | jq -r --arg ref "$WEB_SECRET_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            WORKER_SECRET_URL=$(echo "$WORKER_APP_JSON" | jq -r --arg ref "$WORKER_SECRET_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            if [ -z "$JOB_SECRET_URL" ] || [ -z "$WEB_SECRET_URL" ] || [ -z "$WORKER_SECRET_URL" ]; then
+              echo "ERROR: reconciler, web, and worker $key must use verifiable Key Vault references"
+              exit 1
+            fi
+            if [ "$JOB_SECRET_URL" != "$WEB_SECRET_URL" ] || [ "$JOB_SECRET_URL" != "$WORKER_SECRET_URL" ]; then
+              echo "ERROR: reconciler, web, and worker $key references do not match"
+              exit 1
+            fi
+          done
+          JOB_PREFIX_REF=$(echo "$ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .secretRef // empty')
+          WEB_PREFIX_REF=$(echo "$WEB_RUNTIME_ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .secretRef // empty')
+          WORKER_PREFIX_REF=$(echo "$WORKER_RUNTIME_ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .secretRef // empty')
+          if [ -n "$JOB_PREFIX_REF" ] || [ -n "$WEB_PREFIX_REF" ] || [ -n "$WORKER_PREFIX_REF" ]; then
+            echo "ERROR: JOB_QUEUE_PREFIX must be a directly comparable non-secret value"
+            exit 1
+          fi
+          JOB_PREFIX=$(echo "$ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .value // empty')
+          WEB_PREFIX=$(echo "$WEB_RUNTIME_ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .value // empty')
+          WORKER_PREFIX=$(echo "$WORKER_RUNTIME_ENV" | jq -r '.[] | select(.name=="JOB_QUEUE_PREFIX") | .value // empty')
+          JOB_PREFIX_PRESENT=$(echo "$ENV" | jq -r '[.[] | select(.name=="JOB_QUEUE_PREFIX")] | length')
+          WEB_PREFIX_PRESENT=$(echo "$WEB_RUNTIME_ENV" | jq -r '[.[] | select(.name=="JOB_QUEUE_PREFIX")] | length')
+          WORKER_PREFIX_PRESENT=$(echo "$WORKER_RUNTIME_ENV" | jq -r '[.[] | select(.name=="JOB_QUEUE_PREFIX")] | length')
+          if [ "$JOB_PREFIX_PRESENT" = "0" ]; then JOB_PREFIX='vaultspace:jobs:'; fi
+          if [ "$WEB_PREFIX_PRESENT" = "0" ]; then WEB_PREFIX='vaultspace:jobs:'; fi
+          if [ "$WORKER_PREFIX_PRESENT" = "0" ]; then WORKER_PREFIX='vaultspace:jobs:'; fi
+          if [ "$JOB_PREFIX" != "$WEB_PREFIX" ] || [ "$JOB_PREFIX" != "$WORKER_PREFIX" ]; then
+            echo "ERROR: reconciler, web, and worker JOB_QUEUE_PREFIX values do not match"
+            exit 1
+          fi
+          DEPLOYMENT_MODE=$(echo "$ENV" | jq -r '.[] | select(.name=="DEPLOYMENT_MODE") | .value // empty')
+          RECONCILER_ENABLED=$(echo "$ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECONCILER_ENABLED") | .value // empty')
+          if [ "$DEPLOYMENT_MODE" != "azure" ] || [ "$RECONCILER_ENABLED" != "true" ]; then
+            echo "ERROR: password reset reconciler must run in Azure mode and be explicitly enabled"
+            exit 1
+          fi
+          for forbidden in APP_URL SESSION_SECRET DATABASE_URL_ADMIN PASSWORD_RESET_RECOVERY_KEYS PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID; do
+            if echo "$ENV" | jq -e --arg key "$forbidden" '.[] | select(.name==$key)' >/dev/null; then
+              echo "ERROR: password reset reconciler has unnecessary sensitive configuration: $forbidden"
+              exit 1
+            fi
+          done
+          echo "Password reset reconciler image, bounded schedule, and minimal environment verified"
+
+      - name: Execute password reset reconciler preflight
+        if: env.RESET_RECONCILER_JOB_APP != ''
+        run: |
+          EXECUTION_NAME=$(az containerapp job start \
+            --name "$RESET_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --args "npm" "run" "worker:password-reset-preflight" \
+            --query name \
+            --output tsv)
+          if [ -z "$EXECUTION_NAME" ]; then
+            echo "ERROR: password reset reconciler did not return an execution name"
+            exit 1
+          fi
+
+          for attempt in $(seq 1 20); do
+            STATUS=$(az containerapp job execution show \
+              --name "$RESET_RECONCILER_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$EXECUTION_NAME" \
+              --query properties.status \
+              --output tsv)
+            if [ "$STATUS" = "Succeeded" ]; then
+              echo "Password reset reconciler preflight succeeded: $EXECUTION_NAME"
+              exit 0
+            fi
+            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Stopped" ]; then
+              echo "ERROR: password reset reconciler preflight ended with status $STATUS"
+              exit 1
+            fi
+            echo "Password reset reconciler preflight status: ${STATUS:-Pending} ($attempt/20)"
+            sleep 15
+          done
+
+          echo "ERROR: password reset reconciler preflight did not succeed within five minutes"
+          exit 1
+
+      # Single-revision mode gives a zero-downtime cutover only after the new
+      # revision is ready and eliminates the mixed-build traffic that caused the
+      # post-login page failure.
+      - name: Mark Web mutation start
+        run: |
+          echo "WEB_MUTATED=true" >> "$GITHUB_ENV"
+          if [ "$TARGET_RESET_WRITE_MODE" = "hmac" ] || [ "$PREVIOUS_RESET_WRITE_MODE" = "hmac" ]; then
+            echo "RESET_FLOW_ONLY_POSSIBLE=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Normalize Web to captured stable revision
+        run: |
+          CURRENT_WEB_MODE=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.activeRevisionsMode \
+            --output tsv)
+          if [ "$CURRENT_WEB_MODE" = "Multiple" ]; then
+            az containerapp revision activate \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision "$PREVIOUS_WEB_REVISION"
+            az containerapp ingress traffic set \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision-weight "$PREVIOUS_WEB_REVISION=100"
+            while IFS= read -r REVISION; do
+              if [ -n "$REVISION" ] && [ "$REVISION" != "$PREVIOUS_WEB_REVISION" ]; then
+                az containerapp revision deactivate \
+                  --name "$WEB_CONTAINER_APP" \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --revision "$REVISION"
+              fi
+            done < <(az containerapp revision list \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "[?properties.active].name" \
+              --output tsv)
+          fi
+
+          STABLE_IMAGE=$(az containerapp revision show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$PREVIOUS_WEB_REVISION" \
+            --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+          ACTIVE_WEB_COUNT=$(az containerapp revision list \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "length([?properties.active])" \
+            --output tsv)
+          STABLE_TRAFFIC=$(az containerapp ingress traffic show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          if [ "$STABLE_IMAGE" != "$PREVIOUS_WEB_IMAGE" ] || \
+             [ "$ACTIVE_WEB_COUNT" != "1" ] || \
+             [ "$(echo "$STABLE_TRAFFIC" | jq --arg r "$PREVIOUS_WEB_REVISION" \
+               '([.[] | select(.revisionName == $r and .weight == 100)] | length)')" != "1" ]; then
+            echo "ERROR: captured stable web revision was not normalized safely"
+            exit 1
+          fi
+
+      - name: Set Web to single-revision mode
+        run: |
+          az containerapp revision set-mode \
+            --name $WEB_CONTAINER_APP \
+            --resource-group $RESOURCE_GROUP \
+            --mode single
+
+      - name: Update Container App - Web
+        run: |
+          az containerapp update \
+            --name $WEB_CONTAINER_APP \
+            --resource-group $RESOURCE_GROUP \
+            --container-name $WEB_CONTAINER_NAME \
+            --image "$TARGET_WEB_IMAGE_PINNED" \
+            --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$TARGET_RESET_WRITE_MODE"
+
+      - name: Route all Web traffic to the latest revision
+        run: |
+          az containerapp ingress traffic set \
+            --name $WEB_CONTAINER_APP \
+            --resource-group $RESOURCE_GROUP \
+            --revision-weight latest=100
+
+      - name: Update Container App Job - Delayed Waker
+        env:
+          JOBS_MUTATED: 'true'
+        run: |
+          echo "JOBS_MUTATED=true" >> "$GITHUB_ENV"
           az containerapp job update \
             --name $WAKER_JOB_APP \
             --resource-group $RESOURCE_GROUP \
-            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
+            --image "$TARGET_WORKER_IMAGE_PINNED"
 
       - name: Update Container App Job - Invitation Lifecycle
         run: |
           az containerapp job update \
             --name $LIFECYCLE_JOB_APP \
             --resource-group $RESOURCE_GROUP \
-            --image $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA
+            --image "$TARGET_WORKER_IMAGE_PINNED"
 
       - name: Validate waker job template
         run: |
@@ -178,7 +846,7 @@ jobs:
             '.properties.template.containers[] | select(.name==$c) | (.args // []) | join(" ")')
           TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
 
-          if [ "$IMAGE" != "$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA" ]; then
+          if [ "$IMAGE" != "$TARGET_WORKER_IMAGE_PINNED" ]; then
             echo "ERROR: waker image mismatch: $IMAGE"
             exit 1
           fi
@@ -203,7 +871,7 @@ jobs:
           ARGS=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].args // []) | join(" ")')
           TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
 
-          if [ "$IMAGE" != "$ACR_SERVER/vaultspace-worker:$DEPLOY_SHA" ]; then
+          if [ "$IMAGE" != "$TARGET_WORKER_IMAGE_PINNED" ]; then
             echo "ERROR: lifecycle job image mismatch: $IMAGE"
             exit 1
           fi
@@ -255,7 +923,7 @@ jobs:
             echo "=== Attempt $ATTEMPT of $MAX_ATTEMPTS ==="
 
             # Basic health check
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL/api/health" 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL/api/health?deep=true" 2>/dev/null || echo "000")
             echo "HTTP status: $HTTP_CODE"
 
             if [ "$HTTP_CODE" != "200" ]; then
@@ -272,12 +940,17 @@ jobs:
             fi
 
             # Fetch full health response
-            HEALTH_RESPONSE=$(curl -s --max-time 10 "$APP_URL/api/health" 2>/dev/null || echo '{}')
+            HEALTH_RESPONSE=$(curl -s --max-time 10 "$APP_URL/api/health?deep=true" 2>/dev/null || echo '{}')
             echo "Health response: $HEALTH_RESPONSE"
 
             # Validate deployment mode
             DEPLOY_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.mode // "unknown"')
             echo "Deployment mode: $DEPLOY_MODE"
+
+            RELEASE=$(echo "$HEALTH_RESPONSE" | jq -r '.release // "unknown"')
+            REVISION=$(echo "$HEALTH_RESPONSE" | jq -r '.revision // "unknown"')
+            echo "Release: $RELEASE"
+            echo "Revision: $REVISION"
 
             if [ "$DEPLOY_MODE" = "unknown" ]; then
               echo "New container not yet active (mode field missing)"
@@ -304,9 +977,72 @@ jobs:
             fi
             echo "✓ Deployment mode verified: $DEPLOY_MODE"
 
+            if [ "$RELEASE" != "$DEPLOY_SHA" ]; then
+              echo "Expected release $DEPLOY_SHA but reached $RELEASE"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Retrying in ${RETRY_INTERVAL}s..."
+                sleep $RETRY_INTERVAL
+                ATTEMPT=$((ATTEMPT + 1))
+                continue
+              fi
+              echo "ERROR: public traffic did not converge on $DEPLOY_SHA"
+              exit 1
+            fi
+            if [ "$REVISION" = "unknown" ]; then
+              echo "ERROR: health response did not include Container App revision identity"
+              exit 1
+            fi
+            echo "✓ Release identity verified: $RELEASE ($REVISION)"
+
+            OVERALL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.status // "unknown"')
+            DATABASE_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.checks.database.status // "unknown"')
+            CACHE_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.checks.cache.status // "unknown"')
+            if [ "$OVERALL_STATUS" != "healthy" ] || \
+               [ "$DATABASE_STATUS" != "healthy" ] || \
+               [ "$CACHE_STATUS" != "healthy" ]; then
+              echo "Dependencies not ready: overall=$OVERALL_STATUS database=$DATABASE_STATUS cache=$CACHE_STATUS"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                sleep $RETRY_INTERVAL
+                ATTEMPT=$((ATTEMPT + 1))
+                continue
+              fi
+              echo "ERROR: live dependency checks did not become healthy"
+              exit 1
+            fi
+            echo "✓ Database and cache live checks verified"
+
+            RESET_WRITE_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetTokens.writeMode // "unknown"')
+            RESET_RECOVERY_CONFIGURED=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetRecovery.configured // false')
+            RESET_RECONCILER_ENABLED=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetRecovery.reconcilerEnabled // false')
+            if [ "$RESET_WRITE_MODE" = "hmac" ]; then
+              if [ "$RESET_RECOVERY_CONFIGURED" != "true" ] || \
+                 [ "$RESET_RECONCILER_ENABLED" != "true" ] || \
+                 [ -z "$RESET_RECONCILER_JOB_APP" ]; then
+                echo "ERROR: HMAC reset writes require recovery keys, enabled reconciler, and RESET_RECONCILER_JOB_APP"
+                exit 1
+              fi
+              for app in "$WEB_CONTAINER_APP" "$WORKER_CONTAINER_APP"; do
+                RESET_KEYS_SECRET_REF=$(az containerapp show \
+                  --name "$app" \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --query "properties.template.containers[0].env[?name=='PASSWORD_RESET_RECOVERY_KEYS'].secretRef | [0]" \
+                  --output tsv)
+                RESET_ACTIVE_KEY_PRESENT=$(az containerapp show \
+                  --name "$app" \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --query "length(properties.template.containers[0].env[?name=='PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID'])" \
+                  --output tsv)
+                if [ -z "$RESET_KEYS_SECRET_REF" ] || [ "$RESET_ACTIVE_KEY_PRESENT" != "1" ]; then
+                  echo "ERROR: $app lacks secret-backed reset recovery keys or an active key ID"
+                  exit 1
+                fi
+              done
+            fi
+
             # Verify critical Azure capabilities
             CAN_QUEUE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canQueueJobs // false')
             CAN_CACHE=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canUseDistributedCache // false')
+            CAN_SEND_ASYNC=$(echo "$HEALTH_RESPONSE" | jq -r '.capabilities.canSendAsyncEmail // false')
 
             if [ "$CAN_QUEUE" != "true" ]; then
               echo "ERROR: Job queue capability unavailable in Azure mode"
@@ -319,6 +1055,12 @@ jobs:
               exit 1
             fi
             echo "✓ Distributed cache capability verified"
+
+            if [ "$CAN_SEND_ASYNC" != "true" ]; then
+              echo "ERROR: Asynchronous email capability unavailable in Azure mode"
+              exit 1
+            fi
+            echo "✓ Asynchronous email capability verified"
 
             # Check for degraded capabilities (warning, not failure)
             DEGRADED=$(echo "$HEALTH_RESPONSE" | jq -r '.degraded // []')
@@ -333,6 +1075,118 @@ jobs:
             exit 0
           done
 
+      - name: Verify Web revision, image, and traffic allocation
+        run: |
+          EXPECTED_IMAGE="$TARGET_WEB_IMAGE_PINNED"
+          WEB_REVISION=$(az containerapp show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName \
+            --output tsv)
+          WEB_IMAGE=$(az containerapp revision show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --revision "$WEB_REVISION" \
+            --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+            --output tsv)
+          ACTIVE_WEB_REVISIONS=$(az containerapp revision list \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query '[?properties.active].name' \
+            --output json)
+          TRAFFIC_JSON=$(az containerapp ingress traffic show \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+
+          HEADER_FILE="$RUNNER_TEMP/post-deploy-web-headers-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+          BODY_FILE="$RUNNER_TEMP/post-deploy-web-body-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          curl -fsS --max-time 15 \
+            -H "Cache-Control: no-cache" \
+            -H "Pragma: no-cache" \
+            -D "$HEADER_FILE" \
+            -o "$BODY_FILE" \
+            "$APP_URL/api/health?post_deploy_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${DEPLOY_SHA}"
+          CACHE_CONTROL=$(awk \
+            'BEGIN { IGNORECASE=1 } /^cache-control:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); value=$0 } END { print value }' \
+            "$HEADER_FILE")
+          HEALTH_BODY=$(<"$BODY_FILE")
+          CONVERGENCE_INPUT=$(jq -cn \
+            --arg revision "$WEB_REVISION" \
+            --arg image "$WEB_IMAGE" \
+            --arg expectedImage "$EXPECTED_IMAGE" \
+            --arg expectedRelease "$DEPLOY_SHA" \
+            --argjson activeWebRevisions "$ACTIVE_WEB_REVISIONS" \
+            --argjson traffic "$TRAFFIC_JSON" \
+            --arg cacheControl "$CACHE_CONTROL" \
+            --argjson healthBody "$HEALTH_BODY" \
+            '{
+              convergence: {
+                revision: $revision,
+                image: $image,
+                expectedImage: $expectedImage,
+                expectedRelease: $expectedRelease,
+                activeWebRevisions: $activeWebRevisions,
+                traffic: $traffic,
+                latestRevisionName: $revision,
+                cacheControl: $cacheControl,
+                healthBody: $healthBody
+              }
+            }')
+          printf '%s' "$CONVERGENCE_INPUT" | \
+            node scripts/verify-password-reset-deployment-contract.mjs >/dev/null
+          echo "✓ Web revision $WEB_REVISION is the sole active revision with 100 percent traffic"
+
+      - name: Final Worker readiness gate
+        run: |
+          EXPECTED_IMAGE="$TARGET_WORKER_IMAGE_PINNED"
+          WORKER_MIN_REPLICAS=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.template.scale.minReplicas || `0`' \
+            --output tsv)
+          for ATTEMPT in $(seq 1 20); do
+            WORKER_REVISION=$(az containerapp show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestRevisionName \
+              --output tsv)
+            REVISION_JSON=$(az containerapp revision show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision "$WORKER_REVISION" \
+              --output json)
+            WORKER_IMAGE=$(echo "$REVISION_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
+              '.properties.template.containers[] | select(.name==$c) | .image')
+            WORKER_ACTIVE=$(echo "$REVISION_JSON" | jq -r '.properties.active')
+            WORKER_PROVISIONING=$(echo "$REVISION_JSON" | jq -r '.properties.provisioningState')
+            WORKER_RUNNING=$(echo "$REVISION_JSON" | jq -r '.properties.runningState')
+            WORKER_REPLICAS=$(echo "$REVISION_JSON" | jq -r '.properties.replicas // 0')
+            ACTIVE_WORKER_COUNT=$(az containerapp revision list \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "length([?properties.active])" \
+              --output tsv)
+            READY_REPLICAS=true
+            if [ "$WORKER_MIN_REPLICAS" -gt 0 ] && [ "$WORKER_REPLICAS" -lt "$WORKER_MIN_REPLICAS" ]; then
+              READY_REPLICAS=false
+            fi
+            if [ "$WORKER_IMAGE" = "$EXPECTED_IMAGE" ] && \
+               [ "$WORKER_ACTIVE" = "true" ] && \
+               [ "$WORKER_PROVISIONING" = "Provisioned" ] && \
+               [ "$WORKER_RUNNING" = "Running" ] && \
+               [ "$READY_REPLICAS" = "true" ] && \
+               [ "$ACTIVE_WORKER_COUNT" = "1" ]; then
+              echo "✓ Final worker readiness verified: $WORKER_REVISION"
+              break
+            fi
+            if [ "$ATTEMPT" = "20" ]; then
+              echo "ERROR: worker lost readiness before deployment completion"
+              exit 1
+            fi
+            sleep 15
+          done
+
       - name: Post deployment summary
         run: |
           # Fetch capabilities for summary
@@ -344,11 +1198,266 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deployment Info" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** $DEPLOY_SHA" >> $GITHUB_STEP_SUMMARY
-          echo "- **Web image:** $ACR_SERVER/vaultspace-web:$DEPLOY_SHA" >> $GITHUB_STEP_SUMMARY
-          echo "- **Worker/waker image:** $ACR_SERVER/vaultspace-worker:$DEPLOY_SHA" >> $GITHUB_STEP_SUMMARY
+          echo "- **Web image:** $TARGET_WEB_IMAGE_PINNED" >> $GITHUB_STEP_SUMMARY
+          echo "- **Worker/waker image:** $TARGET_WORKER_IMAGE_PINNED" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** $APP_URL" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deployment Mode" >> $GITHUB_STEP_SUMMARY
           echo "- **Mode:** $DEPLOY_MODE" >> $GITHUB_STEP_SUMMARY
           echo "- **Degraded Capabilities:** $DEGRADED" >> $GITHUB_STEP_SUMMARY
           echo "- **Health:** ✓ Verified" >> $GITHUB_STEP_SUMMARY
+
+      - name: Restore previous staging release after failure
+        if: failure() && steps.before_state.outcome == 'success' && env.DEPLOYMENT_MUTATED == 'true'
+        run: |
+          set +e
+          ROLLBACK_FAILED=0
+
+          # Stop the new web from creating enriched jobs before considering a
+          # worker rollback. The highest-weight pre-deploy revision is the
+          # deliberate known-good release and is restored at 100 percent.
+          if [ "$WEB_MUTATED" = "true" ]; then
+            RECOVERY_WEB_MODE=$(az containerapp show \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.configuration.activeRevisionsMode \
+              --output tsv)
+            if [ "$RECOVERY_WEB_MODE" = "Multiple" ]; then
+              az containerapp revision activate \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --revision "$PREVIOUS_WEB_REVISION" || ROLLBACK_FAILED=1
+              az containerapp ingress traffic set \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --revision-weight "$PREVIOUS_WEB_REVISION=100" || ROLLBACK_FAILED=1
+              while IFS= read -r REVISION; do
+                if [ -n "$REVISION" ] && [ "$REVISION" != "$PREVIOUS_WEB_REVISION" ]; then
+                  az containerapp revision deactivate \
+                    --name "$WEB_CONTAINER_APP" \
+                    --resource-group "$RESOURCE_GROUP" \
+                    --revision "$REVISION" || ROLLBACK_FAILED=1
+                fi
+              done < <(az containerapp revision list \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "[?properties.active].name" \
+                --output tsv)
+            fi
+            az containerapp revision set-mode \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --mode single || ROLLBACK_FAILED=1
+            az containerapp update \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --container-name "$WEB_CONTAINER_NAME" \
+              --image "$PREVIOUS_WEB_IMAGE_PINNED" \
+              --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$PREVIOUS_RESET_WRITE_MODE" || ROLLBACK_FAILED=1
+            az containerapp ingress traffic set \
+              --name "$WEB_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision-weight latest=100 || ROLLBACK_FAILED=1
+          fi
+
+          if [ "$JOBS_MUTATED" = "true" ]; then
+            az containerapp job update \
+              --name "$WAKER_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$PREVIOUS_WAKER_IMAGE" || ROLLBACK_FAILED=1
+            az containerapp job update \
+              --name "$LIFECYCLE_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$PREVIOUS_LIFECYCLE_IMAGE" || ROLLBACK_FAILED=1
+            if [ "$RESET_FLOW_ONLY_POSSIBLE" != "true" ] && \
+               [ -n "$RESET_RECONCILER_JOB_APP" ] && \
+               [ -n "$PREVIOUS_RESET_RECONCILER_IMAGE_PINNED" ]; then
+              az containerapp job update \
+                --name "$RESET_RECONCILER_JOB_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "$PREVIOUS_RESET_RECONCILER_IMAGE_PINNED" || ROLLBACK_FAILED=1
+            fi
+          fi
+
+          # A verified forward worker is backward-compatible with the restored
+          # web and may already own enriched jobs. Re-check it now because the
+          # earlier readiness flag is historical, not a health guarantee.
+          EXPECTED_RECOVERY_WORKER_IMAGE="$TARGET_WORKER_IMAGE_PINNED"
+          WORKER_MIN_REPLICAS=$(az containerapp show \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.template.scale.minReplicas || `0`' \
+            --output tsv)
+
+          recovery_worker_ready() {
+            local expected_image="$1"
+            RECOVERY_WORKER_REVISION=$(az containerapp show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestRevisionName \
+              --output tsv)
+            RECOVERY_WORKER_JSON=$(az containerapp revision show \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --revision "$RECOVERY_WORKER_REVISION" \
+              --output json)
+            RECOVERY_WORKER_IMAGE=$(echo "$RECOVERY_WORKER_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
+              '.properties.template.containers[] | select(.name==$c) | .image')
+            RECOVERY_WORKER_ACTIVE=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.active')
+            RECOVERY_WORKER_STATE=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.runningState')
+            RECOVERY_WORKER_PROVISIONING=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.provisioningState')
+            RECOVERY_WORKER_REPLICAS=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.replicas // 0')
+            RECOVERY_ACTIVE_COUNT=$(az containerapp revision list \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "length([?properties.active])" \
+              --output tsv)
+            [ "$RECOVERY_WORKER_IMAGE" = "$expected_image" ] && \
+              [ "$RECOVERY_WORKER_ACTIVE" = "true" ] && \
+              [ "$RECOVERY_WORKER_STATE" = "Running" ] && \
+              [ "$RECOVERY_WORKER_PROVISIONING" = "Provisioned" ] && \
+              [ "$RECOVERY_ACTIVE_COUNT" = "1" ] && \
+              { [ "$WORKER_MIN_REPLICAS" -eq 0 ] || [ "$RECOVERY_WORKER_REPLICAS" -ge "$WORKER_MIN_REPLICAS" ]; }
+          }
+
+          USE_PRIOR_WORKER=true
+          if [ "$FORWARD_WORKER_VERIFIED" = "true" ]; then
+            for ATTEMPT in $(seq 1 5); do
+              if recovery_worker_ready "$EXPECTED_RECOVERY_WORKER_IMAGE"; then
+                USE_PRIOR_WORKER=false
+                break
+              fi
+              sleep 10
+            done
+          fi
+
+          # Once an HMAC web revision could have emitted flow-only reset jobs,
+          # an older worker or reconciler may not understand the queue schema.
+          # Keep the forward-compatible consumers in place and fail recovery
+          # loudly if they cannot be restored to health.
+          if [ "$RESET_FLOW_ONLY_POSSIBLE" = "true" ]; then
+            USE_PRIOR_WORKER=false
+          fi
+
+          if [ "$USE_PRIOR_WORKER" = "true" ]; then
+            EXPECTED_RECOVERY_WORKER_IMAGE="$PREVIOUS_WORKER_IMAGE_PINNED"
+            az containerapp update \
+              --name "$WORKER_CONTAINER_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --container-name "$WORKER_CONTAINER_NAME" \
+              --image "$EXPECTED_RECOVERY_WORKER_IMAGE" \
+              --set-env-vars ENABLE_RLS=false || ROLLBACK_FAILED=1
+          fi
+          az containerapp revision set-mode \
+            --name "$WORKER_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --mode single || ROLLBACK_FAILED=1
+
+          for ATTEMPT in $(seq 1 20); do
+            if recovery_worker_ready "$EXPECTED_RECOVERY_WORKER_IMAGE"; then
+              break
+            fi
+            if [ "$ATTEMPT" = "20" ]; then
+              echo "ERROR: recovery worker did not become ready"
+              ROLLBACK_FAILED=1
+              break
+            fi
+            sleep 15
+          done
+
+          if [ "$WEB_MUTATED" = "true" ]; then
+            RECOVERY_HEADER_FILE="$RUNNER_TEMP/recovery-web-headers-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+            RECOVERY_BODY_FILE="$RUNNER_TEMP/recovery-web-body-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+            RECOVERY_CONVERGENCE_ERROR="$RUNNER_TEMP/recovery-web-convergence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+            for ATTEMPT in $(seq 1 20); do
+              if curl -fsS --max-time 15 \
+                -H "Cache-Control: no-cache" \
+                -H "Pragma: no-cache" \
+                -D "$RECOVERY_HEADER_FILE" \
+                -o "$RECOVERY_BODY_FILE" \
+                "$APP_URL/api/health?deep=true&recovery_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}"; then
+                RECOVERY_HEALTH=$(<"$RECOVERY_BODY_FILE")
+              else
+                RECOVERY_HEALTH='{}'
+              fi
+              RECOVERY_CACHE_CONTROL=$(awk \
+                'BEGIN { IGNORECASE=1 } /^cache-control:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); value=$0 } END { print value }' \
+                "$RECOVERY_HEADER_FILE" 2>/dev/null)
+              RECOVERY_RELEASE=$(echo "$RECOVERY_HEALTH" | jq -r '.release // "unknown"')
+              RECOVERY_HEALTH_REVISION=$(echo "$RECOVERY_HEALTH" | jq -r '.revision // "unknown"')
+              RECOVERY_STATUS=$(echo "$RECOVERY_HEALTH" | jq -r '.status // "unknown"')
+              RECOVERY_DB=$(echo "$RECOVERY_HEALTH" | jq -r '.checks.database.status // "unknown"')
+              RECOVERY_CACHE=$(echo "$RECOVERY_HEALTH" | jq -r '.checks.cache.status // "unknown"')
+              RECOVERY_WEB_REVISION=$(az containerapp show \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query properties.latestRevisionName \
+                --output tsv)
+              RECOVERY_WEB_IMAGE=$(az containerapp revision show \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --revision "$RECOVERY_WEB_REVISION" \
+                --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
+                --output tsv)
+              RECOVERY_ACTIVE_WEB_REVISIONS=$(az containerapp revision list \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query '[?properties.active].name' \
+                --output json)
+              RECOVERY_TRAFFIC=$(az containerapp ingress traffic show \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --output json)
+              RECOVERY_CONVERGENCE_INPUT=$(jq -cn \
+                --arg revision "$RECOVERY_WEB_REVISION" \
+                --arg image "$RECOVERY_WEB_IMAGE" \
+                --arg expectedImage "$PREVIOUS_WEB_IMAGE_PINNED" \
+                --arg expectedRelease "$PREVIOUS_WEB_RELEASE" \
+                --argjson activeWebRevisions "$RECOVERY_ACTIVE_WEB_REVISIONS" \
+                --argjson traffic "$RECOVERY_TRAFFIC" \
+                --arg cacheControl "$RECOVERY_CACHE_CONTROL" \
+                --argjson healthBody "$RECOVERY_HEALTH" \
+                '{
+                  convergence: {
+                    revision: $revision,
+                    image: $image,
+                    expectedImage: $expectedImage,
+                    expectedRelease: $expectedRelease,
+                    activeWebRevisions: $activeWebRevisions,
+                    traffic: $traffic,
+                    latestRevisionName: $revision,
+                    cacheControl: $cacheControl,
+                    healthBody: $healthBody
+                  }
+                }' 2>"$RECOVERY_CONVERGENCE_ERROR")
+              RECOVERY_CONVERGED=false
+              if [ -n "$RECOVERY_CONVERGENCE_INPUT" ] && \
+                 printf '%s' "$RECOVERY_CONVERGENCE_INPUT" | \
+                   node scripts/verify-password-reset-deployment-contract.mjs \
+                     >/dev/null 2>"$RECOVERY_CONVERGENCE_ERROR"; then
+                RECOVERY_CONVERGED=true
+              fi
+              if [ "$RECOVERY_CONVERGED" = "true" ] && \
+                 [ "$RECOVERY_STATUS" = "healthy" ] && \
+                 [ "$RECOVERY_DB" = "healthy" ] && \
+                 [ "$RECOVERY_CACHE" = "healthy" ]; then
+                break
+              fi
+              echo "Recovery not converged (attempt $ATTEMPT/20): release=$RECOVERY_RELEASE healthRevision=$RECOVERY_HEALTH_REVISION azureRevision=$RECOVERY_WEB_REVISION"
+              if [ "$ATTEMPT" = "20" ]; then
+                if [ -s "$RECOVERY_CONVERGENCE_ERROR" ]; then
+                  cat "$RECOVERY_CONVERGENCE_ERROR"
+                fi
+                echo "ERROR: restored web release failed identity, traffic, or dependency verification"
+                ROLLBACK_FAILED=1
+                break
+              fi
+              sleep 15
+            done
+          fi
+
+          if [ "$ROLLBACK_FAILED" != "0" ]; then
+            echo "ERROR: automatic staging recovery was incomplete; manual intervention is required"
+            exit 1
+          fi
+          echo "Known-good web release restored at 100 percent; compatible worker verified; additive database migrations remain applied"

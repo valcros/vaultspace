@@ -309,7 +309,7 @@ Three commits landed during plan creation:
 #### 3.2 CD Pipeline (new)
 
 - [x] Staging deployment on merge to main — deploy-staging.yml created
-- [x] Database migration automation — prisma migrate deploy in pipeline
+- [x] Database migration automation — reviewed `db:migrate` wrapper in pipeline
 - [x] Container image build and push to ACR — web + worker images
 - [x] Health check validation post-deploy — curl /api/health in pipeline
 - [ ] Production deployment — deferred (tag-based, future sprint)

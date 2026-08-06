@@ -231,10 +231,10 @@ describe('GET /api/rooms/:roomId/audit', () => {
       {
         id: 'event-1',
         eventType: 'DOCUMENT_VIEWED',
-        description: 'Viewed file',
+        description: '=HYPERLINK("https://example.invalid")',
         ipAddress: '10.0.0.1',
         createdAt: new Date('2024-01-15T10:30:00Z'),
-        actor: { firstName: 'John', lastName: 'Doe', email: 'john@example.com' },
+        actor: { firstName: '+John', lastName: 'Doe', email: 'john@example.com' },
         actorEmail: null,
       },
     ];
@@ -260,9 +260,10 @@ describe('GET /api/rooms/:roomId/audit', () => {
     expect(response.headers.get('Content-Disposition')).toContain('audit-room-1');
 
     const csv = await response.text();
-    expect(csv).toContain('Timestamp,Event Type,Actor');
+    expect(csv).toContain('"Timestamp","Event Type","Actor"');
     expect(csv).toContain('DOCUMENT_VIEWED');
-    expect(csv).toContain('John Doe');
+    expect(csv).toContain('"\'+John Doe"');
+    expect(csv).toContain('"\'=HYPERLINK(""https://example.invalid"")"');
   });
 
   it('handles events without actors in CSV', async () => {

@@ -201,8 +201,8 @@ start_services() {
 
   # Run Prisma migrations
   log_info "Running database migrations..."
-  DATABASE_URL=$TEST_DATABASE_URL npx prisma migrate deploy > /dev/null 2>&1 || {
-    log_info "Migration failed, trying db push..."
+  MIGRATION_DATABASE_URL=$TEST_DATABASE_URL npm run db:migrate > /dev/null 2>&1 || {
+    log_info "Migration failed; using disposable smoke-only db push fallback, not migration evidence..."
     DATABASE_URL=$TEST_DATABASE_URL npx prisma db push --skip-generate > /dev/null 2>&1
   }
   log_success "Database ready"

@@ -20,6 +20,13 @@ import {
   getDegradedCapabilities,
   type DeploymentCapabilities,
 } from '@/lib/deployment-capabilities';
+import { getPasswordResetTokenWriteMode } from '@/lib/auth/passwordResetToken';
+import { validatePasswordResetRecoveryConfiguration } from '@/lib/auth/passwordResetRecovery';
+import { PASSWORD_RESET_DELIVERY_CONTRACT_VERSION } from '@/lib/auth/passwordResetDeliveryContract';
+
+const HEALTH_RESPONSE_HEADERS = {
+  'Cache-Control': 'no-store, max-age=0',
+};
 
 interface HealthCheck {
   status: 'healthy' | 'unhealthy' | 'degraded';
@@ -31,9 +38,23 @@ interface HealthResponse {
   status: 'healthy' | 'unhealthy' | 'degraded';
   timestamp: string;
   version: string;
+  release: string | null;
+  revision: string | null;
   mode: DeploymentMode;
   capabilities: DeploymentCapabilities;
   degraded: (keyof DeploymentCapabilities)[];
+  passwordResetTokens: {
+    readerVersion: 1;
+    writeMode: 'legacy' | 'hmac';
+    activeKeyId: 'session-v1';
+  };
+  passwordResetRecovery: {
+    writerVersion: 1;
+    deliveryContractVersion: 1;
+    configured: boolean;
+    activeKeyId: string | null;
+    reconcilerEnabled: boolean;
+  };
   checks: {
     database: HealthCheck;
     cache: HealthCheck;
@@ -161,21 +182,48 @@ export async function GET(request: NextRequest) {
   const deep = searchParams.get('deep') === 'true';
 
   const version = process.env['npm_package_version'] ?? '0.1.0';
+  const release = process.env['NEXT_PUBLIC_APP_RELEASE'] || process.env['APP_RELEASE'] || null;
+  const revision = process.env['CONTAINER_APP_REVISION'] || null;
 
   const mode = getDeploymentMode();
   const capabilities = resolveCapabilities();
   const degraded = getDegradedCapabilities();
+  const passwordResetTokens = {
+    readerVersion: 1 as const,
+    writeMode: getPasswordResetTokenWriteMode(),
+    activeKeyId: 'session-v1' as const,
+  };
+  let recoveryConfiguration: { activeKeyId: string; keyCount: number } | null = null;
+  try {
+    recoveryConfiguration = validatePasswordResetRecoveryConfiguration();
+  } catch {
+    // Recovery keys are intentionally optional during the legacy-writer phase.
+  }
+  const passwordResetRecovery = {
+    writerVersion: 1 as const,
+    deliveryContractVersion: PASSWORD_RESET_DELIVERY_CONTRACT_VERSION,
+    configured: recoveryConfiguration !== null,
+    activeKeyId: recoveryConfiguration?.activeKeyId ?? null,
+    reconcilerEnabled: process.env['PASSWORD_RESET_RECONCILER_ENABLED'] === 'true',
+  };
 
   // Quick liveness check
   if (!deep) {
-    return NextResponse.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      version,
-      mode,
-      capabilities,
-      degraded,
-    });
+    return NextResponse.json(
+      {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        version,
+        release,
+        revision,
+        mode,
+        capabilities,
+        degraded,
+        passwordResetTokens,
+        passwordResetRecovery,
+      },
+      { headers: HEALTH_RESPONSE_HEADERS }
+    );
   }
 
   // Full readiness check with dependency verification
@@ -210,9 +258,13 @@ export async function GET(request: NextRequest) {
     status: overallStatus,
     timestamp: new Date().toISOString(),
     version,
+    release,
+    revision,
     mode,
     capabilities,
     degraded,
+    passwordResetTokens,
+    passwordResetRecovery,
     checks,
   };
 
@@ -220,5 +272,5 @@ export async function GET(request: NextRequest) {
   // Degraded is still 200 (ready to serve, with reduced functionality)
   const statusCode = overallStatus === 'unhealthy' ? 503 : 200;
 
-  return NextResponse.json(response, { status: statusCode });
+  return NextResponse.json(response, { status: statusCode, headers: HEALTH_RESPONSE_HEADERS });
 }

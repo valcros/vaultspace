@@ -16,6 +16,17 @@ interface RoomAnalytics {
     uniqueViewers: number;
     totalDownloads: number;
   };
+  auditReconciliation: {
+    captureMode: 'OFF' | 'SHADOW' | 'AUTHORITATIVE';
+    operationalViewCount: number;
+    capturedViewEvents: number;
+    operationalDownloadCount: number;
+    capturedDownloadEvents: number;
+    viewDelta: number;
+    downloadDelta: number;
+    distinctViewers: number;
+    interpretation: string;
+  };
   topDocuments: Array<{
     id: string;
     name: string;
@@ -27,6 +38,10 @@ interface RoomAnalytics {
   recentViewers: Array<{
     email: string | null;
     name: string | null;
+    identityLabel: string;
+    accessType: 'member' | 'share-link';
+    provenance: 'native' | 'legacy' | 'inferred';
+    auditStatus: 'authoritative' | 'shadow' | 'inferred';
     timeSpent: number | null;
     lastActive: string | null;
   }>;
@@ -46,6 +61,52 @@ interface RoomAnalytics {
     startDate: string;
   };
 }
+
+type RecentViewer = RoomAnalytics['recentViewers'][number];
+
+const BADGE_BASE = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium';
+
+const ACCESS_TYPE_META: Record<RecentViewer['accessType'], { label: string; className: string }> = {
+  member: {
+    label: 'Member',
+    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
+  },
+  'share-link': {
+    label: 'Share link',
+    className: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200',
+  },
+};
+
+const PROVENANCE_META: Record<RecentViewer['provenance'], { label: string; className: string }> = {
+  native: {
+    label: 'Native',
+    className: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
+  },
+  legacy: {
+    label: 'Legacy',
+    className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  },
+  inferred: {
+    label: 'Inferred',
+    className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  },
+};
+
+const AUDIT_STATUS_META: Record<RecentViewer['auditStatus'], { label: string; className: string }> =
+  {
+    authoritative: {
+      label: 'Authoritative',
+      className: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
+    },
+    shadow: {
+      label: 'Shadow',
+      className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+    },
+    inferred: {
+      label: 'Inferred',
+      className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+    },
+  };
 
 export default function RoomAnalyticsPage() {
   const params = useParams();
@@ -96,6 +157,7 @@ export default function RoomAnalyticsPage() {
             <Skeleton key={i} className="h-32" />
           ))}
         </div>
+
         <Skeleton className="h-96 w-full" />
       </div>
     );
@@ -182,6 +244,30 @@ export default function RoomAnalyticsPage() {
           </Card>
         </div>
 
+        <div className="mb-8 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="font-medium">
+              Audit capture: {analytics.auditReconciliation.captureMode}
+            </span>
+            <span>
+              Distinct viewers: {analytics.auditReconciliation.distinctViewers.toLocaleString()}
+            </span>
+            <span>
+              Captured views: {analytics.auditReconciliation.capturedViewEvents.toLocaleString()} of{' '}
+              {analytics.auditReconciliation.operationalViewCount.toLocaleString()} operational
+              (preview) count
+            </span>
+            <span>
+              Captured downloads:{' '}
+              {analytics.auditReconciliation.capturedDownloadEvents.toLocaleString()} of{' '}
+              {analytics.auditReconciliation.operationalDownloadCount.toLocaleString()} operational
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {analytics.auditReconciliation.interpretation}
+          </p>
+        </div>
+
         {/* Top Documents */}
         <Card className="mb-8">
           <CardHeader>
@@ -225,6 +311,72 @@ export default function RoomAnalyticsPage() {
           </CardContent>
         </Card>
 
+        {/* Recent Viewers */}
+        <Card className="mb-8">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50">
+                <Users className="h-5 w-5 text-primary-600" />
+              </div>
+              <div>
+                <CardTitle>Recent Viewers</CardTitle>
+                <CardDescription>
+                  Authenticated members and share-link viewers, de-duplicated.{' '}
+                  {analytics.auditReconciliation.distinctViewers.toLocaleString()} distinct viewer
+                  {analytics.auditReconciliation.distinctViewers === 1 ? '' : 's'}.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {analytics.recentViewers.length === 0 ? (
+              <p className="py-8 text-center text-sm text-neutral-500">No viewer activity yet</p>
+            ) : (
+              <ul className="space-y-3">
+                {analytics.recentViewers.map((viewer, index) => (
+                  <li
+                    key={`${viewer.email ?? 'anon'}-${index}`}
+                    data-testid="recent-viewer"
+                    className="flex flex-wrap items-center gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">
+                        {viewer.name ?? viewer.email ?? 'Anonymous viewer'}
+                      </p>
+                      {viewer.name && viewer.email ? (
+                        <p className="truncate text-xs text-neutral-500">{viewer.email}</p>
+                      ) : null}
+                    </div>
+                    <span
+                      className={`${BADGE_BASE} ${ACCESS_TYPE_META[viewer.accessType].className}`}
+                    >
+                      {ACCESS_TYPE_META[viewer.accessType].label}
+                    </span>
+                    <span
+                      className={`${BADGE_BASE} ${PROVENANCE_META[viewer.provenance].className}`}
+                    >
+                      {PROVENANCE_META[viewer.provenance].label}
+                    </span>
+                    <span
+                      className={`${BADGE_BASE} ${AUDIT_STATUS_META[viewer.auditStatus].className}`}
+                    >
+                      {AUDIT_STATUS_META[viewer.auditStatus].label}
+                    </span>
+                    <span className="text-xs text-neutral-500">
+                      {viewer.lastActive
+                        ? new Date(viewer.lastActive).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                        : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Activity Chart Placeholder */}
         <Card>
           <CardHeader>
@@ -233,8 +385,11 @@ export default function RoomAnalyticsPage() {
                 <BarChart3 className="h-5 w-5 text-primary-600" />
               </div>
               <div>
-                <CardTitle>Activity Over Time</CardTitle>
-                <CardDescription>Views over the past {analytics.period.days} days</CardDescription>
+                <CardTitle>Captured Audit Views Over Time</CardTitle>
+                <CardDescription>
+                  Audit view events over the past {analytics.period.days} days. Operational totals
+                  above remain counter-based.
+                </CardDescription>
               </div>
             </div>
           </CardHeader>

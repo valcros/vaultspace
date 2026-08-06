@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { FileText, Folder, Search, Download, Eye, ChevronRight, Home, History } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -51,7 +51,9 @@ interface Folder {
 export default function ViewerDocumentsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const shareToken = params['shareToken'] as string;
+  const requestedFolderId = searchParams.get('folderId');
 
   const [session, setSession] = React.useState<ViewerSession | null>(null);
   const [documents, setDocuments] = React.useState<Document[]>([]);
@@ -63,8 +65,15 @@ export default function ViewerDocumentsPage() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
 
-  const currentFolderId = trail.at(-1)?.id ?? null;
-  const folderKey = trail.map((t) => t.id).join('/');
+  const currentFolderId = requestedFolderId;
+
+  const buildDocumentsUrl = React.useCallback(
+    (folderId: string | null) => {
+      const base = `/view/${shareToken}/documents`;
+      return folderId ? `${base}?folderId=${encodeURIComponent(folderId)}` : base;
+    },
+    [shareToken]
+  );
 
   const fetchDocuments = React.useCallback(async () => {
     setIsLoading(true);
@@ -81,28 +90,34 @@ export default function ViewerDocumentsPage() {
       setSession(data.session);
       setDocuments(data.documents || []);
       setFolders(data.folders || []);
+      setTrail(data.trail || []);
+
+      const resolvedFolderId = data.folderContextId || null;
+      if (resolvedFolderId !== currentFolderId) {
+        router.replace(buildDocumentsUrl(resolvedFolderId));
+      }
     } catch (error) {
       console.error('Failed to fetch documents:', error);
       router.push(`/view/${shareToken}`);
     } finally {
       setIsLoading(false);
     }
-  }, [shareToken, currentFolderId, router]);
+  }, [shareToken, currentFolderId, router, buildDocumentsUrl]);
 
   React.useEffect(() => {
     fetchDocuments();
-  }, [fetchDocuments, folderKey]);
+  }, [fetchDocuments]);
 
   const navigateToFolder = (folder: { id: string; name: string }) => {
-    setTrail((prev) => [...prev, { id: folder.id, name: folder.name }]);
+    router.push(buildDocumentsUrl(folder.id));
   };
 
   const navigateToRoot = () => {
-    setTrail([]);
+    router.push(buildDocumentsUrl(null));
   };
 
   const navigateToPathIndex = (index: number) => {
-    setTrail((prev) => prev.slice(0, index + 1));
+    router.push(buildDocumentsUrl(trail[index]?.id ?? null));
   };
 
   const formatFileSize = (bytes: number) => {
@@ -129,7 +144,8 @@ export default function ViewerDocumentsPage() {
   );
 
   const handleViewDocument = (documentId: string) => {
-    router.push(`/view/${shareToken}/documents/${documentId}`);
+    const query = currentFolderId ? `?folderId=${encodeURIComponent(currentFolderId)}` : '';
+    router.push(`/view/${shareToken}/documents/${documentId}${query}`);
   };
 
   const handleDownloadDocument = async (documentId: string, versionId?: string) => {
@@ -349,6 +365,7 @@ export default function ViewerDocumentsPage() {
                               size="sm"
                               className="flex-1"
                               onClick={() => handleViewDocument(doc.id)}
+                              aria-label={`View ${doc.name}`}
                             >
                               <Eye className="mr-1 h-4 w-4" />
                               View

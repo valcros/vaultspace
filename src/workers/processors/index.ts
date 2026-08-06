@@ -9,6 +9,10 @@ export {
   processDocumentUploadedNotification,
   processDocumentViewedNotification,
 } from './emailProcessor';
+export {
+  processPasswordResetAcceptanceJob,
+  processPasswordResetDeliveryJob,
+} from './passwordResetDeliveryProcessor';
 export { processRoomExportJob } from './exportProcessor';
 export { processPreviewJob, processThumbnailJob } from './previewProcessor';
 export { processScanJob } from './scanProcessor';

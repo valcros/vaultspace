@@ -1781,20 +1781,20 @@ Automated via Prisma on container startup:
 ```dockerfile
 # In Dockerfile
 ENTRYPOINT ["/sbin/dumb-init", "--"]
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]
+CMD ["sh", "-c", "MIGRATION_DATABASE_URL=\"$DATABASE_URL_ADMIN\" npm run db:migrate && npm run start"]
 ```
 
 **Manual migration (if needed):**
 
 ```bash
-# Get connection string
-export DATABASE_URL=postgresql://user:pass@host/db
+# Get the dedicated migration-owner connection string
+export MIGRATION_DATABASE_URL=postgresql://user:pass@host/db
 
 # List pending migrations
 npx prisma migrate status
 
-# Apply migrations
-npx prisma migrate deploy
+# Apply migrations through the reviewed startup-timeout wrapper
+npm run db:migrate
 
 # Rollback (if something goes wrong)
 npx prisma migrate resolve --rolled-back 20240314120000_migration_name

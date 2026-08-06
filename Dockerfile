@@ -60,6 +60,21 @@ COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/.bin ./node_modules/.bin
 
+# The entrypoint runs `node scripts/run-prisma-migrate-deploy.mjs` for migrations,
+# which imports the sibling scripts/migration-startup-gucs.mjs. Neither is part of
+# the Next standalone trace, so copy ONLY those two modules. Backup, restore,
+# RLS-fix, certificate, setup, and diagnostic tooling must NOT ship in the
+# production web runtime image.
+COPY --from=builder /app/scripts/run-prisma-migrate-deploy.mjs ./scripts/run-prisma-migrate-deploy.mjs
+COPY --from=builder /app/scripts/migration-startup-gucs.mjs ./scripts/migration-startup-gucs.mjs
+
+# Narrow runtime-image assertion (build time only; starts no migrations and needs
+# no database): the two entrypoint migration modules exist and scripts/ contains
+# ONLY them.
+RUN test -f scripts/run-prisma-migrate-deploy.mjs \
+  && test -f scripts/migration-startup-gucs.mjs \
+  && [ "$(ls -1 scripts | wc -l)" -eq 2 ]
+
 # Copy entrypoint script
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh

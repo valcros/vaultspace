@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { isAuthenticationError } from '@/lib/errors';
-import { db } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { hashPassword, verifyPassword, validatePassword } from '@/lib/auth/password';
 
 export const dynamic = 'force-dynamic';
@@ -23,11 +23,16 @@ const schema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const session = await requireAuth();
+    if (!session.organizationId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     const { currentPassword, newPassword } = schema.parse(await request.json());
 
-    const user = await db.user.findUnique({
-      where: { id: session.userId },
-      select: { id: true, passwordHash: true },
+    const user = await withOrgContext(session.organizationId, async (tx) => {
+      return tx.user.findUnique({
+        where: { id: session.userId },
+        select: { id: true, passwordHash: true },
+      });
     });
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -55,12 +60,18 @@ export async function POST(request: NextRequest) {
     }
 
     const newHash = await hashPassword(newPassword);
-    await db.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
+    await withOrgContext(session.organizationId, async (tx) => {
+      await tx.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
 
-    // Security: invalidate the user's other active sessions, keep the current one.
-    await db.session.updateMany({
-      where: { userId: user.id, id: { not: session.sessionId }, isActive: true },
-      data: { isActive: false },
+      // Security: invalidate the user's other active sessions, keep the current one.
+      await tx.session.updateMany({
+        where: {
+          userId: user.id,
+          id: { not: session.sessionId },
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
     });
 
     return NextResponse.json({ success: true });

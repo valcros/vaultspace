@@ -135,7 +135,7 @@ npm run test                         # Unit tests (no database required)
 # Azure Mode (default)
 DATABASE_URL=<azure-postgres-url> npm run test:integration
 az containerapp up ...               # Deploy to Azure
-DATABASE_URL=<azure-postgres-url> npm run db:migrate
+MIGRATION_DATABASE_URL=<dedicated-migration-owner-url> npm run db:migrate
 
 # Standalone Mode
 npm run dev:standalone               # Local development server
