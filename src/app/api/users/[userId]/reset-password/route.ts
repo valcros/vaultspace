@@ -27,6 +27,7 @@ import { captureSecurityAudit, createSecurityAuditEvent } from '@/lib/audit/secu
 import { getProviders } from '@/providers';
 import { normalizeEmailError } from '@/providers/email/errors';
 import { hasCapability } from '@/lib/deployment-capabilities';
+import { escapeHtml } from '@/lib/email/escapeHtml';
 import {
   JOB_NAMES,
   PASSWORD_RESET_EMAIL_JOB_OPTIONS,
@@ -542,7 +543,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const sendResult = await providers.email.sendEmail({
           to: result.user.email,
           subject: `Reset your ${orgName} password`,
-          html: `<p>Hi ${result.user.firstName || 'User'},</p><p>An administrator has requested a password reset for your account. Click <a href="${resetUrl}">here</a> to set a new password.</p><p>This link expires in 1 hour.</p>`,
+          html: `<p>Hi ${escapeHtml(result.user.firstName || 'User')},</p><p>An administrator has requested a password reset for your account. Click <a href="${escapeHtml(resetUrl)}">here</a> to set a new password.</p><p>This link expires in 1 hour.</p>`,
           text: `Hi ${result.user.firstName || 'User'},\n\nAn administrator has requested a password reset for your account. Set a new password here: ${resetUrl}\n\nThis link expires in 1 hour.`,
           from: senderFrom,
           fromName: senderName,
