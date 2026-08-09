@@ -173,6 +173,8 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('application/pdf');
       expect(res.headers.get('Content-Disposition')).toContain('inline');
+      // PDF/raster previews must keep their exact headers (no CSP added).
+      expect(res.headers.get('Content-Security-Policy')).toBeNull();
       expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
     });
 
@@ -182,10 +184,11 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       const res = await GET(makeRequest(), makeContext());
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('image/png');
+      expect(res.headers.get('Content-Security-Policy')).toBeNull();
       expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
     });
 
-    it('keeps image/svg+xml app-served (no redirect)', async () => {
+    it('keeps image/svg+xml app-served (no redirect) but neutralizes active content via CSP', async () => {
       mockTx.document.findFirst.mockResolvedValue(makeDocument('image/svg+xml'));
       mockTx.documentVersion.findFirst.mockResolvedValue(makeVersion('image/svg+xml'));
       const res = await GET(makeRequest(), makeContext());
@@ -193,6 +196,12 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
       expect(res.headers.get('Content-Type')).toBe('image/svg+xml');
       expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
       expect(await res.text()).toBe('file content');
+      // A crafted SVG served inline is a stored-XSS vector; the CSP must block
+      // <script> and inline event handlers while still rendering the vector.
+      const csp = res.headers.get('Content-Security-Policy');
+      expect(csp).toContain("script-src 'none'");
+      expect(csp).toContain("object-src 'none'");
+      expect(csp).toContain("default-src 'none'");
     });
 
     it('keeps text previews app-served with body intact', async () => {

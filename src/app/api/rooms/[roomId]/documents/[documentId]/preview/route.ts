@@ -54,6 +54,16 @@ const PREVIEWABLE_MIME_TYPES = new Set([
 // All responses from this route need X-Frame-Options: SAMEORIGIN to allow iframe embedding
 const FRAME_HEADERS = { 'X-Frame-Options': 'SAMEORIGIN' };
 
+// Content types a browser renders as an ACTIVE document — executing embedded
+// <script> and inline event handlers (e.g. an SVG's onload=) — when served
+// inline. We serve the untrusted original file for preview, so a crafted SVG/XML
+// is a stored-XSS vector in our own origin. A strict CSP neutralizes active
+// content while still letting the vector/markup and inline styles render. Scoped
+// to these types only so PDF and raster-image previews keep their exact headers.
+const ACTIVE_DOCUMENT_MIME_TYPES = new Set(['image/svg+xml', 'text/xml', 'application/xml']);
+const INLINE_PREVIEW_CSP =
+  "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+
 function jsonResponse(data: object, status: number) {
   return NextResponse.json(data, { status, headers: FRAME_HEADERS });
 }
@@ -259,15 +269,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Serve HTML as text/plain to prevent XSS if it ever reaches an iframe
       const safeContentType = mimeType === 'text/html' ? 'text/plain' : mimeType;
 
+      const inlineHeaders: Record<string, string> = {
+        'Content-Type': safeContentType,
+        'Content-Length': data.length.toString(),
+        'Content-Disposition': `inline; filename="${encodeURIComponent(document.name)}"`,
+        'Cache-Control': 'private, max-age=300',
+        'X-Frame-Options': 'SAMEORIGIN',
+      };
+      if (ACTIVE_DOCUMENT_MIME_TYPES.has(mimeType)) {
+        inlineHeaders['Content-Security-Policy'] = INLINE_PREVIEW_CSP;
+      }
+
       return new NextResponse(new Uint8Array(data), {
         status: 200,
-        headers: {
-          'Content-Type': safeContentType,
-          'Content-Length': data.length.toString(),
-          'Content-Disposition': `inline; filename="${encodeURIComponent(document.name)}"`,
-          'Cache-Control': 'private, max-age=300',
-          'X-Frame-Options': 'SAMEORIGIN',
-        },
+        headers: inlineHeaders,
       });
     }
 
