@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
+import { RateLimitError } from '@/lib/errors';
+
 const mockCompare = vi.fn();
 const mockFindUnique = vi.fn();
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
 const mockSessionCreate = vi.fn();
 const mockUserUpdate = vi.fn();
+const mockLoginByEmail = vi.fn().mockResolvedValue(undefined);
+const mockLoginByIp = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('bcryptjs', () => ({
   default: {
@@ -37,6 +41,10 @@ vi.mock('@/lib/middleware', () => ({
     userAgent: 'vitest',
   })),
   setSessionCookie: vi.fn(),
+  rateLimiters: {
+    loginByEmail: (...args: unknown[]) => mockLoginByEmail(...args),
+    loginByIp: (...args: unknown[]) => mockLoginByIp(...args),
+  },
 }));
 
 vi.mock('@/lib/audit/accessAudit', () => ({
@@ -73,6 +81,8 @@ describe('POST /api/auth/login', () => {
     mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
     mockUserUpdate.mockResolvedValue({});
     mockCaptureAccessAudit.mockResolvedValue('disabled');
+    mockLoginByEmail.mockResolvedValue(undefined);
+    mockLoginByIp.mockResolvedValue(undefined);
   });
 
   it('returns 500 instead of using a weak fallback when SESSION_SECRET is missing', async () => {
@@ -153,6 +163,25 @@ describe('POST /api/auth/login', () => {
         userAgent: 'vitest',
       }),
     });
+  });
+
+  it('returns 429 and skips account lookup when the login rate limit is exceeded', async () => {
+    process.env['SESSION_SECRET'] = 'test-session-secret';
+    mockLoginByEmail.mockRejectedValueOnce(new RateLimitError(60));
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'user@example.com', password: 'password123' }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.error).toMatch(/too many/i);
+    // Throttling must happen before any account lookup or bcrypt work.
+    expect(mockFindUnique).not.toHaveBeenCalled();
+    expect(mockCompare).not.toHaveBeenCalled();
   });
 
   it('keeps a successful login available when the bounded audit write fails', async () => {
