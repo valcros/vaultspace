@@ -22,6 +22,7 @@ import {
   AdminSurface,
   AdminToolbar,
 } from '@/components/layout/admin-page';
+import { sanitizeSearchSnippet } from '@/lib/sanitizeSearchSnippet';
 
 interface SearchResult {
   documentId: string;
@@ -257,7 +258,7 @@ export default function SearchPage() {
                     {result.snippet && (
                       <p
                         className="mt-1 line-clamp-2 text-sm text-neutral-600 [&>b]:font-semibold [&>b]:text-primary-700"
-                        dangerouslySetInnerHTML={{ __html: result.snippet }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeSearchSnippet(result.snippet) }}
                       />
                     )}
                     <div className="mt-1.5 flex items-center gap-3 text-xs text-neutral-400">

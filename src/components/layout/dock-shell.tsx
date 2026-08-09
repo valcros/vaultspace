@@ -16,6 +16,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useIsAdmin } from './role-provider';
 import { DockHeader } from './dock-header';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { sanitizeSearchSnippet } from '@/lib/sanitizeSearchSnippet';
 import { clsx } from 'clsx';
 import {
   Home,
@@ -909,7 +910,7 @@ function CommandMenu({ open, onOpenChange, recentRooms = [] }: CommandMenuProps)
                         {doc.snippet && (
                           <p
                             className="mt-0.5 line-clamp-2 text-xs text-neutral-500"
-                            dangerouslySetInnerHTML={{ __html: doc.snippet }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeSearchSnippet(doc.snippet) }}
                           />
                         )}
                         <p className="mt-0.5 text-xs text-neutral-400">{doc.roomName}</p>
