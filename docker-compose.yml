@@ -38,7 +38,12 @@ services:
 
   # Gotenberg (Document Preview Service)
   gotenberg:
-    image: gotenberg/gotenberg:8.0
+    # Chromium renders user-supplied document HTML, so it will fetch any internal
+    # URL referenced by a crafted document (loopback, RFC1918, cloud metadata
+    # 169.254.169.254) — SSRF. Use a current 8.x (server-side URL filtering +
+    # DNS-pinning proxy) and deny navigations to non-public IPs. Pin a specific
+    # 8.x digest for reproducibility in your own deployment.
+    image: gotenberg/gotenberg:8
     container_name: vaultspace-gotenberg
     ports:
       - '3001:3000'
@@ -50,6 +55,9 @@ services:
     restart: unless-stopped
     environment:
       LOG_LEVEL: info
+      # SSRF defense: reject Chromium navigations/sub-resources to non-public IPs
+      # (loopback, RFC1918, link-local, IPv6 unique-local).
+      CHROMIUM_DENY_PRIVATE_IPS: 'true'
 
   # ClamAV (Virus Scanning)
   clamav:
@@ -84,7 +92,10 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       APP_URL: ${APP_URL:-http://localhost:3000}
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      # No insecure default: a known session-signing secret allows trivial
+      # session forgery. Compose fails fast if unset. scripts/setup.sh generates
+      # one; otherwise set SESSION_SECRET=$(openssl rand -hex 32) in your .env.
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (e.g. openssl rand -hex 32)}
       APP_NAME: ${APP_NAME:-VaultSpace}
       DEFAULT_ORG_NAME: ${DEFAULT_ORG_NAME:-My Organization}
       LOG_LEVEL: ${LOG_LEVEL:-info}
