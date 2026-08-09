@@ -11,7 +11,8 @@ import { randomBytes } from 'crypto';
 import { generateTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { bootstrapDb, withOrgContext } from '@/lib/db';
-import { getRequestContext, setSessionCookie } from '@/lib/middleware';
+import { getRequestContext, rateLimiters, setSessionCookie } from '@/lib/middleware';
+import { RateLimitError } from '@/lib/errors';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { z } from 'zod';
 
@@ -28,6 +29,24 @@ export async function POST(request: NextRequest) {
     const reqContext = getRequestContext(request);
     const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
     const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
+
+    // Throttle credential stuffing / brute force BEFORE any account lookup or
+    // bcrypt work (SEC-010/011). Keyed by email + client IP; fail closed.
+    try {
+      await Promise.all([
+        rateLimiters.loginByEmail(email.toLowerCase()),
+        rateLimiters.loginByIp(reqContext.ipAddress || 'unknown'),
+      ]);
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: 'Too many login attempts. Please try again later.' },
+          { status: 429 }
+        );
+      }
+      console.error('[LoginAPI] Rate limiter unavailable:', error);
+      return NextResponse.json({ error: 'Failed to sign in' }, { status: 503 });
+    }
 
     // Find user with their organizations. Uses bootstrapDb because we don't
     // know the user's org yet, so RLS can't be scoped — the admin connection
