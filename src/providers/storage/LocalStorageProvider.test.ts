@@ -116,3 +116,36 @@ describe('LocalStorageProvider — signed URL', () => {
     });
   });
 });
+
+describe('LocalStorageProvider — path traversal defense (NEW1)', () => {
+  // The guard throws in getPath BEFORE any filesystem access, so these cases
+  // reject without touching the disk.
+  it('rejects a key that escapes the storage root via ..', async () => {
+    const provider = makeProvider();
+    await expect(provider.get('docs', '../../../../etc/passwd')).rejects.toThrow(
+      'Invalid storage path'
+    );
+  });
+
+  it('rejects a bucket that escapes the storage root via ..', async () => {
+    const provider = makeProvider();
+    await expect(provider.get('../../..', 'file.pdf')).rejects.toThrow('Invalid storage path');
+  });
+
+  it('rejects an absolute-path key', async () => {
+    const provider = makeProvider();
+    await expect(provider.get('docs', '/etc/passwd')).rejects.toThrow('Invalid storage path');
+  });
+
+  it('rejects traversal on delete as well', async () => {
+    const provider = makeProvider();
+    await expect(provider.delete('docs', '../../secret')).rejects.toThrow('Invalid storage path');
+  });
+
+  it('allows a legitimate nested key (reaches the filesystem, not a traversal error)', async () => {
+    const provider = makeProvider();
+    // A valid key passes the guard and hits readFile, failing with ENOENT — proof
+    // the guard did not false-positive on a normal nested path.
+    await expect(provider.get('docs', 'subdir/file.pdf')).rejects.toThrow(/ENOENT|no such file/i);
+  });
+});
