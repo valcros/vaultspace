@@ -30,6 +30,7 @@ import {
 } from '@/lib/auth/passwordResetRecovery';
 import { bootstrapDb as db } from '@/lib/db';
 import { hasCapability } from '@/lib/deployment-capabilities';
+import { escapeHtml } from '@/lib/email/escapeHtml';
 import { RateLimitError } from '@/lib/errors';
 import { getRequestContext, rateLimiters } from '@/lib/middleware';
 import { getProviders } from '@/providers';
@@ -665,7 +666,7 @@ export async function POST(request: NextRequest) {
           result = await providers.email.sendEmail({
             to: deliveryUser.email,
             subject: `Reset your ${orgName} password`,
-            html: `<p>Hi ${deliveryUser.firstName || 'User'},</p><p>Click <a href="${resetUrl}">here</a> to reset your password.</p><p>This link expires in 1 hour.</p><p>If you didn't request this, please ignore this email.</p>`,
+            html: `<p>Hi ${escapeHtml(deliveryUser.firstName || 'User')},</p><p>Click <a href="${escapeHtml(resetUrl)}">here</a> to reset your password.</p><p>This link expires in 1 hour.</p><p>If you didn't request this, please ignore this email.</p>`,
             text: `Hi ${deliveryUser.firstName || 'User'},\n\nReset your password: ${resetUrl}\n\nThis link expires in 1 hour.`,
             from: senderFrom,
             fromName: senderName,
