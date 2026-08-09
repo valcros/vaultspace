@@ -14,7 +14,8 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { verifyTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
-import { getRequestContext, setSessionCookie } from '@/lib/middleware';
+import { getRequestContext, rateLimiters, setSessionCookie } from '@/lib/middleware';
+import { RateLimitError } from '@/lib/errors';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { verifyTOTP, verifyBackupCode } from '@/lib/totp';
 import { randomBytes } from 'crypto';
@@ -39,6 +40,24 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid or expired temporary token. Please log in again.' },
         { status: 401 }
       );
+    }
+
+    // Throttle 2FA code guessing per user + IP. The temp token is reusable for
+    // its window, so cap online TOTP/backup-code attempts. Fail closed.
+    try {
+      await Promise.all([
+        rateLimiters.loginByEmail(`2fa:${tokenData.userId}`),
+        rateLimiters.loginByIp(reqContext.ipAddress || 'unknown'),
+      ]);
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: 'Too many attempts. Please log in again.' },
+          { status: 429 }
+        );
+      }
+      console.error('[2FA Validate] Rate limiter unavailable:', error);
+      return NextResponse.json({ error: 'Failed to validate 2FA code' }, { status: 503 });
     }
 
     // Get user with 2FA data
