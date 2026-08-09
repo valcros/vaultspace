@@ -13,6 +13,7 @@ import type { Prisma } from '@prisma/client';
 
 import type { EmailProvider } from '@/providers/types';
 import { db, withOrgContext } from '@/lib/db';
+import { escapeHtml } from '@/lib/email/escapeHtml';
 
 type DbClient = typeof db | Prisma.TransactionClient;
 
@@ -389,15 +390,17 @@ export class EmailNotificationService {
     return [
       '<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">',
       '<h2 style="color: #1e293b;">Document Viewed</h2>',
-      '<p>Hello ' + data.recipientName + ',</p>',
+      '<p>Hello ' + escapeHtml(data.recipientName) + ',</p>',
       '<p>A document in your data room has been viewed:</p>',
       '<div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">',
-      '<p style="margin: 0;"><strong>Document:</strong> ' + data.documentName + '</p>',
-      '<p style="margin: 8px 0 0;"><strong>Viewer:</strong> ' + data.viewerEmail + '</p>',
-      '<p style="margin: 8px 0 0;"><strong>Time:</strong> ' + data.viewTime + '</p>',
+      '<p style="margin: 0;"><strong>Document:</strong> ' + escapeHtml(data.documentName) + '</p>',
+      '<p style="margin: 8px 0 0;"><strong>Viewer:</strong> ' +
+        escapeHtml(data.viewerEmail) +
+        '</p>',
+      '<p style="margin: 8px 0 0;"><strong>Time:</strong> ' + escapeHtml(data.viewTime) + '</p>',
       '</div>',
       '<p><a href="' +
-        data.roomUrl +
+        escapeHtml(data.roomUrl) +
         '" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Room</a></p>',
       '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
       '<p style="color: #64748b; font-size: 12px;">Manage notification preferences in account settings.</p>',
@@ -419,16 +422,18 @@ export class EmailNotificationService {
     return [
       '<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">',
       '<h2 style="color: #1e293b;">Document Uploaded</h2>',
-      '<p>Hello ' + data.recipientName + ',</p>',
+      '<p>Hello ' + escapeHtml(data.recipientName) + ',</p>',
       '<p>A new document has been uploaded to your data room:</p>',
       '<div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">',
-      '<p style="margin: 0;"><strong>Document:</strong> ' + data.documentName + '</p>',
-      '<p style="margin: 8px 0 0;"><strong>Uploaded by:</strong> ' + data.uploaderName + '</p>',
-      '<p style="margin: 8px 0 0;"><strong>Size:</strong> ' + data.fileSize + '</p>',
-      '<p style="margin: 8px 0 0;"><strong>Type:</strong> ' + data.fileType + '</p>',
+      '<p style="margin: 0;"><strong>Document:</strong> ' + escapeHtml(data.documentName) + '</p>',
+      '<p style="margin: 8px 0 0;"><strong>Uploaded by:</strong> ' +
+        escapeHtml(data.uploaderName) +
+        '</p>',
+      '<p style="margin: 8px 0 0;"><strong>Size:</strong> ' + escapeHtml(data.fileSize) + '</p>',
+      '<p style="margin: 8px 0 0;"><strong>Type:</strong> ' + escapeHtml(data.fileType) + '</p>',
       '</div>',
       '<p><a href="' +
-        data.roomUrl +
+        escapeHtml(data.roomUrl) +
         '" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Room</a></p>',
       '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
       '<p style="color: #64748b; font-size: 12px;">Manage notification preferences in account settings.</p>',
@@ -443,10 +448,10 @@ export class EmailNotificationService {
     return [
       '<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">',
       '<h2 style="color: #1e293b;">Access Revoked</h2>',
-      '<p>Hello ' + data.recipientName + ',</p>',
+      '<p>Hello ' + escapeHtml(data.recipientName) + ',</p>',
       '<p>Your access to the following data room has been revoked:</p>',
       '<div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">',
-      '<p style="margin: 0;"><strong>Room:</strong> ' + data.roomName + '</p>',
+      '<p style="margin: 0;"><strong>Room:</strong> ' + escapeHtml(data.roomName) + '</p>',
       '</div>',
       '<p>If you believe this is an error, please contact the room administrator.</p>',
       '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
@@ -469,20 +474,20 @@ export class EmailNotificationService {
       '<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">',
       '<h2 style="color: #1e293b;">You\'ve Been Invited to VaultSpace</h2>',
       '<p>' +
-        data.inviterName +
+        escapeHtml(data.inviterName) +
         ' has invited you to join <strong>' +
-        data.organizationName +
+        escapeHtml(data.organizationName) +
         '</strong> as a ' +
-        data.role.toLowerCase() +
+        escapeHtml(data.role.toLowerCase()) +
         '.</p>',
       '<p>VaultSpace is a secure virtual data room for sharing confidential documents.</p>',
       '<div style="margin: 24px 0;">',
       '<a href="' +
-        data.invitationUrl +
+        escapeHtml(data.invitationUrl) +
         '" style="background: #2563eb; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 500;">Accept Invitation</a>',
       '</div>',
       '<p style="color: #64748b; font-size: 14px;">This invitation expires on ' +
-        data.expiryDate +
+        escapeHtml(data.expiryDate) +
         '.</p>',
       '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />',
       '<p style="color: #94a3b8; font-size: 12px;">If you did not expect this invitation, you can safely ignore this email.</p>',
