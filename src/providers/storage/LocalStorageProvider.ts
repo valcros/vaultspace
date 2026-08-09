@@ -7,7 +7,7 @@
 
 import { createHash, randomBytes } from 'crypto';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'fs/promises';
-import { dirname, join } from 'path';
+import { dirname, resolve, sep } from 'path';
 
 import { SIGNED_URL_CONFIG } from '@/lib/constants';
 
@@ -28,7 +28,15 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   private getPath(bucket: string, key: string): string {
-    return join(this.basePath, bucket, key);
+    // Resolve within the storage root and reject any bucket/key that escapes it
+    // (path traversal via '..' or an absolute segment). storageKey is normally
+    // server-generated, but this is the defense-in-depth backstop.
+    const root = resolve(this.basePath);
+    const target = resolve(root, bucket, key);
+    if (target !== root && !target.startsWith(root + sep)) {
+      throw new Error('Invalid storage path');
+    }
+    return target;
   }
 
   async put(bucket: string, key: string, data: Buffer): Promise<void> {
