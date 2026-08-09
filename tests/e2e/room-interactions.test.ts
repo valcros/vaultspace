@@ -16,14 +16,6 @@ import { test, expect, Page } from '@playwright/test';
 const ROOM_NAME = 'Due Diligence Package';
 const ROOT_DOCUMENT = 'Pitch Deck.pptx';
 
-async function loginAsAdmin(page: Page) {
-  await page.goto('/auth/login');
-  await page.fill('input[type="email"]', 'admin@demo.vaultspace.app');
-  await page.fill('input[type="password"]', 'Demo123!');
-  await page.click('button[type="submit"]');
-  await page.waitForURL('**/dashboard', { timeout: 15000 });
-}
-
 async function findRoomId(page: Page): Promise<string> {
   const res = await page.request.get('/api/rooms');
   expect(res.ok()).toBeTruthy();
@@ -34,9 +26,10 @@ async function findRoomId(page: Page): Promise<string> {
 }
 
 test.describe('Room interactions', () => {
-  test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page);
-  });
+  // Reuse the shared admin session from auth-setup instead of re-logging-in per
+  // test. 10 tests x 2 browser projects was ~20 real logins, tripping the spec's
+  // 5/min-per-email login rate limit and cascading 429s across the E2E suite.
+  test.use({ storageState: 'tests/e2e/.auth/admin.json' });
 
   test('folder tiles navigate and update the breadcrumb', async ({ page }) => {
     const roomId = await findRoomId(page);

@@ -34,12 +34,24 @@ const ADMIN_PASSWORD = process.env['PLAYWRIGHT_ADMIN_PASSWORD'] || 'Demo123!';
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Cache the admin session for the whole file. Each describe block calls this in
+// beforeAll; without memoization that is one real POST /api/auth/login per block
+// (6 blocks), which — combined with the other suites — trips the spec's login
+// rate limit (5 attempts/min per email). Since every block authenticates the same
+// demo admin, one login is reused. CI runs a single Playwright worker, so this
+// module-level cache holds for the entire run.
+let cachedAdminCookie: string | undefined;
+
 async function loginAsAdmin(request: APIRequestContext): Promise<string> {
+  if (cachedAdminCookie !== undefined) {
+    return cachedAdminCookie;
+  }
   const res = await request.post('/api/auth/login', {
     data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
   });
   expect(res.ok(), `Admin login failed: ${res.status()}`).toBe(true);
-  return res.headers()['set-cookie'] ?? '';
+  cachedAdminCookie = res.headers()['set-cookie'] ?? '';
+  return cachedAdminCookie;
 }
 
 interface RoomSummary {
