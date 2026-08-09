@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
+import { RateLimitError } from '@/lib/errors';
+
 const mockUserFindUnique = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockSessionCreate = vi.fn();
 const mockCaptureAccessAudit = vi.fn();
+const mockLoginByEmail = vi.fn().mockResolvedValue(undefined);
+const mockLoginByIp = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/lib/db', () => ({
   db: {
@@ -32,6 +36,10 @@ vi.mock('@/lib/middleware', () => ({
     userAgent: '2fa-context-agent',
   })),
   setSessionCookie: vi.fn(),
+  rateLimiters: {
+    loginByEmail: (...args: unknown[]) => mockLoginByEmail(...args),
+    loginByIp: (...args: unknown[]) => mockLoginByIp(...args),
+  },
 }));
 
 vi.mock('@/lib/audit/accessAudit', () => ({
@@ -62,6 +70,8 @@ describe('POST /api/auth/2fa/validate', () => {
     mockUserUpdate.mockResolvedValue({});
     mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
     mockCaptureAccessAudit.mockResolvedValue('disabled');
+    mockLoginByEmail.mockResolvedValue(undefined);
+    mockLoginByIp.mockResolvedValue(undefined);
   });
 
   it('uses identical normalized request metadata for the session and login audit', async () => {
@@ -86,5 +96,23 @@ describe('POST /api/auth/2fa/validate', () => {
         userAgent: '2fa-context-agent',
       })
     );
+  });
+
+  it('returns 429 without validating the code when the 2FA rate limit is exceeded', async () => {
+    mockLoginByEmail.mockRejectedValueOnce(new RateLimitError(60));
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/2fa/validate', {
+        method: 'POST',
+        body: JSON.stringify({ code: '123456', tempToken: 'temporary-token' }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.error).toMatch(/too many/i);
+    // Throttling happens after temp-token verification but before code checks.
+    expect(mockUserFindUnique).not.toHaveBeenCalled();
+    expect(mockSessionCreate).not.toHaveBeenCalled();
   });
 });
