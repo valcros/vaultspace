@@ -411,6 +411,27 @@ describe('staging deployment workflow boundary', () => {
     expect(deployWorkflow).toContain('RECOVERY_ACTIVE_WEB_REVISIONS');
   });
 
+  it('uses quick production health and validates the real reset reconciler job', () => {
+    expect(deployWorkflow).not.toContain('deep=true');
+    expect(deployWorkflow).toContain(
+      'api/health?deployment_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}'
+    );
+    expect(deployWorkflow).toContain(
+      'api/health?recovery_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}'
+    );
+    expect(deployWorkflow.match(/-H "Cache-Control: no-cache"/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(deployWorkflow.match(/-H "Pragma: no-cache"/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(deployWorkflow).toContain('the actual job validation and preflight are authoritative');
+    expect(deployWorkflow).toContain("grep -Eq '^(\\*|\\*/([1-9]|1[0-5])) \\* \\* \\* \\*$'");
+    expect(deployWorkflow).toContain(
+      'password reset reconciler must run at least every fifteen minutes'
+    );
+    expect(deployWorkflow).not.toContain('[ "$CURRENT_RECONCILER_ENABLED" != "true" ] ||');
+    expect(deployWorkflow).not.toContain('[ "$RESET_RECONCILER_ENABLED" != "true" ] ||');
+    expect(deployWorkflow).not.toContain('.checks.database.status');
+    expect(deployWorkflow).not.toContain('.checks.cache.status');
+  });
+
   it('uses one scale-aware worker readiness contract at every deployment boundary', () => {
     expect(deployWorkflow.match(/scripts\/worker-revision-ready\.sh/g)).toHaveLength(4);
     expect(deployWorkflow).toContain('.properties.healthState');

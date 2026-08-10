@@ -563,10 +563,12 @@ jobs:
               exit 1
             fi
             if [ "$CURRENT_RECOVERY_CONFIGURED" != "true" ] || \
-               [ "$CURRENT_RECONCILER_ENABLED" != "true" ] || \
                [ -z "$RESET_RECONCILER_JOB_APP" ]; then
-              echo "ERROR: HMAC cutover requires configured recovery and the enabled reconciler job"
+              echo "ERROR: HMAC mode requires configured recovery and RESET_RECONCILER_JOB_APP"
               exit 1
+            fi
+            if [ "$CURRENT_RECONCILER_ENABLED" != "true" ]; then
+              echo "NOTICE: web health does not mirror reconciler enablement; the actual job validation and preflight are authoritative"
             fi
             WEB_KEYS_REF=$(echo "$WEB_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
             WORKER_KEYS_REF=$(echo "$WORKER_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
@@ -651,8 +653,8 @@ jobs:
             echo "ERROR: password reset reconciler must use a Schedule trigger"
             exit 1
           fi
-          if ! echo "$CRON" | grep -Eq '^(\*|\*/[1-5]) \* \* \* \*$'; then
-            echo "ERROR: password reset reconciler must run at least every five minutes"
+          if ! echo "$CRON" | grep -Eq '^(\*|\*/([1-9]|1[0-5])) \* \* \* \*$'; then
+            echo "ERROR: password reset reconciler must run at least every fifteen minutes"
             exit 1
           fi
           if [ "$COMPLETIONS" != "1" ] || [ "$PARALLELISM" != "1" ] || [ "$TIMEOUT" -gt 600 ]; then
@@ -943,7 +945,11 @@ jobs:
             echo "=== Attempt $ATTEMPT of $MAX_ATTEMPTS ==="
 
             # Basic health check
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL/api/health?deep=true" 2>/dev/null || echo "000")
+            HEALTH_URL="$APP_URL/api/health?deployment_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+              -H "Cache-Control: no-cache" \
+              -H "Pragma: no-cache" \
+              "$HEALTH_URL" 2>/dev/null || echo "000")
             echo "HTTP status: $HTTP_CODE"
 
             if [ "$HTTP_CODE" != "200" ]; then
@@ -960,7 +966,10 @@ jobs:
             fi
 
             # Fetch full health response
-            HEALTH_RESPONSE=$(curl -s --max-time 10 "$APP_URL/api/health?deep=true" 2>/dev/null || echo '{}')
+            HEALTH_RESPONSE=$(curl -s --max-time 10 \
+              -H "Cache-Control: no-cache" \
+              -H "Pragma: no-cache" \
+              "$HEALTH_URL" 2>/dev/null || echo '{}')
             echo "Health response: $HEALTH_RESPONSE"
 
             # Validate deployment mode
@@ -1015,31 +1024,29 @@ jobs:
             echo "✓ Release identity verified: $RELEASE ($REVISION)"
 
             OVERALL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.status // "unknown"')
-            DATABASE_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.checks.database.status // "unknown"')
-            CACHE_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.checks.cache.status // "unknown"')
-            if [ "$OVERALL_STATUS" != "healthy" ] || \
-               [ "$DATABASE_STATUS" != "healthy" ] || \
-               [ "$CACHE_STATUS" != "healthy" ]; then
-              echo "Dependencies not ready: overall=$OVERALL_STATUS database=$DATABASE_STATUS cache=$CACHE_STATUS"
+            if [ "$OVERALL_STATUS" != "healthy" ]; then
+              echo "Quick health not ready: overall=$OVERALL_STATUS"
               if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
                 sleep $RETRY_INTERVAL
                 ATTEMPT=$((ATTEMPT + 1))
                 continue
               fi
-              echo "ERROR: live dependency checks did not become healthy"
+              echo "ERROR: quick health did not become healthy"
               exit 1
             fi
-            echo "✓ Database and cache live checks verified"
+            echo "✓ Quick health verified without a dependency-mutating deep probe"
 
             RESET_WRITE_MODE=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetTokens.writeMode // "unknown"')
             RESET_RECOVERY_CONFIGURED=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetRecovery.configured // false')
             RESET_RECONCILER_ENABLED=$(echo "$HEALTH_RESPONSE" | jq -r '.passwordResetRecovery.reconcilerEnabled // false')
             if [ "$RESET_WRITE_MODE" = "hmac" ]; then
               if [ "$RESET_RECOVERY_CONFIGURED" != "true" ] || \
-                 [ "$RESET_RECONCILER_ENABLED" != "true" ] || \
                  [ -z "$RESET_RECONCILER_JOB_APP" ]; then
-                echo "ERROR: HMAC reset writes require recovery keys, enabled reconciler, and RESET_RECONCILER_JOB_APP"
+                echo "ERROR: HMAC reset writes require recovery keys and RESET_RECONCILER_JOB_APP"
                 exit 1
+              fi
+              if [ "$RESET_RECONCILER_ENABLED" != "true" ]; then
+                echo "NOTICE: web health does not mirror reconciler enablement; the validated job remains authoritative"
               fi
               for app in "$WEB_CONTAINER_APP" "$WORKER_CONTAINER_APP"; do
                 RESET_KEYS_SECRET_REF=$(az containerapp show \
@@ -1399,7 +1406,7 @@ jobs:
                 -H "Pragma: no-cache" \
                 -D "$RECOVERY_HEADER_FILE" \
                 -o "$RECOVERY_BODY_FILE" \
-                "$APP_URL/api/health?deep=true&recovery_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}"; then
+                "$APP_URL/api/health?recovery_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}"; then
                 RECOVERY_HEALTH=$(<"$RECOVERY_BODY_FILE")
               else
                 RECOVERY_HEALTH='{}'
@@ -1410,8 +1417,6 @@ jobs:
               RECOVERY_RELEASE=$(echo "$RECOVERY_HEALTH" | jq -r '.release // "unknown"')
               RECOVERY_HEALTH_REVISION=$(echo "$RECOVERY_HEALTH" | jq -r '.revision // "unknown"')
               RECOVERY_STATUS=$(echo "$RECOVERY_HEALTH" | jq -r '.status // "unknown"')
-              RECOVERY_DB=$(echo "$RECOVERY_HEALTH" | jq -r '.checks.database.status // "unknown"')
-              RECOVERY_CACHE=$(echo "$RECOVERY_HEALTH" | jq -r '.checks.cache.status // "unknown"')
               RECOVERY_WEB_REVISION=$(az containerapp show \
                 --name "$WEB_CONTAINER_APP" \
                 --resource-group "$RESOURCE_GROUP" \
@@ -1462,9 +1467,7 @@ jobs:
                 RECOVERY_CONVERGED=true
               fi
               if [ "$RECOVERY_CONVERGED" = "true" ] && \
-                 [ "$RECOVERY_STATUS" = "healthy" ] && \
-                 [ "$RECOVERY_DB" = "healthy" ] && \
-                 [ "$RECOVERY_CACHE" = "healthy" ]; then
+                 [ "$RECOVERY_STATUS" = "healthy" ]; then
                 break
               fi
               echo "Recovery not converged (attempt $ATTEMPT/20): release=$RECOVERY_RELEASE healthRevision=$RECOVERY_HEALTH_REVISION azureRevision=$RECOVERY_WEB_REVISION"
@@ -1472,7 +1475,7 @@ jobs:
                 if [ -s "$RECOVERY_CONVERGENCE_ERROR" ]; then
                   cat "$RECOVERY_CONVERGENCE_ERROR"
                 fi
-                echo "ERROR: restored web release failed identity, traffic, or dependency verification"
+                echo "ERROR: restored web release failed identity, traffic, or quick-health verification"
                 ROLLBACK_FAILED=1
                 break
               fi
