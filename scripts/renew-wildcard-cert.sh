@@ -49,7 +49,7 @@ RG="${RESOURCE_GROUP:?RESOURCE_GROUP is required}"
 WEB="${WEB_CONTAINER_APP:?WEB_CONTAINER_APP is required}"
 DOMAIN="${DOMAIN:-vaultspace.org}"
 WILDCARD="*.${DOMAIN}"
-EMAIL="${ACME_EMAIL:-mmunger@markmunger.com}"
+EMAIL="${ACME_EMAIL:-mmunger@vaultspace.org}"
 FORCE_RENEW="${FORCE_RENEW:-false}"
 RENEW_THRESHOLD_DAYS="${RENEW_THRESHOLD_DAYS:-30}"
 # A throwaway subdomain: the wildcard cert + wildcard DNS make it resolve and be
