@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const repositoryRoot = process.cwd();
 const verifierPath = `${repositoryRoot}/scripts/verify-password-reset-deployment-contract.mjs`;
+const workerRevisionReadyPath = `${repositoryRoot}/scripts/worker-revision-ready.sh`;
 const targetRevision = 'a'.repeat(40);
 const rollbackRevision = 'b'.repeat(40);
 
@@ -59,6 +60,30 @@ function verify(input: unknown) {
     input: JSON.stringify(input),
     encoding: 'utf8',
   });
+}
+
+function workerRevisionReady(
+  active: string,
+  health: string,
+  provisioning: string,
+  running: string,
+  replicas: number | string,
+  minReplicas: number | string,
+  activeRevisions: number | string
+) {
+  return spawnSync(
+    workerRevisionReadyPath,
+    [
+      active,
+      health,
+      provisioning,
+      running,
+      String(replicas),
+      String(minReplicas),
+      String(activeRevisions),
+    ],
+    { encoding: 'utf8' }
+  );
 }
 
 function validConvergence() {
@@ -260,6 +285,73 @@ describe('password reset deployment contract verifier', () => {
   });
 });
 
+describe('worker revision readiness', () => {
+  it.each([
+    ['running at its minimum', 'Running', 1, 1],
+    ['running above a zero minimum', 'Running', 1, 0],
+    ['running at its configured maximum', 'RunningAtMaxScale', 1, 0],
+    ['healthy scale to zero', 'ScaledToZero', 0, 0],
+  ])('accepts %s', (_name, running, replicas, minReplicas) => {
+    expect(
+      workerRevisionReady('true', 'Healthy', 'Provisioned', running, replicas, minReplicas, 1)
+        .status
+    ).toBe(0);
+  });
+
+  it.each([
+    ['inactive', 'false', 'Healthy', 'Provisioned', 'Running', 1, 0, 1],
+    ['unhealthy', 'true', 'Unhealthy', 'Provisioned', 'Running', 1, 0, 1],
+    ['unprovisioned', 'true', 'Healthy', 'Provisioning', 'Running', 1, 0, 1],
+    ['activating', 'true', 'Healthy', 'Provisioned', 'Activating', 1, 0, 1],
+    ['processing', 'true', 'Healthy', 'Provisioned', 'Processing', 1, 0, 1],
+    ['stopped', 'true', 'Healthy', 'Provisioned', 'Stopped', 0, 0, 1],
+    ['degraded', 'true', 'Healthy', 'Provisioned', 'Degraded', 1, 0, 1],
+    ['failed', 'true', 'Healthy', 'Provisioned', 'Failed', 0, 0, 1],
+    ['unknown', 'true', 'Healthy', 'Provisioned', 'Unknown', 0, 0, 1],
+    ['missing state', 'true', 'Healthy', 'Provisioned', '', 0, 0, 1],
+    ['running with no replica', 'true', 'Healthy', 'Provisioned', 'Running', 0, 0, 1],
+    ['under minimum', 'true', 'Healthy', 'Provisioned', 'Running', 1, 2, 1],
+    [
+      'scale to zero with required replica',
+      'true',
+      'Healthy',
+      'Provisioned',
+      'ScaledToZero',
+      0,
+      1,
+      1,
+    ],
+    [
+      'scale to zero with contradictory replica',
+      'true',
+      'Healthy',
+      'Provisioned',
+      'ScaledToZero',
+      1,
+      0,
+      1,
+    ],
+    ['no active revision', 'true', 'Healthy', 'Provisioned', 'Running', 1, 0, 0],
+    ['multiple active revisions', 'true', 'Healthy', 'Provisioned', 'Running', 1, 0, 2],
+    ['nonnumeric replica count', 'true', 'Healthy', 'Provisioned', 'Running', 'unknown', 0, 1],
+  ])(
+    'rejects %s',
+    (_name, active, health, provisioning, running, replicas, minReplicas, activeRevisions) => {
+      expect(
+        workerRevisionReady(
+          active,
+          health,
+          provisioning,
+          running,
+          replicas,
+          minReplicas,
+          activeRevisions
+        ).status
+      ).toBe(1);
+    }
+  );
+});
+
 describe('staging deployment workflow boundary', () => {
   const deployWorkflow = readFileSync(
     `${repositoryRoot}/.github/workflows/deploy-staging.yml`,
@@ -317,6 +409,13 @@ describe('staging deployment workflow boundary', () => {
     expect(deployWorkflow).toContain('post_deploy_gate=');
     expect(deployWorkflow).toContain('recovery_gate=');
     expect(deployWorkflow).toContain('RECOVERY_ACTIVE_WEB_REVISIONS');
+  });
+
+  it('uses one scale-aware worker readiness contract at every deployment boundary', () => {
+    expect(deployWorkflow.match(/scripts\/worker-revision-ready\.sh/g)).toHaveLength(4);
+    expect(deployWorkflow).toContain('.properties.healthState');
+    expect(deployWorkflow).not.toContain('[ "$WORKER_RUNNING" = "Running" ]');
+    expect(deployWorkflow).not.toContain('[ "$RECOVERY_WORKER_STATE" = "Running" ]');
   });
 
   it('keeps reviewed migration startup controls on every documented deployment path', () => {
