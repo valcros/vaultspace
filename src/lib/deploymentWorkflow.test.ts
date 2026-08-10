@@ -444,6 +444,14 @@ describe('staging deployment workflow boundary', () => {
     expect(deployWorkflow).not.toContain(
       'for forbidden in APP_URL SESSION_SECRET DATABASE_URL_ADMIN PASSWORD_RESET_RECOVERY_KEYS'
     );
+    expect(deployWorkflow).toContain('--query properties.template');
+    expect(deployWorkflow).toContain('--yaml "$EXECUTION_TEMPLATE"');
+    expect(deployWorkflow).toContain('["npm", "run", "worker:password-reset-preflight"]');
+    expect(deployWorkflow).toContain(
+      'ERROR: password reset reconciler preflight execution template mismatch'
+    );
+    expect(deployWorkflow).not.toContain('--args "npm" "run" "worker:password-reset-preflight"');
+    expect(deployWorkflow).not.toContain('cat "$EXECUTION_TEMPLATE"');
     expect(
       deployWorkflow.indexOf('- name: Execute password reset reconciler preflight')
     ).toBeLessThan(deployWorkflow.indexOf('- name: Update Container App - Web'));
