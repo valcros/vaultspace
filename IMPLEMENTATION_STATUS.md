@@ -161,4 +161,4 @@ V1 expansion (BYO custom domain like `dataroom.client.com`) needs a per-tenant o
 
 DMARC TXT record `_dmarc.vaultspace.org` resolves publicly as `v=DMARC1; p=quarantine; pct=100`. Combined with verified SPF and DKIM, downstream mail receivers (Gmail, Outlook, etc.) will apply the quarantine policy on alignment failures. The Azure Communication Services dashboard shows `DMARC: NotStarted` because ACS does not actively verify DMARC (only Domain, SPF, DKIM, DKIM2 appear in `verificationRecords`); the field is informational only.
 
-Optional follow-up: add `rua=mailto:dmarc-reports@vaultspace.org` to the policy once an inbox is provisioned to receive aggregate reports.
+Done (2026-08-09): the policy now carries `rua=mailto:security@vaultspace.org` for aggregate reports, and `vaultspace.org` was added to Exchange Online for inbound mail (MX + autodiscover + DKIM `selector1/2._domainkey`), coexisting with the ACS `azurecomm` sending records.
