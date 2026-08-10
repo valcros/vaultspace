@@ -428,6 +428,25 @@ describe('staging deployment workflow boundary', () => {
     );
     expect(deployWorkflow).not.toContain('[ "$CURRENT_RECONCILER_ENABLED" != "true" ] ||');
     expect(deployWorkflow).not.toContain('[ "$RESET_RECONCILER_ENABLED" != "true" ] ||');
+    expect(deployWorkflow).toContain('ERROR: reconciler and worker $key references do not match');
+    expect(deployWorkflow).not.toContain(
+      'ERROR: reconciler, web, and worker DATABASE_URL references do not match'
+    );
+    expect(deployWorkflow).toContain(
+      'ERROR: reconciler, web, and worker password reset recovery key references do not match'
+    );
+    expect(deployWorkflow).toContain(
+      'ERROR: reconciler, web, and worker password reset recovery active key IDs do not match'
+    );
+    expect(deployWorkflow).toContain(
+      'ERROR: password reset reconciler must not have DATABASE_URL_ADMIN'
+    );
+    expect(deployWorkflow).not.toContain(
+      'for forbidden in APP_URL SESSION_SECRET DATABASE_URL_ADMIN PASSWORD_RESET_RECOVERY_KEYS'
+    );
+    expect(
+      deployWorkflow.indexOf('- name: Execute password reset reconciler preflight')
+    ).toBeLessThan(deployWorkflow.indexOf('- name: Update Container App - Web'));
     expect(deployWorkflow).not.toContain('.checks.database.status');
     expect(deployWorkflow).not.toContain('.checks.cache.status');
   });
