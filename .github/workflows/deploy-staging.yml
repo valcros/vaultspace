@@ -662,7 +662,25 @@ jobs:
             exit 1
           fi
 
-          for key in DATABASE_URL REDIS_URL; do
+          for key in DATABASE_URL; do
+            SECRET_REF=$(echo "$ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
+            if [ -z "$SECRET_REF" ]; then
+              echo "ERROR: password reset reconciler requires secret-backed $key"
+              exit 1
+            fi
+            WORKER_SECRET_REF=$(echo "$WORKER_RUNTIME_ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
+            JOB_SECRET_URL=$(echo "$JOB_JSON" | jq -r --arg ref "$SECRET_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            WORKER_SECRET_URL=$(echo "$WORKER_APP_JSON" | jq -r --arg ref "$WORKER_SECRET_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+            if [ -z "$JOB_SECRET_URL" ] || [ -z "$WORKER_SECRET_URL" ]; then
+              echo "ERROR: reconciler and worker $key must use verifiable Key Vault references"
+              exit 1
+            fi
+            if [ "$JOB_SECRET_URL" != "$WORKER_SECRET_URL" ]; then
+              echo "ERROR: reconciler and worker $key references do not match"
+              exit 1
+            fi
+          done
+          for key in REDIS_URL; do
             SECRET_REF=$(echo "$ENV" | jq -r --arg key "$key" '.[] | select(.name==$key) | .secretRef // empty')
             if [ -z "$SECRET_REF" ]; then
               echo "ERROR: password reset reconciler requires secret-backed $key"
@@ -702,19 +720,49 @@ jobs:
             echo "ERROR: reconciler, web, and worker JOB_QUEUE_PREFIX values do not match"
             exit 1
           fi
+          JOB_RECOVERY_KEYS_REF=$(echo "$ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
+          WEB_RECOVERY_KEYS_REF=$(echo "$WEB_RUNTIME_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
+          WORKER_RECOVERY_KEYS_REF=$(echo "$WORKER_RUNTIME_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_KEYS") | .secretRef // empty')
+          JOB_RECOVERY_KEYS_URL=$(echo "$JOB_JSON" | jq -r --arg ref "$JOB_RECOVERY_KEYS_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+          WEB_RECOVERY_KEYS_URL=$(echo "$WEB_APP_JSON" | jq -r --arg ref "$WEB_RECOVERY_KEYS_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+          WORKER_RECOVERY_KEYS_URL=$(echo "$WORKER_APP_JSON" | jq -r --arg ref "$WORKER_RECOVERY_KEYS_REF" '.properties.configuration.secrets[]? | select(.name==$ref) | .keyVaultUrl // empty')
+          if [ -z "$JOB_RECOVERY_KEYS_URL" ] || [ -z "$WEB_RECOVERY_KEYS_URL" ] || [ -z "$WORKER_RECOVERY_KEYS_URL" ]; then
+            echo "ERROR: reconciler, web, and worker require secret-backed password reset recovery keys"
+            exit 1
+          fi
+          if [ "$JOB_RECOVERY_KEYS_URL" != "$WEB_RECOVERY_KEYS_URL" ] || [ "$JOB_RECOVERY_KEYS_URL" != "$WORKER_RECOVERY_KEYS_URL" ]; then
+            echo "ERROR: reconciler, web, and worker password reset recovery key references do not match"
+            exit 1
+          fi
+          JOB_ACTIVE_KEY_REF=$(echo "$ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .secretRef // empty')
+          WEB_ACTIVE_KEY_REF=$(echo "$WEB_RUNTIME_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .secretRef // empty')
+          WORKER_ACTIVE_KEY_REF=$(echo "$WORKER_RUNTIME_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .secretRef // empty')
+          if [ -n "$JOB_ACTIVE_KEY_REF" ] || [ -n "$WEB_ACTIVE_KEY_REF" ] || [ -n "$WORKER_ACTIVE_KEY_REF" ]; then
+            echo "ERROR: password reset recovery active key ID must be a directly comparable non-secret value"
+            exit 1
+          fi
+          JOB_ACTIVE_KEY_ID=$(echo "$ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .value // empty')
+          WEB_ACTIVE_KEY_ID=$(echo "$WEB_RUNTIME_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .value // empty')
+          WORKER_ACTIVE_KEY_ID=$(echo "$WORKER_RUNTIME_ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID") | .value // empty')
+          if [ -z "$JOB_ACTIVE_KEY_ID" ] || [ -z "$WEB_ACTIVE_KEY_ID" ] || [ -z "$WORKER_ACTIVE_KEY_ID" ]; then
+            echo "ERROR: reconciler, web, and worker require a password reset recovery active key ID"
+            exit 1
+          fi
+          if [ "$JOB_ACTIVE_KEY_ID" != "$WEB_ACTIVE_KEY_ID" ] || [ "$JOB_ACTIVE_KEY_ID" != "$WORKER_ACTIVE_KEY_ID" ]; then
+            echo "ERROR: reconciler, web, and worker password reset recovery active key IDs do not match"
+            exit 1
+          fi
           DEPLOYMENT_MODE=$(echo "$ENV" | jq -r '.[] | select(.name=="DEPLOYMENT_MODE") | .value // empty')
           RECONCILER_ENABLED=$(echo "$ENV" | jq -r '.[] | select(.name=="PASSWORD_RESET_RECONCILER_ENABLED") | .value // empty')
           if [ "$DEPLOYMENT_MODE" != "azure" ] || [ "$RECONCILER_ENABLED" != "true" ]; then
             echo "ERROR: password reset reconciler must run in Azure mode and be explicitly enabled"
             exit 1
           fi
-          for forbidden in APP_URL SESSION_SECRET DATABASE_URL_ADMIN PASSWORD_RESET_RECOVERY_KEYS PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID; do
-            if echo "$ENV" | jq -e --arg key "$forbidden" '.[] | select(.name==$key)' >/dev/null; then
-              echo "ERROR: password reset reconciler has unnecessary sensitive configuration: $forbidden"
-              exit 1
-            fi
-          done
-          echo "Password reset reconciler image, bounded schedule, and minimal environment verified"
+          if echo "$ENV" | jq -e '.[] | select(.name=="DATABASE_URL_ADMIN")' >/dev/null; then
+            echo "ERROR: password reset reconciler must not have DATABASE_URL_ADMIN"
+            exit 1
+          fi
+          echo "Password reset reconciler image, bounded schedule, and required environment verified"
 
       - name: Execute password reset reconciler preflight
         if: env.RESET_RECONCILER_JOB_APP != ''
