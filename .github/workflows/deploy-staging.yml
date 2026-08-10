@@ -151,22 +151,43 @@ jobs:
             --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
             --output tsv)
 
-          HEALTHY_WORKER_REVISIONS=$(az containerapp revision list \
+          ACTIVE_WORKER_REVISIONS=$(az containerapp revision list \
             --name "$WORKER_CONTAINER_APP" \
             --resource-group "$RESOURCE_GROUP" \
-            --query "[?properties.active && properties.runningState=='Running'].name" \
+            --query "[?properties.active].name" \
             --output tsv)
-          if [ "$(echo "$HEALTHY_WORKER_REVISIONS" | sed '/^$/d' | wc -l | tr -d ' ')" != "1" ]; then
-            echo "ERROR: expected one unambiguous active, running worker revision"
+          ACTIVE_WORKER_COUNT=$(echo "$ACTIVE_WORKER_REVISIONS" | sed '/^$/d' | wc -l | tr -d ' ')
+          if [ "$ACTIVE_WORKER_COUNT" != "1" ]; then
+            echo "ERROR: expected one unambiguous active worker revision"
             exit 1
           fi
-          PREVIOUS_WORKER_REVISION="$HEALTHY_WORKER_REVISIONS"
-          PREVIOUS_WORKER_IMAGE=$(az containerapp revision show \
+          PREVIOUS_WORKER_REVISION="$ACTIVE_WORKER_REVISIONS"
+          PREVIOUS_WORKER_JSON=$(az containerapp revision show \
             --name "$WORKER_CONTAINER_APP" \
             --resource-group "$RESOURCE_GROUP" \
             --revision "$PREVIOUS_WORKER_REVISION" \
-            --query "properties.template.containers[?name=='$WORKER_CONTAINER_NAME'].image | [0]" \
-            --output tsv)
+            --output json)
+          PREVIOUS_WORKER_IMAGE=$(echo "$PREVIOUS_WORKER_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
+            '.properties.template.containers[] | select(.name==$c) | .image')
+          PREVIOUS_WORKER_ACTIVE=$(echo "$PREVIOUS_WORKER_JSON" | jq -r '.properties.active')
+          PREVIOUS_WORKER_HEALTH=$(echo "$PREVIOUS_WORKER_JSON" | jq -r '.properties.healthState')
+          PREVIOUS_WORKER_PROVISIONING=$(echo "$PREVIOUS_WORKER_JSON" | jq -r '.properties.provisioningState')
+          PREVIOUS_WORKER_RUNNING=$(echo "$PREVIOUS_WORKER_JSON" | jq -r '.properties.runningState')
+          PREVIOUS_WORKER_REPLICAS=$(echo "$PREVIOUS_WORKER_JSON" | jq -r '.properties.replicas // 0')
+          PREVIOUS_WORKER_MIN_REPLICAS=$(echo "$PREVIOUS_WORKER_JSON" | \
+            jq -r '.properties.template.scale.minReplicas // 0')
+          if ! scripts/worker-revision-ready.sh \
+            "$PREVIOUS_WORKER_ACTIVE" \
+            "$PREVIOUS_WORKER_HEALTH" \
+            "$PREVIOUS_WORKER_PROVISIONING" \
+            "$PREVIOUS_WORKER_RUNNING" \
+            "$PREVIOUS_WORKER_REPLICAS" \
+            "$PREVIOUS_WORKER_MIN_REPLICAS" \
+            "$ACTIVE_WORKER_COUNT"; then
+            echo "ERROR: active worker revision is not a safe rollback source"
+            echo "Worker state: health=$PREVIOUS_WORKER_HEALTH provisioning=$PREVIOUS_WORKER_PROVISIONING running=$PREVIOUS_WORKER_RUNNING replicas=$PREVIOUS_WORKER_REPLICAS minReplicas=$PREVIOUS_WORKER_MIN_REPLICAS"
+            exit 1
+          fi
           PREVIOUS_WAKER_IMAGE=$(az containerapp job show \
             --name "$WAKER_JOB_APP" \
             --resource-group "$RESOURCE_GROUP" \
@@ -444,6 +465,7 @@ jobs:
             WORKER_IMAGE=$(echo "$REVISION_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
               '.properties.template.containers[] | select(.name==$c) | .image')
             WORKER_ACTIVE=$(echo "$REVISION_JSON" | jq -r '.properties.active')
+            WORKER_HEALTH=$(echo "$REVISION_JSON" | jq -r '.properties.healthState')
             WORKER_PROVISIONING=$(echo "$REVISION_JSON" | jq -r '.properties.provisioningState')
             WORKER_RUNNING=$(echo "$REVISION_JSON" | jq -r '.properties.runningState')
             WORKER_REPLICAS=$(echo "$REVISION_JSON" | jq -r '.properties.replicas // 0')
@@ -453,22 +475,20 @@ jobs:
               --query "length([?properties.active])" \
               --output tsv)
 
-            READY_REPLICAS=true
-            if [ "$WORKER_MIN_REPLICAS" -gt 0 ] && [ "$WORKER_REPLICAS" -lt "$WORKER_MIN_REPLICAS" ]; then
-              READY_REPLICAS=false
-            fi
-
             if [ "$WORKER_IMAGE" = "$EXPECTED_IMAGE" ] && \
-               [ "$WORKER_ACTIVE" = "true" ] && \
-               [ "$WORKER_PROVISIONING" = "Provisioned" ] && \
-               [ "$WORKER_RUNNING" = "Running" ] && \
-               [ "$READY_REPLICAS" = "true" ] && \
-               [ "$ACTIVE_WORKER_COUNT" = "1" ]; then
+               scripts/worker-revision-ready.sh \
+                 "$WORKER_ACTIVE" \
+                 "$WORKER_HEALTH" \
+                 "$WORKER_PROVISIONING" \
+                 "$WORKER_RUNNING" \
+                 "$WORKER_REPLICAS" \
+                 "$WORKER_MIN_REPLICAS" \
+                 "$ACTIVE_WORKER_COUNT"; then
               echo "✓ Worker revision $WORKER_REVISION is ready on $EXPECTED_IMAGE"
               break
             fi
 
-            echo "Worker not ready (attempt $ATTEMPT/20): image=$WORKER_IMAGE active=$WORKER_ACTIVE provisioning=$WORKER_PROVISIONING running=$WORKER_RUNNING replicas=$WORKER_REPLICAS minReplicas=$WORKER_MIN_REPLICAS activeRevisions=$ACTIVE_WORKER_COUNT"
+            echo "Worker not ready (attempt $ATTEMPT/20): image=$WORKER_IMAGE active=$WORKER_ACTIVE health=$WORKER_HEALTH provisioning=$WORKER_PROVISIONING running=$WORKER_RUNNING replicas=$WORKER_REPLICAS minReplicas=$WORKER_MIN_REPLICAS activeRevisions=$ACTIVE_WORKER_COUNT"
             if [ "$ATTEMPT" = "20" ]; then
               echo "ERROR: worker revision did not become ready"
               exit 1
@@ -1159,6 +1179,7 @@ jobs:
             WORKER_IMAGE=$(echo "$REVISION_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
               '.properties.template.containers[] | select(.name==$c) | .image')
             WORKER_ACTIVE=$(echo "$REVISION_JSON" | jq -r '.properties.active')
+            WORKER_HEALTH=$(echo "$REVISION_JSON" | jq -r '.properties.healthState')
             WORKER_PROVISIONING=$(echo "$REVISION_JSON" | jq -r '.properties.provisioningState')
             WORKER_RUNNING=$(echo "$REVISION_JSON" | jq -r '.properties.runningState')
             WORKER_REPLICAS=$(echo "$REVISION_JSON" | jq -r '.properties.replicas // 0')
@@ -1167,16 +1188,15 @@ jobs:
               --resource-group "$RESOURCE_GROUP" \
               --query "length([?properties.active])" \
               --output tsv)
-            READY_REPLICAS=true
-            if [ "$WORKER_MIN_REPLICAS" -gt 0 ] && [ "$WORKER_REPLICAS" -lt "$WORKER_MIN_REPLICAS" ]; then
-              READY_REPLICAS=false
-            fi
             if [ "$WORKER_IMAGE" = "$EXPECTED_IMAGE" ] && \
-               [ "$WORKER_ACTIVE" = "true" ] && \
-               [ "$WORKER_PROVISIONING" = "Provisioned" ] && \
-               [ "$WORKER_RUNNING" = "Running" ] && \
-               [ "$READY_REPLICAS" = "true" ] && \
-               [ "$ACTIVE_WORKER_COUNT" = "1" ]; then
+               scripts/worker-revision-ready.sh \
+                 "$WORKER_ACTIVE" \
+                 "$WORKER_HEALTH" \
+                 "$WORKER_PROVISIONING" \
+                 "$WORKER_RUNNING" \
+                 "$WORKER_REPLICAS" \
+                 "$WORKER_MIN_REPLICAS" \
+                 "$ACTIVE_WORKER_COUNT"; then
               echo "✓ Final worker readiness verified: $WORKER_REVISION"
               break
             fi
@@ -1304,6 +1324,7 @@ jobs:
             RECOVERY_WORKER_IMAGE=$(echo "$RECOVERY_WORKER_JSON" | jq -r --arg c "$WORKER_CONTAINER_NAME" \
               '.properties.template.containers[] | select(.name==$c) | .image')
             RECOVERY_WORKER_ACTIVE=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.active')
+            RECOVERY_WORKER_HEALTH=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.healthState')
             RECOVERY_WORKER_STATE=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.runningState')
             RECOVERY_WORKER_PROVISIONING=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.provisioningState')
             RECOVERY_WORKER_REPLICAS=$(echo "$RECOVERY_WORKER_JSON" | jq -r '.properties.replicas // 0')
@@ -1313,11 +1334,14 @@ jobs:
               --query "length([?properties.active])" \
               --output tsv)
             [ "$RECOVERY_WORKER_IMAGE" = "$expected_image" ] && \
-              [ "$RECOVERY_WORKER_ACTIVE" = "true" ] && \
-              [ "$RECOVERY_WORKER_STATE" = "Running" ] && \
-              [ "$RECOVERY_WORKER_PROVISIONING" = "Provisioned" ] && \
-              [ "$RECOVERY_ACTIVE_COUNT" = "1" ] && \
-              { [ "$WORKER_MIN_REPLICAS" -eq 0 ] || [ "$RECOVERY_WORKER_REPLICAS" -ge "$WORKER_MIN_REPLICAS" ]; }
+              scripts/worker-revision-ready.sh \
+                "$RECOVERY_WORKER_ACTIVE" \
+                "$RECOVERY_WORKER_HEALTH" \
+                "$RECOVERY_WORKER_PROVISIONING" \
+                "$RECOVERY_WORKER_STATE" \
+                "$RECOVERY_WORKER_REPLICAS" \
+                "$WORKER_MIN_REPLICAS" \
+                "$RECOVERY_ACTIVE_COUNT"
           }
 
           USE_PRIOR_WORKER=true
