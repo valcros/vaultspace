@@ -946,7 +946,10 @@ jobs:
 
             # Basic health check
             HEALTH_URL="$APP_URL/api/health?deployment_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}"
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+              -H "Cache-Control: no-cache" \
+              -H "Pragma: no-cache" \
+              "$HEALTH_URL" 2>/dev/null || echo "000")
             echo "HTTP status: $HTTP_CODE"
 
             if [ "$HTTP_CODE" != "200" ]; then
@@ -963,7 +966,10 @@ jobs:
             fi
 
             # Fetch full health response
-            HEALTH_RESPONSE=$(curl -s --max-time 10 "$HEALTH_URL" 2>/dev/null || echo '{}')
+            HEALTH_RESPONSE=$(curl -s --max-time 10 \
+              -H "Cache-Control: no-cache" \
+              -H "Pragma: no-cache" \
+              "$HEALTH_URL" 2>/dev/null || echo '{}')
             echo "Health response: $HEALTH_RESPONSE"
 
             # Validate deployment mode

@@ -419,6 +419,8 @@ describe('staging deployment workflow boundary', () => {
     expect(deployWorkflow).toContain(
       'api/health?recovery_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}'
     );
+    expect(deployWorkflow.match(/-H "Cache-Control: no-cache"/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(deployWorkflow.match(/-H "Pragma: no-cache"/g)?.length).toBeGreaterThanOrEqual(4);
     expect(deployWorkflow).toContain('the actual job validation and preflight are authoritative');
     expect(deployWorkflow).toContain("grep -Eq '^(\\*|\\*/([1-9]|1[0-5])) \\* \\* \\* \\*$'");
     expect(deployWorkflow).toContain(
