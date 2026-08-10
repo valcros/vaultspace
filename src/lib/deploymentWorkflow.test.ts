@@ -478,6 +478,59 @@ describe('staging deployment workflow boundary', () => {
     expect(deployWorkflow).not.toContain('[ "$RECOVERY_WORKER_STATE" = "Running" ]');
   });
 
+  it('uses idempotent activation and mode-correct traffic controls for web cutover', () => {
+    const normalizationStart = deployWorkflow.indexOf(
+      '- name: Normalize Web to captured stable revision'
+    );
+    const singleModeStart = deployWorkflow.indexOf('- name: Set Web to single-revision mode');
+    const forwardJobStart = deployWorkflow.indexOf(
+      '- name: Update Container App Job - Delayed Waker'
+    );
+    const recoveryStart = deployWorkflow.indexOf(
+      '- name: Restore previous staging release after failure'
+    );
+    const recoveryWorkerStart = deployWorkflow.indexOf(
+      '          if [ "$JOBS_MUTATED" = "true" ]; then',
+      recoveryStart
+    );
+
+    for (const boundary of [
+      normalizationStart,
+      singleModeStart,
+      forwardJobStart,
+      recoveryStart,
+      recoveryWorkerStart,
+    ]) {
+      expect(boundary).toBeGreaterThan(0);
+    }
+
+    const normalization = deployWorkflow.slice(normalizationStart, singleModeStart);
+    const singleModeCutover = deployWorkflow.slice(singleModeStart, forwardJobStart);
+    const recoveryWeb = deployWorkflow.slice(recoveryStart, recoveryWorkerStart);
+
+    expect(normalization).toContain('--query properties.active');
+    expect(normalization).toContain('if [ "${PREVIOUS_WEB_ACTIVE,,}" != "true" ]; then');
+    expect(normalization).toContain('az containerapp revision activate \\');
+    expect(normalization).toContain('az containerapp ingress traffic set \\');
+
+    expect(recoveryWeb).toContain('--query properties.active');
+    expect(recoveryWeb).toContain('if [ "${RECOVERY_PREVIOUS_WEB_ACTIVE,,}" != "true" ]; then');
+    expect(recoveryWeb).toContain('az containerapp revision activate \\');
+    expect(recoveryWeb).toContain('az containerapp ingress traffic set \\');
+
+    expect(singleModeCutover).not.toContain('az containerapp ingress traffic set');
+    expect(recoveryWeb.slice(recoveryWeb.indexOf('--mode single'))).not.toContain(
+      'az containerapp ingress traffic set'
+    );
+    expect(deployWorkflow.match(/az containerapp ingress traffic set \\/g)).toHaveLength(2);
+
+    expect(deployWorkflow).toContain('post_deploy_gate=');
+    expect(deployWorkflow).toContain('recovery_gate=');
+    expect(
+      deployWorkflow.match(/node scripts\/verify-password-reset-deployment-contract\.mjs/g)
+    ).toHaveLength(3);
+  });
+
   it('keeps reviewed migration startup controls on every documented deployment path', () => {
     const migrationPaths = [
       '.github/workflows/ci.yml',
