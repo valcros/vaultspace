@@ -621,6 +621,7 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --output json)
           IMAGE=$(echo "$JOB_JSON" | jq -r '.properties.template.containers[0].image')
+          COMMAND=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].command // []) | join(" ")')
           ARGS=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].args // []) | join(" ")')
           TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
           CRON=$(echo "$JOB_JSON" | jq -r '.properties.configuration.scheduleTriggerConfig.cronExpression // empty')
@@ -645,7 +646,7 @@ jobs:
             echo "ERROR: password reset reconciler image mismatch"
             exit 1
           fi
-          if ! echo "$ARGS" | grep -q "worker:password-reset-reconcile"; then
+          if [ "$COMMAND" != "npm" ] || [ "$ARGS" != "run worker:password-reset-reconcile" ]; then
             echo "ERROR: password reset reconciler command mismatch"
             exit 1
           fi
@@ -777,6 +778,8 @@ jobs:
           CONTAINER_COUNT=$(echo "$JOB_TEMPLATE" | jq -r '.containers | length')
           CONTAINER_NAME=$(echo "$JOB_TEMPLATE" | jq -r '.containers[0].name // empty')
           TEMPLATE_IMAGE=$(echo "$JOB_TEMPLATE" | jq -r '.containers[0].image // empty')
+          TEMPLATE_COMMAND=$(echo "$JOB_TEMPLATE" | jq -r '(.containers[0].command // []) | join(" ")')
+          TEMPLATE_ARGS=$(echo "$JOB_TEMPLATE" | jq -r '(.containers[0].args // []) | join(" ")')
           if [ "$CONTAINER_COUNT" != "1" ] || [ -z "$CONTAINER_NAME" ]; then
             echo "ERROR: password reset reconciler preflight requires exactly one named container"
             exit 1
@@ -785,8 +788,13 @@ jobs:
             echo "ERROR: password reset reconciler preflight template image mismatch"
             exit 1
           fi
+          if [ "$TEMPLATE_COMMAND" != "npm" ] || \
+             [ "$TEMPLATE_ARGS" != "run worker:password-reset-reconcile" ]; then
+            echo "ERROR: password reset reconciler preflight template command mismatch"
+            exit 1
+          fi
           printf '%s' "$JOB_TEMPLATE" | jq --arg container "$CONTAINER_NAME" \
-            '(.containers[] | select(.name==$container).args) = ["npm", "run", "worker:password-reset-preflight"]' \
+            '(.containers[] | select(.name==$container).args) = ["run", "worker:password-reset-preflight"]' \
             > "$EXECUTION_TEMPLATE"
           if [ ! -s "$EXECUTION_TEMPLATE" ]; then
             echo "ERROR: password reset reconciler preflight template was not created"
@@ -811,10 +819,13 @@ jobs:
             --output json)
           EXECUTION_IMAGE=$(echo "$EXECUTION_JSON" | jq -r --arg container "$CONTAINER_NAME" \
             '.properties.template.containers[] | select(.name==$container) | .image // empty')
+          EXECUTION_COMMAND=$(echo "$EXECUTION_JSON" | jq -r --arg container "$CONTAINER_NAME" \
+            '(.properties.template.containers[] | select(.name==$container) | .command // []) | join(" ")')
           EXECUTION_ARGS=$(echo "$EXECUTION_JSON" | jq -r --arg container "$CONTAINER_NAME" \
             '(.properties.template.containers[] | select(.name==$container) | .args // []) | join(" ")')
           if [ "$EXECUTION_IMAGE" != "$TARGET_WORKER_IMAGE_PINNED" ] || \
-             [ "$EXECUTION_ARGS" != "npm run worker:password-reset-preflight" ]; then
+             [ "$EXECUTION_COMMAND" != "npm" ] || \
+             [ "$EXECUTION_ARGS" != "run worker:password-reset-preflight" ]; then
             echo "ERROR: password reset reconciler preflight execution template mismatch"
             exit 1
           fi
