@@ -65,9 +65,10 @@ export async function getViewerSession<T extends Prisma.ViewSessionSelect>(
 /** Resolve a viewer session when a trusted server-side caller already read the cookie token. */
 export async function getViewerSessionByToken<T extends Prisma.ViewSessionSelect>(
   viewerToken: string,
-  select: T
+  select: T,
+  client: typeof bootstrapDb | Prisma.TransactionClient = bootstrapDb
 ): Promise<Prisma.ViewSessionGetPayload<{ select: T }> | null> {
-  return bootstrapDb.viewSession.findFirst({
+  return client.viewSession.findFirst({
     where: {
       sessionToken: viewerToken,
       isActive: true,
