@@ -209,7 +209,7 @@ Cause:
 Detection within five minutes:
 
 - recovery uses cache-busting query identity plus `Cache-Control: no-cache` and `Pragma: no-cache`;
-- the verifier requires captured image, captured release SHA, expected revision identity, exactly one active revision, and 100 percent traffic.
+- the verifier requires the captured image, the captured release SHA, the expected revision identity, exactly one active revision, and 100 percent traffic.
 
 Rollback:
 
