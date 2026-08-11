@@ -18,7 +18,7 @@ import { DOCUMENT_SCAN_JOB_OPTIONS } from '@/workers/types';
 
 import type { PaginatedResult, PaginationOptions, ServiceContext } from './types';
 
-const AUTHORIZATION_BATCH_SIZE = 8;
+const DOCUMENT_AUTHORIZATION_CANDIDATE_BATCH_SIZE = 100;
 
 /**
  * Supported MIME types for upload
@@ -445,42 +445,54 @@ export class DocumentService {
     // before total and pagination so explicit leaf or inherited denies cannot
     // leak through items, counts, sparse pages, or hasMore.
     const { total, documents } = await withOrgContext(session.organizationId, async (tx) => {
-      const candidates = await tx.document.findMany({
-        where,
-        select: {
-          id: true,
-          folderId: true,
-        },
-        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
-      });
-
-      const decisions: boolean[] = [];
       const permissionEngine = getPermissionEngine();
-      for (let index = 0; index < candidates.length; index += AUTHORIZATION_BATCH_SIZE) {
-        const batch = candidates.slice(index, index + AUTHORIZATION_BATCH_SIZE);
-        decisions.push(
-          ...(await Promise.all(
-            batch.map((candidate) =>
-              permissionEngine.can(
-                { userId: session.userId },
-                'view',
-                {
-                  type: 'DOCUMENT',
-                  organizationId: session.organizationId,
-                  roomId,
-                  folderId: candidate.folderId ?? undefined,
-                  documentId: candidate.id,
-                },
-                tx
-              )
-            )
-          ))
-        );
+      const authorization = await permissionEngine.prepareDocumentViewAuthorization(
+        { userId: session.userId },
+        session.organizationId,
+        roomId,
+        tx
+      );
+
+      if (authorization.unrestricted) {
+        const total = await tx.document.count({ where });
+        const documents = await tx.document.findMany({
+          where,
+          include: {
+            versions: {
+              orderBy: { versionNumber: 'desc' },
+              take: 1,
+            },
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+          skip: offset,
+          take: limit,
+        });
+        return { total, documents };
       }
 
-      const authorizedIds = candidates
-        .filter((_candidate, index) => decisions[index])
-        .map(({ id }) => id);
+      const authorizedIds: string[] = [];
+      let cursorId: string | undefined;
+      while (true) {
+        const candidates = await tx.document.findMany({
+          where,
+          select: {
+            id: true,
+            folderId: true,
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+          take: DOCUMENT_AUTHORIZATION_CANDIDATE_BATCH_SIZE,
+          ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+        });
+        if (candidates.length === 0) {
+          break;
+        }
+        authorizedIds.push(...authorization.getViewableIds(candidates));
+        if (candidates.length < DOCUMENT_AUTHORIZATION_CANDIDATE_BATCH_SIZE) {
+          break;
+        }
+        cursorId = candidates[candidates.length - 1]?.id;
+      }
+
       const total = authorizedIds.length;
       const pageIds = authorizedIds.slice(offset, offset + limit);
 

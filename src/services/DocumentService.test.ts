@@ -12,6 +12,7 @@ import type { ServiceContext } from './types';
 
 const permissionMocks = vi.hoisted(() => ({
   can: vi.fn(),
+  prepareDocumentViewAuthorization: vi.fn(),
 }));
 
 // Mock dependencies
@@ -22,6 +23,7 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: vi.fn(() => ({
     can: permissionMocks.can,
+    prepareDocumentViewAuthorization: permissionMocks.prepareDocumentViewAuthorization,
   })),
 }));
 
@@ -96,6 +98,12 @@ describe('DocumentService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     permissionMocks.can.mockResolvedValue(true);
+    permissionMocks.prepareDocumentViewAuthorization.mockResolvedValue({
+      unrestricted: true,
+      getViewableIds: vi.fn((candidates: { id: string }[]) =>
+        candidates.map((candidate) => candidate.id)
+      ),
+    });
     service = new DocumentService();
     ctx = createMockContext();
   });
@@ -306,16 +314,13 @@ describe('DocumentService', () => {
 
   describe('list', () => {
     it('should return paginated documents', async () => {
-      const candidates = [
-        { id: 'd1', folderId: null },
-        { id: 'd2', folderId: null },
-      ];
       const docs = [
         { id: 'd1', name: 'File 1.pdf', versions: [{ id: 'v1' }] },
         { id: 'd2', name: 'File 2.docx', versions: [] },
       ];
 
-      mockTx.document.findMany.mockResolvedValueOnce(candidates).mockResolvedValueOnce(docs);
+      mockTx.document.count.mockResolvedValue(2);
+      mockTx.document.findMany.mockResolvedValue(docs);
 
       const result = await service.list(ctx, { roomId: 'room-1' });
 
@@ -324,6 +329,7 @@ describe('DocumentService', () => {
     });
 
     it('should scope documents to organization', async () => {
+      mockTx.document.count.mockResolvedValue(0);
       mockTx.document.findMany.mockResolvedValue([]);
 
       await service.list(ctx, { roomId: 'room-1' }).catch(() => {
@@ -368,10 +374,13 @@ describe('DocumentService', () => {
       mockTx.document.findMany
         .mockResolvedValueOnce(candidates)
         .mockResolvedValueOnce([{ id: 'doc-allowed-1', name: 'Allowed 1.pdf', versions: [] }]);
-      permissionMocks.can.mockImplementation(
-        async (_actor, _action, resource: { type: string; documentId?: string }) =>
-          resource.type === 'ROOM' || resource.documentId !== 'doc-denied'
+      const getViewableIds = vi.fn((batch: { id: string }[]) =>
+        batch.filter(({ id }) => id !== 'doc-denied').map(({ id }) => id)
       );
+      permissionMocks.prepareDocumentViewAuthorization.mockResolvedValue({
+        unrestricted: false,
+        getViewableIds,
+      });
 
       const result = await service.list(ctx, {
         roomId: 'room-1',
@@ -384,6 +393,8 @@ describe('DocumentService', () => {
       expect(result.total).toBe(2);
       expect(result.hasMore).toBe(true);
       expect(mockTx.document.count).not.toHaveBeenCalled();
+      expect(getViewableIds).toHaveBeenCalledWith(candidates);
+      expect(permissionMocks.can).toHaveBeenCalledTimes(1);
       expect(mockTx.document.findMany).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining({
@@ -395,18 +406,58 @@ describe('DocumentService', () => {
           }),
         })
       );
-      expect(permissionMocks.can).toHaveBeenCalledWith(
+      expect(permissionMocks.prepareDocumentViewAuthorization).toHaveBeenCalledWith(
         { userId: 'user-1' },
-        'view',
-        {
-          type: 'DOCUMENT',
-          organizationId: 'org-1',
-          roomId: 'room-1',
-          folderId: 'folder-1',
-          documentId: 'doc-denied',
-        },
+        'org-1',
+        'room-1',
         mockTx
       );
+    });
+
+    it('uses bounded keyset candidate reads with one prepared authorizer', async () => {
+      const firstBatch = Array.from({ length: 100 }, (_, index) => ({
+        id: `doc-${index.toString().padStart(3, '0')}`,
+        folderId: null,
+      }));
+      const finalBatch = [{ id: 'doc-100', folderId: null }];
+      const getViewableIds = vi.fn((batch: { id: string }[]) =>
+        batch.map((candidate) => candidate.id)
+      );
+      permissionMocks.prepareDocumentViewAuthorization.mockResolvedValue({
+        unrestricted: false,
+        getViewableIds,
+      });
+      mockTx.document.findMany
+        .mockResolvedValueOnce(firstBatch)
+        .mockResolvedValueOnce(finalBatch)
+        .mockResolvedValueOnce([
+          { id: 'doc-000', name: 'First.pdf', versions: [] },
+          { id: 'doc-001', name: 'Second.pdf', versions: [] },
+        ]);
+
+      const result = await service.list(ctx, { roomId: 'room-1', offset: 0, limit: 2 });
+
+      expect(result.total).toBe(101);
+      expect(result.items.map(({ id }) => id)).toEqual(['doc-000', 'doc-001']);
+      expect(result.hasMore).toBe(true);
+      expect(getViewableIds).toHaveBeenCalledTimes(2);
+      expect(permissionMocks.prepareDocumentViewAuthorization).toHaveBeenCalledOnce();
+      expect(mockTx.document.findMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          take: 100,
+          orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        })
+      );
+      expect(mockTx.document.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          take: 100,
+          cursor: { id: 'doc-099' },
+          skip: 1,
+        })
+      );
+      expect(permissionMocks.can).toHaveBeenCalledTimes(1);
     });
   });
 });
