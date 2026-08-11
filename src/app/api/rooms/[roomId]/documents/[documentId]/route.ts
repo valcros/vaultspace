@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getPermissionEngine } from '@/lib/permissions';
 import { serializeBigInt } from '@/lib/serialization';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -71,6 +72,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const canView = await getPermissionEngine().can(
+        { userId: session.userId },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId,
+          folderId: document.folderId ?? undefined,
+          documentId,
+        },
+        tx
+      );
+      if (!canView) {
         return { error: 'Document not found', status: 404 };
       }
 

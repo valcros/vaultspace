@@ -337,12 +337,13 @@ export class DocumentService {
       // Check permissions (inside RLS context)
       const permissionEngine = getPermissionEngine();
       const canView = await permissionEngine.can(
-        { userId: session.userId, role: session.organization.role },
+        { userId: session.userId },
         'view',
         {
           type: 'DOCUMENT',
           organizationId: session.organizationId,
           roomId: document.roomId,
+          folderId: document.folderId ?? undefined,
           documentId,
         },
         tx
@@ -375,6 +376,19 @@ export class DocumentService {
   ): Promise<PaginatedResult<DocumentWithVersion>> {
     const { session } = ctx;
     const { roomId, folderId, status, search, category, offset = 0, limit = 50 } = options;
+
+    const canViewRoom = await withOrgContext(session.organizationId, async (tx) => {
+      const permissionEngine = getPermissionEngine();
+      return permissionEngine.can(
+        { userId: session.userId },
+        'view',
+        { type: 'ROOM', organizationId: session.organizationId, roomId },
+        tx
+      );
+    });
+    if (!canViewRoom) {
+      throw new NotFoundError('Room not found');
+    }
 
     // Build where clause
     // When no folderId is specified and no search query, show only root-level documents

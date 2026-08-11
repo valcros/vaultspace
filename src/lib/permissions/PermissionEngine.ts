@@ -26,7 +26,9 @@ export type Action = 'view' | 'download' | 'admin' | 'delete' | 'manage_permissi
 
 export interface Actor {
   userId?: string;
+  /** @deprecated Persisted organization membership is authoritative. */
   role?: UserRole;
+  /** @deprecated Group memberships are loaded from the database. */
   groupIds?: string[];
   linkId?: string;
   isSystem?: boolean;
@@ -58,6 +60,21 @@ export interface PermissionExplanation {
   summary: string;
 }
 
+const PERMISSION_LEVEL_RANK: Record<PermissionLevel, number> = {
+  NONE: 0,
+  VIEW: 1,
+  DOWNLOAD: 2,
+  ADMIN: 3,
+};
+
+type ApplicablePermission = {
+  permissionLevel: PermissionLevel;
+  resourceType: PermissionResourceType;
+  roomId: string | null;
+  folderId: string | null;
+  documentId: string | null;
+};
+
 /**
  * The PermissionEngine class evaluates access permissions.
  */
@@ -78,7 +95,6 @@ export class PermissionEngine {
   ): Promise<PermissionResult> {
     const dbClient = client ?? db;
 
-    // Layer 0: System actors always have access
     if (actor.isSystem) {
       return {
         allowed: true,
@@ -87,87 +103,80 @@ export class PermissionEngine {
       };
     }
 
-    // Fetch org membership once; used by the admin check (Layer 1) and the
-    // organization VIEWER baseline (Layer 15).
-    const orgMembership = actor.userId
-      ? await this.getOrgMembership(resource.organizationId, actor.userId, dbClient)
-      : null;
-
-    // Layer 1: Organization admin has full access
-    if (actor.userId) {
-      if (orgMembership?.role === 'ADMIN') {
-        return {
-          allowed: true,
-          level: 'ADMIN',
-          reason: 'Organization admin',
-        };
-      }
-
-      // Layer 2: Room-level role assignment
-      if (resource.roomId) {
-        const roomRole = await this.getRoomRole(
-          resource.organizationId,
-          actor.userId,
-          resource.roomId,
-          dbClient
-        );
-
-        if (roomRole === 'ADMIN') {
-          return {
-            allowed: true,
-            level: 'ADMIN',
-            reason: 'Room admin',
-          };
-        }
-      }
-    }
-
-    // Layer 3-5: Check explicit permissions (document -> folder -> room)
-    const explicitPermission = await this.getExplicitPermission(actor, resource, dbClient);
-    if (explicitPermission) {
-      return this.evaluatePermissionLevel(explicitPermission.level, action);
-    }
-
-    // Layer 6: Check group permissions
-    if (actor.groupIds?.length) {
-      const groupPermission = await this.getGroupPermission(actor.groupIds, resource, dbClient);
-      if (groupPermission) {
-        return this.evaluatePermissionLevel(groupPermission.level, action);
-      }
-    }
-
-    // Layer 7: Check link-based access
+    // A request carrying link identity stays link-bound. An authenticated user
+    // cannot widen a scoped link with unrelated organization permissions.
     if (actor.linkId) {
       const linkPermission = await this.getLinkPermission(actor.linkId, resource, dbClient);
       if (linkPermission) {
         return this.evaluatePermissionLevel(linkPermission.level, action);
       }
+      return this.defaultDeny('Link is not valid for this resource');
     }
 
-    // Layer 8-14: Inheritance and defaults. getInheritedPermission probes parent
-    // resources with the 'view' action, so re-apply the requested action against
-    // the inherited LEVEL — otherwise an inherited VIEW would wrongly authorize a
-    // DOWNLOAD/EDIT. The inherited reason is preserved for auditability.
-    const inheritedPermission = await this.getInheritedPermission(actor, resource, dbClient);
-    if (inheritedPermission) {
-      const applied = this.evaluatePermissionLevel(inheritedPermission.level, action);
-      return { ...applied, reason: inheritedPermission.reason };
+    if (!actor.userId) {
+      return this.defaultDeny('No authenticated actor');
     }
 
-    // Layer 15: Organization VIEWER baseline. An org VIEWER can VIEW all of their
-    // organization's room content (an invited viewer sees the entire room). Scoped
-    // to the user's own org via orgMembership (RLS enforces the same at the DB
-    // layer); grants VIEW only, so DOWNLOAD/EDIT/ADMIN still require an explicit
-    // grant, group, or link. A future restricted role can narrow this.
-    if (orgMembership?.role === 'VIEWER' && orgMembership.isActive) {
-      return this.evaluatePermissionLevel('VIEW', action);
+    const orgMembership = await this.getOrgMembership(
+      resource.organizationId,
+      actor.userId,
+      dbClient
+    );
+    if (!orgMembership?.isActive) {
+      return this.defaultDeny('No active organization membership');
     }
 
-    // Default: deny access
+    // Persisted organization and room authority is evaluated before non-admin
+    // ACL denies, as required by the permission contract.
+    if (orgMembership.role === 'ADMIN') {
+      return { allowed: true, level: 'ADMIN', reason: 'Organization admin' };
+    }
+
+    if (resource.roomId) {
+      const roomRole = await this.getRoomRole(
+        resource.organizationId,
+        actor.userId,
+        resource.roomId,
+        dbClient
+      );
+      if (roomRole === 'ADMIN') {
+        return { allowed: true, level: 'ADMIN', reason: 'Room admin' };
+      }
+    }
+
+    const permissions = await this.getApplicablePermissions(actor.userId, resource, dbClient);
+    const explicitDeny = permissions.find((permission) => permission.permissionLevel === 'NONE');
+    if (explicitDeny) {
+      return {
+        allowed: false,
+        level: 'NONE',
+        reason: `Explicit deny on ${explicitDeny.resourceType.toLowerCase()}`,
+        inheritedFrom: this.inheritedFrom(explicitDeny, resource),
+      };
+    }
+
+    const strongest = permissions.reduce<ApplicablePermission | null>((current, permission) => {
+      if (!current) {
+        return permission;
+      }
+      return PERMISSION_LEVEL_RANK[permission.permissionLevel] >
+        PERMISSION_LEVEL_RANK[current.permissionLevel]
+        ? permission
+        : current;
+    }, null);
+
+    if (!strongest) {
+      return this.defaultDeny('No permission found');
+    }
+
+    const result = this.evaluatePermissionLevel(strongest.permissionLevel, action);
+    const inheritedFrom = this.inheritedFrom(strongest, resource);
     return {
-      allowed: false,
-      level: 'NONE',
-      reason: 'No permission found',
+      ...result,
+      reason: inheritedFrom
+        ? `${result.reason}; inherited from ${inheritedFrom.type.toLowerCase()}`
+        : result.reason,
+      inheritedFrom,
     };
   }
 
@@ -199,197 +208,107 @@ export class PermissionEngine {
     resource: Resource,
     client?: DbClient
   ): Promise<PermissionExplanation> {
-    const dbClient = client ?? db;
-    const reasoning: string[] = [];
-
-    // Layer 0: System actors
-    if (actor.isSystem) {
-      reasoning.push('Layer 0: Actor is system user → ADMIN access granted');
-      return {
-        allowed: true,
-        action,
-        resource,
-        reasoning,
-        summary: 'Allowed: system actor has full access',
-      };
-    }
-    reasoning.push('Layer 0: Not a system actor → continue evaluation');
-
-    // Fetch org membership once; used by the admin check (Layer 1) and the
-    // organization VIEWER baseline (Layer 15).
-    const orgMembership = actor.userId
-      ? await this.getOrgMembership(resource.organizationId, actor.userId, dbClient)
-      : null;
-
-    // Layer 1: Organization admin check
-    if (actor.userId) {
-      if (orgMembership?.role === 'ADMIN') {
-        reasoning.push(`Layer 1: User is organization admin → ADMIN access granted`);
-        return {
-          allowed: true,
-          action,
-          resource,
-          reasoning,
-          summary: 'Allowed: organization admin has full access',
-        };
-      }
-      reasoning.push(
-        `Layer 1: User role is ${orgMembership?.role ?? 'VIEWER'} (not ADMIN) → continue`
-      );
-
-      // Layer 2: Room-level role assignment
-      if (resource.roomId) {
-        const roomRole = await this.getRoomRole(
-          resource.organizationId,
-          actor.userId,
-          resource.roomId,
-          dbClient
-        );
-
-        if (roomRole === 'ADMIN') {
-          reasoning.push(`Layer 2: User has ADMIN role on room → ADMIN access granted`);
-          return {
-            allowed: true,
-            action,
-            resource,
-            reasoning,
-            summary: 'Allowed: room admin has full access to room resources',
-          };
-        }
-        reasoning.push(`Layer 2: User room role is ${roomRole ?? 'none'} → continue`);
-      } else {
-        reasoning.push('Layer 2: No room context → skip room role check');
-      }
-    } else {
-      reasoning.push('Layer 1-2: No userId provided → skip user-specific checks');
-    }
-
-    // Layer 3-5: Explicit permissions (document → folder → room)
-    const explicitPermission = await this.getExplicitPermission(actor, resource, dbClient);
-    if (explicitPermission) {
-      const result = this.evaluatePermissionLevel(explicitPermission.level, action);
-      const resourceType = resource.documentId ? 'document' : resource.folderId ? 'folder' : 'room';
-      reasoning.push(
-        `Layer 3-5: Found explicit ${explicitPermission.level} permission on ${resourceType}`
-      );
-      reasoning.push(
-        `Permission level ${explicitPermission.level} ${result.allowed ? 'allows' : 'does not allow'} ${action}`
-      );
-      return {
-        allowed: result.allowed,
-        action,
-        resource,
-        reasoning,
-        summary: result.allowed
-          ? `Allowed: explicit ${explicitPermission.level} permission on ${resourceType}`
-          : `Denied: ${explicitPermission.level} permission insufficient for ${action}`,
-      };
-    }
-    reasoning.push('Layer 3-5: No explicit user permission found → continue');
-
-    // Layer 6: Group permissions
-    if (actor.groupIds?.length) {
-      const groupPermission = await this.getGroupPermission(actor.groupIds, resource, dbClient);
-      if (groupPermission) {
-        const result = this.evaluatePermissionLevel(groupPermission.level, action);
-        reasoning.push(`Layer 6: User in group(s) with ${groupPermission.level} permission`);
-        reasoning.push(
-          `Permission level ${groupPermission.level} ${result.allowed ? 'allows' : 'does not allow'} ${action}`
-        );
-        return {
-          allowed: result.allowed,
-          action,
-          resource,
-          reasoning,
-          summary: result.allowed
-            ? `Allowed: group membership grants ${groupPermission.level} access`
-            : `Denied: group ${groupPermission.level} permission insufficient for ${action}`,
-        };
-      }
-      reasoning.push(
-        `Layer 6: User groups [${actor.groupIds.join(', ')}] have no permissions → continue`
-      );
-    } else {
-      reasoning.push('Layer 6: User has no group memberships → skip group check');
-    }
-
-    // Layer 7: Link-based access
-    if (actor.linkId) {
-      const linkPermission = await this.getLinkPermission(actor.linkId, resource, dbClient);
-      if (linkPermission) {
-        const result = this.evaluatePermissionLevel(linkPermission.level, action);
-        reasoning.push(`Layer 7: Link grants ${linkPermission.level} access`);
-        reasoning.push(
-          `Permission level ${linkPermission.level} ${result.allowed ? 'allows' : 'does not allow'} ${action}`
-        );
-        return {
-          allowed: result.allowed,
-          action,
-          resource,
-          reasoning,
-          summary: result.allowed
-            ? `Allowed: link access grants ${linkPermission.level}`
-            : `Denied: link ${linkPermission.level} permission insufficient for ${action}`,
-        };
-      }
-      reasoning.push('Layer 7: Link not valid for this resource → continue');
-    } else {
-      reasoning.push('Layer 7: No link context → skip link check');
-    }
-
-    // Layer 8-14: Inheritance
-    const inheritedPermission = await this.getInheritedPermission(actor, resource, dbClient);
-    if (inheritedPermission) {
-      reasoning.push(
-        `Layer 8-14: ${inheritedPermission.reason} (${inheritedPermission.inheritedFrom?.type})`
-      );
-      reasoning.push(
-        `Inherited level ${inheritedPermission.level} ${inheritedPermission.allowed ? 'allows' : 'does not allow'} ${action}`
-      );
-      return {
-        allowed: inheritedPermission.allowed,
-        action,
-        resource,
-        reasoning,
-        summary: inheritedPermission.allowed
-          ? `Allowed: inherited from ${inheritedPermission.inheritedFrom?.type?.toLowerCase()}`
-          : `Denied: inherited ${inheritedPermission.level} insufficient for ${action}`,
-      };
-    }
-    reasoning.push('Layer 8-14: No inherited permissions found');
-
-    // Layer 15: Organization VIEWER baseline. An org VIEWER can VIEW all of their
-    // organization's room content (an invited viewer sees the entire room). This
-    // is scoped to the user's own org via orgMembership (and RLS enforces the same
-    // at the DB layer), and it grants VIEW only — DOWNLOAD/EDIT/ADMIN still require
-    // an explicit grant, group, or link. A future restricted role/level can carve
-    // out narrower access without changing this default.
-    if (orgMembership?.role === 'VIEWER' && orgMembership.isActive) {
-      const result = this.evaluatePermissionLevel('VIEW', action);
-      reasoning.push('Layer 15: Org VIEWER baseline grants VIEW on org resources');
-      reasoning.push(
-        `Permission level VIEW ${result.allowed ? 'allows' : 'does not allow'} ${action}`
-      );
-      return {
-        allowed: result.allowed,
-        action,
-        resource,
-        reasoning,
-        summary: result.allowed
-          ? 'Allowed: organization VIEWER baseline grants VIEW access'
-          : `Denied: VIEWER baseline (VIEW) insufficient for ${action}`,
-      };
-    }
-
-    // Default deny
-    reasoning.push('Default: No permission found → DENIED');
+    const result = await this.evaluate(actor, action, resource, client);
     return {
-      allowed: false,
+      allowed: result.allowed,
       action,
       resource,
-      reasoning,
-      summary: 'Denied: no permission grants access to this resource',
+      reasoning: [result.reason],
+      summary: `${result.allowed ? 'Allowed' : 'Denied'}: ${result.reason}`,
     };
+  }
+
+  /**
+   * Resolve the room IDs that may appear in the general room list.
+   * A null result means the persisted organization ADMIN authority is
+   * unrestricted inside the supplied organization. Leaf-only grants are
+   * intentionally excluded from discovery.
+   */
+  async getViewableRoomIds(
+    actor: Actor,
+    organizationId: string,
+    client?: DbClient
+  ): Promise<Set<string> | null> {
+    const dbClient = client ?? db;
+    if (actor.isSystem) {
+      return null;
+    }
+    if (!actor.userId) {
+      return new Set();
+    }
+
+    const membership = await this.getOrgMembership(organizationId, actor.userId, dbClient);
+    if (!membership?.isActive) {
+      return new Set();
+    }
+    if (membership.role === 'ADMIN') {
+      return null;
+    }
+
+    const groupIds = await this.getActiveGroupIds(organizationId, actor.userId, dbClient);
+    const grantees: Prisma.PermissionWhereInput[] = [
+      { granteeType: 'USER', userId: actor.userId },
+      ...(groupIds.length > 0
+        ? [{ granteeType: 'GROUP' as const, groupId: { in: groupIds } }]
+        : []),
+    ];
+    const now = new Date();
+
+    const [assignments, permissions] = await Promise.all([
+      dbClient.roleAssignment.findMany({
+        where: {
+          organizationId,
+          userId: actor.userId,
+          scopeType: 'ROOM',
+          role: 'ADMIN',
+          roomId: { not: null },
+        },
+        select: { roomId: true },
+      }),
+      dbClient.permission.findMany({
+        where: {
+          organizationId,
+          resourceType: 'ROOM',
+          roomId: { not: null },
+          isActive: true,
+          AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, { OR: grantees }],
+        },
+        select: {
+          permissionLevel: true,
+          resourceType: true,
+          roomId: true,
+          folderId: true,
+          documentId: true,
+        },
+      }),
+    ]);
+
+    const roomAdminIds = new Set(
+      assignments.flatMap((assignment) => (assignment.roomId ? [assignment.roomId] : []))
+    );
+    const allowed = new Set(roomAdminIds);
+    const denied = new Set<string>();
+
+    for (const permission of permissions) {
+      if (
+        permission.resourceType !== 'ROOM' ||
+        !permission.roomId ||
+        roomAdminIds.has(permission.roomId)
+      ) {
+        continue;
+      }
+      if (permission.permissionLevel === 'NONE') {
+        denied.add(permission.roomId);
+        allowed.delete(permission.roomId);
+      } else if (
+        !denied.has(permission.roomId) &&
+        PERMISSION_LEVEL_RANK[permission.permissionLevel] >= PERMISSION_LEVEL_RANK.VIEW
+      ) {
+        allowed.add(permission.roomId);
+      }
+    }
+
+    return allowed;
   }
 
   /**
@@ -400,6 +319,7 @@ export class PermissionEngine {
       where: {
         organizationId_userId: { organizationId, userId },
       },
+      select: { role: true, isActive: true },
     });
   }
 
@@ -419,100 +339,79 @@ export class PermissionEngine {
         roomId,
         scopeType: 'ROOM',
       },
+      select: { role: true },
     });
     return assignment?.role ?? null;
   }
 
-  /**
-   * Get explicit permission for a resource
-   */
-  private async getExplicitPermission(
-    actor: Actor,
-    resource: Resource,
+  private async getActiveGroupIds(
+    organizationId: string,
+    userId: string,
     client: DbClient
-  ): Promise<{ level: PermissionLevel } | null> {
-    if (!actor.userId) {
-      return null;
-    }
-
-    // Check document permission first
-    if (resource.documentId) {
-      const docPermission = await client.permission.findFirst({
-        where: {
-          organizationId: resource.organizationId,
-          documentId: resource.documentId,
-          userId: actor.userId,
-          granteeType: 'USER',
-          isActive: true,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        },
-      });
-      if (docPermission) {
-        return { level: docPermission.permissionLevel };
-      }
-    }
-
-    // Check folder permission
-    if (resource.folderId) {
-      const folderPermission = await client.permission.findFirst({
-        where: {
-          organizationId: resource.organizationId,
-          folderId: resource.folderId,
-          userId: actor.userId,
-          granteeType: 'USER',
-          isActive: true,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        },
-      });
-      if (folderPermission) {
-        return { level: folderPermission.permissionLevel };
-      }
-    }
-
-    // Check room permission
-    if (resource.roomId) {
-      const roomPermission = await client.permission.findFirst({
-        where: {
-          organizationId: resource.organizationId,
-          roomId: resource.roomId,
-          userId: actor.userId,
-          granteeType: 'USER',
-          isActive: true,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        },
-      });
-      if (roomPermission) {
-        return { level: roomPermission.permissionLevel };
-      }
-    }
-
-    return null;
+  ): Promise<string[]> {
+    const memberships = await client.groupMembership.findMany({
+      where: {
+        userId,
+        group: { organizationId, isActive: true },
+      },
+      select: { groupId: true },
+    });
+    return memberships.map((membership) => membership.groupId);
   }
 
-  /**
-   * Get permission through group membership
-   */
-  private async getGroupPermission(
-    groupIds: string[],
+  private async getApplicablePermissions(
+    userId: string,
     resource: Resource,
     client: DbClient
-  ): Promise<{ level: PermissionLevel } | null> {
-    const permission = await client.permission.findFirst({
+  ): Promise<ApplicablePermission[]> {
+    const groupIds = await this.getActiveGroupIds(resource.organizationId, userId, client);
+    const grantees: Prisma.PermissionWhereInput[] = [
+      { granteeType: 'USER', userId },
+      ...(groupIds.length > 0
+        ? [{ granteeType: 'GROUP' as const, groupId: { in: groupIds } }]
+        : []),
+    ];
+    const resources: Prisma.PermissionWhereInput[] = [];
+
+    if (resource.documentId) {
+      resources.push({ resourceType: 'DOCUMENT', documentId: resource.documentId });
+    }
+    if (resource.folderId) {
+      resources.push({
+        resourceType: 'FOLDER',
+        folderId: resource.folderId,
+        ...(resource.type !== 'FOLDER' && { inheritFromParent: true }),
+      });
+    }
+    if (resource.roomId) {
+      resources.push({
+        resourceType: 'ROOM',
+        roomId: resource.roomId,
+        ...(resource.type !== 'ROOM' && { inheritFromParent: true }),
+      });
+    }
+    if (resources.length === 0) {
+      return [];
+    }
+
+    return client.permission.findMany({
       where: {
         organizationId: resource.organizationId,
-        groupId: { in: groupIds },
-        granteeType: 'GROUP',
         isActive: true,
-        OR: [
-          { roomId: resource.roomId },
-          { folderId: resource.folderId },
-          { documentId: resource.documentId },
+        AND: [
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+          { OR: grantees },
+          { OR: resources },
         ],
       },
-      orderBy: { permissionLevel: 'desc' }, // Highest permission wins
+      select: {
+        permissionLevel: true,
+        resourceType: true,
+        roomId: true,
+        folderId: true,
+        documentId: true,
+      },
     });
-
-    return permission ? { level: permission.permissionLevel } : null;
   }
 
   /**
@@ -527,7 +426,12 @@ export class PermissionEngine {
       where: { id: linkId },
     });
 
-    if (!link || !link.isActive) {
+    if (
+      !link ||
+      !link.isActive ||
+      link.organizationId !== resource.organizationId ||
+      (link.expiresAt && link.expiresAt <= new Date())
+    ) {
       return null;
     }
 
@@ -547,70 +451,30 @@ export class PermissionEngine {
     return null;
   }
 
-  /**
-   * Get inherited permission from parent resources
-   */
-  private async getInheritedPermission(
-    actor: Actor,
-    resource: Resource,
-    client: DbClient
-  ): Promise<PermissionResult | null> {
-    // If checking document, try to inherit from folder
-    if (resource.documentId && resource.folderId) {
-      const folderResult = await this.evaluate(
-        actor,
-        'view',
-        {
-          ...resource,
-          type: 'FOLDER',
-          documentId: undefined,
-        },
-        client
-      );
-      if (folderResult.allowed) {
-        return {
-          ...folderResult,
-          reason: `Inherited from folder`,
-          inheritedFrom: { type: 'FOLDER', id: resource.folderId },
-        };
-      }
+  private inheritedFrom(
+    permission: ApplicablePermission,
+    resource: Resource
+  ): PermissionResult['inheritedFrom'] {
+    if (permission.resourceType === resource.type) {
+      return undefined;
     }
+    const id =
+      permission.resourceType === 'ROOM'
+        ? permission.roomId
+        : permission.resourceType === 'FOLDER'
+          ? permission.folderId
+          : permission.documentId;
+    return id ? { type: permission.resourceType, id } : undefined;
+  }
 
-    // If checking folder or document, try to inherit from room
-    if ((resource.folderId || resource.documentId) && resource.roomId) {
-      const roomResult = await this.evaluate(
-        actor,
-        'view',
-        {
-          type: 'ROOM',
-          organizationId: resource.organizationId,
-          roomId: resource.roomId,
-        },
-        client
-      );
-      if (roomResult.allowed) {
-        return {
-          ...roomResult,
-          reason: `Inherited from room`,
-          inheritedFrom: { type: 'ROOM', id: resource.roomId },
-        };
-      }
-    }
-
-    return null;
+  private defaultDeny(reason: string): PermissionResult {
+    return { allowed: false, level: 'NONE', reason };
   }
 
   /**
    * Evaluate if a permission level allows an action
    */
   private evaluatePermissionLevel(level: PermissionLevel, action: Action): PermissionResult {
-    const levelHierarchy: Record<PermissionLevel, number> = {
-      NONE: 0,
-      VIEW: 1,
-      DOWNLOAD: 2,
-      ADMIN: 3,
-    };
-
     const actionRequirements: Record<Action, PermissionLevel> = {
       view: 'VIEW',
       download: 'DOWNLOAD',
@@ -620,7 +484,7 @@ export class PermissionEngine {
     };
 
     const requiredLevel = actionRequirements[action];
-    const allowed = levelHierarchy[level] >= levelHierarchy[requiredLevel];
+    const allowed = PERMISSION_LEVEL_RANK[level] >= PERMISSION_LEVEL_RANK[requiredLevel];
 
     return {
       allowed,

@@ -46,6 +46,7 @@ export type {
 
 export type {
   CreateRoomOptions,
+  RoomListItem,
   RoomListOptions,
   RoomWithStats,
   UpdateRoomOptions,

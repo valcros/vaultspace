@@ -41,13 +41,33 @@ export interface RoomListOptions extends PaginationOptions {
 /**
  * Room with statistics
  */
-export interface RoomWithStats extends Room {
+export type RoomWithStats = Omit<Room, 'passwordHash'> & {
   _count: {
     documents: number;
     folders: number;
     links: number;
+    permissions: number;
   };
-}
+};
+
+const ROOM_LIST_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+  archivedAt: true,
+  _count: {
+    select: {
+      documents: true,
+      folders: true,
+    },
+  },
+} satisfies Prisma.RoomSelect;
+
+export type RoomListItem = Prisma.RoomGetPayload<{ select: typeof ROOM_LIST_SELECT }>;
 
 /**
  * Generate URL-safe slug from name
@@ -145,6 +165,7 @@ export class RoomService {
               documents: true,
               folders: true,
               links: true,
+              permissions: true,
             },
           },
         },
@@ -157,7 +178,7 @@ export class RoomService {
       // Check permissions (pass transaction for RLS context)
       const permissionEngine = getPermissionEngine();
       const canView = await permissionEngine.can(
-        { userId: session.userId, role: session.organization.role },
+        { userId: session.userId },
         'view',
         { type: 'ROOM', organizationId: session.organizationId, roomId },
         tx
@@ -167,7 +188,8 @@ export class RoomService {
         return null;
       }
 
-      return room;
+      const { passwordHash: _passwordHash, ...safeRoom } = room;
+      return safeRoom;
     });
   }
 
@@ -191,6 +213,7 @@ export class RoomService {
               documents: true,
               folders: true,
               links: true,
+              permissions: true,
             },
           },
         },
@@ -203,7 +226,7 @@ export class RoomService {
       // Check permissions (pass transaction for RLS context)
       const permissionEngine = getPermissionEngine();
       const canView = await permissionEngine.can(
-        { userId: session.userId, role: session.organization.role },
+        { userId: session.userId },
         'view',
         { type: 'ROOM', organizationId: session.organizationId, roomId: room.id },
         tx
@@ -213,7 +236,8 @@ export class RoomService {
         return null;
       }
 
-      return room;
+      const { passwordHash: _passwordHash, ...safeRoom } = room;
+      return safeRoom;
     });
   }
 
@@ -224,41 +248,42 @@ export class RoomService {
   async list(
     ctx: ServiceContext,
     options: RoomListOptions = {}
-  ): Promise<PaginatedResult<RoomWithStats>> {
+  ): Promise<PaginatedResult<RoomListItem>> {
     const { session } = ctx;
     const { status, search, offset = 0, limit = 50 } = options;
 
-    // Build where clause
-    const where: Prisma.RoomWhereInput = {
-      organizationId: session.organizationId,
-      ...(status && { status }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } },
-        ],
-      }),
-    };
-
     // Use RLS context for org-scoped queries
     const { total, rooms } = await withOrgContext(session.organizationId, async (tx) => {
-      const total = await tx.room.count({ where });
+      const permissionEngine = getPermissionEngine();
+      const viewableRoomIds = await permissionEngine.getViewableRoomIds(
+        { userId: session.userId },
+        session.organizationId,
+        tx
+      );
+      const isOrganizationAdmin = viewableRoomIds === null;
+      const where: Prisma.RoomWhereInput = {
+        organizationId: session.organizationId,
+        ...(isOrganizationAdmin
+          ? status && { status }
+          : { id: { in: [...viewableRoomIds] }, status: 'ACTIVE' }),
+        ...(search && {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
+      };
 
-      const rooms = await tx.room.findMany({
-        where,
-        include: {
-          _count: {
-            select: {
-              documents: true,
-              folders: true,
-              links: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip: offset,
-        take: limit,
-      });
+      const [total, rooms] = await Promise.all([
+        tx.room.count({ where }),
+        tx.room.findMany({
+          where,
+          select: ROOM_LIST_SELECT,
+          orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+          skip: offset,
+          take: limit,
+        }),
+      ]);
 
       return { total, rooms };
     });

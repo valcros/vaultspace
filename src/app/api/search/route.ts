@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getPermissionEngine } from '@/lib/permissions';
 import { Prisma } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -59,8 +60,23 @@ export async function GET(request: NextRequest) {
     const startTime = Date.now();
 
     const response = await withOrgContext(organizationId, async (tx) => {
+      const viewableRoomIds = await getPermissionEngine().getViewableRoomIds(
+        { userId: session.userId },
+        organizationId,
+        tx
+      );
+      if (viewableRoomIds !== null) {
+        if (viewableRoomIds.size === 0 || (roomId && !viewableRoomIds.has(roomId))) {
+          return { results: [], total: 0, took: Date.now() - startTime };
+        }
+      }
+
       // Build dynamic WHERE conditions
       const conditions: Prisma.Sql[] = [Prisma.sql`si."organizationId" = ${organizationId}`];
+
+      if (viewableRoomIds !== null) {
+        conditions.push(Prisma.sql`d."roomId" IN (${Prisma.join([...viewableRoomIds])})`);
+      }
 
       // Exclude soft-deleted documents
       conditions.push(Prisma.sql`d."status" != 'DELETED'`);

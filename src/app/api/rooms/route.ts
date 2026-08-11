@@ -6,13 +6,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import type { RoomStatus } from '@prisma/client';
 
 import { isAuthenticationError } from '@/lib/errors';
-import { requireAuthFromRequest } from '@/lib/middleware';
+import { getRequestContext, requireAuthFromRequest } from '@/lib/middleware';
+import { createServiceContext, roomService } from '@/services';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 import { withOrgContext } from '@/lib/db';
+
+const ROOM_STATUSES = new Set<RoomStatus>(['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED']);
 
 /**
  * GET /api/rooms
@@ -23,56 +27,35 @@ export async function GET(request: NextRequest) {
     const session = await requireAuthFromRequest(request);
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
-    const limit = parseInt(searchParams.get('limit') ?? '50', 10);
-    const offset = parseInt(searchParams.get('offset') ?? '0', 10);
-
-    const where = {
-      organizationId: session.organizationId,
-      ...(status && { status: status as 'DRAFT' | 'ACTIVE' | 'ARCHIVED' | 'CLOSED' }),
-      // Non-admins can only see active rooms
-      ...(session.organization.role !== 'ADMIN' && { status: 'ACTIVE' as const }),
-    };
-
-    // Use RLS context for org-scoped queries
-    const [rooms, total] = await withOrgContext(session.organizationId, async (tx) => {
-      return Promise.all([
-        // Select only list-view fields: the previous full-model include
-        // serialized passwordHash, NDA content, and watermark config into a
-        // list response no client screen reads.
-        tx.room.findMany({
-          where,
-          orderBy: { updatedAt: 'desc' },
-          take: limit,
-          skip: offset,
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            description: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
-            archivedAt: true,
-            _count: {
-              select: {
-                documents: true,
-                folders: true,
-              },
-            },
-          },
-        }),
-        tx.room.count({ where }),
-      ]);
+    const requestedStatus = searchParams.get('status');
+    const parsedLimit = Number.parseInt(searchParams.get('limit') ?? '50', 10);
+    const parsedOffset = Number.parseInt(searchParams.get('offset') ?? '0', 10);
+    const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 50;
+    const offset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
+    const reqContext = getRequestContext(request);
+    const ctx = createServiceContext({
+      session,
+      requestId: reqContext.requestId,
+      ipAddress: reqContext.ipAddress,
+      userAgent: reqContext.userAgent,
+    });
+    const result = await roomService.list(ctx, {
+      status:
+        requestedStatus && ROOM_STATUSES.has(requestedStatus as RoomStatus)
+          ? (requestedStatus as RoomStatus)
+          : undefined,
+      search: searchParams.get('search') || undefined,
+      limit,
+      offset,
     });
 
     return NextResponse.json({
-      rooms,
+      rooms: result.items,
       pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + rooms.length < total,
+        total: result.total,
+        limit: result.limit,
+        offset: result.offset,
+        hasMore: result.hasMore,
       },
     });
   } catch (error) {

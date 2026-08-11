@@ -7,6 +7,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+const permissionMocks = vi.hoisted(() => ({
+  getViewableRoomIds: vi.fn(),
+}));
+
 // Mock auth
 const mockSession = {
   userId: 'user-1',
@@ -25,12 +29,16 @@ const mockTx = {
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
 }));
+vi.mock('@/lib/permissions', () => ({
+  getPermissionEngine: () => ({ getViewableRoomIds: permissionMocks.getViewableRoomIds }),
+}));
 
 import { GET } from './route';
 
 describe('GET /api/search', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    permissionMocks.getViewableRoomIds.mockResolvedValue(null);
   });
 
   it('returns 400 when no query param', async () => {
@@ -102,5 +110,28 @@ describe('GET /api/search', () => {
     await GET(req);
 
     expect(withOrgContext).toHaveBeenCalledWith('org-1', expect.any(Function));
+  });
+
+  it('does not query search data when the viewer has no discoverable room', async () => {
+    permissionMocks.getViewableRoomIds.mockResolvedValue(new Set());
+
+    const res = await GET(new NextRequest('http://localhost:3000/api/search?q=restricted'));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.results).toEqual([]);
+    expect(body.total).toBe(0);
+    expect(mockTx.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('denies an explicitly requested room outside the viewer room set', async () => {
+    permissionMocks.getViewableRoomIds.mockResolvedValue(new Set(['room-allowed']));
+
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/search?q=restricted&roomId=room-denied')
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockTx.$queryRaw).not.toHaveBeenCalled();
   });
 });

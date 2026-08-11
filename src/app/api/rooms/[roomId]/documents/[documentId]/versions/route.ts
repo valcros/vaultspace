@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getPermissionEngine } from '@/lib/permissions';
 import { serializeBigInt } from '@/lib/serialization';
 import { getProviders } from '@/providers';
 import { createHash } from 'crypto';
@@ -33,51 +34,55 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // Use RLS context for org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Verify room access
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!room) {
-        return { error: 'Room not found', status: 404 };
-      }
-
-      // Get document with all versions
       const document = await tx.document.findFirst({
         where: {
           id: documentId,
           roomId,
           organizationId: session.organizationId,
         },
-        include: {
-          versions: {
-            orderBy: { versionNumber: 'desc' },
-            include: {
-              uploadedByUser: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-              previewAssets: {
-                where: { assetType: 'THUMBNAIL' },
-                take: 1,
-              },
-            },
-          },
-        },
+        select: { id: true, roomId: true, folderId: true },
       });
 
       if (!document) {
         return { error: 'Document not found', status: 404 };
       }
 
-      return { versions: document.versions };
+      const canView = await getPermissionEngine().can(
+        { userId: session.userId },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId: document.roomId,
+          folderId: document.folderId ?? undefined,
+          documentId: document.id,
+        },
+        tx
+      );
+      if (!canView) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const versions = await tx.documentVersion.findMany({
+        where: { organizationId: session.organizationId, documentId: document.id },
+        orderBy: { versionNumber: 'desc' },
+        include: {
+          uploadedByUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          previewAssets: {
+            where: { assetType: 'THUMBNAIL' },
+            take: 1,
+          },
+        },
+      });
+
+      return { versions };
     });
 
     if ('error' in result) {

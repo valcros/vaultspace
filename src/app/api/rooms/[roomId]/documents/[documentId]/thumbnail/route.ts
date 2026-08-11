@@ -19,6 +19,7 @@ import { withOrgContext } from '@/lib/db';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 import { hasCapability } from '@/lib/deployment-capabilities';
+import { getPermissionEngine } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,10 +68,32 @@ export async function GET(request: NextRequest, context: RouteContext) {
           organizationId: session.organizationId,
           status: 'ACTIVE',
         },
-        select: { id: true, name: true, mimeType: true, currentVersionId: true },
+        select: {
+          id: true,
+          name: true,
+          mimeType: true,
+          folderId: true,
+          currentVersionId: true,
+        },
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const canView = await getPermissionEngine().can(
+        { userId: session.userId },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId,
+          folderId: document.folderId ?? undefined,
+          documentId,
+        },
+        tx
+      );
+      if (!canView) {
         return { error: 'Document not found', status: 404 };
       }
 
