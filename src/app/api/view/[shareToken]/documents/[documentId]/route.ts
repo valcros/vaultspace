@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
 import { getRequestContext } from '@/lib/middleware';
-import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
+import { canViewerLinkAccessDocument } from '@/lib/permissions/LinkPolicy';
 import {
   getViewerSession,
   requireViewerSession,

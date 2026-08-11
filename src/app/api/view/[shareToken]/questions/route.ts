@@ -10,6 +10,10 @@ import { z } from 'zod';
 
 import { withOrgContext } from '@/lib/db';
 import {
+  canViewerLinkAccessDocument,
+  getViewerLinkScopedDocumentIds,
+} from '@/lib/permissions/LinkPolicy';
+import {
   getViewerSession,
   requireViewerSession,
   viewerSessionBaseSelect,
@@ -39,11 +43,35 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const viewerSession = sessionResult.session;
 
     const questions = await withOrgContext(viewerSession.organizationId, async (tx) => {
+      const scopedDocumentIds = await getViewerLinkScopedDocumentIds(
+        tx,
+        viewerSession.link,
+        viewerSession.roomId
+      );
+      const scopeWhere =
+        scopedDocumentIds === null
+          ? {}
+          : {
+              OR: [
+                { documentId: null },
+                ...(scopedDocumentIds.size > 0
+                  ? [{ documentId: { in: [...scopedDocumentIds] } }]
+                  : []),
+              ],
+            };
+      const ownIdentityWhere = viewerSession.visitorEmail
+        ? { askedByEmail: viewerSession.visitorEmail }
+        : { viewSessionId: viewerSession.id };
+      const excludeOwnWhere = viewerSession.visitorEmail
+        ? { askedByEmail: viewerSession.visitorEmail }
+        : { viewSessionId: viewerSession.id };
+
       // 1. Viewer's own questions (all statuses)
       const ownQuestions = await tx.question.findMany({
         where: {
           roomId: viewerSession.roomId,
-          askedByEmail: viewerSession.visitorEmail ?? undefined,
+          ...ownIdentityWhere,
+          ...scopeWhere,
         },
         include: {
           answers: {
@@ -73,10 +101,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           roomId: viewerSession.roomId,
           isPublic: true,
           status: 'ANSWERED',
+          ...scopeWhere,
           // Exclude the viewer's own questions (already included above)
-          NOT: {
-            askedByEmail: viewerSession.visitorEmail ?? undefined,
-          },
+          NOT: excludeOwnWhere,
         },
         include: {
           answers: {
@@ -172,16 +199,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { subject, body, documentId } = parsed.data;
 
     const question = await withOrgContext(viewerSession.organizationId, async (tx) => {
-      // If documentId provided, verify it belongs to this room
+      // If documentId is provided, verify both room identity and link scope.
       if (documentId) {
         const doc = await tx.document.findFirst({
           where: {
             id: documentId,
             roomId: viewerSession.roomId,
+            organizationId: viewerSession.organizationId,
+            status: 'ACTIVE',
+            withdrawnAt: null,
           },
-          select: { id: true },
+          select: { id: true, folderId: true },
         });
-        if (!doc) {
+        if (
+          !doc ||
+          !(await canViewerLinkAccessDocument(tx, viewerSession.link, viewerSession.roomId, doc))
+        ) {
           return null; // Signal invalid document
         }
       }

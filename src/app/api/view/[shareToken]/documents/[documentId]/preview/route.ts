@@ -15,7 +15,7 @@ import {
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
-import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
+import { canViewerLinkAccessDocument } from '@/lib/permissions/LinkPolicy';
 import { getProviders } from '@/providers';
 
 interface RouteContext {

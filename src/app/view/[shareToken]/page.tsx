@@ -25,6 +25,7 @@ interface ShareLinkInfo {
   ndaText: string | null;
   expiresAt: string | null;
   isActive: boolean;
+  alreadyAdmitted?: boolean;
 }
 
 export default function ViewerAccessPage() {
@@ -55,8 +56,24 @@ export default function ViewerAccessPage() {
 
       setLinkInfo(data.link);
 
-      // If no gates required, redirect directly to documents
+      if (data.link.alreadyAdmitted) {
+        router.push(`/view/${shareToken}/documents`);
+        return;
+      }
+
+      // A gate-free link still requires an admitted server-side viewer session.
+      // This call atomically consumes maxViews before the document route opens.
       if (!data.link.requiresPassword && !data.link.requiresEmail && !data.link.ndaRequired) {
+        const admissionResponse = await fetch(`/api/view/${shareToken}/access`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        if (!admissionResponse.ok) {
+          const admissionData = await admissionResponse.json().catch(() => null);
+          setError(admissionData?.error || 'Access denied');
+          return;
+        }
         router.push(`/view/${shareToken}/documents`);
         return;
       }
