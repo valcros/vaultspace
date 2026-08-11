@@ -9,7 +9,11 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { PrismaClient, type Prisma } from '@prisma/client';
 
-import { getViewerSessionGuardResponse, viewerSessionBaseSelect } from '@/lib/viewerSession';
+import {
+  getViewerSessionByToken,
+  getViewerSessionGuardResponse,
+  viewerSessionBaseSelect,
+} from '@/lib/viewerSession';
 
 const prisma = new PrismaClient();
 
@@ -134,13 +138,11 @@ describe('SEC-013/014: event immutability trigger', () => {
       });
 
       expect(result.count).toBe(1);
-      const activeSession = await tx.viewSession.findFirst({
-        where: {
-          sessionToken: viewSession.sessionToken,
-          isActive: true,
-        },
-        select: viewerSessionBaseSelect,
-      });
+      const activeSession = await getViewerSessionByToken(
+        viewSession.sessionToken,
+        viewerSessionBaseSelect,
+        tx
+      );
 
       expect(activeSession).toBeNull();
       const serveResponse = getViewerSessionGuardResponse(link.slug, activeSession);
