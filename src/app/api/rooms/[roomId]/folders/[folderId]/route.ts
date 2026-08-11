@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
@@ -20,14 +21,23 @@ interface RouteContext {
   params: Promise<{ roomId: string; folderId: string }>;
 }
 
+const routeParamsSchema = z.object({
+  roomId: z.string().trim().min(1).max(191),
+  folderId: z.string().trim().min(1).max(191),
+});
+
 /**
  * GET /api/rooms/:roomId/folders/:folderId
  * Get folder details
  */
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
+    const parsedParams = routeParamsSchema.safeParse(await context.params);
+    if (!parsedParams.success) {
+      return NextResponse.json({ error: 'Invalid folder route' }, { status: 400 });
+    }
+    const { roomId, folderId } = parsedParams.data;
     const session = await requireAuth();
-    const { roomId, folderId } = await context.params;
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
       // Check view permission
@@ -45,7 +55,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       );
 
       if (!canView) {
-        return { error: 'Access denied', status: 403 };
+        return { error: 'Folder not found', status: 404 };
       }
 
       const folder = await tx.folder.findFirst({

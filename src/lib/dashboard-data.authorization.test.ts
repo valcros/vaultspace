@@ -120,4 +120,39 @@ describe('dashboard room-scoped authorization', () => {
       expect.objectContaining({ documentId: 'document-1', roomId: 'room-leaf' }),
     ]);
   });
+
+  it('filters denied bookmark and history documents from a viewable room', async () => {
+    mockTx.bookmark.findMany.mockResolvedValue([
+      {
+        id: 'bookmark-denied',
+        createdAt: new Date('2026-08-11T00:00:00Z'),
+        document: {
+          id: 'document-denied',
+          name: 'Denied document',
+          folderId: 'folder-denied',
+          folder: { name: 'Denied folder' },
+        },
+        room: { id: 'room-allowed', name: 'Allowed room' },
+      },
+    ]);
+    mockTx.pageView.findMany.mockResolvedValue([
+      {
+        createdAt: new Date('2026-08-11T00:00:00Z'),
+        pageNumber: 3,
+        document: {
+          id: 'document-denied',
+          name: 'Denied document',
+          folderId: 'folder-denied',
+        },
+        room: { id: 'room-allowed', name: 'Allowed room' },
+      },
+    ]);
+    mocks.can.mockResolvedValue(false);
+
+    const result = await getDashboardData({ organizationId: 'org-1', userId: 'viewer-1' });
+
+    expect(result.bookmarks).toEqual([]);
+    expect(result.continueReading).toEqual([]);
+    expect(mocks.can).toHaveBeenCalledTimes(2);
+  });
 });
