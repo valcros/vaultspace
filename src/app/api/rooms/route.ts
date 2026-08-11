@@ -6,13 +6,44 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import type { RoomStatus } from '@prisma/client';
+import { z } from 'zod';
 
 import { isAuthenticationError } from '@/lib/errors';
-import { requireAuthFromRequest } from '@/lib/middleware';
+import { getRequestContext, requireAuthFromRequest } from '@/lib/middleware';
+import { createServiceContext, roomService } from '@/services';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 import { withOrgContext } from '@/lib/db';
+
+const ROOM_STATUSES = ['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED'] as const;
+const ROOM_STATUS_SET = new Set<RoomStatus>(ROOM_STATUSES);
+
+function normalizeInteger(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum?: number
+): number {
+  const parsed = Number.parseInt(typeof value === 'string' ? value : String(fallback), 10);
+  const normalized = Number.isFinite(parsed) ? Math.max(parsed, minimum) : fallback;
+  return maximum === undefined ? normalized : Math.min(normalized, maximum);
+}
+
+const roomListQuerySchema = z.object({
+  status: z.preprocess(
+    (value) =>
+      typeof value === 'string' && ROOM_STATUS_SET.has(value as RoomStatus) ? value : undefined,
+    z.enum(ROOM_STATUSES).optional()
+  ),
+  search: z.preprocess(
+    (value) => (typeof value === 'string' && value ? value : undefined),
+    z.string().optional()
+  ),
+  limit: z.preprocess((value) => normalizeInteger(value, 50, 1, 100), z.number().int()),
+  offset: z.preprocess((value) => normalizeInteger(value, 0, 0), z.number().int()),
+});
 
 /**
  * GET /api/rooms
@@ -23,56 +54,33 @@ export async function GET(request: NextRequest) {
     const session = await requireAuthFromRequest(request);
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
-    const limit = parseInt(searchParams.get('limit') ?? '50', 10);
-    const offset = parseInt(searchParams.get('offset') ?? '0', 10);
-
-    const where = {
-      organizationId: session.organizationId,
-      ...(status && { status: status as 'DRAFT' | 'ACTIVE' | 'ARCHIVED' | 'CLOSED' }),
-      // Non-admins can only see active rooms
-      ...(session.organization.role !== 'ADMIN' && { status: 'ACTIVE' as const }),
-    };
-
-    // Use RLS context for org-scoped queries
-    const [rooms, total] = await withOrgContext(session.organizationId, async (tx) => {
-      return Promise.all([
-        // Select only list-view fields: the previous full-model include
-        // serialized passwordHash, NDA content, and watermark config into a
-        // list response no client screen reads.
-        tx.room.findMany({
-          where,
-          orderBy: { updatedAt: 'desc' },
-          take: limit,
-          skip: offset,
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            description: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
-            archivedAt: true,
-            _count: {
-              select: {
-                documents: true,
-                folders: true,
-              },
-            },
-          },
-        }),
-        tx.room.count({ where }),
-      ]);
+    const query = roomListQuerySchema.parse({
+      status: searchParams.get('status'),
+      search: searchParams.get('search'),
+      limit: searchParams.get('limit'),
+      offset: searchParams.get('offset'),
+    });
+    const reqContext = getRequestContext(request);
+    const ctx = createServiceContext({
+      session,
+      requestId: reqContext.requestId,
+      ipAddress: reqContext.ipAddress,
+      userAgent: reqContext.userAgent,
+    });
+    const result = await roomService.list(ctx, {
+      status: query.status,
+      search: query.search,
+      limit: query.limit,
+      offset: query.offset,
     });
 
     return NextResponse.json({
-      rooms,
+      rooms: result.items,
       pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + rooms.length < total,
+        total: result.total,
+        limit: result.limit,
+        offset: result.offset,
+        hasMore: result.hasMore,
       },
     });
   } catch (error) {

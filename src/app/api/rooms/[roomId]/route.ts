@@ -8,8 +8,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { requireAuth } from '@/lib/middleware';
+import { getRequestContext, requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { createServiceContext, roomService } from '@/services';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -28,25 +29,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const session = await requireAuth();
     const { roomId } = await context.params;
-
-    // Use RLS context for org-scoped query
-    const room = await withOrgContext(session.organizationId, async (tx) => {
-      return tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-        include: {
-          _count: {
-            select: {
-              documents: true,
-              folders: true,
-              permissions: true,
-            },
-          },
-        },
-      });
+    const reqContext = getRequestContext(request);
+    const ctx = createServiceContext({
+      session,
+      requestId: reqContext.requestId,
+      ipAddress: reqContext.ipAddress,
+      userAgent: reqContext.userAgent,
     });
+    const room = await roomService.getById(ctx, roomId);
 
     if (!room) {
       return NextResponse.json({ error: 'Room not found' }, { status: 404 });

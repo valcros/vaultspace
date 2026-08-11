@@ -48,6 +48,20 @@ describe('GET /api/rooms/:roomId/permissions', () => {
     expect(response.status).toBe(401);
   });
 
+  it('does not expose permission rosters to viewers', async () => {
+    mockRequireAuth.mockResolvedValue({
+      ...mockSession,
+      organization: { role: 'VIEWER' },
+    } as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+
+    const request = new NextRequest('http://localhost/api/rooms/room-1/permissions');
+    const context = { params: Promise.resolve({ roomId: 'room-1' }) };
+
+    const response = await GET(request, context);
+    expect(response.status).toBe(403);
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
+  });
+
   it('returns 404 when room not found', async () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {

@@ -13,6 +13,7 @@ import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAu
 import { withOrgContext } from '@/lib/db';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import { getRequestContext, requireAuth } from '@/lib/middleware';
+import { getPermissionEngine } from '@/lib/permissions';
 import { getProviders } from '@/providers';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -122,6 +123,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const canView = await getPermissionEngine().can(
+        { userId: session.userId },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId,
+          folderId: document.folderId ?? undefined,
+          documentId,
+        },
+        tx
+      );
+      if (!canView) {
         return { error: 'Document not found', status: 404 };
       }
 

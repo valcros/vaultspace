@@ -14,15 +14,25 @@ import { PermissionEngine } from './PermissionEngine';
 vi.mock('../db', () => ({
   db: {
     userOrganization: { findUnique: vi.fn() },
-    roleAssignment: { findFirst: vi.fn() },
-    permission: { findFirst: vi.fn() },
+    roleAssignment: { findFirst: vi.fn(), findMany: vi.fn() },
+    groupMembership: { findMany: vi.fn() },
+    folder: { findFirst: vi.fn() },
+    permission: { findFirst: vi.fn(), findMany: vi.fn() },
     link: { findUnique: vi.fn() },
   },
 }));
 
 import { db } from '../db';
 
-const mockedDb = vi.mocked(db, true);
+type MockFunction = ReturnType<typeof vi.fn>;
+const mockedDb = db as unknown as {
+  userOrganization: { findUnique: MockFunction };
+  roleAssignment: { findFirst: MockFunction; findMany: MockFunction };
+  groupMembership: { findMany: MockFunction };
+  folder: { findFirst: MockFunction };
+  permission: { findFirst: MockFunction; findMany: MockFunction };
+  link: { findUnique: MockFunction };
+};
 
 describe('PermissionEngine Security Tests', () => {
   let engine: PermissionEngine;
@@ -30,6 +40,15 @@ describe('PermissionEngine Security Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     engine = new PermissionEngine();
+    mockedDb.roleAssignment.findMany.mockResolvedValue([]);
+    mockedDb.groupMembership.findMany.mockResolvedValue([]);
+    mockedDb.folder.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+      Promise.resolve({ id: where.id, parentId: null })
+    );
+    mockedDb.permission.findMany.mockImplementation(async (args) => {
+      const permission = await mockedDb.permission.findFirst(args as never);
+      return permission ? [permission] : [];
+    });
   });
 
   // SEC-001: Cross-tenant isolation
@@ -150,6 +169,7 @@ describe('PermissionEngine Security Tests', () => {
       role: 'VIEWER',
       userId: 'user-1',
       organizationId: 'org-1',
+      isActive: true,
     };
 
     it('should allow when permission is active (isActive: true)', async () => {
@@ -202,16 +222,21 @@ describe('PermissionEngine Security Tests', () => {
       role: 'VIEWER',
       userId: 'user-1',
       organizationId: 'org-1',
+      isActive: true,
     };
 
     it('should allow when user is in a group with permission', async () => {
-      const actorWithGroup: Actor = { userId: 'user-1', groupIds: ['group-1'] };
+      const actorWithGroup: Actor = { userId: 'user-1' };
 
       mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
       mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
-      // First call: explicit user permission (null); second call: group permission (granted)
-      mockedDb.permission.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      mockedDb.groupMembership.findMany.mockResolvedValue([{ groupId: 'group-1' }]);
+      mockedDb.permission.findFirst.mockResolvedValue({
         permissionLevel: 'VIEW',
+        resourceType: 'ROOM',
+        roomId: 'room-1',
+        folderId: null,
+        documentId: null,
         groupId: 'group-1',
         granteeType: 'GROUP',
         isActive: true,
@@ -222,7 +247,7 @@ describe('PermissionEngine Security Tests', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('should deny when user is removed from the group (no groupIds)', async () => {
+    it('should deny when the persisted group membership is removed', async () => {
       const actorWithoutGroup: Actor = { userId: 'user-1' };
 
       mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
@@ -236,7 +261,7 @@ describe('PermissionEngine Security Tests', () => {
     });
 
     it('should deny when user is in group but group permission was revoked', async () => {
-      const actorWithGroup: Actor = { userId: 'user-1', groupIds: ['group-1'] };
+      const actorWithGroup: Actor = { userId: 'user-1' };
 
       mockedDb.userOrganization.findUnique.mockResolvedValue(viewerMembership as never);
       mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
@@ -269,6 +294,7 @@ describe('PermissionEngine Security Tests', () => {
         role: 'VIEWER',
         userId: 'user-1',
         organizationId: 'org-1',
+        isActive: true,
       } as never);
       mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
       mockedDb.permission.findFirst.mockResolvedValue(null);
@@ -292,6 +318,7 @@ describe('PermissionEngine Security Tests', () => {
         role: 'ADMIN',
         userId: 'admin-1',
         organizationId: 'org-1',
+        isActive: true,
       } as never);
 
       const result = await engine.evaluate({ userId: 'admin-1', role: 'ADMIN' }, 'admin', {
@@ -308,6 +335,7 @@ describe('PermissionEngine Security Tests', () => {
         role: 'VIEWER',
         userId: 'room-admin',
         organizationId: 'org-1',
+        isActive: true,
       } as never);
       mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
       mockedDb.permission.findFirst.mockResolvedValue(null);
@@ -330,6 +358,7 @@ describe('PermissionEngine Security Tests', () => {
         role: 'VIEWER',
         userId: 'user-1',
         organizationId: 'org-1',
+        isActive: true,
       } as never);
       mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
       mockedDb.permission.findFirst.mockResolvedValue({
@@ -353,6 +382,7 @@ describe('PermissionEngine Security Tests', () => {
         role: 'VIEWER',
         userId: 'user-1',
         organizationId: 'org-1',
+        isActive: true,
       } as never);
       mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
       mockedDb.permission.findFirst.mockResolvedValue({

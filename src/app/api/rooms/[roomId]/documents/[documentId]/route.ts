@@ -7,9 +7,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getPermissionEngine } from '@/lib/permissions';
 import { serializeBigInt } from '@/lib/serialization';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -19,14 +21,23 @@ interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
 }
 
+const routeParamsSchema = z.object({
+  roomId: z.string().trim().min(1).max(191),
+  documentId: z.string().trim().min(1).max(191),
+});
+
 /**
  * GET /api/rooms/:roomId/documents/:documentId
  * Get document details including versions
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const parsedParams = routeParamsSchema.safeParse(await context.params);
+    if (!parsedParams.success) {
+      return NextResponse.json({ error: 'Invalid document route' }, { status: 400 });
+    }
+    const { roomId, documentId } = parsedParams.data;
     const session = await requireAuth();
-    const { roomId, documentId } = await context.params;
 
     // Use RLS context for org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
@@ -71,6 +82,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const canView = await getPermissionEngine().can(
+        { userId: session.userId },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId,
+          folderId: document.folderId ?? undefined,
+          documentId,
+        },
+        tx
+      );
+      if (!canView) {
         return { error: 'Document not found', status: 404 };
       }
 

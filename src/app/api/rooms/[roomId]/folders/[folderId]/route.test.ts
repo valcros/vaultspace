@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+const permissionMocks = vi.hoisted(() => ({ can: vi.fn() }));
+
 vi.mock('@/lib/middleware', () => ({
   requireAuth: vi.fn(),
 }));
@@ -11,13 +13,13 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: vi.fn(() => ({
-    can: vi.fn().mockResolvedValue(true),
+    can: permissionMocks.can,
   })),
 }));
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
-import { PATCH } from './route';
+import { GET, PATCH } from './route';
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockWithOrgContext = vi.mocked(withOrgContext);
@@ -28,8 +30,8 @@ const adminSession = {
   organization: { role: 'ADMIN' },
 } as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never;
 
-function makeContext(folderId = 'fld-source') {
-  return { params: Promise.resolve({ roomId: 'room-1', folderId }) };
+function makeContext(folderId = 'fld-source', roomId = 'room-1') {
+  return { params: Promise.resolve({ roomId, folderId }) };
 }
 
 function makeRequest(body: unknown, folderId = 'fld-source') {
@@ -43,6 +45,7 @@ function makeRequest(body: unknown, folderId = 'fld-source') {
 describe('PATCH /api/rooms/:roomId/folders/:folderId', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    permissionMocks.can.mockResolvedValue(true);
     mockRequireAuth.mockResolvedValue(adminSession);
   });
 
@@ -215,5 +218,63 @@ describe('PATCH /api/rooms/:roomId/folders/:folderId', () => {
         data: { path: '/Financials/Q4/Team' },
       })
     );
+  });
+});
+
+describe('GET /api/rooms/:roomId/folders/:folderId', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    permissionMocks.can.mockResolvedValue(true);
+    mockRequireAuth.mockResolvedValue({
+      ...adminSession,
+      organization: { role: 'VIEWER' },
+    } as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+  });
+
+  it('authorizes the requested folder resource rather than requiring room discovery', async () => {
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      const tx = {
+        folder: {
+          findFirst: vi.fn().mockResolvedValue({ id: 'fld-source', name: 'Direct folder' }),
+        },
+      };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await GET(makeRequest({}, 'fld-source'), makeContext());
+
+    expect(response.status).toBe(200);
+    expect(permissionMocks.can).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      'view',
+      {
+        type: 'FOLDER',
+        organizationId: 'org-1',
+        roomId: 'room-1',
+        folderId: 'fld-source',
+      },
+      expect.anything()
+    );
+  });
+
+  it('does not load folder metadata when the folder grant is denied', async () => {
+    permissionMocks.can.mockResolvedValue(false);
+    const findFirst = vi.fn();
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      return callback({ folder: { findFirst } } as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await GET(makeRequest({}, 'fld-source'), makeContext());
+
+    expect(response.status).toBe(404);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid route identifiers before authorization or database access', async () => {
+    const response = await GET(makeRequest({}, 'fld-source'), makeContext('fld-source', ' '));
+
+    expect(response.status).toBe(400);
+    expect(mockRequireAuth).not.toHaveBeenCalled();
+    expect(permissionMocks.can).not.toHaveBeenCalled();
   });
 });

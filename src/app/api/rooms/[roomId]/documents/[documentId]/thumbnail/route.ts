@@ -13,12 +13,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
+import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 import { hasCapability } from '@/lib/deployment-capabilities';
+import { getPermissionEngine } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,10 +49,19 @@ interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
 }
 
+const routeParamsSchema = z.object({
+  roomId: z.string().trim().min(1).max(191),
+  documentId: z.string().trim().min(1).max(191),
+});
+
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const parsedParams = routeParamsSchema.safeParse(await context.params);
+    if (!parsedParams.success) {
+      return NextResponse.json({ error: 'Invalid document route' }, { status: 400 });
+    }
+    const { roomId, documentId } = parsedParams.data;
     const session = await requireAuth();
-    const { roomId, documentId } = await context.params;
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
       const room = await tx.room.findFirst({
@@ -67,10 +78,32 @@ export async function GET(request: NextRequest, context: RouteContext) {
           organizationId: session.organizationId,
           status: 'ACTIVE',
         },
-        select: { id: true, name: true, mimeType: true, currentVersionId: true },
+        select: {
+          id: true,
+          name: true,
+          mimeType: true,
+          folderId: true,
+          currentVersionId: true,
+        },
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const canView = await getPermissionEngine().can(
+        { userId: session.userId },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId,
+          folderId: document.folderId ?? undefined,
+          documentId,
+        },
+        tx
+      );
+      if (!canView) {
         return { error: 'Document not found', status: 404 };
       }
 
