@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const repositoryRoot = process.cwd();
 const verifierPath = `${repositoryRoot}/scripts/verify-password-reset-deployment-contract.mjs`;
 const workerRevisionReadyPath = `${repositoryRoot}/scripts/worker-revision-ready.sh`;
+const containerEnvValidatorPath = `${repositoryRoot}/scripts/validate-container-env.sh`;
 const targetRevision = 'a'.repeat(40);
 const rollbackRevision = 'b'.repeat(40);
 
@@ -83,6 +84,105 @@ function workerRevisionReady(
       String(activeRevisions),
     ],
     { encoding: 'utf8' }
+  );
+}
+
+function workerImageRepository(imageReference: string) {
+  return spawnSync(
+    'bash',
+    [
+      '-c',
+      'source "$1"; image_repository "$2"',
+      'image-repository-test',
+      containerEnvValidatorPath,
+      imageReference,
+    ],
+    { encoding: 'utf8' }
+  );
+}
+
+function validateContainerEnv(workerImage: string) {
+  const sharedNames = [
+    'NODE_ENV',
+    'APP_URL',
+    'SESSION_SECRET',
+    'DATABASE_URL',
+    'REDIS_URL',
+    'STORAGE_PROVIDER',
+    'AZURE_STORAGE_ACCOUNT_NAME',
+    'AZURE_STORAGE_ACCOUNT_KEY',
+    'EMAIL_PROVIDER',
+    'ACS_CONNECTION_STRING',
+    'ACS_SENDER_ADDRESS',
+    'SCAN_ENGINE',
+  ];
+  const secretNames = new Set([
+    'SESSION_SECRET',
+    'DATABASE_URL',
+    'DATABASE_URL_ADMIN',
+    'REDIS_URL',
+    'AZURE_STORAGE_ACCOUNT_KEY',
+    'ACS_CONNECTION_STRING',
+  ]);
+  const envEntry = (name: string) =>
+    secretNames.has(name)
+      ? { name, secretRef: `synthetic-${name.toLowerCase()}` }
+      : { name, value: `synthetic-${name.toLowerCase()}` };
+  const webEnv = [...sharedNames, 'DATABASE_URL_ADMIN'].map(envEntry);
+  const workerEnv = [...sharedNames, 'WORKER_TYPE'].map(envEntry);
+  const controlledAzure = `
+az() {
+  local app=""
+  local query=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --name)
+        app="$2"
+        shift 2
+        ;;
+      --query)
+        query="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  if [[ "$query" == *".probes | [0]"* ]]; then
+    printf '%s\n' '[{"tcpSocket":{"port":3000}}]'
+  elif [[ "$query" == *"ENABLE_RLS"* ]]; then
+    printf '%s\n' 'false'
+  elif [[ "$query" == *"[0].image"* ]]; then
+    printf '%s\n' "$MOCK_WORKER_IMAGE"
+  elif [ "$query" = "properties.template.containers[0].env" ]; then
+    if [ "$app" = "synthetic-web" ]; then
+      printf '%s\n' "$MOCK_WEB_ENV"
+    else
+      printf '%s\n' "$MOCK_WORKER_ENV"
+    fi
+  else
+    printf '%s\n' 'null'
+  fi
+}
+export -f az
+"$1" synthetic-rg synthetic-web synthetic-worker synthetic-worker
+`;
+
+  return spawnSync(
+    'bash',
+    ['-c', controlledAzure, 'container-env-direct-test', containerEnvValidatorPath],
+    {
+      encoding: 'utf8',
+      env: {
+        NODE_ENV: 'test',
+        PATH: process.env['PATH'] ?? '',
+        MOCK_WEB_ENV: JSON.stringify(webEnv),
+        MOCK_WORKER_ENV: JSON.stringify(workerEnv),
+        MOCK_WORKER_IMAGE: workerImage,
+      },
+    }
   );
 }
 
@@ -350,6 +450,62 @@ describe('worker revision readiness', () => {
       ).toBe(1);
     }
   );
+});
+
+describe('container environment worker image repository validation', () => {
+  it.each([
+    [
+      'a tagged ACR reference',
+      `<azure-container-registry>/vaultspace-worker:${targetRevision}`,
+    ],
+    [
+      'a digest-pinned ACR reference',
+      `<azure-container-registry>/vaultspace-worker@sha256:${'1'.repeat(64)}`,
+    ],
+    [
+      'a tagged registry reference with a port',
+      `registry.example.com:5000/team/vaultspace-worker:${targetRevision}`,
+    ],
+  ])('extracts vaultspace-worker from %s', (_name, imageReference) => {
+    const result = workerImageRepository(imageReference);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('vaultspace-worker');
+  });
+
+  it.each([
+    `<azure-container-registry>/vaultspace-web@sha256:${'2'.repeat(64)}`,
+    `<azure-container-registry>/team/vaultspace-worker-lookalike:${targetRevision}`,
+  ])(
+    'does not collapse a different repository into the worker repository: %s',
+    (imageReference) => {
+      const result = workerImageRepository(imageReference);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim()).not.toBe('vaultspace-worker');
+    }
+  );
+
+  it('accepts a digest-pinned worker image through direct validator execution', () => {
+    const result = validateContainerEnv(
+      `<azure-container-registry>/vaultspace-worker@sha256:${'3'.repeat(64)}`
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('OK: image repo is vaultspace-worker');
+    expect(result.stdout).toContain('Validation passed');
+  });
+
+  it('rejects a different repository through direct validator execution', () => {
+    const result = validateContainerEnv(
+      `<azure-container-registry>/vaultspace-web@sha256:${'4'.repeat(64)}`
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("repo 'vaultspace-web'");
+    expect(result.stdout).toContain("expected the 'vaultspace-worker' image");
+    expect(result.stdout).toContain('Validation failed: 1 error(s) found');
+  });
 });
 
 describe('staging deployment workflow boundary', () => {
