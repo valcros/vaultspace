@@ -9,6 +9,8 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { PrismaClient, type Prisma } from '@prisma/client';
 
+import { getViewerSessionGuardResponse, viewerSessionBaseSelect } from '@/lib/viewerSession';
+
 const prisma = new PrismaClient();
 
 afterAll(async () => {
@@ -132,14 +134,17 @@ describe('SEC-013/014: event immutability trigger', () => {
       });
 
       expect(result.count).toBe(1);
-      await expect(
-        tx.viewSession.findFirst({
-          where: {
-            sessionToken: viewSession.sessionToken,
-            isActive: true,
-          },
-        })
-      ).resolves.toBeNull();
+      const activeSession = await tx.viewSession.findFirst({
+        where: {
+          sessionToken: viewSession.sessionToken,
+          isActive: true,
+        },
+        select: viewerSessionBaseSelect,
+      });
+
+      expect(activeSession).toBeNull();
+      const serveResponse = getViewerSessionGuardResponse(link.slug, activeSession);
+      expect(serveResponse?.status).toBe(401);
       await expect(tx.event.findUnique({ where: { id: event.id } })).resolves.toMatchObject({
         id: event.id,
         sessionId: viewSession.id,
