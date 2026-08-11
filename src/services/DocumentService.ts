@@ -18,6 +18,8 @@ import { DOCUMENT_SCAN_JOB_OPTIONS } from '@/workers/types';
 
 import type { PaginatedResult, PaginationOptions, ServiceContext } from './types';
 
+const AUTHORIZATION_BATCH_SIZE = 8;
+
 /**
  * Supported MIME types for upload
  */
@@ -439,23 +441,69 @@ export class DocumentService {
       ...searchCondition,
     };
 
-    // Use RLS context for org-scoped queries
+    // Use RLS context for org-scoped queries. Resolve document authorization
+    // before total and pagination so explicit leaf or inherited denies cannot
+    // leak through items, counts, sparse pages, or hasMore.
     const { total, documents } = await withOrgContext(session.organizationId, async (tx) => {
-      // Get total count
-      const total = await tx.document.count({ where });
-
-      // Get documents with latest version
-      const documents = await tx.document.findMany({
+      const candidates = await tx.document.findMany({
         where,
+        select: {
+          id: true,
+          folderId: true,
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      });
+
+      const decisions: boolean[] = [];
+      const permissionEngine = getPermissionEngine();
+      for (let index = 0; index < candidates.length; index += AUTHORIZATION_BATCH_SIZE) {
+        const batch = candidates.slice(index, index + AUTHORIZATION_BATCH_SIZE);
+        decisions.push(
+          ...(await Promise.all(
+            batch.map((candidate) =>
+              permissionEngine.can(
+                { userId: session.userId },
+                'view',
+                {
+                  type: 'DOCUMENT',
+                  organizationId: session.organizationId,
+                  roomId,
+                  folderId: candidate.folderId ?? undefined,
+                  documentId: candidate.id,
+                },
+                tx
+              )
+            )
+          ))
+        );
+      }
+
+      const authorizedIds = candidates
+        .filter((_candidate, index) => decisions[index])
+        .map(({ id }) => id);
+      const total = authorizedIds.length;
+      const pageIds = authorizedIds.slice(offset, offset + limit);
+
+      if (pageIds.length === 0) {
+        return { total, documents: [] };
+      }
+
+      const pageDocuments = await tx.document.findMany({
+        where: {
+          ...where,
+          id: { in: pageIds },
+        },
         include: {
           versions: {
             orderBy: { versionNumber: 'desc' },
             take: 1,
           },
         },
-        orderBy: { createdAt: 'desc' },
-        skip: offset,
-        take: limit,
+      });
+      const documentsById = new Map(pageDocuments.map((document) => [document.id, document]));
+      const documents = pageIds.flatMap((id) => {
+        const document = documentsById.get(id);
+        return document ? [document] : [];
       });
 
       return { total, documents };
