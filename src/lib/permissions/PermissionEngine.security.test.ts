@@ -16,6 +16,7 @@ vi.mock('../db', () => ({
     userOrganization: { findUnique: vi.fn() },
     roleAssignment: { findFirst: vi.fn(), findMany: vi.fn() },
     groupMembership: { findMany: vi.fn() },
+    folder: { findFirst: vi.fn() },
     permission: { findFirst: vi.fn(), findMany: vi.fn() },
     link: { findUnique: vi.fn() },
   },
@@ -28,6 +29,7 @@ const mockedDb = db as unknown as {
   userOrganization: { findUnique: MockFunction };
   roleAssignment: { findFirst: MockFunction; findMany: MockFunction };
   groupMembership: { findMany: MockFunction };
+  folder: { findFirst: MockFunction };
   permission: { findFirst: MockFunction; findMany: MockFunction };
   link: { findUnique: MockFunction };
 };
@@ -40,6 +42,9 @@ describe('PermissionEngine Security Tests', () => {
     engine = new PermissionEngine();
     mockedDb.roleAssignment.findMany.mockResolvedValue([]);
     mockedDb.groupMembership.findMany.mockResolvedValue([]);
+    mockedDb.folder.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+      Promise.resolve({ id: where.id, parentId: null })
+    );
     mockedDb.permission.findMany.mockImplementation(async (args) => {
       const permission = await mockedDb.permission.findFirst(args as never);
       return permission ? [permission] : [];

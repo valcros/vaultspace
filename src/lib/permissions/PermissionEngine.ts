@@ -364,7 +364,10 @@ export class PermissionEngine {
     resource: Resource,
     client: DbClient
   ): Promise<ApplicablePermission[]> {
-    const groupIds = await this.getActiveGroupIds(resource.organizationId, userId, client);
+    const [groupIds, folderLineage] = await Promise.all([
+      this.getActiveGroupIds(resource.organizationId, userId, client),
+      this.getFolderLineage(resource, client),
+    ]);
     const grantees: Prisma.PermissionWhereInput[] = [
       { granteeType: 'USER', userId },
       ...(groupIds.length > 0
@@ -376,11 +379,19 @@ export class PermissionEngine {
     if (resource.documentId) {
       resources.push({ resourceType: 'DOCUMENT', documentId: resource.documentId });
     }
-    if (resource.folderId) {
+    const [directFolderId, ...ancestorFolderIds] = folderLineage;
+    if (directFolderId && resource.type === 'FOLDER') {
       resources.push({
         resourceType: 'FOLDER',
-        folderId: resource.folderId,
-        ...(resource.type !== 'FOLDER' && { inheritFromParent: true }),
+        folderId: directFolderId,
+      });
+    }
+    const inheritableFolderIds = resource.type === 'FOLDER' ? ancestorFolderIds : folderLineage;
+    if (inheritableFolderIds.length > 0) {
+      resources.push({
+        resourceType: 'FOLDER',
+        folderId: { in: inheritableFolderIds },
+        inheritFromParent: true,
       });
     }
     if (resource.roomId) {
@@ -412,6 +423,40 @@ export class PermissionEngine {
         documentId: true,
       },
     });
+  }
+
+  /**
+   * Resolve the requested folder followed by its ancestors. Folder IDs are
+   * constrained to the resource tenant and room so a malformed resource tuple
+   * cannot borrow an inheritance chain from another room or organization.
+   */
+  private async getFolderLineage(resource: Resource, client: DbClient): Promise<string[]> {
+    if (!resource.folderId) {
+      return [];
+    }
+
+    const folderIds: string[] = [];
+    const visited = new Set<string>();
+    let currentFolderId: string | null = resource.folderId;
+
+    while (currentFolderId && !visited.has(currentFolderId)) {
+      visited.add(currentFolderId);
+      const folder: { id: string; parentId: string | null } | null = await client.folder.findFirst({
+        where: {
+          id: currentFolderId,
+          organizationId: resource.organizationId,
+          ...(resource.roomId ? { roomId: resource.roomId } : {}),
+        },
+        select: { id: true, parentId: true },
+      });
+      if (!folder) {
+        break;
+      }
+      folderIds.push(folder.id);
+      currentFolderId = folder.parentId;
+    }
+
+    return folderIds;
   }
 
   /**

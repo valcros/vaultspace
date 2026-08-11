@@ -7,6 +7,7 @@ vi.mock('../db', () => ({
     userOrganization: { findUnique: vi.fn() },
     roleAssignment: { findFirst: vi.fn(), findMany: vi.fn() },
     groupMembership: { findMany: vi.fn() },
+    folder: { findFirst: vi.fn() },
     permission: { findMany: vi.fn() },
     link: { findUnique: vi.fn() },
   },
@@ -19,6 +20,7 @@ const mockedDb = db as unknown as {
   userOrganization: { findUnique: MockFunction };
   roleAssignment: { findFirst: MockFunction; findMany: MockFunction };
   groupMembership: { findMany: MockFunction };
+  folder: { findFirst: MockFunction };
   permission: { findMany: MockFunction };
   link: { findUnique: MockFunction };
 };
@@ -51,6 +53,9 @@ describe('PermissionEngine Option A authorization', () => {
     mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
     mockedDb.roleAssignment.findMany.mockResolvedValue([]);
     mockedDb.groupMembership.findMany.mockResolvedValue([]);
+    mockedDb.folder.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+      Promise.resolve({ id: where.id, parentId: null })
+    );
     mockedDb.permission.findMany.mockResolvedValue([]);
     mockedDb.link.findUnique.mockResolvedValue(null);
   });
@@ -126,6 +131,46 @@ describe('PermissionEngine Option A authorization', () => {
         level: 'NONE',
         reason: 'Explicit deny on folder',
         inheritedFrom: { type: 'FOLDER', id: 'folder-1' },
+      })
+    );
+  });
+
+  it('loads inheritable ancestor-folder decisions for nested resources', async () => {
+    mockedDb.folder.findFirst.mockImplementation(({ where }: { where: { id: string } }) => {
+      if (where.id === 'folder-child') {
+        return Promise.resolve({ id: 'folder-child', parentId: 'folder-parent' });
+      }
+      return Promise.resolve({ id: 'folder-parent', parentId: null });
+    });
+    mockedDb.permission.findMany.mockResolvedValue([
+      permission('VIEW', 'ROOM', 'room-1'),
+      permission('NONE', 'FOLDER', 'folder-parent'),
+    ]);
+
+    const result = await engine.evaluate({ userId: 'viewer-1' }, 'view', {
+      type: 'DOCUMENT',
+      organizationId: 'org-1',
+      roomId: 'room-1',
+      folderId: 'folder-child',
+      documentId: 'doc-1',
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(mockedDb.permission.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              OR: expect.arrayContaining([
+                {
+                  resourceType: 'FOLDER',
+                  folderId: { in: ['folder-child', 'folder-parent'] },
+                  inheritFromParent: true,
+                },
+              ]),
+            },
+          ]),
+        }),
       })
     );
   });
