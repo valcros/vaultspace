@@ -3,36 +3,44 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
 import { bootstrapDb } from '@/lib/db';
+import {
+  evaluateLinkServe,
+  type LinkPolicyAction,
+  type LinkServeSession,
+} from '@/lib/permissions/LinkPolicy';
 
 export const viewerSessionBaseSelect = {
   id: true,
   createdAt: true,
   isActive: true,
   organizationId: true,
+  roomId: true,
+  linkId: true,
   link: {
     select: {
+      id: true,
       slug: true,
       isActive: true,
+      organizationId: true,
+      roomId: true,
+      expiresAt: true,
       permission: true,
       scope: true,
       scopedFolderId: true,
       scopedDocumentId: true,
       maxSessionMinutes: true,
+      room: {
+        select: {
+          id: true,
+          organizationId: true,
+          status: true,
+        },
+      },
     },
   },
 } satisfies Prisma.ViewSessionSelect;
 
-type ViewerSessionGuardable = {
-  createdAt: Date;
-  isActive: boolean;
-  link: {
-    slug: string | null;
-    isActive: boolean;
-    maxSessionMinutes: number | null;
-  } | null;
-};
-
-type ValidViewerSession<T extends ViewerSessionGuardable> = T & {
+type ValidViewerSession<T extends LinkServeSession> = T & {
   link: NonNullable<T['link']>;
 };
 
@@ -51,6 +59,14 @@ export async function getViewerSession<T extends Prisma.ViewSessionSelect>(
     return null;
   }
 
+  return getViewerSessionByToken(viewerToken, select);
+}
+
+/** Resolve a viewer session when a trusted server-side caller already read the cookie token. */
+export async function getViewerSessionByToken<T extends Prisma.ViewSessionSelect>(
+  viewerToken: string,
+  select: T
+): Promise<Prisma.ViewSessionGetPayload<{ select: T }> | null> {
   return bootstrapDb.viewSession.findFirst({
     where: {
       sessionToken: viewerToken,
@@ -62,31 +78,21 @@ export async function getViewerSession<T extends Prisma.ViewSessionSelect>(
 
 export function getViewerSessionGuardResponse(
   shareToken: string,
-  session: ViewerSessionGuardable | null
+  session: LinkServeSession | null,
+  action: LinkPolicyAction = 'view'
 ): NextResponse | null {
-  if (!session || !session.isActive || !session.link || session.link.slug !== shareToken) {
-    return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
-  }
-
-  if (!session.link.isActive) {
-    return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 });
-  }
-
-  if (session.link.maxSessionMinutes) {
-    const elapsedMinutes = (Date.now() - session.createdAt.getTime()) / 1000 / 60;
-    if (elapsedMinutes > session.link.maxSessionMinutes) {
-      return NextResponse.json({ error: 'Session time limit exceeded' }, { status: 403 });
-    }
-  }
-
-  return null;
+  const decision = evaluateLinkServe(shareToken, session, action);
+  return decision.allowed
+    ? null
+    : NextResponse.json({ error: decision.message }, { status: decision.status });
 }
 
-export function requireViewerSession<T extends ViewerSessionGuardable>(
+export function requireViewerSession<T extends LinkServeSession>(
   shareToken: string,
-  session: T | null
+  session: T | null,
+  action: LinkPolicyAction = 'view'
 ): { response: NextResponse } | { session: ValidViewerSession<T> } {
-  const response = getViewerSessionGuardResponse(shareToken, session);
+  const response = getViewerSessionGuardResponse(shareToken, session, action);
   if (response) {
     return { response };
   }

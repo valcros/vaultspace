@@ -6,13 +6,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
 import { z } from 'zod';
 
-import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { getRequestContext } from '@/lib/middleware';
+import {
+  admitLinkViewer,
+  evaluateLinkState,
+  getLinkPolicyRecord,
+} from '@/lib/permissions/LinkPolicy';
+import { getClientIp } from '@/lib/utils/ip';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -21,7 +24,8 @@ interface RouteContext {
 
 const linkAccessSchema = z.object({
   password: z.string().max(1024).optional(),
-  email: z.string().email().max(320).optional(),
+  email: z.string().trim().email().max(320).optional(),
+  ndaAccepted: z.boolean().optional(),
 });
 
 /**
@@ -32,48 +36,15 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const { slug } = await context.params;
 
-    // PRE-RLS BOOTSTRAP: Public link info lookup by slug
-    // This is intentionally unauthenticated - returns minimal public info
-    const link = await bootstrapDb.link.findFirst({
-      where: {
-        slug,
-        isActive: true,
-      },
-      include: {
-        room: {
-          select: {
-            id: true,
-            name: true,
-            status: true,
-          },
-        },
-        organization: {
-          select: {
-            name: true,
-            logoUrl: true,
-            primaryColor: true,
-          },
-        },
-      },
-    });
+    const link = await getLinkPolicyRecord(slug);
 
     if (!link) {
       return NextResponse.json({ error: 'Link not found or expired' }, { status: 404 });
     }
 
-    // Check if link is expired
-    if (link.expiresAt && link.expiresAt < new Date()) {
-      return NextResponse.json({ error: 'Link has expired' }, { status: 410 });
-    }
-
-    // Check if max views reached
-    if (link.maxViews !== null && link.viewCount >= link.maxViews) {
-      return NextResponse.json({ error: 'Link has reached maximum views' }, { status: 410 });
-    }
-
-    // Check if room is accessible
-    if (link.room.status !== 'ACTIVE') {
-      return NextResponse.json({ error: 'Room is not accessible' }, { status: 403 });
+    const decision = evaluateLinkState(link, { admission: true });
+    if (!decision.allowed) {
+      return NextResponse.json({ error: decision.message }, { status: decision.status });
     }
 
     // Return public info (without sensitive data)
@@ -114,38 +85,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!parsedBody.success) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
-    const { password, email } = parsedBody.data;
+    const { password, email, ndaAccepted } = parsedBody.data;
     const reqContext = getRequestContext(request);
 
-    // PRE-RLS BOOTSTRAP: Narrowly scoped lookup to resolve organizationId from slug
-    const link = await bootstrapDb.link.findFirst({
-      where: {
-        slug,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        organizationId: true,
-        roomId: true,
-        expiresAt: true,
-        maxViews: true,
-        viewCount: true,
-        requiresPassword: true,
-        passwordHash: true,
-        requiresEmailVerification: true,
-        allowedEmails: true,
-        permission: true,
-        scope: true,
-        scopedFolderId: true,
-        scopedDocumentId: true,
-        room: {
-          select: {
-            id: true,
-            status: true,
-          },
-        },
-      },
-    });
+    const link = await getLinkPolicyRecord(slug);
 
     if (!link) {
       return NextResponse.json({ error: 'Link not found or expired' }, { status: 404 });
@@ -172,109 +115,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
     };
 
-    // Check expiry
-    if (link.expiresAt && link.expiresAt < new Date()) {
-      await auditDenied('LINK_EXPIRED');
-      return NextResponse.json({ error: 'Link has expired' }, { status: 410 });
-    }
-
-    // Check max views
-    if (link.maxViews !== null && link.viewCount >= link.maxViews) {
-      await auditDenied('MAX_VIEWS_REACHED');
-      return NextResponse.json({ error: 'Link has reached maximum views' }, { status: 410 });
-    }
-
-    // Check room status
-    if (link.room.status !== 'ACTIVE') {
-      await auditDenied('ROOM_NOT_ACTIVE');
-      return NextResponse.json({ error: 'Room is not accessible' }, { status: 403 });
-    }
-
-    // Verify password if required
-    if (link.requiresPassword) {
-      if (!password) {
-        await auditDenied('PASSWORD_REQUIRED');
-        return NextResponse.json({ error: 'Password required' }, { status: 401 });
-      }
-
-      if (!link.passwordHash) {
-        await auditDenied('LINK_CONFIGURATION_ERROR');
-        return NextResponse.json({ error: 'Link configuration error' }, { status: 500 });
-      }
-
-      const passwordValid = await bcrypt.compare(password, link.passwordHash);
-      if (!passwordValid) {
-        await auditDenied('PASSWORD_INVALID');
-        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
-      }
-    }
-
-    // Verify email if required
-    if (link.requiresEmailVerification || link.allowedEmails.length > 0) {
-      if (!email) {
-        await auditDenied('ASSERTED_EMAIL_REQUIRED');
-        return NextResponse.json({ error: 'Email required' }, { status: 401 });
-      }
-
-      // Check if email is allowed
-      if (link.allowedEmails.length > 0) {
-        const normalizedEmail = email.toLowerCase().trim();
-        const allowed = link.allowedEmails.some(
-          (e: string) => e.toLowerCase().trim() === normalizedEmail
-        );
-
-        if (!allowed) {
-          await auditDenied('ASSERTED_EMAIL_NOT_ALLOWED');
-          return NextResponse.json(
-            { error: 'Email not authorized for this link' },
-            { status: 403 }
-          );
-        }
-      }
-    }
-
-    // Generate session token
-    const sessionToken = randomBytes(32).toString('base64url');
-
-    // Now we have organizationId - use RLS context for all writes
-    const viewSession = await withOrgContext(link.organizationId, async (tx) => {
-      // Create view session
-      const viewSession = await tx.viewSession.create({
-        data: {
-          organizationId: link.organizationId,
-          roomId: link.roomId,
-          linkId: link.id,
-          sessionToken,
-          visitorEmail: email?.toLowerCase().trim() ?? null,
-          ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
-          userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
-        },
-      });
-
-      // Increment view count
-      await tx.link.update({
-        where: { id: link.id },
-        data: {
-          viewCount: { increment: 1 },
-          lastAccessedAt: new Date(),
-        },
-      });
-
-      // Record visit
-      await tx.linkVisit.create({
-        data: {
-          organizationId: link.organizationId,
-          linkId: link.id,
-          roomId: link.roomId,
-          viewSessionId: viewSession.id,
-          visitorEmail: email?.toLowerCase().trim() ?? null,
-          ipAddress: reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress,
-          userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
-        },
-      });
-
-      return viewSession;
+    const admission = await admitLinkViewer(link, {
+      password,
+      email,
+      ndaAccepted,
+      sourceIp: getClientIp(request.headers) ?? 'unknown',
+      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
     });
+    if (!admission.allowed) {
+      await auditDenied(admission.code);
+      return NextResponse.json(
+        {
+          error: admission.message,
+          ...(admission.code === 'NDA_ACCEPTANCE_REQUIRED'
+            ? { requiresNda: true, ndaContent: link.room.ndaContent }
+            : {}),
+        },
+        { status: admission.status }
+      );
+    }
 
     // Queue view notification job (async via job queue per architecture)
     // Only notify if link is scoped to a document
@@ -285,7 +144,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           organizationId: link.organizationId,
           roomId: link.roomId,
           documentId: link.scopedDocumentId,
-          viewerEmail: email?.toLowerCase().trim(),
+          viewerEmail: admission.normalizedEmail ?? undefined,
         })
         .catch((err) => console.error('[PublicLinkAPI] Failed to queue notification:', err));
     }
@@ -294,10 +153,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       organizationId: link.organizationId,
       eventType: 'LINK_ACCESSED',
       actorType: 'VIEWER',
-      actorEmail: typeof email === 'string' ? email : null,
+      actorEmail: admission.normalizedEmail,
       roomId: link.roomId,
       documentId: link.scopedDocumentId,
-      viewSessionId: viewSession.id,
+      viewSessionId: admission.session.id,
       requestId: reqContext.requestId,
       description: 'Share link accessed',
       metadata: {
@@ -309,7 +168,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
 
     return NextResponse.json({
-      sessionToken,
+      sessionToken: admission.sessionToken,
       roomId: link.roomId,
       permission: link.permission,
       scope: link.scope,
