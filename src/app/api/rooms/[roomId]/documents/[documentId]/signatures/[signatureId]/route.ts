@@ -10,6 +10,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getSession } from '@/lib/middleware';
 import { db, withOrgContext } from '@/lib/db';
+import { canViewerLinkAccessDocument, type LinkServeSession } from '@/lib/permissions/LinkPolicy';
+import {
+  getViewerSessionByToken,
+  requireViewerSession,
+  viewerSessionBaseSelect,
+} from '@/lib/viewerSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +59,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     let callerEmail: string | null = null;
     let organizationId: string | null = null;
     let isAdmin = false;
+    let viewerLink: NonNullable<LinkServeSession['link']> | null = null;
 
     if (adminSession) {
       callerEmail = adminSession.user.email;
@@ -83,17 +90,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const allCookies = cookieStore.getAll();
       for (const cookie of allCookies) {
         if (cookie.name.startsWith('viewer_') && cookie.value) {
-          const viewerSession = await db.viewSession.findFirst({
-            where: {
-              sessionToken: cookie.value,
-              isActive: true,
-              organizationId: sigReq.organizationId,
-            },
-            select: { visitorEmail: true },
+          const shareToken = cookie.name.slice('viewer_'.length);
+          if (!shareToken) {
+            continue;
+          }
+          const viewerSession = await getViewerSessionByToken(cookie.value, {
+            ...viewerSessionBaseSelect,
+            visitorEmail: true,
           });
-
-          if (viewerSession?.visitorEmail) {
-            callerEmail = viewerSession.visitorEmail;
+          const sessionResult = requireViewerSession(shareToken, viewerSession);
+          if (
+            'session' in sessionResult &&
+            sessionResult.session.organizationId === sigReq.organizationId &&
+            sessionResult.session.roomId === roomId &&
+            sessionResult.session.visitorEmail
+          ) {
+            callerEmail = sessionResult.session.visitorEmail;
+            viewerLink = sessionResult.session.link;
             break;
           }
         }
@@ -123,6 +136,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
       if (!signatureRequest) {
         return { error: 'Signature request not found', status: 404 };
+      }
+
+      if (!isAdmin && viewerLink) {
+        const document = await tx.document.findFirst({
+          where: {
+            id: documentId,
+            roomId,
+            organizationId,
+            status: 'ACTIVE',
+          },
+          select: { id: true, folderId: true },
+        });
+        const inScope =
+          document && (await canViewerLinkAccessDocument(tx, viewerLink, roomId, document));
+        if (!inScope) {
+          return { error: 'Not authorized to act on this signature request', status: 403 };
+        }
       }
 
       // Authorization: admin can always act, signer can act on their own request

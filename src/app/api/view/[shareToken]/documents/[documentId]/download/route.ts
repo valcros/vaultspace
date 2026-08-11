@@ -17,7 +17,7 @@ import {
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
-import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
+import { canViewerLinkAccessDocument } from '@/lib/permissions/LinkPolicy';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -39,21 +39,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
         },
       },
     });
-    const sessionResult = requireViewerSession(shareToken, session);
+    const sessionResult = requireViewerSession(shareToken, session, 'download');
     if ('response' in sessionResult) {
       return sessionResult.response;
     }
     const viewerSession = sessionResult.session;
-
-    // Download is gated on the LINK's permission, not the room. This lets an
-    // admin selectively grant download to one party (a DOWNLOAD link) without
-    // opening the room room-wide; a VIEW link is always view-only.
-    if (viewerSession.link.permission !== 'DOWNLOAD') {
-      return NextResponse.json(
-        { error: 'This link is view-only; downloads are not permitted' },
-        { status: 403 }
-      );
-    }
 
     // Downloading a specific prior version is only allowed when the room exposes
     // version history to viewers; otherwise only the current version is served.

@@ -13,7 +13,7 @@ import {
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
-import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
+import { canViewerLinkAccessDocument } from '@/lib/permissions/LinkPolicy';
 
 interface RouteContext {
   params: Promise<{ shareToken: string; documentId: string }>;

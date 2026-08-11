@@ -6,52 +6,44 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
+import { z } from 'zod';
 
-import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { getRequestContext } from '@/lib/middleware';
-import { isIpAllowed, getClientIp } from '@/lib/utils/ip';
+import { admitLinkViewer, getLinkPolicyRecord } from '@/lib/permissions/LinkPolicy';
+import { getClientIp } from '@/lib/utils/ip';
+import {
+  getViewerSession,
+  requireViewerSession,
+  viewerSessionBaseSelect,
+} from '@/lib/viewerSession';
 
 interface RouteContext {
   params: Promise<{ shareToken: string }>;
 }
 
+const viewerAccessSchema = z.object({
+  email: z.string().trim().email().max(320).optional(),
+  password: z.string().max(1024).optional(),
+  ndaAccepted: z.boolean().optional(),
+});
+
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { shareToken } = await context.params;
-    const body = await request.json();
-    const { email, password, ndaAccepted } = body;
+    const parsedBody = viewerAccessSchema.safeParse(await request.json().catch(() => null));
+    if (!parsedBody.success) {
+      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    }
+    const { email, password, ndaAccepted } = parsedBody.data;
     const reqContext = getRequestContext(request);
 
-    // PRE-RLS BOOTSTRAP: Narrowly scoped lookup to resolve organizationId from shareToken
-    // This is the only raw db access allowed - specifically to bootstrap viewer context
-    const link = await bootstrapDb.link.findFirst({
-      where: {
-        slug: shareToken,
-        isActive: true,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      },
-      select: {
-        id: true,
-        slug: true,
-        requiresEmailVerification: true,
-        allowedEmails: true,
-        requiresPassword: true,
-        passwordHash: true,
-        room: {
-          select: {
-            id: true,
-            name: true,
-            organizationId: true,
-            requiresNda: true,
-            ndaContent: true,
-            ipAllowlist: true,
-          },
-        },
-      },
-    });
+    const existingSession = await getViewerSession(shareToken, viewerSessionBaseSelect);
+    if ('session' in requireViewerSession(shareToken, existingSession)) {
+      return NextResponse.json({ success: true, reused: true });
+    }
+
+    const link = await getLinkPolicyRecord(shareToken);
 
     if (!link) {
       return NextResponse.json({ error: 'This link is invalid or has expired' }, { status: 404 });
@@ -59,11 +51,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const auditDenied = async (reason: string) => {
       await captureAccessAudit({
-        organizationId: link.room.organizationId,
+        organizationId: link.organizationId,
         eventType: 'LINK_ACCESS_DENIED',
         actorType: 'VIEWER',
         actorEmail: typeof email === 'string' ? email : null,
-        roomId: link.room.id,
+        roomId: link.roomId,
         requestId: reqContext.requestId,
         description: 'Share-link access denied',
         metadata: {
@@ -78,105 +70,34 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
     };
 
-    // Check IP allowlist (F018) - supports both exact IPs and CIDR notation
-    if (link.room.ipAllowlist && link.room.ipAllowlist.length > 0) {
-      const clientIp = getClientIp(request.headers);
-      if (!isIpAllowed(clientIp, link.room.ipAllowlist)) {
-        await auditDenied('IP_NOT_ALLOWED');
-        return NextResponse.json(
-          { error: 'Access denied: your IP address is not allowed.' },
-          { status: 403 }
-        );
-      }
-    }
-
-    // Verify email if required
-    if (link.requiresEmailVerification) {
-      if (!email || typeof email !== 'string' || !email.includes('@')) {
-        await auditDenied('ASSERTED_EMAIL_REQUIRED');
-        return NextResponse.json({ error: 'A valid email address is required' }, { status: 400 });
-      }
-
-      // Check if email is in allowed list (if configured)
-      if (link.allowedEmails.length > 0) {
-        const normalizedEmail = email.toLowerCase().trim();
-        const isAllowed = link.allowedEmails.some(
-          (e) => e.toLowerCase().trim() === normalizedEmail
-        );
-        if (!isAllowed) {
-          await auditDenied('ASSERTED_EMAIL_NOT_ALLOWED');
-          return NextResponse.json(
-            { error: 'Your email address is not authorized to access this link' },
-            { status: 403 }
-          );
-        }
-      }
-    }
-
-    // Verify password if required
-    if (link.requiresPassword) {
-      if (!password || typeof password !== 'string') {
-        await auditDenied('PASSWORD_REQUIRED');
-        return NextResponse.json({ error: 'Password is required' }, { status: 400 });
-      }
-
-      const isValid = link.passwordHash ? await bcrypt.compare(password, link.passwordHash) : false;
-
-      if (!isValid) {
-        await auditDenied('PASSWORD_INVALID');
-        return NextResponse.json({ error: 'Incorrect password' }, { status: 401 });
-      }
-    }
-
-    // Verify NDA acceptance if required (F130)
-    if (link.room.requiresNda) {
-      if (ndaAccepted !== true) {
-        await auditDenied('NDA_ACCEPTANCE_REQUIRED');
-        return NextResponse.json(
-          {
-            error: 'NDA acceptance is required',
-            requiresNda: true,
-            ndaContent: link.room.ndaContent,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Generate session token
-    const sessionToken = randomBytes(32).toString('base64url');
-
-    // Now we have organizationId - use RLS context for all writes
-    const viewSession = await withOrgContext(link.room.organizationId, async (tx) => {
-      // Create view session
-      const createdSession = await tx.viewSession.create({
-        data: {
-          organizationId: link.room.organizationId,
-          roomId: link.room.id,
-          linkId: link.id,
-          sessionToken,
-          visitorEmail: email?.toLowerCase().trim() || null,
-          ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-          userAgent: request.headers.get('user-agent') || null,
-        },
-      });
-
-      // Update link view count
-      await tx.link.update({
-        where: { id: link.id },
-        data: {
-          viewCount: { increment: 1 },
-          lastAccessedAt: new Date(),
-        },
-      });
-
-      return createdSession;
+    const admission = await admitLinkViewer(link, {
+      email,
+      password,
+      ndaAccepted,
+      sourceIp: getClientIp(request.headers) ?? 'unknown',
+      userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
     });
+    if (!admission.allowed) {
+      await auditDenied(admission.code);
+      return NextResponse.json(
+        {
+          error: admission.message,
+          ...(admission.code === 'NDA_ACCEPTANCE_REQUIRED'
+            ? { requiresNda: true, ndaContent: link.room.ndaContent }
+            : {}),
+        },
+        { status: admission.status }
+      );
+    }
 
     // Set viewer session cookie
     const cookieStore = await cookies();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-    cookieStore.set(`viewer_${shareToken}`, sessionToken, {
+    const cookieLifetimeMs = Math.min(
+      24 * 60 * 60 * 1000,
+      link.maxSessionMinutes === null ? Number.POSITIVE_INFINITY : link.maxSessionMinutes * 60_000
+    );
+    const expiresAt = new Date(Date.now() + cookieLifetimeMs);
+    cookieStore.set(`viewer_${shareToken}`, admission.sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -186,12 +107,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
 
     await captureAccessAudit({
-      organizationId: link.room.organizationId,
+      organizationId: link.organizationId,
       eventType: 'LINK_ACCESSED',
       actorType: 'VIEWER',
-      actorEmail: typeof email === 'string' ? email : null,
-      roomId: link.room.id,
-      viewSessionId: viewSession.id,
+      actorEmail: admission.normalizedEmail,
+      roomId: link.roomId,
+      viewSessionId: admission.session.id,
       requestId: reqContext.requestId,
       description: 'Share link accessed',
       metadata: {
