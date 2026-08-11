@@ -7,7 +7,7 @@ vi.mock('../db', () => ({
     userOrganization: { findUnique: vi.fn() },
     roleAssignment: { findFirst: vi.fn(), findMany: vi.fn() },
     groupMembership: { findMany: vi.fn() },
-    folder: { findFirst: vi.fn() },
+    folder: { findFirst: vi.fn(), findMany: vi.fn() },
     permission: { findMany: vi.fn() },
     link: { findUnique: vi.fn() },
   },
@@ -20,7 +20,7 @@ const mockedDb = db as unknown as {
   userOrganization: { findUnique: MockFunction };
   roleAssignment: { findFirst: MockFunction; findMany: MockFunction };
   groupMembership: { findMany: MockFunction };
-  folder: { findFirst: MockFunction };
+  folder: { findFirst: MockFunction; findMany: MockFunction };
   permission: { findMany: MockFunction };
   link: { findUnique: MockFunction };
 };
@@ -56,6 +56,7 @@ describe('PermissionEngine Option A authorization', () => {
     mockedDb.folder.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
       Promise.resolve({ id: where.id, parentId: null })
     );
+    mockedDb.folder.findMany.mockResolvedValue([]);
     mockedDb.permission.findMany.mockResolvedValue([]);
     mockedDb.link.findUnique.mockResolvedValue(null);
   });
@@ -133,6 +134,77 @@ describe('PermissionEngine Option A authorization', () => {
         inheritedFrom: { type: 'FOLDER', id: 'folder-1' },
       })
     );
+  });
+
+  it('prepares one set-based document authorizer for more than eight candidates', async () => {
+    mockedDb.folder.findMany.mockResolvedValue([
+      { id: 'folder-parent', parentId: null },
+      { id: 'folder-child', parentId: 'folder-parent' },
+    ]);
+    mockedDb.permission.findMany.mockResolvedValue([
+      {
+        ...permission('VIEW', 'ROOM', 'room-1'),
+        inheritFromParent: true,
+      },
+      {
+        ...permission('NONE', 'DOCUMENT', 'doc-0'),
+        inheritFromParent: false,
+      },
+      {
+        ...permission('NONE', 'FOLDER', 'folder-parent'),
+        inheritFromParent: true,
+      },
+    ]);
+    const candidates = [
+      { id: 'doc-0', folderId: null },
+      { id: 'doc-1', folderId: 'folder-child' },
+      ...Array.from({ length: 7 }, (_, index) => ({
+        id: `doc-${index + 2}`,
+        folderId: null,
+      })),
+    ];
+
+    const authorization = await engine.prepareDocumentViewAuthorization(
+      { userId: 'viewer-1' },
+      'org-1',
+      'room-1'
+    );
+
+    expect(authorization.unrestricted).toBe(false);
+    expect(authorization.getViewableIds(candidates)).toEqual([
+      'doc-2',
+      'doc-3',
+      'doc-4',
+      'doc-5',
+      'doc-6',
+      'doc-7',
+      'doc-8',
+    ]);
+    expect(mockedDb.userOrganization.findUnique).toHaveBeenCalledOnce();
+    expect(mockedDb.roleAssignment.findFirst).toHaveBeenCalledOnce();
+    expect(mockedDb.groupMembership.findMany).toHaveBeenCalledOnce();
+    expect(mockedDb.folder.findMany).toHaveBeenCalledOnce();
+    expect(mockedDb.permission.findMany).toHaveBeenCalledOnce();
+  });
+
+  it('keeps persisted administrator authority unrestricted in the batch path', async () => {
+    mockedDb.userOrganization.findUnique.mockResolvedValue(membership('ADMIN'));
+
+    const authorization = await engine.prepareDocumentViewAuthorization(
+      { userId: 'admin-1', role: 'VIEWER' },
+      'org-1',
+      'room-1'
+    );
+
+    expect(authorization.unrestricted).toBe(true);
+    expect(
+      authorization.getViewableIds([
+        { id: 'doc-1', folderId: null },
+        { id: 'doc-2', folderId: 'folder-1' },
+      ])
+    ).toEqual(['doc-1', 'doc-2']);
+    expect(mockedDb.roleAssignment.findFirst).not.toHaveBeenCalled();
+    expect(mockedDb.permission.findMany).not.toHaveBeenCalled();
   });
 
   it('loads inheritable ancestor-folder decisions for nested resources', async () => {

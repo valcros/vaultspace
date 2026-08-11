@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { withOrgContext } from '@/lib/db';
 import { getDashboardData } from '@/lib/dashboard-data';
 import { getPermissionEngine } from '@/lib/permissions';
+import { DocumentService } from '@/services/DocumentService';
 import { RoomService } from '@/services/RoomService';
 import type { ServiceContext } from '@/services/types';
 
@@ -432,6 +433,67 @@ describe('W1-1 room-scoped authorization with the runtime database role', () => 
     });
     await expect(canViewNestedDocument()).resolves.toBe(true);
     await expect(listedRoomIds(fixture)).resolves.toEqual([]);
+  });
+
+  it('filters explicit document and ancestor denies before document totals and pagination', async () => {
+    const fixture = await seedFixture();
+    await prisma.permission.createMany({
+      data: [
+        {
+          organizationId: fixture.orgA.id,
+          resourceType: 'ROOM',
+          roomId: fixture.roomA3.id,
+          granteeType: 'USER',
+          userId: fixture.viewerA.id,
+          permissionLevel: 'VIEW',
+        },
+        {
+          organizationId: fixture.orgA.id,
+          resourceType: 'DOCUMENT',
+          roomId: fixture.roomA3.id,
+          folderId: fixture.folderA3.id,
+          documentId: fixture.documentA3.id,
+          granteeType: 'USER',
+          userId: fixture.viewerA.id,
+          permissionLevel: 'NONE',
+        },
+      ],
+    });
+
+    const service = new DocumentService();
+    const context = serviceContext(fixture);
+    const folderList = await service.list(context, {
+      roomId: fixture.roomA3.id,
+      folderId: fixture.folderA3.id,
+    });
+
+    expect(folderList.items.map(({ id }) => id)).toEqual([fixture.secondDocumentA3.id]);
+    expect(folderList.total).toBe(1);
+    await expect(service.getById(context, fixture.documentA3.id)).resolves.toBeNull();
+    await expect(service.getById(context, fixture.secondDocumentA3.id)).resolves.toMatchObject({
+      id: fixture.secondDocumentA3.id,
+    });
+
+    await prisma.permission.create({
+      data: {
+        organizationId: fixture.orgA.id,
+        resourceType: 'FOLDER',
+        roomId: fixture.roomA3.id,
+        folderId: fixture.folderA3.id,
+        granteeType: 'USER',
+        userId: fixture.viewerA.id,
+        permissionLevel: 'NONE',
+        inheritFromParent: true,
+      },
+    });
+
+    const nestedList = await service.list(context, {
+      roomId: fixture.roomA3.id,
+      folderId: fixture.nestedFolderA3.id,
+    });
+    expect(nestedList.items).toEqual([]);
+    expect(nestedList.total).toBe(0);
+    await expect(service.getById(context, fixture.nestedDocumentA3.id)).resolves.toBeNull();
   });
 
   it('orders room admin over ACL deny and denies inactive or cross-tenant membership', async () => {

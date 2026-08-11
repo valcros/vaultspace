@@ -22,8 +22,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (session?.link?.slug === shareToken) {
       await withOrgContext(session.organizationId, async (tx) => {
-        await tx.viewSession.delete({
-          where: { id: session.id },
+        await tx.viewSession.updateMany({
+          where: {
+            id: session.id,
+            organizationId: session.organizationId,
+            isActive: true,
+          },
+          data: { isActive: false },
         });
       });
     }
