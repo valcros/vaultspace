@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { RoomStatus } from '@prisma/client';
+import { z } from 'zod';
 
 import { isAuthenticationError } from '@/lib/errors';
 import { getRequestContext, requireAuthFromRequest } from '@/lib/middleware';
@@ -16,7 +17,33 @@ import { createServiceContext, roomService } from '@/services';
 export const dynamic = 'force-dynamic';
 import { withOrgContext } from '@/lib/db';
 
-const ROOM_STATUSES = new Set<RoomStatus>(['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED']);
+const ROOM_STATUSES = ['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED'] as const;
+const ROOM_STATUS_SET = new Set<RoomStatus>(ROOM_STATUSES);
+
+function normalizeInteger(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum?: number
+): number {
+  const parsed = Number.parseInt(typeof value === 'string' ? value : String(fallback), 10);
+  const normalized = Number.isFinite(parsed) ? Math.max(parsed, minimum) : fallback;
+  return maximum === undefined ? normalized : Math.min(normalized, maximum);
+}
+
+const roomListQuerySchema = z.object({
+  status: z.preprocess(
+    (value) =>
+      typeof value === 'string' && ROOM_STATUS_SET.has(value as RoomStatus) ? value : undefined,
+    z.enum(ROOM_STATUSES).optional()
+  ),
+  search: z.preprocess(
+    (value) => (typeof value === 'string' && value ? value : undefined),
+    z.string().optional()
+  ),
+  limit: z.preprocess((value) => normalizeInteger(value, 50, 1, 100), z.number().int()),
+  offset: z.preprocess((value) => normalizeInteger(value, 0, 0), z.number().int()),
+});
 
 /**
  * GET /api/rooms
@@ -27,11 +54,12 @@ export async function GET(request: NextRequest) {
     const session = await requireAuthFromRequest(request);
 
     const { searchParams } = new URL(request.url);
-    const requestedStatus = searchParams.get('status');
-    const parsedLimit = Number.parseInt(searchParams.get('limit') ?? '50', 10);
-    const parsedOffset = Number.parseInt(searchParams.get('offset') ?? '0', 10);
-    const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 50;
-    const offset = Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0;
+    const query = roomListQuerySchema.parse({
+      status: searchParams.get('status'),
+      search: searchParams.get('search'),
+      limit: searchParams.get('limit'),
+      offset: searchParams.get('offset'),
+    });
     const reqContext = getRequestContext(request);
     const ctx = createServiceContext({
       session,
@@ -40,13 +68,10 @@ export async function GET(request: NextRequest) {
       userAgent: reqContext.userAgent,
     });
     const result = await roomService.list(ctx, {
-      status:
-        requestedStatus && ROOM_STATUSES.has(requestedStatus as RoomStatus)
-          ? (requestedStatus as RoomStatus)
-          : undefined,
-      search: searchParams.get('search') || undefined,
-      limit,
-      offset,
+      status: query.status,
+      search: query.search,
+      limit: query.limit,
+      offset: query.offset,
     });
 
     return NextResponse.json({

@@ -128,9 +128,9 @@ function createRequest() {
   return new NextRequest('http://localhost/api/rooms/room-1/documents/doc-1/thumbnail');
 }
 
-function createContext() {
+function createContext(roomId = 'room-1', documentId = 'doc-1') {
   return {
-    params: Promise.resolve({ roomId: 'room-1', documentId: 'doc-1' }),
+    params: Promise.resolve({ roomId, documentId }),
   };
 }
 
@@ -153,6 +153,14 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
     const response = await GET(createRequest(), createContext());
 
     expect(response.status).toBe(404);
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockJobAddJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid route identifiers before storage access', async () => {
+    const response = await GET(createRequest(), createContext('room-1', ' '));
+
+    expect(response.status).toBe(400);
     expect(mockStorageGet).not.toHaveBeenCalled();
     expect(mockJobAddJob).not.toHaveBeenCalled();
   });

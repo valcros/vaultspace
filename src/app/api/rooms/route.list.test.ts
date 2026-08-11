@@ -73,4 +73,27 @@ describe('GET /api/rooms authorization adapter', () => {
       expect.objectContaining({ status: undefined })
     );
   });
+
+  it('preserves integer-prefix parsing and pagination defaults through Zod', async () => {
+    await GET(new NextRequest('http://localhost/api/rooms?limit=12items&offset=7rows'));
+
+    expect(mocks.list).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ limit: 12, offset: 7 })
+    );
+
+    vi.clearAllMocks();
+    mocks.requireAuth.mockResolvedValue({ userId: 'viewer-1', organizationId: 'org-1' });
+    mocks.createContext.mockReturnValue({
+      session: { userId: 'viewer-1', organizationId: 'org-1' },
+    });
+    mocks.list.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50, hasMore: false });
+
+    await GET(new NextRequest('http://localhost/api/rooms?limit=invalid&offset=invalid'));
+
+    expect(mocks.list).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ limit: 50, offset: 0 })
+    );
+  });
 });

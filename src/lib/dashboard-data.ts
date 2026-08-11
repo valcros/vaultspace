@@ -447,38 +447,34 @@ export async function getDashboardData({
     const [bookmarkDecisions, pageViewDecisions] = await Promise.all([
       Promise.all(
         userBookmarks.map((bookmark) =>
-          isAdmin || scopedRoomIdSet.has(bookmark.room.id)
-            ? Promise.resolve(true)
-            : permissionEngine.can(
-                { userId },
-                'view',
-                {
-                  type: 'DOCUMENT',
-                  organizationId: orgId,
-                  roomId: bookmark.room.id,
-                  folderId: bookmark.document.folderId ?? undefined,
-                  documentId: bookmark.document.id,
-                },
-                tx
-              )
+          permissionEngine.can(
+            { userId },
+            'view',
+            {
+              type: 'DOCUMENT',
+              organizationId: orgId,
+              roomId: bookmark.room.id,
+              folderId: bookmark.document.folderId ?? undefined,
+              documentId: bookmark.document.id,
+            },
+            tx
+          )
         )
       ),
       Promise.all(
         recentPageViews.map((pageView) =>
-          isAdmin || scopedRoomIdSet.has(pageView.room.id)
-            ? Promise.resolve(true)
-            : permissionEngine.can(
-                { userId },
-                'view',
-                {
-                  type: 'DOCUMENT',
-                  organizationId: orgId,
-                  roomId: pageView.room.id,
-                  folderId: pageView.document.folderId ?? undefined,
-                  documentId: pageView.document.id,
-                },
-                tx
-              )
+          permissionEngine.can(
+            { userId },
+            'view',
+            {
+              type: 'DOCUMENT',
+              organizationId: orgId,
+              roomId: pageView.room.id,
+              folderId: pageView.document.folderId ?? undefined,
+              documentId: pageView.document.id,
+            },
+            tx
+          )
         )
       ),
     ]);

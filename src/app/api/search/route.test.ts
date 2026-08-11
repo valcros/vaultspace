@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server';
 
 const permissionMocks = vi.hoisted(() => ({
   getViewableRoomIds: vi.fn(),
+  can: vi.fn(),
 }));
 
 // Mock auth
@@ -30,7 +31,10 @@ vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
 }));
 vi.mock('@/lib/permissions', () => ({
-  getPermissionEngine: () => ({ getViewableRoomIds: permissionMocks.getViewableRoomIds }),
+  getPermissionEngine: () => ({
+    getViewableRoomIds: permissionMocks.getViewableRoomIds,
+    can: permissionMocks.can,
+  }),
 }));
 
 import { GET } from './route';
@@ -39,6 +43,7 @@ describe('GET /api/search', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     permissionMocks.getViewableRoomIds.mockResolvedValue(null);
+    permissionMocks.can.mockResolvedValue(true);
   });
 
   it('returns 400 when no query param', async () => {
@@ -59,7 +64,6 @@ describe('GET /api/search', () => {
   });
 
   it('returns search results with correct shape', async () => {
-    // Single query: results carry the window count
     mockTx.$queryRaw.mockResolvedValueOnce([
       {
         documentId: 'doc-1',
@@ -72,8 +76,8 @@ describe('GET /api/search', () => {
         tags: ['legal'],
         uploadedAt: new Date('2026-01-01'),
         roomId: 'room-1',
+        folderId: null,
         roomName: 'Test Room',
-        totalCount: BigInt(1),
       },
     ]);
 
@@ -133,5 +137,60 @@ describe('GET /api/search', () => {
 
     expect(res.status).toBe(200);
     expect(mockTx.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('authorizes documents before computing search totals and pagination', async () => {
+    permissionMocks.getViewableRoomIds.mockResolvedValue(new Set(['room-allowed']));
+    permissionMocks.can.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockTx.$queryRaw.mockResolvedValueOnce([
+      {
+        documentId: 'doc-denied',
+        versionId: 'ver-denied',
+        title: 'Denied Document',
+        fileName: 'denied.pdf',
+        snippet: 'denied match',
+        score: 0.9,
+        mimeType: 'application/pdf',
+        tags: [],
+        uploadedAt: new Date('2026-01-01'),
+        roomId: 'room-allowed',
+        folderId: 'folder-denied',
+        roomName: 'Allowed Room',
+      },
+      {
+        documentId: 'doc-allowed',
+        versionId: 'ver-allowed',
+        title: 'Allowed Document',
+        fileName: 'allowed.pdf',
+        snippet: 'allowed match',
+        score: 0.8,
+        mimeType: 'application/pdf',
+        tags: [],
+        uploadedAt: new Date('2026-01-02'),
+        roomId: 'room-allowed',
+        folderId: null,
+        roomName: 'Allowed Room',
+      },
+    ]);
+
+    const res = await GET(new NextRequest('http://localhost:3000/api/search?q=match&limit=1'));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.total).toBe(1);
+    expect(body.results).toEqual([expect.objectContaining({ documentId: 'doc-allowed' })]);
+    expect(permissionMocks.can).toHaveBeenNthCalledWith(
+      1,
+      { userId: 'user-1' },
+      'view',
+      {
+        type: 'DOCUMENT',
+        organizationId: 'org-1',
+        roomId: 'room-allowed',
+        folderId: 'folder-denied',
+        documentId: 'doc-denied',
+      },
+      mockTx
+    );
   });
 });

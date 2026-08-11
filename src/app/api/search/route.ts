@@ -26,6 +26,12 @@ interface SearchResponse {
   took: number;
 }
 
+interface SearchCandidate extends SearchResult {
+  folderId: string | null;
+}
+
+const AUTHORIZATION_BATCH_SIZE = 8;
+
 export async function GET(request: NextRequest) {
   try {
     const session = await requireAuth();
@@ -110,9 +116,10 @@ export async function GET(request: NextRequest) {
 
       const whereClause = Prisma.join(conditions, ' AND ');
 
-      // Single query: window count replaces the separate COUNT pass that ran
-      // the whole match twice (audit finding 6).
-      const rows = await tx.$queryRaw<(SearchResult & { totalCount: bigint })[]>`
+      // Fetch the coarse room-scoped candidate set before pagination. A room
+      // grant cannot override a folder or document NONE, so totals and pages
+      // must be computed only after document-level authorization.
+      const candidates = await tx.$queryRaw<SearchCandidate[]>`
         SELECT
           si."documentId" AS "documentId",
           si."versionId" AS "versionId",
@@ -129,19 +136,44 @@ export async function GET(request: NextRequest) {
           si."tags" AS "tags",
           si."uploadedAt" AS "uploadedAt",
           d."roomId" AS "roomId",
-          r."name" AS "roomName",
-          count(*) OVER () AS "totalCount"
+          d."folderId" AS "folderId",
+          r."name" AS "roomName"
         FROM search_indexes si
         JOIN documents d ON d.id = si."documentId"
         JOIN rooms r ON r.id = d."roomId"
         WHERE ${whereClause}
         ORDER BY "score" DESC
-        LIMIT ${limit}
-        OFFSET ${offset}
       `;
 
-      const total = Number(rows[0]?.totalCount ?? 0);
-      const results = rows.map(({ totalCount: _totalCount, ...rest }) => rest);
+      const decisions: boolean[] = [];
+      const permissionEngine = getPermissionEngine();
+      for (let index = 0; index < candidates.length; index += AUTHORIZATION_BATCH_SIZE) {
+        const batch = candidates.slice(index, index + AUTHORIZATION_BATCH_SIZE);
+        decisions.push(
+          ...(await Promise.all(
+            batch.map((candidate) =>
+              permissionEngine.can(
+                { userId: session.userId },
+                'view',
+                {
+                  type: 'DOCUMENT',
+                  organizationId,
+                  roomId: candidate.roomId,
+                  folderId: candidate.folderId ?? undefined,
+                  documentId: candidate.documentId,
+                },
+                tx
+              )
+            )
+          ))
+        );
+      }
+
+      const authorizedCandidates = candidates.filter((_candidate, index) => decisions[index]);
+      const total = authorizedCandidates.length;
+      const results = authorizedCandidates
+        .slice(offset, offset + limit)
+        .map(({ folderId: _folderId, ...result }) => result);
 
       return { results, total, took: Date.now() - startTime };
     });

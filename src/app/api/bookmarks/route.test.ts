@@ -9,7 +9,6 @@ import { NextRequest } from 'next/server';
 
 const permissionMocks = vi.hoisted(() => ({
   can: vi.fn(),
-  getViewableRoomIds: vi.fn(),
 }));
 
 // Mock auth
@@ -34,7 +33,6 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: () => ({
     can: permissionMocks.can,
-    getViewableRoomIds: permissionMocks.getViewableRoomIds,
   }),
 }));
 
@@ -44,7 +42,6 @@ describe('GET /api/bookmarks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     permissionMocks.can.mockResolvedValue(true);
-    permissionMocks.getViewableRoomIds.mockResolvedValue(null);
   });
 
   it('returns bookmarks list', async () => {
@@ -81,7 +78,7 @@ describe('GET /api/bookmarks', () => {
     expect(body.bookmarks).toHaveLength(2);
   });
 
-  it('filters bookmarks after access is revoked', async () => {
+  it('filters a denied document even when its room would otherwise be viewable', async () => {
     mockTx.bookmark.findMany.mockResolvedValue([
       {
         id: 'bm-denied',
@@ -96,7 +93,6 @@ describe('GET /api/bookmarks', () => {
       },
     ]);
     permissionMocks.can.mockResolvedValue(false);
-    permissionMocks.getViewableRoomIds.mockResolvedValue(new Set());
 
     const res = await GET();
     const body = await res.json();

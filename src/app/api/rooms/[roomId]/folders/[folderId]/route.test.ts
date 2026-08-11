@@ -30,8 +30,8 @@ const adminSession = {
   organization: { role: 'ADMIN' },
 } as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never;
 
-function makeContext(folderId = 'fld-source') {
-  return { params: Promise.resolve({ roomId: 'room-1', folderId }) };
+function makeContext(folderId = 'fld-source', roomId = 'room-1') {
+  return { params: Promise.resolve({ roomId, folderId }) };
 }
 
 function makeRequest(body: unknown, folderId = 'fld-source') {
@@ -266,7 +266,15 @@ describe('GET /api/rooms/:roomId/folders/:folderId', () => {
 
     const response = await GET(makeRequest({}, 'fld-source'), makeContext());
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
     expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid route identifiers before authorization or database access', async () => {
+    const response = await GET(makeRequest({}, 'fld-source'), makeContext('fld-source', ' '));
+
+    expect(response.status).toBe(400);
+    expect(mockRequireAuth).not.toHaveBeenCalled();
+    expect(permissionMocks.can).not.toHaveBeenCalled();
   });
 });

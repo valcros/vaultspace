@@ -46,26 +46,20 @@ export async function GET() {
       });
 
       const permissionEngine = getPermissionEngine();
-      const viewableRoomIds = await permissionEngine.getViewableRoomIds({ userId }, orgId, tx);
-      if (viewableRoomIds === null) {
-        return candidates;
-      }
       const decisions = await Promise.all(
         candidates.map((bookmark) =>
-          viewableRoomIds.has(bookmark.room.id)
-            ? Promise.resolve(true)
-            : permissionEngine.can(
-                { userId },
-                'view',
-                {
-                  type: 'DOCUMENT',
-                  organizationId: orgId,
-                  roomId: bookmark.room.id,
-                  folderId: bookmark.document.folderId ?? undefined,
-                  documentId: bookmark.document.id,
-                },
-                tx
-              )
+          permissionEngine.can(
+            { userId },
+            'view',
+            {
+              type: 'DOCUMENT',
+              organizationId: orgId,
+              roomId: bookmark.room.id,
+              folderId: bookmark.document.folderId ?? undefined,
+              documentId: bookmark.document.id,
+            },
+            tx
+          )
         )
       );
 

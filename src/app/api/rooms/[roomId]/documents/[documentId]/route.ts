@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
@@ -20,14 +21,23 @@ interface RouteContext {
   params: Promise<{ roomId: string; documentId: string }>;
 }
 
+const routeParamsSchema = z.object({
+  roomId: z.string().trim().min(1).max(191),
+  documentId: z.string().trim().min(1).max(191),
+});
+
 /**
  * GET /api/rooms/:roomId/documents/:documentId
  * Get document details including versions
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const parsedParams = routeParamsSchema.safeParse(await context.params);
+    if (!parsedParams.success) {
+      return NextResponse.json({ error: 'Invalid document route' }, { status: 400 });
+    }
+    const { roomId, documentId } = parsedParams.data;
     const session = await requireAuth();
-    const { roomId, documentId } = await context.params;
 
     // Use RLS context for org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
