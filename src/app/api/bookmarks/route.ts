@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { getPermissionEngine } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,7 @@ export async function GET() {
     const userId = session.userId;
 
     const bookmarks = await withOrgContext(orgId, async (tx) => {
-      return tx.bookmark.findMany({
+      const candidates = await tx.bookmark.findMany({
         where: {
           organizationId: orgId,
           userId,
@@ -30,6 +31,7 @@ export async function GET() {
               id: true,
               name: true,
               mimeType: true,
+              folderId: true,
             },
           },
           room: {
@@ -42,6 +44,26 @@ export async function GET() {
         orderBy: { createdAt: 'desc' },
         take: 500,
       });
+
+      const permissionEngine = getPermissionEngine();
+      const decisions = await Promise.all(
+        candidates.map((bookmark) =>
+          permissionEngine.can(
+            { userId },
+            'view',
+            {
+              type: 'DOCUMENT',
+              organizationId: orgId,
+              roomId: bookmark.room.id,
+              folderId: bookmark.document.folderId ?? undefined,
+              documentId: bookmark.document.id,
+            },
+            tx
+          )
+        )
+      );
+
+      return candidates.filter((_bookmark, index) => decisions[index]);
     });
 
     return NextResponse.json({ bookmarks });
@@ -79,8 +101,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const bookmark = await withOrgContext(orgId, async (tx) => {
-      return tx.bookmark.upsert({
+    const result = await withOrgContext(orgId, async (tx) => {
+      const document = await tx.document.findFirst({
+        where: { id: documentId, roomId, organizationId: orgId },
+        select: { id: true, roomId: true, folderId: true },
+      });
+      if (!document) {
+        return { error: 'Document not found', status: 404 as const };
+      }
+
+      const canView = await getPermissionEngine().can(
+        { userId },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: orgId,
+          roomId: document.roomId,
+          folderId: document.folderId ?? undefined,
+          documentId: document.id,
+        },
+        tx
+      );
+      if (!canView) {
+        return { error: 'Document not found', status: 404 as const };
+      }
+
+      const bookmark = await tx.bookmark.upsert({
         where: {
           userId_documentId: {
             userId,
@@ -95,9 +141,14 @@ export async function POST(request: NextRequest) {
           roomId,
         },
       });
+      return { bookmark };
     });
 
-    return NextResponse.json({ bookmark }, { status: 201 });
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    return NextResponse.json({ bookmark: result.bookmark }, { status: 201 });
   } catch (error: unknown) {
     if (error instanceof Error && error.message === 'Authentication required') {
       return NextResponse.json(

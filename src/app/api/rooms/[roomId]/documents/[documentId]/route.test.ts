@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
+const mockPermissionCan = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+
 const mockTx = {
   room: { findFirst: vi.fn() },
   document: { findFirst: vi.fn() },
@@ -20,15 +22,20 @@ vi.mock('@/lib/db', () => ({
   ),
 }));
 
+vi.mock('@/lib/permissions', () => ({
+  getPermissionEngine: () => ({ can: mockPermissionCan }),
+}));
+
 import { GET } from './route';
 
-function makeContext() {
-  return { params: Promise.resolve({ roomId: 'room-1', documentId: 'doc-1' }) };
+function makeContext(roomId = 'room-1', documentId = 'doc-1') {
+  return { params: Promise.resolve({ roomId, documentId }) };
 }
 
 describe('GET /api/rooms/:roomId/documents/:documentId', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPermissionCan.mockResolvedValue(true);
     mockTx.room.findFirst.mockResolvedValue({ id: 'room-1' });
   });
 
@@ -68,5 +75,32 @@ describe('GET /api/rooms/:roomId/documents/:documentId', () => {
     const res = await GET(req, makeContext());
 
     expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when the actor cannot view the document', async () => {
+    mockTx.document.findFirst.mockResolvedValue({
+      id: 'doc-1',
+      folderId: null,
+      versions: [],
+    });
+    mockPermissionCan.mockResolvedValue(false);
+
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/rooms/room-1/documents/doc-1'),
+      makeContext()
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects invalid route identifiers before database access', async () => {
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/rooms/invalid/documents/doc-1'),
+      makeContext(' ', 'doc-1')
+    );
+
+    expect(res.status).toBe(400);
+    expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+    expect(mockTx.document.findFirst).not.toHaveBeenCalled();
   });
 });

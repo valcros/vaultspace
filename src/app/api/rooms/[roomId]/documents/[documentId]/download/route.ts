@@ -14,6 +14,7 @@ import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
 import { getRequestContext, requireAuth } from '@/lib/middleware';
+import { getPermissionEngine } from '@/lib/permissions';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -63,10 +64,32 @@ export async function GET(request: NextRequest, context: RouteContext) {
           organizationId: session.organizationId,
           status: 'ACTIVE',
         },
-        select: { id: true, name: true, mimeType: true, currentVersionId: true },
+        select: {
+          id: true,
+          name: true,
+          mimeType: true,
+          folderId: true,
+          currentVersionId: true,
+        },
       });
 
       if (!document) {
+        return { error: 'Document not found', status: 404 };
+      }
+
+      const canDownload = await getPermissionEngine().can(
+        { userId: session.userId },
+        'download',
+        {
+          type: 'DOCUMENT',
+          organizationId: session.organizationId,
+          roomId,
+          folderId: document.folderId ?? undefined,
+          documentId,
+        },
+        tx
+      );
+      if (!canDownload) {
         return { error: 'Document not found', status: 404 };
       }
 

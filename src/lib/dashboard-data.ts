@@ -14,6 +14,7 @@
  */
 
 import { withOrgContext } from '@/lib/db';
+import { getPermissionEngine } from '@/lib/permissions';
 import {
   CURRENT_DASHBOARD_LAYOUT_VERSION,
   getDefaultLayout,
@@ -178,13 +179,18 @@ export async function getDashboardData({
       },
     });
 
-    if (!userOrg) {
+    if (!userOrg?.isActive) {
       throw new Error('User not found in organization');
     }
 
     const user = userOrg.user;
     const userRole = userOrg.role;
-    const isAdmin = userRole === 'ADMIN';
+    const permissionEngine = getPermissionEngine();
+    const viewableRoomIds = await permissionEngine.getViewableRoomIds({ userId }, orgId, tx);
+    const isAdmin = viewableRoomIds === null;
+    const scopedRoomIdSet = viewableRoomIds ?? new Set<string>();
+    const scopedRoomIds = [...scopedRoomIdSet];
+    const roomIdFilter = isAdmin ? {} : { roomId: { in: scopedRoomIds } };
     const lastLoginAt = user.lastLoginAt;
 
     // Get user's dashboard layout
@@ -308,12 +314,13 @@ export async function getDashboardData({
         },
       }),
 
-      // User's rooms. Same visibility rule as GET /api/rooms: admins see all
-      // non-closed rooms, non-admins see ACTIVE rooms only.
+      // Apply the same room-scoped discovery contract as GET /api/rooms.
       tx.room.findMany({
         where: {
           organizationId: orgId,
-          ...(isAdmin ? { status: { not: 'CLOSED' as const } } : { status: 'ACTIVE' as const }),
+          ...(isAdmin
+            ? { status: { not: 'CLOSED' as const } }
+            : { id: { in: scopedRoomIds }, status: 'ACTIVE' as const }),
         },
         select: {
           id: true,
@@ -351,6 +358,7 @@ export async function getDashboardData({
             by: ['roomId'],
             where: {
               organizationId: orgId,
+              ...roomIdFilter,
               status: 'ACTIVE',
               createdAt: { gt: lastLoginAt },
             },
@@ -369,13 +377,14 @@ export async function getDashboardData({
             select: {
               id: true,
               name: true,
+              folderId: true,
               folder: { select: { name: true } },
             },
           },
           room: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: 'desc' },
-        take: 10,
+        take: 50,
       }),
 
       // User's questions
@@ -383,6 +392,7 @@ export async function getDashboardData({
         where: {
           organizationId: orgId,
           askedByUserId: userId,
+          ...roomIdFilter,
         },
         include: {
           room: { select: { id: true, name: true } },
@@ -404,12 +414,13 @@ export async function getDashboardData({
             select: {
               id: true,
               name: true,
+              folderId: true,
             },
           },
           room: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: 'desc' },
-        take: 5,
+        take: 25,
         distinct: ['documentId'],
       }),
 
@@ -418,6 +429,11 @@ export async function getDashboardData({
         where: {
           organizationId: orgId,
           isAnnouncement: true,
+          ...(isAdmin
+            ? {}
+            : {
+                OR: [{ roomId: null }, { roomId: { in: scopedRoomIds } }],
+              }),
         },
         include: {
           sender: { select: { firstName: true, lastName: true, email: true } },
@@ -427,6 +443,47 @@ export async function getDashboardData({
         take: 5,
       }),
     ]);
+
+    const [bookmarkDecisions, pageViewDecisions] = await Promise.all([
+      Promise.all(
+        userBookmarks.map((bookmark) =>
+          permissionEngine.can(
+            { userId },
+            'view',
+            {
+              type: 'DOCUMENT',
+              organizationId: orgId,
+              roomId: bookmark.room.id,
+              folderId: bookmark.document.folderId ?? undefined,
+              documentId: bookmark.document.id,
+            },
+            tx
+          )
+        )
+      ),
+      Promise.all(
+        recentPageViews.map((pageView) =>
+          permissionEngine.can(
+            { userId },
+            'view',
+            {
+              type: 'DOCUMENT',
+              organizationId: orgId,
+              roomId: pageView.room.id,
+              folderId: pageView.document.folderId ?? undefined,
+              documentId: pageView.document.id,
+            },
+            tx
+          )
+        )
+      ),
+    ]);
+    const authorizedBookmarks = userBookmarks
+      .filter((_bookmark, index) => bookmarkDecisions[index])
+      .slice(0, 10);
+    const authorizedPageViews = recentPageViews
+      .filter((_pageView, index) => pageViewDecisions[index])
+      .slice(0, 5);
 
     // Root folders for the listed rooms (landing card contents peek)
     const rootFolders = await tx.folder.findMany({
@@ -504,7 +561,7 @@ export async function getDashboardData({
     }));
 
     // Continue Reading
-    response.continueReading = recentPageViews.map((pv) => ({
+    response.continueReading = authorizedPageViews.map((pv) => ({
       documentId: pv.document.id,
       documentName: pv.document.name,
       roomId: pv.room.id,
@@ -515,7 +572,7 @@ export async function getDashboardData({
     }));
 
     // Bookmarks
-    response.bookmarks = userBookmarks.map((b) => ({
+    response.bookmarks = authorizedBookmarks.map((b) => ({
       id: b.id,
       documentId: b.document.id,
       documentName: b.document.name,

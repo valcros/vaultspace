@@ -93,4 +93,17 @@ describe('GET /api/dashboard', () => {
 
     expect(res.status).toBe(500);
   });
+
+  it('does not expose organization-wide aggregates to viewers', async () => {
+    const { requireAuth } = await import('@/lib/middleware');
+    (requireAuth as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...mockSession,
+      organization: { role: 'VIEWER' },
+    });
+
+    const res = await GET();
+
+    expect(res.status).toBe(403);
+    expect(mockTx.room.count).not.toHaveBeenCalled();
+  });
 });

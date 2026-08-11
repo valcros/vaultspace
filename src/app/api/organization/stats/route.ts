@@ -14,6 +14,9 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const session = await requireAuth();
+    if (session.organization.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
 
     const stats = await withOrgContext(session.organizationId, async (tx) => {
       const oneWeekAgo = new Date();

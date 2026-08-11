@@ -11,6 +11,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+const mockPermissionCan = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+
 const mockSession = {
   userId: 'user-1',
   organizationId: 'org-1',
@@ -49,6 +51,10 @@ vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
 }));
 
+vi.mock('@/lib/permissions', () => ({
+  getPermissionEngine: () => ({ can: mockPermissionCan }),
+}));
+
 import { GET } from './route';
 
 function makeRequest(): NextRequest {
@@ -73,6 +79,7 @@ const VERSIONS: Record<string, { scanStatus: string; fileBlob: unknown }> = {
 describe('GET /api/rooms/:roomId/documents/:documentId/download — current version', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPermissionCan.mockResolvedValue(true);
     mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockTx.room.findFirst.mockResolvedValue({ id: 'room-1', organizationId: 'org-1' });
     mockDocUpdate.mockResolvedValue({});
@@ -111,6 +118,17 @@ describe('GET /api/rooms/:roomId/documents/:documentId/download — current vers
 
     expect(res.status).toBe(400);
     expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 and reads no bytes when document download is denied', async () => {
+    docWithCurrent('ver-1');
+    mockPermissionCan.mockResolvedValue(false);
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(404);
+    expect(mockStorage.get).not.toHaveBeenCalled();
+    expect(mockDocUpdate).not.toHaveBeenCalled();
   });
 
   it.each(['INFECTED', 'PENDING', 'SCANNING', 'ERROR'])(

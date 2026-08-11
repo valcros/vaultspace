@@ -29,6 +29,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const session = await requireAuth();
     const { roomId } = await context.params;
 
+    if (session.organization.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
     // Use RLS context for org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
       // Verify room access

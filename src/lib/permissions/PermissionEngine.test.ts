@@ -18,9 +18,17 @@ vi.mock('../db', () => ({
     },
     roleAssignment: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
+    },
+    groupMembership: {
+      findMany: vi.fn(),
+    },
+    folder: {
+      findFirst: vi.fn(),
     },
     permission: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
     },
     link: {
       findUnique: vi.fn(),
@@ -30,7 +38,15 @@ vi.mock('../db', () => ({
 
 import { db } from '../db';
 
-const mockedDb = vi.mocked(db, true);
+type MockFunction = ReturnType<typeof vi.fn>;
+const mockedDb = db as unknown as {
+  userOrganization: { findUnique: MockFunction };
+  roleAssignment: { findFirst: MockFunction; findMany: MockFunction };
+  groupMembership: { findMany: MockFunction };
+  folder: { findFirst: MockFunction };
+  permission: { findFirst: MockFunction; findMany: MockFunction };
+  link: { findUnique: MockFunction };
+};
 
 describe('PermissionEngine', () => {
   let engine: PermissionEngine;
@@ -42,6 +58,15 @@ describe('PermissionEngine', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     engine = new PermissionEngine();
+    mockedDb.roleAssignment.findMany.mockResolvedValue([]);
+    mockedDb.groupMembership.findMany.mockResolvedValue([]);
+    mockedDb.folder.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+      Promise.resolve({ id: where.id, parentId: null })
+    );
+    mockedDb.permission.findMany.mockImplementation(async (args) => {
+      const permission = await mockedDb.permission.findFirst(args as never);
+      return permission ? [permission] : [];
+    });
   });
 
   // Scenario 1: System actor always has access
@@ -251,7 +276,7 @@ describe('PermissionEngine', () => {
 
   // Scenario 7: Group permission grants access
   it('should allow access through group membership', async () => {
-    const actor: Actor = { userId: 'user-6', groupIds: ['group-1'] };
+    const actor: Actor = { userId: 'user-6' };
     const resource: Resource = { type: 'FOLDER', organizationId: orgId, roomId, folderId };
 
     mockedDb.userOrganization.findUnique.mockResolvedValue({
@@ -266,31 +291,26 @@ describe('PermissionEngine', () => {
       updatedAt: new Date(),
     });
     mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
-    // First call for explicit permission returns null
-    mockedDb.permission.findFirst
-      .mockResolvedValueOnce(null) // document check
-      .mockResolvedValueOnce(null) // folder check
-      .mockResolvedValueOnce(null) // room check
-      .mockResolvedValueOnce({
-        // group check
-        id: 'perm-4',
-        organizationId: orgId,
-        roomId: null,
-        folderId,
-        documentId: null,
-        userId: null,
-        groupId: 'group-1',
-        granteeType: 'GROUP',
-        permissionLevel: 'VIEW',
-        resourceType: 'FOLDER',
-        isActive: true,
-        expiresAt: null,
-        inheritFromParent: true,
-        grantedByUserId: 'admin-1',
-        grantedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+    mockedDb.groupMembership.findMany.mockResolvedValue([{ groupId: 'group-1' }]);
+    mockedDb.permission.findFirst.mockResolvedValue({
+      id: 'perm-4',
+      organizationId: orgId,
+      roomId: null,
+      folderId,
+      documentId: null,
+      userId: null,
+      groupId: 'group-1',
+      granteeType: 'GROUP',
+      permissionLevel: 'VIEW',
+      resourceType: 'FOLDER',
+      isActive: true,
+      expiresAt: null,
+      inheritFromParent: true,
+      grantedByUserId: 'admin-1',
+      grantedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     const result = await engine.evaluate(actor, 'view', resource);
 
@@ -391,7 +411,7 @@ describe('PermissionEngine', () => {
     const actor: Actor = { userId: 'user-7' };
     const resource: Resource = { type: 'DOCUMENT', organizationId: orgId, documentId };
 
-    // Not a member of the org, so the VIEWER baseline does not apply.
+    // Organization membership alone never grants resource access.
     mockedDb.userOrganization.findUnique.mockResolvedValue(null);
     mockedDb.roleAssignment.findFirst.mockResolvedValue(null);
     mockedDb.permission.findFirst.mockResolvedValue(null);
@@ -400,11 +420,10 @@ describe('PermissionEngine', () => {
 
     expect(result.allowed).toBe(false);
     expect(result.level).toBe('NONE');
-    expect(result.reason).toBe('No permission found');
+    expect(result.reason).toBe('No active organization membership');
   });
 
-  // Scenario 11: Organization VIEWER baseline (Layer 15) — invited viewers can
-  // view the entire room without any explicit grant.
+  // Scenario 11: Option A removes the organization VIEWER baseline.
   const viewerMembership = (isActive = true) => ({
     id: 'uo-v',
     userId: 'viewer-1',
@@ -417,7 +436,7 @@ describe('PermissionEngine', () => {
     updatedAt: new Date(),
   });
 
-  it('should allow an org VIEWER to view room content with no explicit grant', async () => {
+  it('should deny an org VIEWER with no room or resource grant', async () => {
     const actor: Actor = { userId: 'viewer-1' };
     const resource: Resource = { type: 'DOCUMENT', organizationId: orgId, roomId, documentId };
 
@@ -427,11 +446,11 @@ describe('PermissionEngine', () => {
 
     const result = await engine.evaluate(actor, 'view', resource);
 
-    expect(result.allowed).toBe(true);
-    expect(result.level).toBe('VIEW');
+    expect(result.allowed).toBe(false);
+    expect(result.level).toBe('NONE');
   });
 
-  it('should deny download to an org VIEWER with only the baseline', async () => {
+  it('should deny download to an org VIEWER with no resource grant', async () => {
     const actor: Actor = { userId: 'viewer-1' };
     const resource: Resource = { type: 'DOCUMENT', organizationId: orgId, roomId, documentId };
 
@@ -444,7 +463,7 @@ describe('PermissionEngine', () => {
     expect(result.allowed).toBe(false);
   });
 
-  it('should not grant the VIEWER baseline to a deactivated membership', async () => {
+  it('should deny a deactivated organization membership', async () => {
     const actor: Actor = { userId: 'viewer-1' };
     const resource: Resource = { type: 'DOCUMENT', organizationId: orgId, roomId, documentId };
 
