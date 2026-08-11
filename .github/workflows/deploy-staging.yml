@@ -870,10 +870,18 @@ jobs:
             --query properties.configuration.activeRevisionsMode \
             --output tsv)
           if [ "$CURRENT_WEB_MODE" = "Multiple" ]; then
-            az containerapp revision activate \
+            PREVIOUS_WEB_ACTIVE=$(az containerapp revision show \
               --name "$WEB_CONTAINER_APP" \
               --resource-group "$RESOURCE_GROUP" \
-              --revision "$PREVIOUS_WEB_REVISION"
+              --revision "$PREVIOUS_WEB_REVISION" \
+              --query properties.active \
+              --output tsv)
+            if [ "${PREVIOUS_WEB_ACTIVE,,}" != "true" ]; then
+              az containerapp revision activate \
+                --name "$WEB_CONTAINER_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --revision "$PREVIOUS_WEB_REVISION"
+            fi
             az containerapp ingress traffic set \
               --name "$WEB_CONTAINER_APP" \
               --resource-group "$RESOURCE_GROUP" \
@@ -930,13 +938,6 @@ jobs:
             --container-name $WEB_CONTAINER_NAME \
             --image "$TARGET_WEB_IMAGE_PINNED" \
             --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$TARGET_RESET_WRITE_MODE"
-
-      - name: Route all Web traffic to the latest revision
-        run: |
-          az containerapp ingress traffic set \
-            --name $WEB_CONTAINER_APP \
-            --resource-group $RESOURCE_GROUP \
-            --revision-weight latest=100
 
       - name: Update Container App Job - Delayed Waker
         env:
@@ -1344,47 +1345,87 @@ jobs:
           # worker rollback. The highest-weight pre-deploy revision is the
           # deliberate known-good release and is restored at 100 percent.
           if [ "$WEB_MUTATED" = "true" ]; then
-            RECOVERY_WEB_MODE=$(az containerapp show \
+            RECOVERY_WEB_CAN_PROCEED=true
+            if ! RECOVERY_WEB_MODE=$(az containerapp show \
               --name "$WEB_CONTAINER_APP" \
               --resource-group "$RESOURCE_GROUP" \
               --query properties.configuration.activeRevisionsMode \
-              --output tsv)
-            if [ "$RECOVERY_WEB_MODE" = "Multiple" ]; then
-              az containerapp revision activate \
+              --output tsv); then
+              ROLLBACK_FAILED=1
+              RECOVERY_WEB_CAN_PROCEED=false
+            fi
+            if [ "$RECOVERY_WEB_CAN_PROCEED" = "true" ] && \
+               [ "$RECOVERY_WEB_MODE" = "Multiple" ]; then
+              if ! RECOVERY_PREVIOUS_WEB_ACTIVE=$(az containerapp revision show \
                 --name "$WEB_CONTAINER_APP" \
                 --resource-group "$RESOURCE_GROUP" \
-                --revision "$PREVIOUS_WEB_REVISION" || ROLLBACK_FAILED=1
-              az containerapp ingress traffic set \
-                --name "$WEB_CONTAINER_APP" \
-                --resource-group "$RESOURCE_GROUP" \
-                --revision-weight "$PREVIOUS_WEB_REVISION=100" || ROLLBACK_FAILED=1
-              while IFS= read -r REVISION; do
-                if [ -n "$REVISION" ] && [ "$REVISION" != "$PREVIOUS_WEB_REVISION" ]; then
-                  az containerapp revision deactivate \
-                    --name "$WEB_CONTAINER_APP" \
-                    --resource-group "$RESOURCE_GROUP" \
-                    --revision "$REVISION" || ROLLBACK_FAILED=1
-                fi
-              done < <(az containerapp revision list \
+                --revision "$PREVIOUS_WEB_REVISION" \
+                --query properties.active \
+                --output tsv); then
+                ROLLBACK_FAILED=1
+                RECOVERY_WEB_CAN_PROCEED=false
+              elif [ "${RECOVERY_PREVIOUS_WEB_ACTIVE,,}" != "true" ] && \
+                   ! az containerapp revision activate \
+                     --name "$WEB_CONTAINER_APP" \
+                     --resource-group "$RESOURCE_GROUP" \
+                     --revision "$PREVIOUS_WEB_REVISION"; then
+                ROLLBACK_FAILED=1
+                RECOVERY_WEB_CAN_PROCEED=false
+              fi
+            fi
+            if [ "$RECOVERY_WEB_CAN_PROCEED" = "true" ] && \
+               [ "$RECOVERY_WEB_MODE" = "Multiple" ] && \
+               ! az containerapp ingress traffic set \
+                 --name "$WEB_CONTAINER_APP" \
+                 --resource-group "$RESOURCE_GROUP" \
+                 --revision-weight "$PREVIOUS_WEB_REVISION=100"; then
+              ROLLBACK_FAILED=1
+              RECOVERY_WEB_CAN_PROCEED=false
+            fi
+            if [ "$RECOVERY_WEB_CAN_PROCEED" = "true" ] && \
+               [ "$RECOVERY_WEB_MODE" = "Multiple" ]; then
+              if ! RECOVERY_ACTIVE_REVISIONS=$(az containerapp revision list \
                 --name "$WEB_CONTAINER_APP" \
                 --resource-group "$RESOURCE_GROUP" \
                 --query "[?properties.active].name" \
-                --output tsv)
+                --output tsv); then
+                ROLLBACK_FAILED=1
+                RECOVERY_WEB_CAN_PROCEED=false
+              fi
             fi
-            az containerapp revision set-mode \
-              --name "$WEB_CONTAINER_APP" \
-              --resource-group "$RESOURCE_GROUP" \
-              --mode single || ROLLBACK_FAILED=1
-            az containerapp update \
-              --name "$WEB_CONTAINER_APP" \
-              --resource-group "$RESOURCE_GROUP" \
-              --container-name "$WEB_CONTAINER_NAME" \
-              --image "$PREVIOUS_WEB_IMAGE_PINNED" \
-              --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$PREVIOUS_RESET_WRITE_MODE" || ROLLBACK_FAILED=1
-            az containerapp ingress traffic set \
-              --name "$WEB_CONTAINER_APP" \
-              --resource-group "$RESOURCE_GROUP" \
-              --revision-weight latest=100 || ROLLBACK_FAILED=1
+            if [ "$RECOVERY_WEB_CAN_PROCEED" = "true" ] && \
+               [ "$RECOVERY_WEB_MODE" = "Multiple" ]; then
+              while IFS= read -r REVISION; do
+                if [ -n "$REVISION" ] && [ "$REVISION" != "$PREVIOUS_WEB_REVISION" ]; then
+                  if ! az containerapp revision deactivate \
+                    --name "$WEB_CONTAINER_APP" \
+                    --resource-group "$RESOURCE_GROUP" \
+                    --revision "$REVISION"; then
+                    ROLLBACK_FAILED=1
+                    RECOVERY_WEB_CAN_PROCEED=false
+                    break
+                  fi
+                fi
+              done <<< "$RECOVERY_ACTIVE_REVISIONS"
+            fi
+            if [ "$RECOVERY_WEB_CAN_PROCEED" = "true" ] && \
+               ! az containerapp revision set-mode \
+                 --name "$WEB_CONTAINER_APP" \
+                 --resource-group "$RESOURCE_GROUP" \
+                 --mode single; then
+              ROLLBACK_FAILED=1
+              RECOVERY_WEB_CAN_PROCEED=false
+            fi
+            if [ "$RECOVERY_WEB_CAN_PROCEED" = "true" ] && \
+               ! az containerapp update \
+                 --name "$WEB_CONTAINER_APP" \
+                 --resource-group "$RESOURCE_GROUP" \
+                 --container-name "$WEB_CONTAINER_NAME" \
+                 --image "$PREVIOUS_WEB_IMAGE_PINNED" \
+                 --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$PREVIOUS_RESET_WRITE_MODE"; then
+              ROLLBACK_FAILED=1
+              RECOVERY_WEB_CAN_PROCEED=false
+            fi
           fi
 
           if [ "$JOBS_MUTATED" = "true" ]; then
