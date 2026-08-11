@@ -575,6 +575,10 @@ describe('staging deployment workflow boundary', () => {
     'utf8'
   );
   const ciWorkflow = readFileSync(`${repositoryRoot}/.github/workflows/ci.yml`, 'utf8');
+  const webConvergenceHelper = readFileSync(
+    `${repositoryRoot}/scripts/wait-for-web-convergence.sh`,
+    'utf8'
+  );
   const rollout = readFileSync(
     `${repositoryRoot}/docs/password-reset-delivery-contract-rollout.md`,
     'utf8'
@@ -622,22 +626,28 @@ describe('staging deployment workflow boundary', () => {
     expect(deployWorkflow).toContain('scripts/verify-password-reset-deployment-contract.mjs');
     expect(
       deployWorkflow.match(/node scripts\/verify-password-reset-deployment-contract\.mjs/g)
-    ).toHaveLength(3);
-    expect(deployWorkflow).toContain('post_deploy_gate=');
+    ).toHaveLength(2);
+    expect(webConvergenceHelper).toContain(
+      'node scripts/verify-password-reset-deployment-contract.mjs'
+    );
+    expect(webConvergenceHelper).toContain('post_deploy_gate=');
     expect(deployWorkflow).toContain('recovery_gate=');
     expect(deployWorkflow).toContain('RECOVERY_ACTIVE_WEB_REVISIONS');
   });
 
   it('uses quick production health and validates the real reset reconciler job', () => {
     expect(deployWorkflow).not.toContain('deep=true');
+    expect(webConvergenceHelper).not.toContain('deep=true');
     expect(deployWorkflow).toContain(
       'api/health?deployment_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}'
     );
     expect(deployWorkflow).toContain(
       'api/health?recovery_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ATTEMPT}'
     );
-    expect(deployWorkflow.match(/-H "Cache-Control: no-cache"/g)?.length).toBeGreaterThanOrEqual(4);
-    expect(deployWorkflow.match(/-H "Pragma: no-cache"/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(deployWorkflow.match(/-H "Cache-Control: no-cache"/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(deployWorkflow.match(/-H "Pragma: no-cache"/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(webConvergenceHelper).toContain('-H "Cache-Control: no-cache"');
+    expect(webConvergenceHelper).toContain('-H "Pragma: no-cache"');
     expect(deployWorkflow).toContain('the actual job validation and preflight are authoritative');
     expect(deployWorkflow).toContain("grep -Eq '^(\\*|\\*/([1-9]|1[0-5])) \\* \\* \\* \\*$'");
     expect(deployWorkflow).toContain(
@@ -747,11 +757,33 @@ describe('staging deployment workflow boundary', () => {
     );
     expect(deployWorkflow.match(/az containerapp ingress traffic set \\/g)).toHaveLength(2);
 
-    expect(deployWorkflow).toContain('post_deploy_gate=');
+    expect(webConvergenceHelper).toContain('post_deploy_gate=');
     expect(deployWorkflow).toContain('recovery_gate=');
     expect(
       deployWorkflow.match(/node scripts\/verify-password-reset-deployment-contract\.mjs/g)
-    ).toHaveLength(3);
+    ).toHaveLength(2);
+    expect(webConvergenceHelper).toContain(
+      'node scripts/verify-password-reset-deployment-contract.mjs'
+    );
+  });
+
+  it('bounds forward web convergence while preserving fresh strict evidence on every attempt', () => {
+    expect(deployWorkflow).toContain('timeout --signal=TERM --kill-after=5s 240s');
+    expect(deployWorkflow).toContain("WEB_CONVERGENCE_TIMEOUT_SECONDS: '210'");
+    expect(deployWorkflow).toContain('scripts/wait-for-web-convergence.sh');
+    expect(webConvergenceHelper).toContain('for ((ATTEMPT = 1;');
+    expect(webConvergenceHelper).toContain('properties.latestRevisionName');
+    expect(webConvergenceHelper).toContain('az containerapp revision show');
+    expect(webConvergenceHelper).toContain("--query '[?properties.active].name'");
+    expect(webConvergenceHelper).toContain('az containerapp ingress traffic show');
+    expect(webConvergenceHelper).toContain('curl -fsS --max-time 15');
+    expect(webConvergenceHelper).toContain('[ "$health_status" != "healthy" ]');
+    expect(webConvergenceHelper).toContain('--arg expectedImage "$TARGET_WEB_IMAGE_PINNED"');
+    expect(webConvergenceHelper).toContain('--arg expectedRelease "$DEPLOY_SHA"');
+    expect(webConvergenceHelper).toContain('--argjson activeWebRevisions');
+    expect(webConvergenceHelper).toContain('--argjson traffic');
+    expect(webConvergenceHelper).toContain('--arg cacheControl');
+    expect(webConvergenceHelper).toContain('--argjson healthBody');
   });
 
   it('keeps reviewed migration startup controls on every documented deployment path', () => {
