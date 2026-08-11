@@ -514,9 +514,15 @@ describe('staging deployment workflow boundary', () => {
     expect(normalization).toContain('az containerapp ingress traffic set \\');
 
     expect(recoveryWeb).toContain('--query properties.active');
-    expect(recoveryWeb).toContain('if [ "${RECOVERY_PREVIOUS_WEB_ACTIVE,,}" != "true" ]; then');
+    expect(recoveryWeb).toContain('RECOVERY_WEB_CAN_PROCEED=true');
+    expect(recoveryWeb).toContain('if ! RECOVERY_PREVIOUS_WEB_ACTIVE=$(az');
+    expect(recoveryWeb).toContain('elif [ "${RECOVERY_PREVIOUS_WEB_ACTIVE,,}" != "true" ] && \\');
     expect(recoveryWeb).toContain('az containerapp revision activate \\');
     expect(recoveryWeb).toContain('az containerapp ingress traffic set \\');
+    expect(recoveryWeb).toContain('if ! RECOVERY_ACTIVE_REVISIONS=$(az');
+    expect(recoveryWeb).toContain('done <<< "$RECOVERY_ACTIVE_REVISIONS"');
+    expect(recoveryWeb.match(/RECOVERY_WEB_CAN_PROCEED=false/g)).toHaveLength(8);
+    expect(recoveryWeb.match(/\[ "\$RECOVERY_WEB_CAN_PROCEED" = "true" \]/g)).toHaveLength(6);
 
     expect(singleModeCutover).not.toContain('az containerapp ingress traffic set');
     expect(recoveryWeb.slice(recoveryWeb.indexOf('--mode single'))).not.toContain(
