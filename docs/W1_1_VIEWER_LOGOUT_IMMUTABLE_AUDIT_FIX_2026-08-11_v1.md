@@ -201,4 +201,3 @@ A mocked Prisma delete or update cannot reproduce FK-trigger behavior. The rollb
 **GO for implementation after this analysis record is committed.**
 
 Steelman justifies the bounded soft-invalidation change. The pre-mortem protects server-side revocation and immutable evidence, and rollback is code-only. No production deployment is authorized. The security freeze remains active and P0-4 remains accepted and unchanged.
-
