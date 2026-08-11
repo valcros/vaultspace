@@ -43,6 +43,16 @@ export interface Resource {
   documentId?: string;
 }
 
+export interface DocumentViewCandidate {
+  id: string;
+  folderId: string | null;
+}
+
+export interface PreparedDocumentViewAuthorization {
+  readonly unrestricted: boolean;
+  getViewableIds(candidates: readonly DocumentViewCandidate[]): string[];
+}
+
 export interface PermissionResult {
   allowed: boolean;
   level: PermissionLevel;
@@ -74,6 +84,10 @@ type ApplicablePermission = {
   roomId: string | null;
   folderId: string | null;
   documentId: string | null;
+};
+
+type PreparedPermission = ApplicablePermission & {
+  inheritFromParent: boolean;
 };
 
 /**
@@ -310,6 +324,156 @@ export class PermissionEngine {
     }
 
     return allowed;
+  }
+
+  /**
+   * Prepare a set-based document VIEW authorizer for one actor and room.
+   * Persisted authority and ACL rows are loaded once; callers can then pass
+   * bounded candidate pages without issuing permission queries per document.
+   */
+  async prepareDocumentViewAuthorization(
+    actor: Actor,
+    organizationId: string,
+    roomId: string,
+    client?: DbClient
+  ): Promise<PreparedDocumentViewAuthorization> {
+    const allowAll = (): PreparedDocumentViewAuthorization => ({
+      unrestricted: true,
+      getViewableIds: (candidates) => candidates.map(({ id }) => id),
+    });
+    const denyAll = (): PreparedDocumentViewAuthorization => ({
+      unrestricted: false,
+      getViewableIds: () => [],
+    });
+
+    if (actor.isSystem) {
+      return allowAll();
+    }
+    if (actor.linkId || !actor.userId) {
+      return denyAll();
+    }
+
+    const dbClient = client ?? db;
+    const membership = await this.getOrgMembership(organizationId, actor.userId, dbClient);
+    if (!membership?.isActive) {
+      return denyAll();
+    }
+    if (membership.role === 'ADMIN') {
+      return allowAll();
+    }
+
+    const roomRole = await this.getRoomRole(organizationId, actor.userId, roomId, dbClient);
+    if (roomRole === 'ADMIN') {
+      return allowAll();
+    }
+
+    const [groupIds, folders] = await Promise.all([
+      this.getActiveGroupIds(organizationId, actor.userId, dbClient),
+      dbClient.folder.findMany({
+        where: { organizationId, roomId },
+        select: { id: true, parentId: true },
+      }),
+    ]);
+    const grantees: Prisma.PermissionWhereInput[] = [
+      { granteeType: 'USER', userId: actor.userId },
+      ...(groupIds.length > 0
+        ? [{ granteeType: 'GROUP' as const, groupId: { in: groupIds } }]
+        : []),
+    ];
+    const permissions: PreparedPermission[] = await dbClient.permission.findMany({
+      where: {
+        organizationId,
+        isActive: true,
+        AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, { OR: grantees }],
+      },
+      select: {
+        permissionLevel: true,
+        resourceType: true,
+        roomId: true,
+        folderId: true,
+        documentId: true,
+        inheritFromParent: true,
+      },
+    });
+
+    const parentByFolderId = new Map(folders.map((folder) => [folder.id, folder.parentId]));
+    const roomPermissions = permissions.filter(
+      (permission) =>
+        permission.resourceType === 'ROOM' &&
+        permission.roomId === roomId &&
+        permission.inheritFromParent
+    );
+    const permissionsByFolderId = new Map<string, PreparedPermission[]>();
+    const permissionsByDocumentId = new Map<string, PreparedPermission[]>();
+
+    for (const permission of permissions) {
+      if (
+        permission.resourceType === 'FOLDER' &&
+        permission.folderId &&
+        permission.inheritFromParent &&
+        parentByFolderId.has(permission.folderId)
+      ) {
+        const existing = permissionsByFolderId.get(permission.folderId) ?? [];
+        existing.push(permission);
+        permissionsByFolderId.set(permission.folderId, existing);
+      } else if (permission.resourceType === 'DOCUMENT' && permission.documentId) {
+        const existing = permissionsByDocumentId.get(permission.documentId) ?? [];
+        existing.push(permission);
+        permissionsByDocumentId.set(permission.documentId, existing);
+      }
+    }
+
+    const getFolderLineage = (folderId: string | null): string[] => {
+      if (!folderId) {
+        return [];
+      }
+      const lineage: string[] = [];
+      const visited = new Set<string>();
+      let currentFolderId: string | null = folderId;
+      while (
+        currentFolderId &&
+        !visited.has(currentFolderId) &&
+        parentByFolderId.has(currentFolderId)
+      ) {
+        visited.add(currentFolderId);
+        lineage.push(currentFolderId);
+        currentFolderId = parentByFolderId.get(currentFolderId) ?? null;
+      }
+      return lineage;
+    };
+
+    return {
+      unrestricted: false,
+      getViewableIds: (candidates) => {
+        const viewableIds: string[] = [];
+        for (const candidate of candidates) {
+          let explicitlyDenied = false;
+          let strongestRank = PERMISSION_LEVEL_RANK.NONE;
+          const apply = (applicable: readonly PreparedPermission[]) => {
+            for (const permission of applicable) {
+              if (permission.permissionLevel === 'NONE') {
+                explicitlyDenied = true;
+              }
+              strongestRank = Math.max(
+                strongestRank,
+                PERMISSION_LEVEL_RANK[permission.permissionLevel]
+              );
+            }
+          };
+
+          apply(roomPermissions);
+          apply(permissionsByDocumentId.get(candidate.id) ?? []);
+          for (const ancestorId of getFolderLineage(candidate.folderId)) {
+            apply(permissionsByFolderId.get(ancestorId) ?? []);
+          }
+
+          if (!explicitlyDenied && strongestRank >= PERMISSION_LEVEL_RANK.VIEW) {
+            viewableIds.push(candidate.id);
+          }
+        }
+        return viewableIds;
+      },
+    };
   }
 
   /**

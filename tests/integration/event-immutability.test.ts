@@ -9,6 +9,12 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { PrismaClient, type Prisma } from '@prisma/client';
 
+import {
+  getViewerSessionByToken,
+  getViewerSessionGuardResponse,
+  viewerSessionBaseSelect,
+} from '@/lib/viewerSession';
+
 const prisma = new PrismaClient();
 
 afterAll(async () => {
@@ -73,6 +79,79 @@ describe('SEC-013/014: event immutability trigger', () => {
       await expect(tx.$executeRaw`DELETE FROM "events" WHERE "id" = ${eventId}`).rejects.toThrow(
         /events are immutable/
       );
+    });
+  });
+
+  it('soft-invalidates an audited viewer session without changing its event', async () => {
+    await withRollbackTransaction(async (tx) => {
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const organization = await tx.organization.create({
+        data: {
+          name: `Viewer Logout Test ${suffix}`,
+          slug: `viewer-logout-${suffix}`,
+          isActive: true,
+        },
+      });
+      const room = await tx.room.create({
+        data: {
+          organizationId: organization.id,
+          name: 'Audited Viewer Room',
+          slug: `viewer-room-${suffix}`,
+          status: 'ACTIVE',
+        },
+      });
+      const link = await tx.link.create({
+        data: {
+          organizationId: organization.id,
+          roomId: room.id,
+          slug: `viewer-link-${suffix}`,
+          isActive: true,
+        },
+      });
+      const viewSession = await tx.viewSession.create({
+        data: {
+          organizationId: organization.id,
+          roomId: room.id,
+          linkId: link.id,
+          sessionToken: `viewer-session-${suffix}`,
+          isActive: true,
+        },
+      });
+      const event = await tx.event.create({
+        data: {
+          organizationId: organization.id,
+          roomId: room.id,
+          sessionId: viewSession.id,
+          eventType: 'LINK_ACCESSED',
+          actorType: 'VIEWER',
+          description: 'audited viewer activity',
+        },
+      });
+
+      const result = await tx.viewSession.updateMany({
+        where: {
+          id: viewSession.id,
+          organizationId: organization.id,
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
+
+      expect(result.count).toBe(1);
+      const activeSession = await getViewerSessionByToken(
+        viewSession.sessionToken,
+        viewerSessionBaseSelect,
+        tx
+      );
+
+      expect(activeSession).toBeNull();
+      const serveResponse = getViewerSessionGuardResponse(link.slug, activeSession);
+      expect(serveResponse?.status).toBe(401);
+      await expect(tx.event.findUnique({ where: { id: event.id } })).resolves.toMatchObject({
+        id: event.id,
+        sessionId: viewSession.id,
+        description: 'audited viewer activity',
+      });
     });
   });
 });
