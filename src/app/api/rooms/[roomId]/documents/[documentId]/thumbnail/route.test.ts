@@ -40,6 +40,8 @@ const { mockStorageExists, mockStorageGet, mockJobAddJob, mockDocument, extraVer
     },
   }));
 
+const mockPermissionCan = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+
 // Mock sharp
 vi.mock('sharp', () => ({
   default: vi.fn(() => ({
@@ -55,6 +57,10 @@ vi.mock('@/lib/middleware', () => ({
     organizationId: 'org-1',
     userId: 'user-1',
   }),
+}));
+
+vi.mock('@/lib/permissions', () => ({
+  getPermissionEngine: () => ({ can: mockPermissionCan }),
 }));
 
 // Mock providers
@@ -131,6 +137,7 @@ function createContext() {
 describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPermissionCan.mockResolvedValue(true);
     mockStorageExists.mockResolvedValue(true);
     mockStorageGet.mockResolvedValue(Buffer.alloc(5000));
     // Shared mutable fixture: reset the scan status to servable before each test
@@ -138,6 +145,16 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
     mockDocument.versions[0]!.scanStatus = 'CLEAN';
     mockDocument.currentVersionId = 'ver-1';
     extraVersions.length = 0;
+  });
+
+  it('returns 404 and reads no storage when document view is denied', async () => {
+    mockPermissionCan.mockResolvedValue(false);
+
+    const response = await GET(createRequest(), createContext());
+
+    expect(response.status).toBe(404);
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockJobAddJob).not.toHaveBeenCalled();
   });
 
   it('serves stored thumbnail with correct headers', async () => {

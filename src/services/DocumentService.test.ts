@@ -10,6 +10,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DocumentService } from './DocumentService';
 import type { ServiceContext } from './types';
 
+const permissionMocks = vi.hoisted(() => ({
+  can: vi.fn(),
+}));
+
 // Mock dependencies
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
@@ -17,7 +21,7 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: vi.fn(() => ({
-    can: vi.fn().mockResolvedValue(true),
+    can: permissionMocks.can,
   })),
 }));
 
@@ -91,6 +95,7 @@ describe('DocumentService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    permissionMocks.can.mockResolvedValue(true);
     service = new DocumentService();
     ctx = createMockContext();
   });
@@ -331,6 +336,25 @@ describe('DocumentService', () => {
           }),
         })
       );
+    });
+
+    it('denies before count and pagination when the room is not viewable', async () => {
+      permissionMocks.can.mockResolvedValue(false);
+
+      await expect(service.list(ctx, { roomId: 'room-denied' })).rejects.toThrow('Room not found');
+
+      expect(permissionMocks.can).toHaveBeenCalledWith(
+        { userId: 'user-1' },
+        'view',
+        {
+          type: 'ROOM',
+          organizationId: 'org-1',
+          roomId: 'room-denied',
+        },
+        mockTx
+      );
+      expect(mockTx.document.count).not.toHaveBeenCalled();
+      expect(mockTx.document.findMany).not.toHaveBeenCalled();
     });
   });
 });

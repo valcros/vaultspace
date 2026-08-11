@@ -7,6 +7,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+const mockPermissionCan = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+
 // Mock auth
 const mockSession = {
   userId: 'user-1',
@@ -56,6 +58,10 @@ vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
 }));
 
+vi.mock('@/lib/permissions', () => ({
+  getPermissionEngine: () => ({ can: mockPermissionCan }),
+}));
+
 import { GET } from './route';
 
 function makeRequest(query = ''): NextRequest {
@@ -93,6 +99,7 @@ function makeVersion(mimeType: string, previewAssets: unknown[] = [], scanStatus
 describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPermissionCan.mockResolvedValue(true);
     mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockTx.room.findFirst.mockResolvedValue(mockRoom);
     mockTx.document.update.mockResolvedValue({});
@@ -109,6 +116,16 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
 
     expect(res.status).toBe(400);
     expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 and reads no storage when document view is denied', async () => {
+    mockTx.document.findFirst.mockResolvedValue(makeDocument('application/pdf'));
+    mockPermissionCan.mockResolvedValue(false);
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(404);
+    expect(mockStorage.get).not.toHaveBeenCalled();
   });
 
   it.each(['?page=0', '?page=not-a-number', '?page=10001', '?versionId=%20'])(

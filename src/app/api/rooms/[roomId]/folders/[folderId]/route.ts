@@ -33,9 +33,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       // Check view permission
       const permissionEngine = getPermissionEngine();
       const canView = await permissionEngine.can(
-        { userId: session.userId, role: session.organization.role },
+        { userId: session.userId },
         'view',
-        { type: 'ROOM', organizationId: session.organizationId, roomId },
+        {
+          type: 'FOLDER',
+          organizationId: session.organizationId,
+          roomId,
+          folderId,
+        },
         tx
       );
 

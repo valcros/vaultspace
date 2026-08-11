@@ -10,6 +10,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomService } from './RoomService';
 import type { ServiceContext } from './types';
 
+const mockGetViewableRoomIds = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+
 // Mock dependencies
 vi.mock('@/lib/db', () => ({
   withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
@@ -18,6 +20,7 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: vi.fn(() => ({
     can: vi.fn().mockResolvedValue(true),
+    getViewableRoomIds: mockGetViewableRoomIds,
   })),
 }));
 
@@ -79,6 +82,7 @@ describe('RoomService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetViewableRoomIds.mockResolvedValue(null);
     service = new RoomService();
     ctx = createMockContext();
   });
@@ -275,6 +279,40 @@ describe('RoomService', () => {
           where: expect.objectContaining({
             organizationId: 'org-1',
           }),
+        })
+      );
+    });
+
+    it('applies authorized room IDs before count and pagination for non-admins', async () => {
+      mockGetViewableRoomIds.mockResolvedValue(new Set(['room-allowed']));
+      mockTx.room.count.mockResolvedValue(1);
+      mockTx.room.findMany.mockResolvedValue([{ id: 'room-allowed' }]);
+
+      const result = await service.list(ctx, { status: 'ARCHIVED', offset: 0, limit: 1 });
+
+      expect(result.total).toBe(1);
+      const expectedWhere = expect.objectContaining({
+        organizationId: 'org-1',
+        id: { in: ['room-allowed'] },
+        status: 'ACTIVE',
+      });
+      expect(mockTx.room.count).toHaveBeenCalledWith({ where: expectedWhere });
+      expect(mockTx.room.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expectedWhere, skip: 0, take: 1 })
+      );
+    });
+
+    it('returns an empty authorized page without falling back to organization scope', async () => {
+      mockGetViewableRoomIds.mockResolvedValue(new Set());
+      mockTx.room.count.mockResolvedValue(0);
+      mockTx.room.findMany.mockResolvedValue([]);
+
+      const result = await service.list(ctx);
+
+      expect(result.items).toEqual([]);
+      expect(mockTx.room.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { in: [] }, status: 'ACTIVE' }),
         })
       );
     });
