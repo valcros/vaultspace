@@ -1204,66 +1204,19 @@ jobs:
           done
 
       - name: Verify Web revision, image, and traffic allocation
+        env:
+          WEB_CONVERGENCE_MAX_ATTEMPTS: '20'
+          WEB_CONVERGENCE_RETRY_SECONDS: '10'
+          WEB_CONVERGENCE_TIMEOUT_SECONDS: '210'
         run: |
-          EXPECTED_IMAGE="$TARGET_WEB_IMAGE_PINNED"
-          WEB_REVISION=$(az containerapp show \
-            --name "$WEB_CONTAINER_APP" \
-            --resource-group "$RESOURCE_GROUP" \
-            --query properties.latestRevisionName \
-            --output tsv)
-          WEB_IMAGE=$(az containerapp revision show \
-            --name "$WEB_CONTAINER_APP" \
-            --resource-group "$RESOURCE_GROUP" \
-            --revision "$WEB_REVISION" \
-            --query "properties.template.containers[?name=='$WEB_CONTAINER_NAME'].image | [0]" \
-            --output tsv)
-          ACTIVE_WEB_REVISIONS=$(az containerapp revision list \
-            --name "$WEB_CONTAINER_APP" \
-            --resource-group "$RESOURCE_GROUP" \
-            --query '[?properties.active].name' \
-            --output json)
-          TRAFFIC_JSON=$(az containerapp ingress traffic show \
-            --name "$WEB_CONTAINER_APP" \
-            --resource-group "$RESOURCE_GROUP" \
-            --output json)
-
-          HEADER_FILE="$RUNNER_TEMP/post-deploy-web-headers-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
-          BODY_FILE="$RUNNER_TEMP/post-deploy-web-body-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
-          curl -fsS --max-time 15 \
-            -H "Cache-Control: no-cache" \
-            -H "Pragma: no-cache" \
-            -D "$HEADER_FILE" \
-            -o "$BODY_FILE" \
-            "$APP_URL/api/health?post_deploy_gate=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${DEPLOY_SHA}"
-          CACHE_CONTROL=$(awk \
-            'BEGIN { IGNORECASE=1 } /^cache-control:/ { sub(/\r$/, ""); sub(/^[^:]*:[[:space:]]*/, ""); value=$0 } END { print value }' \
-            "$HEADER_FILE")
-          HEALTH_BODY=$(<"$BODY_FILE")
-          CONVERGENCE_INPUT=$(jq -cn \
-            --arg revision "$WEB_REVISION" \
-            --arg image "$WEB_IMAGE" \
-            --arg expectedImage "$EXPECTED_IMAGE" \
-            --arg expectedRelease "$DEPLOY_SHA" \
-            --argjson activeWebRevisions "$ACTIVE_WEB_REVISIONS" \
-            --argjson traffic "$TRAFFIC_JSON" \
-            --arg cacheControl "$CACHE_CONTROL" \
-            --argjson healthBody "$HEALTH_BODY" \
-            '{
-              convergence: {
-                revision: $revision,
-                image: $image,
-                expectedImage: $expectedImage,
-                expectedRelease: $expectedRelease,
-                activeWebRevisions: $activeWebRevisions,
-                traffic: $traffic,
-                latestRevisionName: $revision,
-                cacheControl: $cacheControl,
-                healthBody: $healthBody
-              }
-            }')
-          printf '%s' "$CONVERGENCE_INPUT" | \
-            node scripts/verify-password-reset-deployment-contract.mjs >/dev/null
-          echo "✓ Web revision $WEB_REVISION is the sole active revision with 100 percent traffic"
+          if timeout --signal=TERM --kill-after=5s 240s \
+            scripts/wait-for-web-convergence.sh; then
+            :
+          else
+            EXIT_CODE=$?
+            echo "ERROR: forward web convergence verification failed within its 240-second hard limit"
+            exit "$EXIT_CODE"
+          fi
 
       - name: Final Worker readiness gate
         run: |
