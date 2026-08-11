@@ -306,13 +306,16 @@ describe('DocumentService', () => {
 
   describe('list', () => {
     it('should return paginated documents', async () => {
+      const candidates = [
+        { id: 'd1', folderId: null },
+        { id: 'd2', folderId: null },
+      ];
       const docs = [
         { id: 'd1', name: 'File 1.pdf', versions: [{ id: 'v1' }] },
         { id: 'd2', name: 'File 2.docx', versions: [] },
       ];
 
-      mockTx.document.count.mockResolvedValue(2);
-      mockTx.document.findMany.mockResolvedValue(docs);
+      mockTx.document.findMany.mockResolvedValueOnce(candidates).mockResolvedValueOnce(docs);
 
       const result = await service.list(ctx, { roomId: 'room-1' });
 
@@ -321,7 +324,6 @@ describe('DocumentService', () => {
     });
 
     it('should scope documents to organization', async () => {
-      mockTx.document.count.mockResolvedValue(0);
       mockTx.document.findMany.mockResolvedValue([]);
 
       await service.list(ctx, { roomId: 'room-1' }).catch(() => {
@@ -355,6 +357,56 @@ describe('DocumentService', () => {
       );
       expect(mockTx.document.count).not.toHaveBeenCalled();
       expect(mockTx.document.findMany).not.toHaveBeenCalled();
+    });
+
+    it('excludes denied documents before total and pagination while retaining allowed siblings', async () => {
+      const candidates = [
+        { id: 'doc-denied', folderId: 'folder-1' },
+        { id: 'doc-allowed-1', folderId: 'folder-1' },
+        { id: 'doc-allowed-2', folderId: 'folder-1' },
+      ];
+      mockTx.document.findMany
+        .mockResolvedValueOnce(candidates)
+        .mockResolvedValueOnce([{ id: 'doc-allowed-1', name: 'Allowed 1.pdf', versions: [] }]);
+      permissionMocks.can.mockImplementation(
+        async (_actor, _action, resource: { type: string; documentId?: string }) =>
+          resource.type === 'ROOM' || resource.documentId !== 'doc-denied'
+      );
+
+      const result = await service.list(ctx, {
+        roomId: 'room-1',
+        folderId: 'folder-1',
+        offset: 0,
+        limit: 1,
+      });
+
+      expect(result.items.map(({ id }) => id)).toEqual(['doc-allowed-1']);
+      expect(result.total).toBe(2);
+      expect(result.hasMore).toBe(true);
+      expect(mockTx.document.count).not.toHaveBeenCalled();
+      expect(mockTx.document.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: 'org-1',
+            roomId: 'room-1',
+            folderId: 'folder-1',
+            id: { in: ['doc-allowed-1'] },
+          }),
+        })
+      );
+      expect(permissionMocks.can).toHaveBeenCalledWith(
+        { userId: 'user-1' },
+        'view',
+        {
+          type: 'DOCUMENT',
+          organizationId: 'org-1',
+          roomId: 'room-1',
+          folderId: 'folder-1',
+          documentId: 'doc-denied',
+        },
+        mockTx
+      );
     });
   });
 });
