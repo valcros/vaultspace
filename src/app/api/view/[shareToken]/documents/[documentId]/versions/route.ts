@@ -18,7 +18,7 @@ import {
   requireViewerSession,
   viewerSessionBaseSelect,
 } from '@/lib/viewerSession';
-import { canViewerLinkAccessDocument } from '@/lib/viewerLinkScope';
+import { canViewerLinkAccessDocument } from '@/lib/permissions/LinkPolicy';
 
 export const dynamic = 'force-dynamic';
 

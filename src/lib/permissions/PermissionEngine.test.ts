@@ -354,6 +354,7 @@ describe('PermissionEngine', () => {
       remindersSent: 0,
       lastReminderAt: null,
       inviteEmailSentAt: null,
+      room: { id: roomId, organizationId: orgId, status: 'ACTIVE' },
     });
 
     const result = await engine.evaluate(actor, 'view', resource);

@@ -12,6 +12,10 @@ const mockWithOrgContext = vi.fn();
 const mockViewSessionCreate = vi.fn();
 const mockLinkUpdate = vi.fn();
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+const mockGetLinkPolicyRecord = vi.fn();
+const mockAdmitLinkViewer = vi.fn();
+const mockGetViewerSession = vi.fn();
+const mockRequireViewerSession = vi.fn();
 
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => mockCookieStore),
@@ -49,6 +53,17 @@ vi.mock('@/lib/audit/accessAudit', () => ({
   captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
+vi.mock('@/lib/permissions/LinkPolicy', () => ({
+  getLinkPolicyRecord: (...args: unknown[]) => mockGetLinkPolicyRecord(...args),
+  admitLinkViewer: (...args: unknown[]) => mockAdmitLinkViewer(...args),
+}));
+
+vi.mock('@/lib/viewerSession', () => ({
+  viewerSessionBaseSelect: {},
+  getViewerSession: (...args: unknown[]) => mockGetViewerSession(...args),
+  requireViewerSession: (...args: unknown[]) => mockRequireViewerSession(...args),
+}));
+
 import { POST } from './route';
 
 function makeContext(shareToken: string) {
@@ -59,10 +74,15 @@ describe('POST /api/view/[shareToken]/access', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCaptureAccessAudit.mockResolvedValue('disabled');
+    mockGetViewerSession.mockResolvedValue(null);
+    mockRequireViewerSession.mockReturnValue({ response: {} });
 
-    mockLinkFindFirst.mockResolvedValue({
+    mockGetLinkPolicyRecord.mockResolvedValue({
       id: 'link-1',
       slug: 'share-token',
+      organizationId: 'org-1',
+      roomId: 'room-1',
+      maxSessionMinutes: null,
       requiresEmailVerification: false,
       allowedEmails: [],
       requiresPassword: false,
@@ -75,6 +95,13 @@ describe('POST /api/view/[shareToken]/access', () => {
         ndaContent: null,
         ipAllowlist: [],
       },
+    });
+
+    mockAdmitLinkViewer.mockResolvedValue({
+      allowed: true,
+      session: { id: 'view-session-1' },
+      sessionToken: 'generated-viewer-token',
+      normalizedEmail: null,
     });
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
@@ -109,8 +136,7 @@ describe('POST /api/view/[shareToken]/access', () => {
         path: '/',
       })
     );
-    expect(mockViewSessionCreate).toHaveBeenCalledTimes(1);
-    expect(mockLinkUpdate).toHaveBeenCalledTimes(1);
+    expect(mockAdmitLinkViewer).toHaveBeenCalledTimes(1);
     expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'LINK_ACCESSED',
@@ -120,21 +146,11 @@ describe('POST /api/view/[shareToken]/access', () => {
   });
 
   it('records a rate-limited denial without logging the submitted password', async () => {
-    mockLinkFindFirst.mockResolvedValue({
-      id: 'link-1',
-      slug: 'share-token',
-      requiresEmailVerification: false,
-      allowedEmails: [],
-      requiresPassword: true,
-      passwordHash: 'stored-hash',
-      room: {
-        id: 'room-1',
-        name: 'Room',
-        organizationId: 'org-1',
-        requiresNda: false,
-        ndaContent: null,
-        ipAllowlist: [],
-      },
+    mockAdmitLinkViewer.mockResolvedValue({
+      allowed: false,
+      code: 'PASSWORD_INVALID',
+      status: 401,
+      message: 'Invalid password',
     });
 
     const response = await POST(
@@ -170,5 +186,22 @@ describe('POST /api/view/[shareToken]/access', () => {
 
     expect(response.status).toBe(200);
     expect(mockCookieStore.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses a valid admitted session without consuming another maxViews slot', async () => {
+    mockGetViewerSession.mockResolvedValue({ id: 'existing-session' });
+    mockRequireViewerSession.mockReturnValue({ session: { id: 'existing-session' } });
+
+    const response = await POST(
+      new NextRequest('http://localhost:3000/api/view/share-token/access', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+      makeContext('share-token')
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ success: true, reused: true });
+    expect(mockAdmitLinkViewer).not.toHaveBeenCalled();
   });
 });

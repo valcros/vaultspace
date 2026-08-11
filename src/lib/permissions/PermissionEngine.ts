@@ -16,6 +16,7 @@
 import type { PermissionLevel, PermissionResourceType, UserRole, Prisma } from '@prisma/client';
 
 import { db } from '../db';
+import { canLinkAccessResource, linkPermissionLevel } from './LinkPolicy';
 
 /**
  * Database client type - either the global singleton or a transaction client
@@ -106,7 +107,7 @@ export class PermissionEngine {
     // A request carrying link identity stays link-bound. An authenticated user
     // cannot widen a scoped link with unrelated organization permissions.
     if (actor.linkId) {
-      const linkPermission = await this.getLinkPermission(actor.linkId, resource, dbClient);
+      const linkPermission = await this.getLinkPermission(actor.linkId, action, resource, dbClient);
       if (linkPermission) {
         return this.evaluatePermissionLevel(linkPermission.level, action);
       }
@@ -464,36 +465,42 @@ export class PermissionEngine {
    */
   private async getLinkPermission(
     linkId: string,
+    action: Action,
     resource: Resource,
     client: DbClient
   ): Promise<{ level: PermissionLevel } | null> {
     const link = await client.link.findUnique({
       where: { id: linkId },
+      select: {
+        organizationId: true,
+        roomId: true,
+        permission: true,
+        scope: true,
+        scopedFolderId: true,
+        scopedDocumentId: true,
+        isActive: true,
+        expiresAt: true,
+        room: {
+          select: {
+            id: true,
+            organizationId: true,
+            status: true,
+          },
+        },
+      },
     });
 
-    if (
-      !link ||
-      !link.isActive ||
-      link.organizationId !== resource.organizationId ||
-      (link.expiresAt && link.expiresAt <= new Date())
-    ) {
+    if (!link || !resource.roomId || (action !== 'view' && action !== 'download')) {
       return null;
     }
 
-    // Check link scope
-    if (link.scope === 'ENTIRE_ROOM' && link.roomId === resource.roomId) {
-      return { level: link.permission === 'DOWNLOAD' ? 'DOWNLOAD' : 'VIEW' };
-    }
-
-    if (link.scope === 'FOLDER' && link.scopedFolderId === resource.folderId) {
-      return { level: link.permission === 'DOWNLOAD' ? 'DOWNLOAD' : 'VIEW' };
-    }
-
-    if (link.scope === 'DOCUMENT' && link.scopedDocumentId === resource.documentId) {
-      return { level: link.permission === 'DOWNLOAD' ? 'DOWNLOAD' : 'VIEW' };
-    }
-
-    return null;
+    const allowed = await canLinkAccessResource(client as Prisma.TransactionClient, link, action, {
+      organizationId: resource.organizationId,
+      roomId: resource.roomId,
+      folderId: resource.folderId,
+      documentId: resource.documentId,
+    });
+    return allowed ? { level: linkPermissionLevel(link.permission) } : null;
   }
 
   private inheritedFrom(

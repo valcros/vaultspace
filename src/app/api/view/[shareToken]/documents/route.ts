@@ -94,6 +94,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
         // Resolve the folder the viewer is currently inside. At the root, a
         // folder-scoped link uses its scoped folder as the base.
         const baseFolderId = scope === 'FOLDER' && scopedFolderId ? scopedFolderId : null;
+        if (baseFolderId) {
+          const scopeRoot = await tx.folder.findFirst({
+            where: {
+              id: baseFolderId,
+              roomId: viewerSession.room.id,
+              organizationId: viewerSession.organizationId,
+            },
+            select: { id: true },
+          });
+          if (!scopeRoot) {
+            return { folders: [], documents: [], trail: [], folderContextId: null };
+          }
+        }
         let currentFolderId: string | null = baseFolderId;
         let resolvedTrail: Array<{ id: string; name: string }> = [];
         if (requestedFolderId) {
