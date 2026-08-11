@@ -97,7 +97,16 @@ async function seedFixture() {
       path: '/synthetic-folder',
     },
   });
-  const [documentA3, secondDocumentA3] = await Promise.all([
+  const nestedFolderA3 = await prisma.folder.create({
+    data: {
+      organizationId: orgA.id,
+      roomId: roomA3.id,
+      parentId: folderA3.id,
+      name: 'Synthetic Nested Folder',
+      path: '/synthetic-folder/nested',
+    },
+  });
+  const [documentA3, secondDocumentA3, nestedDocumentA3] = await Promise.all([
     prisma.document.create({
       data: {
         organizationId: orgA.id,
@@ -120,6 +129,17 @@ async function seedFixture() {
         originalFileName: 'synthetic-second.pdf',
       },
     }),
+    prisma.document.create({
+      data: {
+        organizationId: orgA.id,
+        roomId: roomA3.id,
+        folderId: nestedFolderA3.id,
+        name: 'Synthetic Nested Document',
+        mimeType: 'application/pdf',
+        fileSize: 1,
+        originalFileName: 'synthetic-nested.pdf',
+      },
+    }),
   ]);
 
   return {
@@ -133,8 +153,10 @@ async function seedFixture() {
     roomA3,
     roomB1,
     folderA3,
+    nestedFolderA3,
     documentA3,
     secondDocumentA3,
+    nestedDocumentA3,
   };
 }
 
@@ -354,6 +376,62 @@ describe('W1-1 room-scoped authorization with the runtime database role', () => 
     );
     expect(deniedByFolder).toBe(false);
     await expect(listedRoomIds(fixture)).resolves.toEqual([fixture.roomA3.id]);
+  });
+
+  it('applies inheritable ancestor-folder allows and denies to nested documents', async () => {
+    const fixture = await seedFixture();
+    const roomGrant = await prisma.permission.create({
+      data: {
+        organizationId: fixture.orgA.id,
+        resourceType: 'ROOM',
+        roomId: fixture.roomA3.id,
+        granteeType: 'USER',
+        userId: fixture.viewerA.id,
+        permissionLevel: 'VIEW',
+      },
+    });
+    const parentDecision = await prisma.permission.create({
+      data: {
+        organizationId: fixture.orgA.id,
+        resourceType: 'FOLDER',
+        roomId: fixture.roomA3.id,
+        folderId: fixture.folderA3.id,
+        granteeType: 'USER',
+        userId: fixture.viewerA.id,
+        permissionLevel: 'NONE',
+        inheritFromParent: true,
+      },
+    });
+    const nestedResource = {
+      type: 'DOCUMENT' as const,
+      organizationId: fixture.orgA.id,
+      roomId: fixture.roomA3.id,
+      folderId: fixture.nestedFolderA3.id,
+      documentId: fixture.nestedDocumentA3.id,
+    };
+    const canViewNestedDocument = () =>
+      withOrgContext(fixture.orgA.id, (tx) =>
+        getPermissionEngine().can({ userId: fixture.viewerA.id }, 'view', nestedResource, tx)
+      );
+
+    await expect(canViewNestedDocument()).resolves.toBe(false);
+
+    await prisma.permission.update({
+      where: { id: parentDecision.id },
+      data: { inheritFromParent: false },
+    });
+    await expect(canViewNestedDocument()).resolves.toBe(true);
+
+    await prisma.permission.update({
+      where: { id: roomGrant.id },
+      data: { isActive: false },
+    });
+    await prisma.permission.update({
+      where: { id: parentDecision.id },
+      data: { permissionLevel: 'VIEW', inheritFromParent: true },
+    });
+    await expect(canViewNestedDocument()).resolves.toBe(true);
+    await expect(listedRoomIds(fixture)).resolves.toEqual([]);
   });
 
   it('orders room admin over ACL deny and denies inactive or cross-tenant membership', async () => {
