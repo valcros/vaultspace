@@ -161,12 +161,6 @@ function validateInput(input) {
   if (rollback.reconciler !== null && rollback.reconciler !== undefined) {
     rollbackReconciler = validateImage('rollback reset reconciler image', rollback.reconciler);
   }
-  if (rollbackWorker.revision !== rollbackWeb.revision) {
-    fail('rollback web and worker images do not declare the same source revision');
-  }
-  if (rollbackReconciler && rollbackReconciler.revision !== rollbackWeb.revision) {
-    fail('rollback reset reconciler does not match the rollback web source revision');
-  }
 
   const serving = requireObject(root.serving, 'serving');
   if (
@@ -212,6 +206,21 @@ function validateInput(input) {
     recovery.deliveryContractVersion !== 1
   ) {
     fail('health delivery contract version must be numeric 1');
+  }
+  const resetTokens = healthBody.passwordResetTokens;
+  const hmacSteadyState =
+    resetTokens !== null &&
+    typeof resetTokens === 'object' &&
+    !Array.isArray(resetTokens) &&
+    resetTokens.writeMode === 'hmac' &&
+    recovery.configured === true;
+  if (!hmacSteadyState) {
+    if (rollbackWorker.revision !== rollbackWeb.revision) {
+      fail('first activation requires rollback web and worker from the same source revision');
+    }
+    if (rollbackReconciler && rollbackReconciler.revision !== rollbackWeb.revision) {
+      fail('first activation requires rollback reconciler and web from the same source revision');
+    }
   }
   if (healthBody.revision !== serving.capturedRevision) {
     fail('health revision does not match the captured Azure revision');
