@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const repositoryRoot = process.cwd();
 const verifierPath = `${repositoryRoot}/scripts/verify-password-reset-deployment-contract.mjs`;
 const workerRevisionReadyPath = `${repositoryRoot}/scripts/worker-revision-ready.sh`;
+const containerEnvValidatorPath = `${repositoryRoot}/scripts/validate-container-env.sh`;
 const targetRevision = 'a'.repeat(40);
 const rollbackRevision = 'b'.repeat(40);
 
@@ -81,6 +82,20 @@ function workerRevisionReady(
       String(replicas),
       String(minReplicas),
       String(activeRevisions),
+    ],
+    { encoding: 'utf8' }
+  );
+}
+
+function workerImageRepository(imageReference: string) {
+  return spawnSync(
+    'bash',
+    [
+      '-c',
+      'source "$1"; image_repository "$2"',
+      'image-repository-test',
+      containerEnvValidatorPath,
+      imageReference,
     ],
     { encoding: 'utf8' }
   );
@@ -350,6 +365,47 @@ describe('worker revision readiness', () => {
       ).toBe(1);
     }
   );
+});
+
+describe('container environment worker image repository validation', () => {
+  it.each([
+    [
+      'a tagged ACR reference',
+      `acrvaultspacestaging.azurecr.io/vaultspace-worker:${targetRevision}`,
+    ],
+    [
+      'a digest-pinned ACR reference',
+      `acrvaultspacestaging.azurecr.io/vaultspace-worker@sha256:${'1'.repeat(64)}`,
+    ],
+    [
+      'a tagged registry reference with a port',
+      `registry.example.com:5000/team/vaultspace-worker:${targetRevision}`,
+    ],
+  ])('extracts vaultspace-worker from %s', (_name, imageReference) => {
+    const result = workerImageRepository(imageReference);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('vaultspace-worker');
+  });
+
+  it.each([
+    `acrvaultspacestaging.azurecr.io/vaultspace-web@sha256:${'2'.repeat(64)}`,
+    `acrvaultspacestaging.azurecr.io/team/vaultspace-worker-lookalike:${targetRevision}`,
+  ])(
+    'does not collapse a different repository into the worker repository: %s',
+    (imageReference) => {
+      const result = workerImageRepository(imageReference);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim()).not.toBe('vaultspace-worker');
+    }
+  );
+
+  it('retains the exact worker repository rejection boundary', () => {
+    const validator = readFileSync(containerEnvValidatorPath, 'utf8');
+
+    expect(validator).toContain('if [ "${worker_repo}" != "vaultspace-worker" ]; then');
+  });
 });
 
 describe('staging deployment workflow boundary', () => {

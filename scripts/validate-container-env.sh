@@ -10,6 +10,20 @@
 
 set -euo pipefail
 
+image_repository() {
+  local image_reference="${1:?image reference is required}"
+  local image_without_digest="${image_reference%%@*}"
+  local repository_with_optional_tag="${image_without_digest##*/}"
+
+  printf '%s\n' "${repository_with_optional_tag%%:*}"
+}
+
+# Permit focused tests to source the production parser without executing live
+# Azure validation. Direct execution continues below.
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+  return 0
+fi
+
 RG="${1:?resource group is required}"
 WEB_APP="${2:?web Container App name is required}"
 WORKER_APP="${3:?worker Container App name is required}"
@@ -136,7 +150,7 @@ worker_image=$(az containerapp show \
   --resource-group "${RG}" \
   --query "properties.template.containers[?name=='${WORKER_CONTAINER_NAME}'] | [0].image" \
   -o tsv 2>/dev/null || echo "")
-worker_repo=$(printf '%s' "${worker_image}" | sed -E 's#.*/([^/:]+):.*#\1#')
+worker_repo=$(image_repository "${worker_image}")
 if [ "${worker_repo}" != "vaultspace-worker" ]; then
   echo "  ERROR: ${WORKER_APP} runs image '${worker_image}' (repo '${worker_repo:-<none>}'); expected the 'vaultspace-worker' image."
   echo "         The web image boots node server.js, not the BullMQ worker, so the queue would not drain."
