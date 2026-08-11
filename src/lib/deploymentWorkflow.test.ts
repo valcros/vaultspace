@@ -8,6 +8,7 @@ const workerRevisionReadyPath = `${repositoryRoot}/scripts/worker-revision-ready
 const containerEnvValidatorPath = `${repositoryRoot}/scripts/validate-container-env.sh`;
 const targetRevision = 'a'.repeat(40);
 const rollbackRevision = 'b'.repeat(40);
+const rollbackConsumerRevision = 'c'.repeat(40);
 
 function labels(revision: string) {
   return {
@@ -50,10 +51,16 @@ function validInput() {
       body: {
         revision: 'vaultspace-web--stable',
         release: rollbackRevision,
-        passwordResetRecovery: { deliveryContractVersion: 1 },
+        passwordResetTokens: { writeMode: 'hmac' },
+        passwordResetRecovery: { configured: true, deliveryContractVersion: 1 },
       },
     },
   };
+}
+
+function splitRollbackConsumerSources(input: ReturnType<typeof validInput>) {
+  input.rollback.worker = image('vaultspace-worker', rollbackConsumerRevision, '4');
+  input.rollback.reconciler = image('vaultspace-worker', rollbackConsumerRevision, '5');
 }
 
 function verify(input: unknown) {
@@ -244,6 +251,60 @@ describe('password reset deployment contract verifier', () => {
     );
   });
 
+  it('accepts independently sourced contract-v1 consumers in proven HMAC steady state', () => {
+    const input = validInput();
+    splitRollbackConsumerSources(input);
+
+    const result = verify(input);
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      PREVIOUS_WEB_RELEASE: rollbackRevision,
+      PREVIOUS_WORKER_IMAGE_PINNED: `registry.example.com/vaultspace-worker@sha256:${'4'.repeat(64)}`,
+      PREVIOUS_RESET_RECONCILER_IMAGE_PINNED: `registry.example.com/vaultspace-worker@sha256:${'5'.repeat(64)}`,
+    });
+  });
+
+  it.each([
+    ['legacy write mode', 'legacy', true],
+    ['unconfigured recovery', 'hmac', false],
+  ])(
+    'keeps the same-source first-activation guard strict for %s',
+    (_name, writeMode, configured) => {
+      const input = validInput();
+      splitRollbackConsumerSources(input);
+      input.health.body.passwordResetTokens.writeMode = writeMode;
+      input.health.body.passwordResetRecovery.configured = configured;
+
+      const result = verify(input);
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('first activation requires rollback web and worker');
+    }
+  );
+
+  it('keeps the same-source guard strict when token mode evidence is missing', () => {
+    const input = validInput();
+    splitRollbackConsumerSources(input);
+    delete (input.health.body as { passwordResetTokens?: unknown }).passwordResetTokens;
+
+    const result = verify(input);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('first activation requires rollback web and worker');
+  });
+
+  it('does not coerce string-valued recovery configuration into steady state', () => {
+    const input = validInput();
+    splitRollbackConsumerSources(input);
+    Object.assign(input.health.body.passwordResetRecovery, { configured: 'true' });
+
+    const result = verify(input);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('first activation requires rollback web and worker');
+  });
+
   it.each([
     [
       'missing target contract label',
@@ -260,17 +321,17 @@ describe('password reset deployment contract verifier', () => {
       },
     ],
     [
-      'rollback worker mismatch',
+      'rollback worker tag and source label mismatch',
       (input: ReturnType<typeof validInput>) => {
         input.rollback.worker.labels['org.opencontainers.image.revision'] = targetRevision;
-        input.rollback.worker.reference = `registry.example.com/vaultspace-worker:${targetRevision}`;
       },
     ],
     [
-      'rollback reconciler mismatch',
+      'rollback reconciler missing its contract label',
       (input: ReturnType<typeof validInput>) => {
-        input.rollback.reconciler!.labels['org.opencontainers.image.revision'] = targetRevision;
-        input.rollback.reconciler!.reference = `registry.example.com/vaultspace-worker:${targetRevision}`;
+        delete (input.rollback.reconciler!.labels as Record<string, string>)[
+          'org.vaultspace.password-reset-delivery-contract-version'
+        ];
       },
     ],
     [
