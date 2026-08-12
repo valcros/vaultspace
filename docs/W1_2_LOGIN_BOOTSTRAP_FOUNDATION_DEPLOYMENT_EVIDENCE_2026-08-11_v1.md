@@ -7,8 +7,9 @@
 - **Merge commit and deployed release:** `3701e36fb0fbe3b29b2d7188fac1ebcfbed9f75e`
 - **Main CI:** `31548712343`, success
 - **Deployment:** `31549294746`, success
-- **Result:** Deployment and catalog posture green. CloudVault identity acceptance blocked.
-- **W1-2 status:** OPEN. The foundation is live but the unit is not acceptance-closed.
+- **Result:** Deployment, catalog posture, and CloudVault acceptance green.
+- **W1-2 Unit 1 status:** Acceptance criteria met, pending written Advisor close-out.
+- **W1-2 overall status:** OPEN.
 - **Freeze status:** ACTIVE
 - **P0-4:** ACCEPTED AND UNCHANGED
 
@@ -158,10 +159,10 @@ All three expected active-row policies exist as RESTRICTIVE SELECT policies for 
 - `user_organizations`; and
 - `organizations`.
 
-## 5. CloudVault acceptance blocker
+## 5. CloudVault fixture restoration and acceptance
 
 The required minimal acceptance was login, authenticated session, logout, and rejection of the old
-session. No room or document access was planned.
+session. No room or document access was planned or performed.
 
 The first approved Key Vault QA credential authenticated successfully through the unchanged login
 path, but the returned organization was not CloudVault. The run rejected that identity before
@@ -183,51 +184,110 @@ Because the expected test organization is absent from the live database, no synt
 identity was created and the target login, session, and logout acceptance could not run. No room,
 document, preview, download, export, or Brightside data was accessed.
 
-This is an environment identity blocker, not evidence of a login-route regression. The unchanged
-login route returned HTTP 200 for the approved QA credential, live health is green, the migration is
-complete, and the catalog posture is exact. The unit nevertheless remains acceptance-open because a
-successful login to a different test organization cannot substitute for the required CloudVault
-check.
+This established fixture drift rather than a login-route regression. The unchanged login route
+returned HTTP 200 for the approved QA credential, live health remained green, the migration was
+complete, and the catalog posture was exact. A successful login to a different test organization
+was not used as a substitute for the required CloudVault check.
+
+### 5.1 Advisor fixture GO
+
+The Stakeholder Advisor accepted the stop and authorized creation of one replacement synthetic
+active organization whose exact display name is CloudVault. The authorization required a dedicated
+synthetic login user, no existing organization rename, no Brightside use, no customer enumeration,
+no room or document matrix, no deployment, no route conversion, and no admin URL removal.
+
+### 5.2 Replacement verification target
+
+The guarded fixture operation rechecked that no exact-name organization existed before creating the
+replacement. It then created:
+
+| Field                | Value                                                |
+| -------------------- | ---------------------------------------------------- |
+| Organization name    | `CloudVault`                                         |
+| Organization id      | `cmspcz1om0000q03r3vuiti5e`                          |
+| Organization slug    | `cloudvault-w1-2-verify`                             |
+| Organization status  | active                                               |
+| Synthetic role       | VIEWER                                               |
+| Synthetic user label | `w12-unit1-cloudvault-c3cc7015af574208@example.test` |
+
+The synthetic password was generated in process memory, was never printed or persisted, and was
+cleared after login.
+
+### 5.3 Minimal acceptance results
+
+The login guard required the response to identify an active organization whose exact name was
+CloudVault and whose slug was `cloudvault-w1-2-verify`.
+
+| Check                                        | Result                         |
+| -------------------------------------------- | ------------------------------ |
+| Exact-name active fixture creation           | PASS                           |
+| Dedicated synthetic membership creation      | PASS                           |
+| Login through the unchanged production route | PASS, HTTP 200                 |
+| Returned organization exact name             | PASS, `CloudVault`             |
+| Returned organization slug                   | PASS, `cloudvault-w1-2-verify` |
+| Authenticated `/api/auth/me` session         | PASS, HTTP 200                 |
+| Authenticated logout                         | PASS, HTTP 200                 |
+| Old session after logout                     | PASS, HTTP 401                 |
+
+No room, folder, document, preview, download, export, or content endpoint was called.
+
+### 5.4 Cleanup and retained fixture posture
+
+After the smoke, the dedicated synthetic user, its CloudVault membership, and all of its sessions
+were soft-disabled. The authenticated login and logout audit evidence was retained.
+
+The replacement CloudVault organization remains active for later W1-2 authentication phases. Its
+post-smoke posture is:
+
+- exact name: CloudVault;
+- slug: `cloudvault-w1-2-verify`;
+- active synthetic users: 0 from this operation;
+- active synthetic memberships: 0 from this operation;
+- active synthetic sessions: 0 from this operation;
+- rooms: 0; and
+- documents: 0.
+
+No existing organization or shared QA membership was renamed or rewritten. No new deployment was
+performed for the smoke.
 
 ## 6. Strawman, Steelman, and Pre-Mortem update
 
 ### Strawman
 
-- Treating catalog green as sufficient would ignore the required end-to-end CloudVault identity
-  check.
-- Recreating or renaming an organization merely to obtain a pass would destroy continuity with the
-  W1-1 acceptance target.
-- Rolling back an additive inert migration because the test organization is absent could re-expose
-  production to an unnecessary deployment transition without resolving the verification blocker.
+- Treating catalog green as sufficient would have ignored the required end-to-end CloudVault
+  identity check.
+- Reusing the QA account's unrelated organization would have produced a false acceptance result.
+- Retaining a replacement fixture could become ambiguous if it were not labeled, empty, and
+  recorded for synthetic-only W1-2 verification.
 
 ### Steelman
 
 - The deployed role and function have the exact least-privilege posture intended for the first
   W1-2 unit.
 - Existing login behavior remains operational, and no runtime route can call the new function.
-- Refusing to substitute a different organization preserves the integrity of the acceptance gate.
+- The dedicated exact-name fixture preserves the integrity and repeatability of the acceptance
+  gate without touching another organization.
 
 ### Pre-Mortem
 
-If the next unit began now, the team could cite a non-CloudVault login as proof and later discover
-that the intended test organization or account mapping had drifted. The control is to hold route
-conversion until the Advisor identifies or restores the authoritative CloudVault organization and
-the minimal target smoke passes.
+If the fixture creation or login guard had used the wrong organization, Unit 1 could have been
+closed on invalid evidence. The controls were an exact-name and exact-slug response check, a
+dedicated synthetic identity, no shared membership rewrite, categorical smoke results, and
+post-smoke soft-disable verification.
 
 Rollback remains available through retained revisions `0000283` and `0000284`. No rollback was
-performed because the deploy, live health, existing login path, workload coherence, migration, and
-catalog posture are green, while the blocker is the absence of the named verification target.
+performed because the deploy, live health, existing login path, workload coherence, migration,
+catalog posture, and restored CloudVault acceptance are green.
 
 ## 7. Status and next gate
 
-**W1-2 foundation: DEPLOYED, CATALOG GREEN, CLOUDVAULT ACCEPTANCE BLOCKED.**
+**W1-2 foundation: DEPLOYED, CATALOG GREEN, CLOUDVAULT ACCEPTANCE GREEN, PENDING WRITTEN ADVISOR
+CLOSE-OUT.**
 
 **W1-2 overall: OPEN.**
 
-The next W1-2 implementation unit must not start until the Stakeholder Advisor resolves which live
-organization is the authoritative CloudVault target, or authorizes creation of a replacement
-CloudVault synthetic organization, and the minimal login, session, logout, and post-logout 401
-smoke passes.
+The Unit 1 technical acceptance criteria are met. The next W1-2 implementation unit must not start
+until the Stakeholder Advisor reviews this evidence and issues the written Unit 1 close-out stamp.
 
 `DATABASE_URL_ADMIN` remains present in the web workload. Runtime execute remains withheld. Route
 conversion has not started. W1-3 production enforcement remains blocked. The security freeze and
