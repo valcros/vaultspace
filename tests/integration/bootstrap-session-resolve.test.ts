@@ -69,28 +69,16 @@ async function functionExecuteAclRows() {
   );
 }
 
-async function withTemporaryRuntimeExecute<T>(
+async function withRuntimeSessionRepository<T>(
   operation: (repository: BootstrapRepository, tx: Prisma.TransactionClient) => Promise<T>
 ): Promise<T> {
-  return rawPrisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      'GRANT EXECUTE ON FUNCTION ' + FUNCTION_SIGNATURE + ' TO ' + RUNTIME_ROLE
-    );
-    await tx.$executeRawUnsafe('SET LOCAL ROLE ' + RUNTIME_ROLE);
-
-    try {
-      const repository = new BootstrapRepository(tx as unknown as BootstrapQueryClient);
-      return await operation(repository, tx);
-    } finally {
-      await tx.$executeRawUnsafe('RESET ROLE');
-      await tx.$executeRawUnsafe(
-        'REVOKE EXECUTE ON FUNCTION ' + FUNCTION_SIGNATURE + ' FROM ' + RUNTIME_ROLE
-      );
-    }
+  return runtimePrisma.$transaction(async (tx) => {
+    const repository = new BootstrapRepository(tx as unknown as BootstrapQueryClient);
+    return operation(repository, tx);
   });
 }
 
-describe('W1-2 additive session resolve foundation', () => {
+describe('W1-2 routed session resolve surface', () => {
   beforeAll(async () => {
     const now = Date.now();
     const activeOrganization = await rawPrisma.organization.create({
@@ -343,7 +331,7 @@ describe('W1-2 additive session resolve foundation', () => {
     expect(schemaPrivileges).toEqual({ can_use: true, can_create: false });
   });
 
-  it('installs one exact static function with no PUBLIC or runtime execution', async () => {
+  it('installs one exact static function with only owner and runtime execution', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         identity_arguments: string;
@@ -400,6 +388,7 @@ describe('W1-2 additive session resolve foundation', () => {
     ).toBe(FUNCTION_SOURCE_SHA256);
 
     expect(await functionExecuteAclRows()).toEqual([
+      { grantee_name: RUNTIME_ROLE, privilege_type: 'EXECUTE' },
       { grantee_name: OWNER_ROLE, privilege_type: 'EXECUTE' },
     ]);
 
@@ -408,18 +397,18 @@ describe('W1-2 additive session resolve foundation', () => {
       RUNTIME_ROLE,
       BOOTSTRAP_SESSION_RESOLVE_FUNCTION
     );
-    expect(runtimePrivilege?.can_execute).toBe(false);
+    expect(runtimePrivilege?.can_execute).toBe(true);
 
     await expect(
       runtimePrisma.$queryRawUnsafe(
         'SELECT * FROM ' + FUNCTION_SIGNATURE.replace('(text)', '($1::text)'),
         activeToken
       )
-    ).rejects.toThrow();
+    ).resolves.toHaveLength(1);
   });
 
-  it('resolves only the minimal active bound session under a temporary exact grant', async () => {
-    await withTemporaryRuntimeExecute(async (repository, tx) => {
+  it('resolves only the minimal active bound session as the runtime role', async () => {
+    await withRuntimeSessionRepository(async (repository, tx) => {
       await tx.$executeRawUnsafe(
         "SELECT pg_catalog.set_config('search_path', 'pg_temp, public', true)"
       );
@@ -481,6 +470,7 @@ describe('W1-2 additive session resolve foundation', () => {
     });
 
     expect(await functionExecuteAclRows()).toEqual([
+      { grantee_name: RUNTIME_ROLE, privilege_type: 'EXECUTE' },
       { grantee_name: OWNER_ROLE, privilege_type: 'EXECUTE' },
     ]);
   });

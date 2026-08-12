@@ -392,7 +392,7 @@ describe('W1-2 routed login bootstrap candidate', () => {
       RUNTIME_ROLE
     );
     expect(otherPrivileges).toEqual({
-      session_execute: false,
+      session_execute: true,
       organization_execute: false,
     });
   });
