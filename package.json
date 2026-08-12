@@ -24,7 +24,7 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:standalone": "DEPLOYMENT_MODE=standalone vitest run --config vitest.integration.config.ts",
-    "test:integration:rls": "ENABLE_RLS=true DEPLOYMENT_MODE=standalone vitest run --config vitest.integration.config.ts tests/integration/rls.test.ts tests/integration/password-reset-provider-final-evidence.test.ts tests/integration/authorization-room-scope.test.ts tests/integration/link-admission-policy.test.ts tests/integration/bootstrap-login-candidate.test.ts",
+    "test:integration:rls": "ENABLE_RLS=true DEPLOYMENT_MODE=standalone vitest run --config vitest.integration.config.ts tests/integration/rls.test.ts tests/integration/password-reset-provider-final-evidence.test.ts tests/integration/authorization-room-scope.test.ts tests/integration/link-admission-policy.test.ts tests/integration/bootstrap-login-candidate.test.ts tests/integration/bootstrap-session-resolve.test.ts",
     "test:integration:provider-event-inbox": "PROVIDER_INBOX_TEST_COMMAND=true DEPLOYMENT_MODE=standalone vitest run --config vitest.integration.config.ts tests/integration/provider-event-inbox.test.ts",
     "db:setup:rls-test": "tsx scripts/setup-rls-test-db.ts",
     "db:setup:provider-event-inbox-test": "tsx scripts/setup-provider-event-inbox-test-db.ts",
