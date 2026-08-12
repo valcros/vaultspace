@@ -6,22 +6,48 @@ const mockSessionUpdateMany = vi.fn();
 const mockCacheDelete = vi.fn();
 const mockCacheGet = vi.fn();
 const mockCacheSet = vi.fn();
-const mockSessionUpdate = vi.fn();
 const mockResolveSession = vi.fn();
+const mockMutationCreate = vi.fn();
+const mockMutationRefresh = vi.fn();
+const mockMutationInvalidate = vi.fn();
 
 vi.mock('@/lib/db', () => {
   const sessionClient = {
     session: {
       findMany: (...args: unknown[]) => mockSessionFindMany(...args),
-      update: (...args: unknown[]) => mockSessionUpdate(...args),
       updateMany: (...args: unknown[]) => mockSessionUpdateMany(...args),
     },
   };
   return {
     db: sessionClient,
-    bootstrapDb: sessionClient,
   };
 });
+
+vi.mock('./sessionMutationRepository', () => {
+  const methods = {
+    createSession: (...args: unknown[]) => mockMutationCreate(...args),
+    refreshSession: (...args: unknown[]) => mockMutationRefresh(...args),
+    invalidateSession: (...args: unknown[]) => mockMutationInvalidate(...args),
+  };
+  return {
+    SessionMutationRepository: class {
+      createSession(...args: unknown[]) {
+        return methods.createSession(...args);
+      }
+      refreshSession(...args: unknown[]) {
+        return methods.refreshSession(...args);
+      }
+      invalidateSession(...args: unknown[]) {
+        return methods.invalidateSession(...args);
+      }
+    },
+    sessionMutationRepository: methods,
+  };
+});
+
+vi.mock('./token', () => ({
+  generateSessionToken: () => 't'.repeat(43),
+}));
 
 vi.mock('./bootstrapRepository', () => ({
   BootstrapRepository: class {
@@ -43,6 +69,7 @@ vi.mock('@/providers', () => ({
 
 import {
   clearSessionCache,
+  createSession,
   invalidateAllUserSessions,
   invalidateSession,
   validateSession,
@@ -53,24 +80,64 @@ describe('auth session invalidation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockMutationCreate.mockResolvedValue(null);
+    mockMutationRefresh.mockResolvedValue(null);
+    mockMutationInvalidate.mockResolvedValue(null);
   });
 
-  it('invalidates a single session in both database and cache', async () => {
-    mockSessionFindMany.mockResolvedValue([{ token: 'session-token' }]);
-    mockSessionUpdateMany.mockResolvedValue({ count: 1 });
+  it('invalidates a single session through the constrained function and clears its cache', async () => {
+    mockMutationInvalidate.mockResolvedValue('session-1');
     mockCacheDelete.mockResolvedValue(undefined);
 
-    await invalidateSession('session-token');
+    await invalidateSession(validSessionToken);
 
-    expect(mockSessionFindMany).toHaveBeenCalledWith({
-      where: { token: 'session-token', isActive: true },
-      select: { token: true },
+    expect(mockMutationInvalidate).toHaveBeenCalledWith(validSessionToken);
+    expect(mockSessionFindMany).not.toHaveBeenCalled();
+    expect(mockSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mockCacheDelete).toHaveBeenCalledWith(`session:${validSessionToken}`);
+  });
+
+  it('creates a session through the constrained function without direct table writes', async () => {
+    const createdAt = new Date('2026-08-12T23:10:00.000Z');
+    const expiresAt = new Date('2026-08-13T23:10:00.000Z');
+    mockMutationCreate.mockResolvedValue({
+      sessionId: 'session-1',
+      createdAt,
+      expiresAt,
     });
-    expect(mockSessionUpdateMany).toHaveBeenCalledWith({
-      where: { token: 'session-token' },
-      data: { isActive: false },
+
+    const result = await createSession('user-1', 'org-1', {
+      expiresAt,
+      ipAddress: '192.0.2.10',
+      userAgent: 'unit-test-agent',
     });
-    expect(mockCacheDelete).toHaveBeenCalledWith('session:session-token');
+
+    expect(mockMutationCreate).toHaveBeenCalledWith({
+      userId: 'user-1',
+      organizationId: 'org-1',
+      token: 't'.repeat(43),
+      expiresAt,
+      ipAddress: '192.0.2.10',
+      userAgent: 'unit-test-agent',
+    });
+    expect(result).toMatchObject({
+      token: 't'.repeat(43),
+      session: {
+        id: 'session-1',
+        userId: 'user-1',
+        organizationId: 'org-1',
+        createdAt,
+        expiresAt,
+        isActive: true,
+      },
+    });
+    expect(mockSessionUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when constrained session creation returns no row', async () => {
+    await expect(createSession('user-1', 'org-1')).rejects.toThrow(
+      'BOOTSTRAP_SESSION_CREATE_DENIED'
+    );
   });
 
   it('invalidates all user sessions and removes each cached token', async () => {
@@ -163,6 +230,7 @@ describe('validateSession read-through cache', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockMutationRefresh.mockResolvedValue(null);
   });
 
   it('returns a valid cached snapshot only after an exact constrained live resolution', async () => {
@@ -293,16 +361,17 @@ describe('validateSession read-through cache', () => {
     mockCacheGet.mockResolvedValue(null);
     mockResolveSession.mockResolvedValue(projection);
     mockCacheSet.mockResolvedValue(undefined);
-    mockSessionUpdate.mockResolvedValue({});
+    mockCacheDelete.mockResolvedValue(undefined);
+    mockMutationRefresh.mockResolvedValue({
+      sessionId: projection.sessionId,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
 
     await validateSession(validSessionToken);
 
-    expect(mockSessionUpdate).toHaveBeenCalledWith({
-      where: { id: projection.sessionId },
-      data: {
-        lastActiveAt: expect.any(Date),
-        expiresAt: expect.any(Date),
-      },
+    await vi.waitFor(() => {
+      expect(mockMutationRefresh).toHaveBeenCalledWith(validSessionToken);
+      expect(mockCacheDelete).toHaveBeenCalledWith(`session:${validSessionToken}`);
     });
   });
 });

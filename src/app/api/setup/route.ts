@@ -6,8 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
 
+import { createSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { getRequestContext, setSessionCookie } from '@/lib/middleware';
@@ -106,23 +106,15 @@ export async function POST(request: NextRequest) {
       return { organization, user };
     });
 
-    // Generate session token
-    const sessionToken = randomBytes(32).toString('base64url');
     const expiresAt = new Date(
       Date.now() + SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000
     );
 
-    // Create session
-    const authSession = await db.session.create({
-      data: {
-        userId: result.user.id,
-        organizationId: result.organization.id,
-        token: sessionToken,
-        expiresAt,
-        ipAddress,
-        userAgent,
-      },
-    });
+    const { session: authSession, token: sessionToken } = await createSession(
+      result.user.id,
+      result.organization.id,
+      { expiresAt, ipAddress, userAgent }
+    );
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);

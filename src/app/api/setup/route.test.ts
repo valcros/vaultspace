@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+const mockCreateSession = vi.fn();
 
 // Mock database
 vi.mock('@/lib/db', () => ({
@@ -25,11 +26,12 @@ vi.mock('@/lib/db', () => ({
     userOrganization: {
       create: vi.fn(),
     },
-    session: {
-      create: vi.fn(),
-    },
     $transaction: vi.fn(),
   },
+}));
+
+vi.mock('@/lib/auth', () => ({
+  createSession: (...args: unknown[]) => mockCreateSession(...args),
 }));
 
 // Mock bcrypt
@@ -37,13 +39,6 @@ vi.mock('bcryptjs', () => ({
   default: {
     hash: vi.fn().mockResolvedValue('hashed-password'),
   },
-}));
-
-// Mock crypto
-vi.mock('crypto', () => ({
-  randomBytes: vi.fn().mockReturnValue({
-    toString: vi.fn().mockReturnValue('mock-session-token'),
-  }),
 }));
 
 // Mock session cookie
@@ -64,7 +59,6 @@ import { db } from '@/lib/db';
 
 const mockDbOrganization = vi.mocked(db.organization);
 const mockDbUser = vi.mocked(db.user);
-const mockDbSession = vi.mocked(db.session);
 const mockDbTransaction = vi.mocked(db.$transaction);
 
 describe('GET /api/setup', () => {
@@ -121,6 +115,10 @@ describe('POST /api/setup', () => {
     mockDbOrganization.findFirst.mockResolvedValue(null);
     mockDbOrganization.findUnique.mockResolvedValue(null);
     mockDbUser.findUnique.mockResolvedValue(null);
+    mockCreateSession.mockResolvedValue({
+      session: { id: 'session-1' },
+      token: 't'.repeat(43),
+    });
   });
 
   it('returns 400 when setup has already been completed', async () => {
@@ -284,11 +282,6 @@ describe('POST /api/setup', () => {
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
 
-    mockDbSession.create.mockResolvedValue({
-      id: 'session-1',
-      token: 'mock-session-token',
-    } as unknown as Awaited<ReturnType<typeof mockDbSession.create>>);
-
     const request = new NextRequest('http://localhost/api/setup', {
       method: 'POST',
       body: JSON.stringify(validSetupData),
@@ -340,10 +333,6 @@ describe('POST /api/setup', () => {
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
 
-    mockDbSession.create.mockResolvedValue({
-      id: 'session-1',
-    } as unknown as Awaited<ReturnType<typeof mockDbSession.create>>);
-
     const request = new NextRequest('http://localhost/api/setup', {
       method: 'POST',
       body: JSON.stringify({ ...validSetupData, adminEmail: 'JOHN@ACME.COM' }),
@@ -383,13 +372,13 @@ describe('POST /api/setup', () => {
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
 
-    let capturedSessionData: Record<string, unknown> | undefined;
-    mockDbSession.create.mockImplementation((args: { data: Record<string, unknown> }) => {
-      capturedSessionData = args.data;
-      return Promise.resolve({ id: 'session-1' }) as unknown as ReturnType<
-        typeof mockDbSession.create
-      >;
-    });
+    let capturedSessionOptions: Record<string, unknown> | undefined;
+    mockCreateSession.mockImplementation(
+      (_userId: string, _organizationId: string, options: Record<string, unknown>) => {
+        capturedSessionOptions = options;
+        return Promise.resolve({ session: { id: 'session-1' }, token: 't'.repeat(43) });
+      }
+    );
 
     const request = new NextRequest('http://localhost/api/setup', {
       method: 'POST',
@@ -402,8 +391,13 @@ describe('POST /api/setup', () => {
 
     const response = await POST(request);
     expect(response.status).toBe(200);
-    expect(capturedSessionData?.['ipAddress']).toBe('127.0.0.1');
-    expect(capturedSessionData?.['userAgent']).toBe('vitest');
+    expect(capturedSessionOptions?.['ipAddress']).toBe('127.0.0.1');
+    expect(capturedSessionOptions?.['userAgent']).toBe('vitest');
+    expect(mockCreateSession).toHaveBeenCalledWith(
+      'user-new',
+      'org-new',
+      expect.objectContaining({ expiresAt: expect.any(Date) })
+    );
     expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
       expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
     );
@@ -453,10 +447,6 @@ describe('POST /api/setup', () => {
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
 
-    mockDbSession.create.mockResolvedValue({
-      id: 'session-1',
-    } as unknown as Awaited<ReturnType<typeof mockDbSession.create>>);
-
     const request = new NextRequest('http://localhost/api/setup', {
       method: 'POST',
       body: JSON.stringify({ ...validSetupData, organizationSlug: 'acme-corp-2024' }),
@@ -494,10 +484,6 @@ describe('POST /api/setup', () => {
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
     });
-
-    mockDbSession.create.mockResolvedValue({
-      id: 'session-1',
-    } as unknown as Awaited<ReturnType<typeof mockDbSession.create>>);
 
     const request = new NextRequest('http://localhost/api/setup', {
       method: 'POST',

@@ -17,6 +17,13 @@ const APP_ROLE = 'vaultspace_app';
 const LOGIN_CANDIDATE_FUNCTION = 'public.bootstrap_login_candidate_v1(text)';
 const SESSION_RESOLVE_FUNCTION = 'public.bootstrap_session_resolve_v1(text)';
 const ORGANIZATION_RESOLVE_FUNCTION = 'public.bootstrap_organization_resolve_v1(text, text)';
+const SESSION_CREATE_FUNCTION =
+  'public.bootstrap_session_create_v1(text, text, text, timestamp with time zone, text, text)';
+const SESSION_REFRESH_FUNCTION = 'public.bootstrap_session_refresh_v1(text)';
+const SESSION_INVALIDATE_FUNCTION = 'public.bootstrap_session_invalidate_v1(text)';
+const SESSION_REVOKE_USER_ORG_FUNCTION = 'public.bootstrap_session_revoke_user_org_v1(text, text)';
+const SESSION_REVOKE_USER_GLOBAL_FUNCTION =
+  'public.bootstrap_session_revoke_user_global_v1(text, text)';
 const REQUIRED_ALLOW_FLAG = 'true';
 
 function requireEnv(name: string): string {
@@ -146,12 +153,26 @@ async function main() {
     await admin.$executeRawUnsafe(
       `GRANT EXECUTE ON FUNCTION ${ORGANIZATION_RESOLVE_FUNCTION} TO ${APP_ROLE};`
     );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${SESSION_CREATE_FUNCTION} TO ${APP_ROLE};`
+    );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${SESSION_REFRESH_FUNCTION} TO ${APP_ROLE};`
+    );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${SESSION_INVALIDATE_FUNCTION} TO ${APP_ROLE};`
+    );
 
     const [bootstrapGrants] = await admin.$queryRawUnsafe<
       Array<{
         login_execute: boolean;
         session_execute: boolean;
         organization_execute: boolean;
+        session_create_execute: boolean;
+        session_refresh_execute: boolean;
+        session_invalidate_execute: boolean;
+        session_revoke_user_org_execute: boolean;
+        session_revoke_user_global_execute: boolean;
         unexpected_login_acl_count: bigint;
         unexpected_session_acl_count: bigint;
         unexpected_organization_acl_count: bigint;
@@ -168,6 +189,21 @@ async function main() {
          pg_catalog.has_function_privilege(
            '${APP_ROLE}', '${ORGANIZATION_RESOLVE_FUNCTION}', 'EXECUTE'
          ) AS organization_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${SESSION_CREATE_FUNCTION}', 'EXECUTE'
+         ) AS session_create_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${SESSION_REFRESH_FUNCTION}', 'EXECUTE'
+         ) AS session_refresh_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${SESSION_INVALIDATE_FUNCTION}', 'EXECUTE'
+         ) AS session_invalidate_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${SESSION_REVOKE_USER_ORG_FUNCTION}', 'EXECUTE'
+         ) AS session_revoke_user_org_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${SESSION_REVOKE_USER_GLOBAL_FUNCTION}', 'EXECUTE'
+         ) AS session_revoke_user_global_execute,
          (
            SELECT pg_catalog.count(*)
            FROM pg_catalog.pg_proc AS function
@@ -220,7 +256,10 @@ async function main() {
              AND function.oid NOT IN (
                pg_catalog.to_regprocedure('${LOGIN_CANDIDATE_FUNCTION}'),
                pg_catalog.to_regprocedure('${SESSION_RESOLVE_FUNCTION}'),
-               pg_catalog.to_regprocedure('${ORGANIZATION_RESOLVE_FUNCTION}')
+               pg_catalog.to_regprocedure('${ORGANIZATION_RESOLVE_FUNCTION}'),
+               pg_catalog.to_regprocedure('${SESSION_CREATE_FUNCTION}'),
+               pg_catalog.to_regprocedure('${SESSION_REFRESH_FUNCTION}'),
+               pg_catalog.to_regprocedure('${SESSION_INVALIDATE_FUNCTION}')
              )
          ) AS unexpected_bootstrap_execute_count`
     );
@@ -229,13 +268,18 @@ async function main() {
       !bootstrapGrants?.login_execute ||
       !bootstrapGrants.session_execute ||
       !bootstrapGrants.organization_execute ||
+      !bootstrapGrants.session_create_execute ||
+      !bootstrapGrants.session_refresh_execute ||
+      !bootstrapGrants.session_invalidate_execute ||
+      bootstrapGrants.session_revoke_user_org_execute ||
+      bootstrapGrants.session_revoke_user_global_execute ||
       Number(bootstrapGrants.unexpected_login_acl_count) !== 0 ||
       Number(bootstrapGrants.unexpected_session_acl_count) !== 0 ||
       Number(bootstrapGrants.unexpected_organization_acl_count) !== 0 ||
       Number(bootstrapGrants.unexpected_bootstrap_execute_count) !== 0
     ) {
       throw new Error(
-        'runtime bootstrap function grants must match the routed login, session, and organization families only'
+        'runtime bootstrap function grants must match the routed resolve and narrow session-mutation families only'
       );
     }
 

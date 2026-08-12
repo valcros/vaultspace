@@ -33,17 +33,20 @@ vi.mock('@/lib/audit/accessAudit', () => ({
 const mockFindUnique = vi.fn();
 const mockInvitationFindUnique = vi.fn();
 const mockTransaction = vi.fn();
-const mockSessionCreate = vi.fn();
+const mockCreateSession = vi.fn();
 
 vi.mock('@/lib/db', () => {
   const client = {
     user: { findUnique: (...args: unknown[]) => mockFindUnique(...args) },
     invitation: { findUnique: (...args: unknown[]) => mockInvitationFindUnique(...args) },
     $transaction: (...args: unknown[]) => mockTransaction(...args),
-    session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
   };
   return { db: client, bootstrapDb: client };
 });
+
+vi.mock('@/lib/auth', () => ({
+  createSession: (...args: unknown[]) => mockCreateSession(...args),
+}));
 
 import { POST } from './route';
 
@@ -77,7 +80,10 @@ describe('POST /api/auth/register', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFindUnique.mockResolvedValue(null); // No existing user
-    mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
+    mockCreateSession.mockResolvedValue({
+      session: { id: 'auth-session-1' },
+      token: 't'.repeat(43),
+    });
     mockTransaction.mockImplementation(
       async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
         const tx = {
@@ -111,9 +117,15 @@ describe('POST /api/auth/register', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.user.email).toBe('alice@example.com');
-      expect(mockSessionCreate).toHaveBeenCalledWith({
-        data: expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' }),
-      });
+      expect(mockCreateSession).toHaveBeenCalledWith(
+        'user-1',
+        'org-new',
+        expect.objectContaining({
+          ipAddress: '127.0.0.1',
+          userAgent: 'vitest',
+          expiresAt: expect.any(Date),
+        })
+      );
       expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
         expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
       );
