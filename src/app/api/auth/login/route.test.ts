@@ -1,10 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import { RateLimitError } from '@/lib/errors';
 
 const mockCompare = vi.fn();
-const mockFindUnique = vi.fn();
+const mockFindLoginCandidate = vi.fn();
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
 const mockSessionCreate = vi.fn();
 const mockUserUpdate = vi.fn();
@@ -22,16 +25,17 @@ vi.mock('@/lib/db', () => ({
     user: { update: vi.fn() },
     session: { create: vi.fn() },
   },
-  bootstrapDb: {
-    user: {
-      findUnique: (...args: unknown[]) => mockFindUnique(...args),
-    },
-  },
   withOrgContext: async (_orgId: string, fn: (tx: unknown) => Promise<unknown>) =>
     fn({
       session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
       user: { update: (...args: unknown[]) => mockUserUpdate(...args) },
     }),
+}));
+
+vi.mock('@/lib/auth/bootstrapRepository', () => ({
+  bootstrapRepository: {
+    findLoginCandidate: (...args: unknown[]) => mockFindLoginCandidate(...args),
+  },
 }));
 
 vi.mock('@/lib/middleware', () => ({
@@ -57,25 +61,18 @@ describe('POST /api/auth/login', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockFindUnique.mockResolvedValue({
-      id: 'user-1',
+    mockFindLoginCandidate.mockResolvedValue({
+      userId: 'user-1',
       email: 'user@example.com',
       firstName: 'Test',
       lastName: 'User',
       passwordHash: 'stored-hash',
-      isActive: true,
+      userIsActive: true,
       twoFactorEnabled: true,
-      organizations: [
-        {
-          role: 'ADMIN',
-          organization: {
-            id: 'org-1',
-            name: 'Org',
-            slug: 'org',
-            isActive: true,
-          },
-        },
-      ],
+      organizationId: 'org-1',
+      organizationName: 'Org',
+      organizationSlug: 'org',
+      organizationRole: 'ADMIN',
     });
     mockCompare.mockResolvedValue(true);
     mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
@@ -83,6 +80,13 @@ describe('POST /api/auth/login', () => {
     mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockLoginByEmail.mockResolvedValue(undefined);
     mockLoginByIp.mockResolvedValue(undefined);
+  });
+
+  it('uses only the narrow login repository for pre-tenant candidate lookup', () => {
+    const source = readFileSync(join(process.cwd(), 'src/app/api/auth/login/route.ts'), 'utf8');
+
+    expect(source).toContain('bootstrapRepository.findLoginCandidate(email)');
+    expect(source).not.toMatch(/\bbootstrapDb\b/);
   });
 
   it('returns 500 instead of using a weak fallback when SESSION_SECRET is missing', async () => {
@@ -118,25 +122,18 @@ describe('POST /api/auth/login', () => {
 
   it('captures a successful password login without making audit authoritative', async () => {
     process.env['SESSION_SECRET'] = 'test-session-secret';
-    mockFindUnique.mockResolvedValue({
-      id: 'user-1',
+    mockFindLoginCandidate.mockResolvedValue({
+      userId: 'user-1',
       email: 'user@example.com',
       firstName: 'Test',
       lastName: 'User',
       passwordHash: 'stored-hash',
-      isActive: true,
+      userIsActive: true,
       twoFactorEnabled: false,
-      organizations: [
-        {
-          role: 'ADMIN',
-          organization: {
-            id: 'org-1',
-            name: 'Org',
-            slug: 'org',
-            isActive: true,
-          },
-        },
-      ],
+      organizationId: 'org-1',
+      organizationName: 'Org',
+      organizationSlug: 'org',
+      organizationRole: 'ADMIN',
     });
 
     const response = await POST(
@@ -180,31 +177,57 @@ describe('POST /api/auth/login', () => {
     expect(response.status).toBe(429);
     expect(body.error).toMatch(/too many/i);
     // Throttling must happen before any account lookup or bcrypt work.
-    expect(mockFindUnique).not.toHaveBeenCalled();
+    expect(mockFindLoginCandidate).not.toHaveBeenCalled();
     expect(mockCompare).not.toHaveBeenCalled();
+  });
+
+  it('logs only categorical fields when the rate limiter is unavailable', async () => {
+    process.env['SESSION_SECRET'] = 'test-session-secret';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockLoginByEmail.mockRejectedValueOnce(new Error('sensitive provider detail'));
+
+    try {
+      const response = await POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'user@example.com', password: 'password123' }),
+        })
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(body.error).toBe('Failed to sign in');
+      expect(mockFindLoginCandidate).not.toHaveBeenCalled();
+      expect(mockCompare).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledOnce();
+
+      const logged = consoleError.mock.calls[0]?.[0];
+      expect(typeof logged).toBe('string');
+      expect(JSON.parse(String(logged))).toEqual({
+        component: 'login-api',
+        outcome: 'rate-limiter-unavailable',
+        errorName: 'Error',
+      });
+      expect(String(logged)).not.toContain('sensitive provider detail');
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('keeps a successful login available when the bounded audit write fails', async () => {
     process.env['SESSION_SECRET'] = 'test-session-secret';
-    mockFindUnique.mockResolvedValue({
-      id: 'user-1',
+    mockFindLoginCandidate.mockResolvedValue({
+      userId: 'user-1',
       email: 'user@example.com',
       firstName: 'Test',
       lastName: 'User',
       passwordHash: 'stored-hash',
-      isActive: true,
+      userIsActive: true,
       twoFactorEnabled: false,
-      organizations: [
-        {
-          role: 'ADMIN',
-          organization: {
-            id: 'org-1',
-            name: 'Org',
-            slug: 'org',
-            isActive: true,
-          },
-        },
-      ],
+      organizationId: 'org-1',
+      organizationName: 'Org',
+      organizationSlug: 'org',
+      organizationRole: 'ADMIN',
     });
     mockCaptureAccessAudit.mockResolvedValue('failed');
 
@@ -216,5 +239,61 @@ describe('POST /api/auth/login', () => {
     );
 
     expect(response.status).toBe(200);
+  });
+
+  it('returns a neutral denial without password work when no candidate resolves', async () => {
+    process.env['SESSION_SECRET'] = 'test-session-secret';
+    mockFindLoginCandidate.mockResolvedValue(null);
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'missing@example.com', password: 'password123' }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error).toBe('Invalid email or password');
+    expect(mockFindLoginCandidate).toHaveBeenCalledWith('missing@example.com');
+    expect(mockCompare).not.toHaveBeenCalled();
+    expect(mockSessionCreate).not.toHaveBeenCalled();
+  });
+
+  it('preserves the neutral invalid-password response without creating a session', async () => {
+    process.env['SESSION_SECRET'] = 'test-session-secret';
+    mockCompare.mockResolvedValue(false);
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'user@example.com', password: 'wrong-password' }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error).toBe('Invalid email or password');
+    expect(mockFindLoginCandidate).toHaveBeenCalledWith('user@example.com');
+    expect(mockCompare).toHaveBeenCalledWith('wrong-password', 'stored-hash');
+    expect(mockSessionCreate).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the narrow repository errors and does not create a session', async () => {
+    process.env['SESSION_SECRET'] = 'test-session-secret';
+    mockFindLoginCandidate.mockRejectedValue(new Error('narrow function unavailable'));
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'user@example.com', password: 'password123' }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe('Failed to sign in');
+    expect(mockCompare).not.toHaveBeenCalled();
+    expect(mockSessionCreate).not.toHaveBeenCalled();
   });
 });
