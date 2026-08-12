@@ -6,6 +6,8 @@ export const BOOTSTRAP_LOGIN_CANDIDATE_FUNCTION =
   'public.bootstrap_login_candidate_v1(text)' as const;
 export const BOOTSTRAP_SESSION_RESOLVE_FUNCTION =
   'public.bootstrap_session_resolve_v1(text)' as const;
+export const BOOTSTRAP_ORGANIZATION_RESOLVE_FUNCTION =
+  'public.bootstrap_organization_resolve_v1(text, text)' as const;
 
 export type BootstrapOrganizationRole = 'ADMIN' | 'VIEWER';
 
@@ -47,6 +49,16 @@ export interface BootstrapSessionProjection {
   };
 }
 
+export interface BootstrapOrganizationProjection {
+  id: string;
+  name: string;
+  slug: string;
+  customDomain: string | null;
+  logoUrl: string | null;
+  primaryColor: string;
+  faviconUrl: string | null;
+}
+
 interface BootstrapLoginCandidateRow {
   user_id: string;
   normalized_email: string;
@@ -77,6 +89,16 @@ interface BootstrapSessionProjectionRow {
   organization_role: string;
   can_manage_users: boolean;
   can_manage_rooms: boolean;
+}
+
+interface BootstrapOrganizationProjectionRow {
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
+  organization_custom_domain: string | null;
+  organization_logo_url: string | null;
+  organization_primary_color: string;
+  organization_favicon_url: string | null;
 }
 
 export type BootstrapQueryClient = Pick<PrismaClient, '$queryRaw'>;
@@ -174,6 +196,66 @@ function mapSessionProjection(row: BootstrapSessionProjectionRow): BootstrapSess
   };
 }
 
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function normalizeOrganizationSlug(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length < 1 || normalized.length > 100 || !/^[a-z0-9-]+$/.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizeCustomDomain(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length < 1 || normalized.length > 255) {
+    return null;
+  }
+
+  const labels = normalized.split('.');
+  if (
+    labels.length < 2 ||
+    labels.some(
+      (label) =>
+        label.length < 1 || label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)
+    )
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function mapOrganizationProjection(
+  row: BootstrapOrganizationProjectionRow
+): BootstrapOrganizationProjection {
+  if (
+    !row.organization_id ||
+    !row.organization_name ||
+    normalizeOrganizationSlug(row.organization_slug) !== row.organization_slug ||
+    !isNullableString(row.organization_custom_domain) ||
+    (row.organization_custom_domain !== null &&
+      normalizeCustomDomain(row.organization_custom_domain) !== row.organization_custom_domain) ||
+    !isNullableString(row.organization_logo_url) ||
+    !/^#[0-9a-fA-F]{6}$/.test(row.organization_primary_color) ||
+    !isNullableString(row.organization_favicon_url)
+  ) {
+    throw new Error('BOOTSTRAP_ORGANIZATION_ROW_INVALID');
+  }
+
+  return {
+    id: row.organization_id,
+    name: row.organization_name,
+    slug: row.organization_slug,
+    customDomain: row.organization_custom_domain,
+    logoUrl: row.organization_logo_url,
+    primaryColor: row.organization_primary_color,
+    faviconUrl: row.organization_favicon_url,
+  };
+}
+
 export class BootstrapRepository {
   constructor(private readonly client: BootstrapQueryClient = db) {}
 
@@ -246,6 +328,55 @@ export class BootstrapRepository {
     }
 
     return mapSessionProjection(rows[0]!);
+  }
+
+  async resolveOrganizationBySlug(slug: string): Promise<BootstrapOrganizationProjection | null> {
+    const normalized = normalizeOrganizationSlug(slug);
+    if (!normalized) {
+      return null;
+    }
+    return this.resolveOrganization('SLUG', normalized);
+  }
+
+  async resolveOrganizationByCustomDomain(
+    customDomain: string
+  ): Promise<BootstrapOrganizationProjection | null> {
+    const normalized = normalizeCustomDomain(customDomain);
+    if (!normalized) {
+      return null;
+    }
+    return this.resolveOrganization('CUSTOM_DOMAIN', normalized);
+  }
+
+  private async resolveOrganization(
+    lookupKind: 'SLUG' | 'CUSTOM_DOMAIN',
+    lookupValue: string
+  ): Promise<BootstrapOrganizationProjection | null> {
+    const rows = await this.client.$queryRaw<BootstrapOrganizationProjectionRow[]>(
+      Prisma.sql`
+        SELECT
+          organization_id,
+          organization_name,
+          organization_slug,
+          organization_custom_domain,
+          organization_logo_url,
+          organization_primary_color,
+          organization_favicon_url
+        FROM public.bootstrap_organization_resolve_v1(
+          ${lookupKind}::text,
+          ${lookupValue}::text
+        )
+      `
+    );
+
+    if (rows.length === 0) {
+      return null;
+    }
+    if (rows.length !== 1) {
+      throw new Error('BOOTSTRAP_ORGANIZATION_DUPLICATE');
+    }
+
+    return mapOrganizationProjection(rows[0]!);
   }
 }
 
