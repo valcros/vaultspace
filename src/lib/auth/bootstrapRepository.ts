@@ -4,6 +4,8 @@ import { db } from '@/lib/db';
 
 export const BOOTSTRAP_LOGIN_CANDIDATE_FUNCTION =
   'public.bootstrap_login_candidate_v1(text)' as const;
+export const BOOTSTRAP_SESSION_RESOLVE_FUNCTION =
+  'public.bootstrap_session_resolve_v1(text)' as const;
 
 export type BootstrapOrganizationRole = 'ADMIN' | 'VIEWER';
 
@@ -21,6 +23,30 @@ export interface BootstrapLoginCandidate {
   organizationRole: BootstrapOrganizationRole;
 }
 
+export interface BootstrapSessionProjection {
+  sessionId: string;
+  userId: string;
+  organizationId: string;
+  createdAt: Date;
+  expiresAt: Date;
+  lastActiveAt: Date;
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    isActive: true;
+  };
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+    role: BootstrapOrganizationRole;
+    canManageUsers: boolean;
+    canManageRooms: boolean;
+  };
+}
+
 interface BootstrapLoginCandidateRow {
   user_id: string;
   normalized_email: string;
@@ -33,6 +59,24 @@ interface BootstrapLoginCandidateRow {
   organization_name: string;
   organization_slug: string;
   organization_role: string;
+}
+
+interface BootstrapSessionProjectionRow {
+  session_id: string;
+  user_id: string;
+  organization_id: string;
+  session_created_at: Date | string;
+  session_expires_at: Date | string;
+  session_last_active_at: Date | string;
+  user_email: string;
+  user_first_name: string;
+  user_last_name: string;
+  user_is_active: boolean;
+  organization_name: string;
+  organization_slug: string;
+  organization_role: string;
+  can_manage_users: boolean;
+  can_manage_rooms: boolean;
 }
 
 export type BootstrapQueryClient = Pick<PrismaClient, '$queryRaw'>;
@@ -76,6 +120,60 @@ function mapLoginCandidate(row: BootstrapLoginCandidateRow): BootstrapLoginCandi
   };
 }
 
+function requiredDate(value: Date | string, field: string): Date {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`BOOTSTRAP_SESSION_${field}_INVALID`);
+  }
+  return date;
+}
+
+function mapSessionProjection(row: BootstrapSessionProjectionRow): BootstrapSessionProjection {
+  if (
+    !row.session_id ||
+    !row.user_id ||
+    !row.organization_id ||
+    !row.user_email ||
+    !row.user_first_name ||
+    !row.user_last_name ||
+    row.user_is_active !== true ||
+    !row.organization_name ||
+    !row.organization_slug ||
+    typeof row.can_manage_users !== 'boolean' ||
+    typeof row.can_manage_rooms !== 'boolean'
+  ) {
+    throw new Error('BOOTSTRAP_SESSION_ROW_INVALID');
+  }
+
+  if (!isOrganizationRole(row.organization_role)) {
+    throw new Error('BOOTSTRAP_SESSION_ROLE_INVALID');
+  }
+
+  return {
+    sessionId: row.session_id,
+    userId: row.user_id,
+    organizationId: row.organization_id,
+    createdAt: requiredDate(row.session_created_at, 'CREATED_AT'),
+    expiresAt: requiredDate(row.session_expires_at, 'EXPIRES_AT'),
+    lastActiveAt: requiredDate(row.session_last_active_at, 'LAST_ACTIVE_AT'),
+    user: {
+      id: row.user_id,
+      email: row.user_email,
+      firstName: row.user_first_name,
+      lastName: row.user_last_name,
+      isActive: true,
+    },
+    organization: {
+      id: row.organization_id,
+      name: row.organization_name,
+      slug: row.organization_slug,
+      role: row.organization_role,
+      canManageUsers: row.can_manage_users,
+      canManageRooms: row.can_manage_rooms,
+    },
+  };
+}
+
 export class BootstrapRepository {
   constructor(private readonly client: BootstrapQueryClient = db) {}
 
@@ -111,6 +209,43 @@ export class BootstrapRepository {
     }
 
     return mapLoginCandidate(rows[0]!);
+  }
+
+  async resolveSession(token: string): Promise<BootstrapSessionProjection | null> {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      return null;
+    }
+
+    const rows = await this.client.$queryRaw<BootstrapSessionProjectionRow[]>(
+      Prisma.sql`
+        SELECT
+          session_id,
+          user_id,
+          organization_id,
+          session_created_at,
+          session_expires_at,
+          session_last_active_at,
+          user_email,
+          user_first_name,
+          user_last_name,
+          user_is_active,
+          organization_name,
+          organization_slug,
+          organization_role,
+          can_manage_users,
+          can_manage_rooms
+        FROM public.bootstrap_session_resolve_v1(${token}::text)
+      `
+    );
+
+    if (rows.length === 0) {
+      return null;
+    }
+    if (rows.length !== 1) {
+      throw new Error('BOOTSTRAP_SESSION_DUPLICATE');
+    }
+
+    return mapSessionProjection(rows[0]!);
   }
 }
 

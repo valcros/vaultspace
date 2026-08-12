@@ -1,20 +1,20 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { Prisma, PrismaClient, UserRole } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  BOOTSTRAP_LOGIN_CANDIDATE_FUNCTION,
+  BOOTSTRAP_SESSION_RESOLVE_FUNCTION,
   BootstrapRepository,
   type BootstrapQueryClient,
 } from '@/lib/auth/bootstrapRepository';
 
 const OWNER_ROLE = 'vaultspace_bootstrap_owner';
 const RUNTIME_ROLE = 'vaultspace_app';
-const FUNCTION_NAME = 'bootstrap_login_candidate_v1';
-const FUNCTION_SIGNATURE = 'public.bootstrap_login_candidate_v1(text)';
-const FUNCTION_CONTRACT_COMMENT = 'vaultspace-contract:w1-2-login-candidate-v1';
-const FUNCTION_SOURCE_SHA256 = '72b12f72ab12ca301cce0b168463dd294df01fa2c0ca1e07b8668643b267db38';
+const FUNCTION_NAME = 'bootstrap_session_resolve_v1';
+const FUNCTION_SIGNATURE = 'public.bootstrap_session_resolve_v1(text)';
+const FUNCTION_CONTRACT_COMMENT = 'vaultspace-contract:w1-2-session-resolve-v1';
+const FUNCTION_SOURCE_SHA256 = '7b83946afec28fcb354c53792a714f7c7aef9ca8d2e3953e4aaee3f199a55916';
 
 const rawPrisma = new PrismaClient({
   datasources: {
@@ -33,19 +33,24 @@ const runtimePrisma = new PrismaClient({
 });
 
 const suffix = randomUUID();
-const activeEmail = 'bootstrap-active-' + suffix + '@example.test';
-const inactiveUserEmail = 'bootstrap-inactive-user-' + suffix + '@example.test';
-const inactiveMembershipEmail = 'bootstrap-inactive-membership-' + suffix + '@example.test';
-const inactiveOrganizationEmail = 'bootstrap-inactive-org-' + suffix + '@example.test';
-const passwordHash = 'bootstrap-integration-hash-' + suffix;
+const token = () => randomBytes(32).toString('base64url');
 
-let firstOrganizationId: string;
-let secondOrganizationId: string;
+const activeToken = token();
+const inactiveSessionToken = token();
+const idleExpiredToken = token();
+const absoluteExpiredToken = token();
+const unboundToken = token();
+const inactiveUserToken = token();
+const inactiveMembershipToken = token();
+const inactiveOrganizationToken = token();
+
+let activeOrganizationId: string;
 let inactiveOrganizationId: string;
 let activeUserId: string;
 let inactiveUserId: string;
 let inactiveMembershipUserId: string;
 let inactiveOrganizationUserId: string;
+let activeSessionId: string;
 
 async function functionExecuteAclRows() {
   return rawPrisma.$queryRawUnsafe<Array<{ grantee_name: string; privilege_type: string }>>(
@@ -85,30 +90,21 @@ async function withTemporaryRuntimeExecute<T>(
   });
 }
 
-describe('W1-2 additive login bootstrap foundation', () => {
+describe('W1-2 additive session resolve foundation', () => {
   beforeAll(async () => {
-    const firstOrganization = await rawPrisma.organization.create({
+    const now = Date.now();
+    const activeOrganization = await rawPrisma.organization.create({
       data: {
-        name: 'Bootstrap First Organization',
-        slug: 'bootstrap-first-' + suffix,
-        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        name: 'Session Bootstrap Organization',
+        slug: 'session-bootstrap-' + suffix,
       },
     });
-    firstOrganizationId = firstOrganization.id;
-
-    const secondOrganization = await rawPrisma.organization.create({
-      data: {
-        name: 'Bootstrap Second Organization',
-        slug: 'bootstrap-second-' + suffix,
-        createdAt: new Date('2026-02-01T00:00:00.000Z'),
-      },
-    });
-    secondOrganizationId = secondOrganization.id;
+    activeOrganizationId = activeOrganization.id;
 
     const inactiveOrganization = await rawPrisma.organization.create({
       data: {
-        name: 'Bootstrap Inactive Organization',
-        slug: 'bootstrap-inactive-' + suffix,
+        name: 'Session Bootstrap Inactive Organization',
+        slug: 'session-bootstrap-inactive-' + suffix,
         isActive: false,
       },
     });
@@ -116,21 +112,20 @@ describe('W1-2 additive login bootstrap foundation', () => {
 
     const activeUser = await rawPrisma.user.create({
       data: {
-        email: activeEmail,
-        passwordHash,
-        firstName: 'Active',
-        lastName: 'Candidate',
-        twoFactorEnabled: true,
+        email: 'session-bootstrap-active-' + suffix + '@example.test',
+        passwordHash: 'session-bootstrap-hash-' + suffix,
+        firstName: 'Session',
+        lastName: 'Active',
       },
     });
     activeUserId = activeUser.id;
 
     const inactiveUser = await rawPrisma.user.create({
       data: {
-        email: inactiveUserEmail,
-        passwordHash,
-        firstName: 'Inactive',
-        lastName: 'User',
+        email: 'session-bootstrap-inactive-user-' + suffix + '@example.test',
+        passwordHash: 'session-bootstrap-hash-' + suffix,
+        firstName: 'Session',
+        lastName: 'Inactive User',
         isActive: false,
       },
     });
@@ -138,20 +133,20 @@ describe('W1-2 additive login bootstrap foundation', () => {
 
     const inactiveMembershipUser = await rawPrisma.user.create({
       data: {
-        email: inactiveMembershipEmail,
-        passwordHash,
-        firstName: 'Inactive',
-        lastName: 'Membership',
+        email: 'session-bootstrap-inactive-membership-' + suffix + '@example.test',
+        passwordHash: 'session-bootstrap-hash-' + suffix,
+        firstName: 'Session',
+        lastName: 'Inactive Membership',
       },
     });
     inactiveMembershipUserId = inactiveMembershipUser.id;
 
     const inactiveOrganizationUser = await rawPrisma.user.create({
       data: {
-        email: inactiveOrganizationEmail,
-        passwordHash,
-        firstName: 'Inactive',
-        lastName: 'Organization',
+        email: 'session-bootstrap-inactive-org-' + suffix + '@example.test',
+        passwordHash: 'session-bootstrap-hash-' + suffix,
+        firstName: 'Session',
+        lastName: 'Inactive Organization',
       },
     });
     inactiveOrganizationUserId = inactiveOrganizationUser.id;
@@ -159,40 +154,109 @@ describe('W1-2 additive login bootstrap foundation', () => {
     await rawPrisma.userOrganization.createMany({
       data: [
         {
-          id: 'bootstrap-membership-first-' + suffix,
+          id: 'session-bootstrap-active-membership-' + suffix,
           userId: activeUserId,
-          organizationId: firstOrganizationId,
-          role: UserRole.VIEWER,
-          createdAt: new Date('2026-01-02T00:00:00.000Z'),
-        },
-        {
-          id: 'bootstrap-membership-second-' + suffix,
-          userId: activeUserId,
-          organizationId: secondOrganizationId,
+          organizationId: activeOrganizationId,
           role: UserRole.ADMIN,
-          createdAt: new Date('2026-02-02T00:00:00.000Z'),
+          canManageUsers: true,
+          canManageRooms: false,
         },
         {
-          id: 'bootstrap-membership-inactive-user-' + suffix,
+          id: 'session-bootstrap-inactive-user-membership-' + suffix,
           userId: inactiveUserId,
-          organizationId: firstOrganizationId,
+          organizationId: activeOrganizationId,
           role: UserRole.VIEWER,
         },
         {
-          id: 'bootstrap-membership-inactive-' + suffix,
+          id: 'session-bootstrap-inactive-membership-' + suffix,
           userId: inactiveMembershipUserId,
-          organizationId: firstOrganizationId,
+          organizationId: activeOrganizationId,
           role: UserRole.VIEWER,
           isActive: false,
         },
         {
-          id: 'bootstrap-membership-inactive-org-' + suffix,
+          id: 'session-bootstrap-inactive-org-membership-' + suffix,
           userId: inactiveOrganizationUserId,
           organizationId: inactiveOrganizationId,
           role: UserRole.VIEWER,
         },
       ],
     });
+
+    const sessions = await Promise.all([
+      rawPrisma.session.create({
+        data: {
+          userId: activeUserId,
+          organizationId: activeOrganizationId,
+          token: activeToken,
+          createdAt: new Date(now - 60_000),
+          lastActiveAt: new Date(now - 30_000),
+          expiresAt: new Date(now + 24 * 60 * 60 * 1000),
+          ipAddress: '192.0.2.10',
+          userAgent: 'integration-secret-metadata',
+        },
+      }),
+      rawPrisma.session.create({
+        data: {
+          userId: activeUserId,
+          organizationId: activeOrganizationId,
+          token: inactiveSessionToken,
+          expiresAt: new Date(now + 24 * 60 * 60 * 1000),
+          isActive: false,
+        },
+      }),
+      rawPrisma.session.create({
+        data: {
+          userId: activeUserId,
+          organizationId: activeOrganizationId,
+          token: idleExpiredToken,
+          createdAt: new Date(now - 2 * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(now - 60_000),
+        },
+      }),
+      rawPrisma.session.create({
+        data: {
+          userId: activeUserId,
+          organizationId: activeOrganizationId,
+          token: absoluteExpiredToken,
+          createdAt: new Date(now - 8 * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(now + 24 * 60 * 60 * 1000),
+        },
+      }),
+      rawPrisma.session.create({
+        data: {
+          userId: activeUserId,
+          organizationId: null,
+          token: unboundToken,
+          expiresAt: new Date(now + 24 * 60 * 60 * 1000),
+        },
+      }),
+      rawPrisma.session.create({
+        data: {
+          userId: inactiveUserId,
+          organizationId: activeOrganizationId,
+          token: inactiveUserToken,
+          expiresAt: new Date(now + 24 * 60 * 60 * 1000),
+        },
+      }),
+      rawPrisma.session.create({
+        data: {
+          userId: inactiveMembershipUserId,
+          organizationId: activeOrganizationId,
+          token: inactiveMembershipToken,
+          expiresAt: new Date(now + 24 * 60 * 60 * 1000),
+        },
+      }),
+      rawPrisma.session.create({
+        data: {
+          userId: inactiveOrganizationUserId,
+          organizationId: inactiveOrganizationId,
+          token: inactiveOrganizationToken,
+          expiresAt: new Date(now + 24 * 60 * 60 * 1000),
+        },
+      }),
+    ]);
+    activeSessionId = sessions[0]!.id;
   });
 
   afterAll(async () => {
@@ -210,16 +274,14 @@ describe('W1-2 additive login bootstrap foundation', () => {
     });
     await rawPrisma.organization.deleteMany({
       where: {
-        id: {
-          in: [firstOrganizationId, secondOrganizationId, inactiveOrganizationId].filter(Boolean),
-        },
+        id: { in: [activeOrganizationId, inactiveOrganizationId].filter(Boolean) },
       },
     });
     await runtimePrisma.$disconnect();
     await rawPrisma.$disconnect();
   });
 
-  it('creates the exact NOLOGIN and NOBYPASSRLS owner posture', async () => {
+  it('preserves the exact owner posture and runtime non-reachability', async () => {
     const [role] = await rawPrisma.$queryRawUnsafe<
       Array<{
         rolcanlogin: boolean;
@@ -245,31 +307,18 @@ describe('W1-2 additive login bootstrap foundation', () => {
       rolcreaterole: false,
       rolreplication: false,
     });
-  });
 
-  it('keeps the owner unreachable from the runtime role', async () => {
     const [reachability] = await rawPrisma.$queryRawUnsafe<Array<{ reachable: boolean }>>(
-      'WITH RECURSIVE membership_closure(roleid) AS (' +
-        ' SELECT membership.roleid FROM pg_catalog.pg_auth_members AS membership' +
-        ' JOIN pg_catalog.pg_roles AS runtime ON runtime.oid = membership.member AND runtime.rolname = $1' +
-        ' UNION' +
-        ' SELECT membership.roleid FROM pg_catalog.pg_auth_members AS membership' +
-        ' JOIN membership_closure AS inherited ON inherited.roleid = membership.member' +
-        ')' +
-        ' SELECT EXISTS (' +
-        ' SELECT 1 FROM membership_closure' +
-        ' JOIN pg_catalog.pg_roles AS reachable_role ON reachable_role.oid = membership_closure.roleid' +
-        ' WHERE reachable_role.rolname = $2' +
-        ') AS reachable',
+      'SELECT pg_catalog.pg_has_role($1, $2, $3) AS reachable',
       RUNTIME_ROLE,
-      OWNER_ROLE
+      OWNER_ROLE,
+      'MEMBER'
     );
-
     expect(reachability?.reachable).toBe(false);
     await expect(runtimePrisma.$executeRawUnsafe('SET ROLE ' + OWNER_ROLE)).rejects.toThrow();
   });
 
-  it('grants only schema usage and SELECT on the four approved bootstrap tables', async () => {
+  it('grants the owner only SELECT on the four approved bootstrap tables', async () => {
     const privileges = await rawPrisma.$queryRawUnsafe<
       Array<{ table_name: string; privilege_type: string }>
     >(
@@ -294,51 +343,7 @@ describe('W1-2 additive login bootstrap foundation', () => {
     expect(schemaPrivileges).toEqual({ can_use: true, can_create: false });
   });
 
-  it('installs only the three active-row owner policies', async () => {
-    const policies = await rawPrisma.$queryRawUnsafe<
-      Array<{
-        tablename: string;
-        policyname: string;
-        permissive: string;
-        roles: string[];
-        cmd: string;
-        qual: string;
-      }>
-    >(
-      'SELECT tablename, policyname, permissive, roles, cmd, qual FROM pg_catalog.pg_policies ' +
-        "WHERE schemaname = 'public' AND policyname LIKE 'bootstrap_owner_%_login_lookup' " +
-        'ORDER BY tablename'
-    );
-
-    expect(policies).toEqual([
-      {
-        tablename: 'organizations',
-        policyname: 'bootstrap_owner_active_organization_login_lookup',
-        permissive: 'RESTRICTIVE',
-        roles: [OWNER_ROLE],
-        cmd: 'SELECT',
-        qual: '("isActive" IS TRUE)',
-      },
-      {
-        tablename: 'user_organizations',
-        policyname: 'bootstrap_owner_active_membership_login_lookup',
-        permissive: 'RESTRICTIVE',
-        roles: [OWNER_ROLE],
-        cmd: 'SELECT',
-        qual: '("isActive" IS TRUE)',
-      },
-      {
-        tablename: 'users',
-        policyname: 'bootstrap_owner_active_user_login_lookup',
-        permissive: 'RESTRICTIVE',
-        roles: [OWNER_ROLE],
-        cmd: 'SELECT',
-        qual: '("isActive" IS TRUE)',
-      },
-    ]);
-  });
-
-  it('installs one exact, static, security-definer function with no runtime ACL', async () => {
+  it('installs one exact static function with no PUBLIC or runtime execution', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         identity_arguments: string;
@@ -370,7 +375,7 @@ describe('W1-2 additive login bootstrap foundation', () => {
 
     expect(functions).toHaveLength(1);
     expect(functions[0]).toMatchObject({
-      identity_arguments: 'input_email text',
+      identity_arguments: 'input_token text',
       owner_name: OWNER_ROLE,
       language_name: 'sql',
       security_definer: true,
@@ -379,9 +384,13 @@ describe('W1-2 additive login bootstrap foundation', () => {
       configuration: ['search_path=pg_catalog'],
       contract_comment: FUNCTION_CONTRACT_COMMENT,
     });
-    expect(functions[0]?.result_type).toContain('user_id text');
-    expect(functions[0]?.result_type).toContain('organization_role text');
+    expect(functions[0]?.result_type).toContain('session_id text');
+    expect(functions[0]?.result_type).toContain('can_manage_rooms boolean');
+    expect(functions[0]?.result_type).not.toContain('token');
+    expect(functions[0]?.result_type).not.toContain('ip_address');
+    expect(functions[0]?.result_type).not.toContain('user_agent');
     expect(functions[0]?.source).not.toMatch(/\bEXECUTE\b/i);
+    expect(functions[0]?.source).not.toContain('passwordHash');
     expect(functions[0]?.source).not.toContain('twoFactorSecret');
     expect(functions[0]?.source).not.toContain('twoFactorBackupCodes');
     expect(
@@ -397,79 +406,82 @@ describe('W1-2 additive login bootstrap foundation', () => {
     const [runtimePrivilege] = await rawPrisma.$queryRawUnsafe<Array<{ can_execute: boolean }>>(
       'SELECT pg_catalog.has_function_privilege($1, $2, ' + "'EXECUTE') AS can_execute",
       RUNTIME_ROLE,
-      BOOTSTRAP_LOGIN_CANDIDATE_FUNCTION
+      BOOTSTRAP_SESSION_RESOLVE_FUNCTION
     );
     expect(runtimePrivilege?.can_execute).toBe(false);
 
     await expect(
       runtimePrisma.$queryRawUnsafe(
         'SELECT * FROM ' + FUNCTION_SIGNATURE.replace('(text)', '($1::text)'),
-        activeEmail
+        activeToken
       )
     ).rejects.toThrow();
   });
 
-  it('resolves only the deterministic minimal active candidate under a temporary exact grant', async () => {
+  it('resolves only the minimal active bound session under a temporary exact grant', async () => {
     await withTemporaryRuntimeExecute(async (repository, tx) => {
       await tx.$executeRawUnsafe(
         "SELECT pg_catalog.set_config('search_path', 'pg_temp, public', true)"
       );
 
-      const candidate = await repository.findLoginCandidate('  ' + activeEmail.toUpperCase() + ' ');
-      expect(candidate).toEqual({
+      const resolved = await repository.resolveSession(activeToken);
+      expect(resolved).toMatchObject({
+        sessionId: activeSessionId,
         userId: activeUserId,
-        email: activeEmail,
-        firstName: 'Active',
-        lastName: 'Candidate',
-        passwordHash,
-        userIsActive: true,
-        twoFactorEnabled: true,
-        organizationId: firstOrganizationId,
-        organizationName: 'Bootstrap First Organization',
-        organizationSlug: 'bootstrap-first-' + suffix,
-        organizationRole: 'VIEWER',
+        organizationId: activeOrganizationId,
+        user: {
+          id: activeUserId,
+          email: 'session-bootstrap-active-' + suffix + '@example.test',
+          firstName: 'Session',
+          lastName: 'Active',
+          isActive: true,
+        },
+        organization: {
+          id: activeOrganizationId,
+          name: 'Session Bootstrap Organization',
+          slug: 'session-bootstrap-' + suffix,
+          role: 'ADMIN',
+          canManageUsers: true,
+          canManageRooms: false,
+        },
       });
-      expect(Object.keys(candidate || {}).sort()).toEqual(
+      expect(resolved?.createdAt).toBeInstanceOf(Date);
+      expect(resolved?.expiresAt).toBeInstanceOf(Date);
+      expect(resolved?.lastActiveAt).toBeInstanceOf(Date);
+      expect(Object.keys(resolved || {}).sort()).toEqual(
         [
-          'email',
-          'firstName',
-          'lastName',
+          'createdAt',
+          'expiresAt',
+          'lastActiveAt',
+          'organization',
           'organizationId',
-          'organizationName',
-          'organizationRole',
-          'organizationSlug',
-          'passwordHash',
-          'twoFactorEnabled',
+          'sessionId',
+          'user',
           'userId',
-          'userIsActive',
         ].sort()
       );
+      expect(resolved).not.toHaveProperty('token');
+      expect(resolved).not.toHaveProperty('ipAddress');
+      expect(resolved).not.toHaveProperty('userAgent');
 
-      await expect(
-        repository.findLoginCandidate('missing-' + suffix + '@example.test')
-      ).resolves.toBeNull();
-      await expect(repository.findLoginCandidate(inactiveUserEmail)).resolves.toBeNull();
-      await expect(repository.findLoginCandidate(inactiveMembershipEmail)).resolves.toBeNull();
-      await expect(repository.findLoginCandidate(inactiveOrganizationEmail)).resolves.toBeNull();
-      await expect(
-        repository.findLoginCandidate('\' OR candidate_user."isActive" IS TRUE --')
-      ).resolves.toBeNull();
+      await expect(repository.resolveSession(token())).resolves.toBeNull();
+      await expect(repository.resolveSession(inactiveSessionToken)).resolves.toBeNull();
+      await expect(repository.resolveSession(idleExpiredToken)).resolves.toBeNull();
+      await expect(repository.resolveSession(absoluteExpiredToken)).resolves.toBeNull();
+      await expect(repository.resolveSession(unboundToken)).resolves.toBeNull();
+      await expect(repository.resolveSession(inactiveUserToken)).resolves.toBeNull();
+      await expect(repository.resolveSession(inactiveMembershipToken)).resolves.toBeNull();
+      await expect(repository.resolveSession(inactiveOrganizationToken)).resolves.toBeNull();
+
+      const hostileRows = await tx.$queryRawUnsafe<unknown[]>(
+        'SELECT * FROM public.bootstrap_session_resolve_v1($1::text)',
+        '\' OR application_session."isActive" IS TRUE --'
+      );
+      expect(hostileRows).toEqual([]);
     });
 
     expect(await functionExecuteAclRows()).toEqual([
       { grantee_name: OWNER_ROLE, privilege_type: 'EXECUTE' },
     ]);
-  });
-
-  it('enforces active-row policies when operating directly as the NOLOGIN owner', async () => {
-    await rawPrisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe('SET LOCAL ROLE ' + OWNER_ROLE);
-      const users = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-        'SELECT id FROM public.users WHERE id = ANY($1::text[]) ORDER BY id',
-        [activeUserId, inactiveUserId]
-      );
-      expect(users).toEqual([{ id: activeUserId }]);
-      await tx.$executeRawUnsafe('RESET ROLE');
-    });
   });
 });
