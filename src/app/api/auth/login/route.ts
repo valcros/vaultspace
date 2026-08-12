@@ -9,8 +9,9 @@ import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
 import { generateTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
+import { bootstrapRepository } from '@/lib/auth/bootstrapRepository';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
-import { bootstrapDb, withOrgContext } from '@/lib/db';
+import { withOrgContext } from '@/lib/db';
 import { getRequestContext, rateLimiters, setSessionCookie } from '@/lib/middleware';
 import { RateLimitError } from '@/lib/errors';
 import { SESSION_CONFIG } from '@/lib/constants';
@@ -44,58 +45,38 @@ export async function POST(request: NextRequest) {
           { status: 429 }
         );
       }
-      console.error('[LoginAPI] Rate limiter unavailable:', error);
+      console.error(
+        JSON.stringify({
+          component: 'login-api',
+          outcome: 'rate-limiter-unavailable',
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        })
+      );
       return NextResponse.json({ error: 'Failed to sign in' }, { status: 503 });
     }
 
-    // Find user with their organizations. Uses bootstrapDb because we don't
-    // know the user's org yet, so RLS can't be scoped — the admin connection
-    // bypasses RLS for this single read. All subsequent writes happen inside
-    // withOrgContext on the regular `db` client below.
-    const user = await bootstrapDb.user.findUnique({
-      where: { email: email.toLowerCase() },
-      include: {
-        organizations: {
-          where: { isActive: true },
-          include: {
-            organization: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                isActive: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'asc' },
-          take: 1,
-        },
-      },
-    });
+    // Resolve the pre-tenant login candidate through the exact, reviewed
+    // bootstrap function. A null result is a neutral denial. Errors fail
+    // closed; this route never falls back to the admin Prisma client.
+    const candidate = await bootstrapRepository.findLoginCandidate(email);
 
-    if (!user || !user.isActive) {
+    if (!candidate) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
     // Verify password
-    const passwordValid = await bcrypt.compare(password, user.passwordHash);
+    const passwordValid = await bcrypt.compare(password, candidate.passwordHash);
     if (!passwordValid) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
     // Check if 2FA is enabled - if so, return a temp token instead of creating a session
-    if (user.twoFactorEnabled) {
-      const tempToken = generateTwoFactorTempToken(user.id);
+    if (candidate.twoFactorEnabled) {
+      const tempToken = generateTwoFactorTempToken(candidate.userId);
       return NextResponse.json({
         requiresTwoFactor: true,
         tempToken,
       });
-    }
-
-    // Get default organization
-    const userOrg = user.organizations[0];
-    if (!userOrg || !userOrg.organization.isActive) {
-      return NextResponse.json({ error: 'No active organization found' }, { status: 403 });
     }
 
     // Generate session token
@@ -107,11 +88,11 @@ export async function POST(request: NextRequest) {
 
     // Create the session and stamp the lastLoginAt atomically inside an org
     // context so RLS policies on the users table can verify membership.
-    const authSession = await withOrgContext(userOrg.organization.id, async (tx) => {
+    const authSession = await withOrgContext(candidate.organizationId, async (tx) => {
       const createdSession = await tx.session.create({
         data: {
-          userId: user.id,
-          organizationId: userOrg.organization.id,
+          userId: candidate.userId,
+          organizationId: candidate.organizationId,
           token: sessionToken,
           expiresAt,
           ipAddress,
@@ -120,7 +101,7 @@ export async function POST(request: NextRequest) {
       });
 
       await tx.user.update({
-        where: { id: user.id },
+        where: { id: candidate.userId },
         data: { lastLoginAt: new Date() },
       });
 
@@ -131,11 +112,11 @@ export async function POST(request: NextRequest) {
     await setSessionCookie(sessionToken, expiresAt);
 
     await captureAccessAudit({
-      organizationId: userOrg.organization.id,
+      organizationId: candidate.organizationId,
       eventType: 'USER_LOGIN',
-      actorType: userOrg.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
-      actorId: user.id,
-      actorEmail: user.email,
+      actorType: candidate.organizationRole === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+      actorId: candidate.userId,
+      actorEmail: candidate.email,
       requestId: reqContext.requestId,
       description: 'User signed in',
       metadata: {
@@ -148,15 +129,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        id: candidate.userId,
+        email: candidate.email,
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
       },
       organization: {
-        id: userOrg.organization.id,
-        name: userOrg.organization.name,
-        slug: userOrg.organization.slug,
+        id: candidate.organizationId,
+        name: candidate.organizationName,
+        slug: candidate.organizationSlug,
       },
     });
   } catch (error) {
@@ -167,7 +148,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error('[LoginAPI] Error:', error);
+    console.error(
+      JSON.stringify({
+        component: 'login-api',
+        outcome: 'failed',
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      })
+    );
     return NextResponse.json({ error: 'Failed to sign in' }, { status: 500 });
   }
 }

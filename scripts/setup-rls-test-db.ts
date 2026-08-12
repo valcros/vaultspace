@@ -14,6 +14,7 @@ import {
 } from '../src/lib/integrations/providerInboxDatabasePrivileges';
 
 const APP_ROLE = 'vaultspace_app';
+const LOGIN_CANDIDATE_FUNCTION = 'public.bootstrap_login_candidate_v1(text)';
 const REQUIRED_ALLOW_FLAG = 'true';
 
 function requireEnv(name: string): string {
@@ -134,6 +135,51 @@ async function main() {
     await admin.$executeRawUnsafe(`REVOKE UPDATE, DELETE ON events FROM ${APP_ROLE};`);
     await revokeAndVerifyProviderInboxAccess(admin, APP_ROLE);
     await revokeAndVerifyPasswordResetProviderCorrelationAccess(admin, APP_ROLE);
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${LOGIN_CANDIDATE_FUNCTION} TO ${APP_ROLE};`
+    );
+
+    const [bootstrapGrants] = await admin.$queryRawUnsafe<
+      Array<{
+        login_execute: boolean;
+        session_execute: boolean;
+        organization_execute: boolean;
+        unexpected_login_acl_count: bigint;
+      }>
+    >(
+      `SELECT
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${LOGIN_CANDIDATE_FUNCTION}', 'EXECUTE'
+         ) AS login_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', 'public.bootstrap_session_resolve_v1(text)', 'EXECUTE'
+         ) AS session_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', 'public.bootstrap_organization_resolve_v1(text, text)', 'EXECUTE'
+         ) AS organization_execute,
+         (
+           SELECT pg_catalog.count(*)
+           FROM pg_catalog.pg_proc AS function
+           CROSS JOIN LATERAL pg_catalog.aclexplode(
+             COALESCE(function.proacl, pg_catalog.acldefault('f', function.proowner))
+           ) AS acl
+           WHERE function.oid = pg_catalog.to_regprocedure('${LOGIN_CANDIDATE_FUNCTION}')
+             AND acl.privilege_type = 'EXECUTE'
+             AND acl.grantee NOT IN (
+               function.proowner,
+               (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = '${APP_ROLE}')
+             )
+         ) AS unexpected_login_acl_count`
+    );
+
+    if (
+      !bootstrapGrants?.login_execute ||
+      bootstrapGrants.session_execute ||
+      bootstrapGrants.organization_execute ||
+      Number(bootstrapGrants.unexpected_login_acl_count) !== 0
+    ) {
+      throw new Error('runtime bootstrap function grants must match the routed login family only');
+    }
 
     const verification = await admin.$queryRawUnsafe<
       Array<{ rolname: string; rolbypassrls: boolean; rolsuper: boolean }>

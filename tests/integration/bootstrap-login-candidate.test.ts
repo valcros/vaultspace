@@ -1,18 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { Prisma, PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient, UserRole } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   BOOTSTRAP_LOGIN_CANDIDATE_FUNCTION,
   BootstrapRepository,
-  type BootstrapQueryClient,
 } from '@/lib/auth/bootstrapRepository';
 
 const OWNER_ROLE = 'vaultspace_bootstrap_owner';
 const RUNTIME_ROLE = 'vaultspace_app';
 const FUNCTION_NAME = 'bootstrap_login_candidate_v1';
-const FUNCTION_SIGNATURE = 'public.bootstrap_login_candidate_v1(text)';
 const FUNCTION_CONTRACT_COMMENT = 'vaultspace-contract:w1-2-login-candidate-v1';
 const FUNCTION_SOURCE_SHA256 = '72b12f72ab12ca301cce0b168463dd294df01fa2c0ca1e07b8668643b267db38';
 
@@ -64,28 +62,7 @@ async function functionExecuteAclRows() {
   );
 }
 
-async function withTemporaryRuntimeExecute<T>(
-  operation: (repository: BootstrapRepository, tx: Prisma.TransactionClient) => Promise<T>
-): Promise<T> {
-  return rawPrisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      'GRANT EXECUTE ON FUNCTION ' + FUNCTION_SIGNATURE + ' TO ' + RUNTIME_ROLE
-    );
-    await tx.$executeRawUnsafe('SET LOCAL ROLE ' + RUNTIME_ROLE);
-
-    try {
-      const repository = new BootstrapRepository(tx as unknown as BootstrapQueryClient);
-      return await operation(repository, tx);
-    } finally {
-      await tx.$executeRawUnsafe('RESET ROLE');
-      await tx.$executeRawUnsafe(
-        'REVOKE EXECUTE ON FUNCTION ' + FUNCTION_SIGNATURE + ' FROM ' + RUNTIME_ROLE
-      );
-    }
-  });
-}
-
-describe('W1-2 additive login bootstrap foundation', () => {
+describe('W1-2 routed login bootstrap candidate', () => {
   beforeAll(async () => {
     const firstOrganization = await rawPrisma.organization.create({
       data: {
@@ -338,7 +315,7 @@ describe('W1-2 additive login bootstrap foundation', () => {
     ]);
   });
 
-  it('installs one exact, static, security-definer function with no runtime ACL', async () => {
+  it('installs one exact static function with only owner and runtime execution', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         identity_arguments: string;
@@ -391,6 +368,7 @@ describe('W1-2 additive login bootstrap foundation', () => {
     ).toBe(FUNCTION_SOURCE_SHA256);
 
     expect(await functionExecuteAclRows()).toEqual([
+      { grantee_name: RUNTIME_ROLE, privilege_type: 'EXECUTE' },
       { grantee_name: OWNER_ROLE, privilege_type: 'EXECUTE' },
     ]);
 
@@ -399,64 +377,70 @@ describe('W1-2 additive login bootstrap foundation', () => {
       RUNTIME_ROLE,
       BOOTSTRAP_LOGIN_CANDIDATE_FUNCTION
     );
-    expect(runtimePrivilege?.can_execute).toBe(false);
+    expect(runtimePrivilege?.can_execute).toBe(true);
 
-    await expect(
-      runtimePrisma.$queryRawUnsafe(
-        'SELECT * FROM ' + FUNCTION_SIGNATURE.replace('(text)', '($1::text)'),
-        activeEmail
-      )
-    ).rejects.toThrow();
+    const [otherPrivileges] = await rawPrisma.$queryRawUnsafe<
+      Array<{ session_execute: boolean; organization_execute: boolean }>
+    >(
+      `SELECT
+         pg_catalog.has_function_privilege(
+           $1, 'public.bootstrap_session_resolve_v1(text)', 'EXECUTE'
+         ) AS session_execute,
+         pg_catalog.has_function_privilege(
+           $1, 'public.bootstrap_organization_resolve_v1(text, text)', 'EXECUTE'
+         ) AS organization_execute`,
+      RUNTIME_ROLE
+    );
+    expect(otherPrivileges).toEqual({
+      session_execute: false,
+      organization_execute: false,
+    });
   });
 
-  it('resolves only the deterministic minimal active candidate under a temporary exact grant', async () => {
-    await withTemporaryRuntimeExecute(async (repository, tx) => {
-      await tx.$executeRawUnsafe(
-        "SELECT pg_catalog.set_config('search_path', 'pg_temp, public', true)"
-      );
-
-      const candidate = await repository.findLoginCandidate('  ' + activeEmail.toUpperCase() + ' ');
-      expect(candidate).toEqual({
-        userId: activeUserId,
-        email: activeEmail,
-        firstName: 'Active',
-        lastName: 'Candidate',
-        passwordHash,
-        userIsActive: true,
-        twoFactorEnabled: true,
-        organizationId: firstOrganizationId,
-        organizationName: 'Bootstrap First Organization',
-        organizationSlug: 'bootstrap-first-' + suffix,
-        organizationRole: 'VIEWER',
-      });
-      expect(Object.keys(candidate || {}).sort()).toEqual(
-        [
-          'email',
-          'firstName',
-          'lastName',
-          'organizationId',
-          'organizationName',
-          'organizationRole',
-          'organizationSlug',
-          'passwordHash',
-          'twoFactorEnabled',
-          'userId',
-          'userIsActive',
-        ].sort()
-      );
-
-      await expect(
-        repository.findLoginCandidate('missing-' + suffix + '@example.test')
-      ).resolves.toBeNull();
-      await expect(repository.findLoginCandidate(inactiveUserEmail)).resolves.toBeNull();
-      await expect(repository.findLoginCandidate(inactiveMembershipEmail)).resolves.toBeNull();
-      await expect(repository.findLoginCandidate(inactiveOrganizationEmail)).resolves.toBeNull();
-      await expect(
-        repository.findLoginCandidate('\' OR candidate_user."isActive" IS TRUE --')
-      ).resolves.toBeNull();
+  it('resolves only the deterministic minimal active candidate as the runtime role', async () => {
+    const repository = new BootstrapRepository(runtimePrisma);
+    const candidate = await repository.findLoginCandidate('  ' + activeEmail.toUpperCase() + ' ');
+    expect(candidate).toEqual({
+      userId: activeUserId,
+      email: activeEmail,
+      firstName: 'Active',
+      lastName: 'Candidate',
+      passwordHash,
+      userIsActive: true,
+      twoFactorEnabled: true,
+      organizationId: firstOrganizationId,
+      organizationName: 'Bootstrap First Organization',
+      organizationSlug: 'bootstrap-first-' + suffix,
+      organizationRole: 'VIEWER',
     });
+    expect(Object.keys(candidate || {}).sort()).toEqual(
+      [
+        'email',
+        'firstName',
+        'lastName',
+        'organizationId',
+        'organizationName',
+        'organizationRole',
+        'organizationSlug',
+        'passwordHash',
+        'twoFactorEnabled',
+        'userId',
+        'userIsActive',
+      ].sort()
+    );
+
+    await expect(
+      repository.findLoginCandidate('missing-' + suffix + '@example.test')
+    ).resolves.toBeNull();
+    await expect(repository.findLoginCandidate(inactiveUserEmail)).resolves.toBeNull();
+    await expect(repository.findLoginCandidate(inactiveMembershipEmail)).resolves.toBeNull();
+    await expect(repository.findLoginCandidate(inactiveOrganizationEmail)).resolves.toBeNull();
+    await expect(
+      repository.findLoginCandidate('\' OR candidate_user."isActive" IS TRUE --')
+    ).resolves.toBeNull();
 
     expect(await functionExecuteAclRows()).toEqual([
+      { grantee_name: RUNTIME_ROLE, privilege_type: 'EXECUTE' },
       { grantee_name: OWNER_ROLE, privilege_type: 'EXECUTE' },
     ]);
   });
