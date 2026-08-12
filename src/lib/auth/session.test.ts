@@ -3,17 +3,16 @@ import { AuthenticationError } from '../errors';
 
 const mockSessionFindMany = vi.fn();
 const mockSessionUpdateMany = vi.fn();
-const mockSessionFindUnique = vi.fn();
 const mockCacheDelete = vi.fn();
 const mockCacheGet = vi.fn();
+const mockCacheSet = vi.fn();
 const mockSessionUpdate = vi.fn();
-const mockUserOrganizationFindUnique = vi.fn();
+const mockResolveSession = vi.fn();
 
 vi.mock('@/lib/db', () => {
   const sessionClient = {
     session: {
       findMany: (...args: unknown[]) => mockSessionFindMany(...args),
-      findUnique: (...args: unknown[]) => mockSessionFindUnique(...args),
       update: (...args: unknown[]) => mockSessionUpdate(...args),
       updateMany: (...args: unknown[]) => mockSessionUpdateMany(...args),
     },
@@ -21,22 +20,22 @@ vi.mock('@/lib/db', () => {
   return {
     db: sessionClient,
     bootstrapDb: sessionClient,
-    withOrgContext: vi.fn(async (_orgId, callback) => {
-      const tx = {
-        userOrganization: {
-          findUnique: (...args: unknown[]) => mockUserOrganizationFindUnique(...args),
-        },
-      };
-      return callback(tx as Parameters<typeof callback>[0]);
-    }),
   };
 });
+
+vi.mock('./bootstrapRepository', () => ({
+  BootstrapRepository: class {
+    resolveSession(token: string) {
+      return mockResolveSession(token);
+    }
+  },
+}));
 
 vi.mock('@/providers', () => ({
   getProviders: () => ({
     cache: {
       delete: mockCacheDelete,
-      set: vi.fn(),
+      set: mockCacheSet,
       get: mockCacheGet,
     },
   }),
@@ -50,6 +49,8 @@ import {
 } from './session';
 
 describe('auth session invalidation', () => {
+  const validSessionToken = 's'.repeat(43);
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -106,28 +107,17 @@ describe('auth session invalidation', () => {
     expect(JSON.stringify(log)).not.toContain('token-1');
   });
 
-  it('does not trust stale cached sessions once the database session is inactive', async () => {
-    mockCacheGet.mockResolvedValue({
-      sessionId: 'session-1',
-      userId: 'user-1',
-      organizationId: 'org-1',
-    });
-    mockSessionFindUnique.mockResolvedValue({
-      id: 'session-1',
-      isActive: false,
-    });
+  it('does not trust a cached session once the constrained resolver rejects it', async () => {
+    mockCacheGet.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(null);
 
-    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
-    expect(mockSessionFindUnique).toHaveBeenCalledWith({
-      where: { token: 'session-token' },
-      include: {
-        user: true,
-      },
-    });
+    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 });
 
 describe('validateSession read-through cache', () => {
+  const validSessionToken = 's'.repeat(43);
   const futureDate = () => new Date(Date.now() + 60 * 60 * 1000);
   const recentDate = () => new Date(Date.now() - 60 * 60 * 1000);
 
@@ -157,59 +147,58 @@ describe('validateSession read-through cache', () => {
     },
   });
 
+  const liveProjection = () => {
+    const snapshot = completeSnapshot().data;
+    return {
+      sessionId: snapshot.sessionId,
+      userId: snapshot.userId,
+      organizationId: snapshot.organizationId,
+      createdAt: new Date(snapshot.issuedAt),
+      expiresAt: new Date(snapshot.expiresAt),
+      lastActiveAt: new Date(),
+      user: snapshot.user,
+      organization: snapshot.organization,
+    };
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns a valid cached snapshot only after verifying live database state', async () => {
-    mockCacheGet.mockResolvedValue(completeSnapshot());
-    mockSessionFindUnique.mockResolvedValue({
-      isActive: true,
-      userId: 'user-1',
-      organizationId: 'org-1',
-      expiresAt: futureDate(),
-    });
+  it('returns a valid cached snapshot only after an exact constrained live resolution', async () => {
+    const cached = completeSnapshot();
+    const projection = liveProjection();
+    projection.expiresAt = new Date(cached.data.expiresAt);
+    projection.createdAt = new Date(cached.data.issuedAt);
+    mockCacheGet.mockResolvedValue(cached);
+    mockResolveSession.mockResolvedValue(projection);
 
-    const result = await validateSession('session-token');
+    const result = await validateSession(validSessionToken);
 
     expect(result.userId).toBe('user-1');
     expect(result.organization.role).toBe('ADMIN');
     expect(result.expiresAt).toBeInstanceOf(Date);
-    expect(mockSessionFindUnique).toHaveBeenCalledWith({
-      where: { id: 'session-1' },
-      select: {
-        isActive: true,
-        userId: true,
-        organizationId: true,
-        expiresAt: true,
-      },
-    });
-    expect(mockUserOrganizationFindUnique).not.toHaveBeenCalled();
+    expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
+    expect(mockCacheSet).not.toHaveBeenCalled();
   });
 
-  it('rejects a complete cached snapshot after the database session is revoked', async () => {
+  it('rejects a complete cached snapshot after the constrained resolver reports revocation', async () => {
     mockCacheGet.mockResolvedValue(completeSnapshot());
-    mockSessionFindUnique.mockResolvedValueOnce({
-      isActive: false,
-      userId: 'user-1',
-      organizationId: 'org-1',
-      expiresAt: futureDate(),
-    });
-    mockSessionFindUnique.mockResolvedValueOnce(null);
+    mockResolveSession.mockResolvedValue(null);
     mockCacheDelete.mockResolvedValue(undefined);
 
-    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
-    expect(mockCacheDelete).toHaveBeenCalledWith('session:session-token');
+    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockCacheDelete).toHaveBeenCalledWith(`session:${validSessionToken}`);
   });
 
   it('falls through to full DB validation on a version mismatch', async () => {
     const stale = completeSnapshot();
     stale.v = 0;
     mockCacheGet.mockResolvedValue(stale);
-    mockSessionFindUnique.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(null);
 
-    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
-    expect(mockSessionFindUnique).toHaveBeenCalled();
+    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
   it('falls through to full DB validation when the cached snapshot is incomplete', async () => {
@@ -217,37 +206,103 @@ describe('validateSession read-through cache', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (partial.data as any).organization;
     mockCacheGet.mockResolvedValue(partial);
-    mockSessionFindUnique.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(null);
 
-    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
-    expect(mockSessionFindUnique).toHaveBeenCalled();
+    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
   it('falls through to the DB path when the cached snapshot is expired', async () => {
     const expired = completeSnapshot();
     expired.data.expiresAt = recentDate().toISOString();
     mockCacheGet.mockResolvedValue(expired);
-    mockSessionFindUnique.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(null);
 
-    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
-    expect(mockSessionFindUnique).toHaveBeenCalled();
+    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
   it('falls through to the DB path when the cached user is inactive', async () => {
     const disabled = completeSnapshot();
     disabled.data.user.isActive = false;
     mockCacheGet.mockResolvedValue(disabled);
-    mockSessionFindUnique.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(null);
 
-    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
-    expect(mockSessionFindUnique).toHaveBeenCalled();
+    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
   it('validates against the database when the cache read itself fails', async () => {
     mockCacheGet.mockRejectedValue(new Error('redis down'));
-    mockSessionFindUnique.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(null);
 
-    await expect(validateSession('session-token')).rejects.toBeInstanceOf(AuthenticationError);
-    expect(mockSessionFindUnique).toHaveBeenCalled();
+    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
+  });
+
+  it('caches a complete projection after an uncached constrained resolution', async () => {
+    const projection = liveProjection();
+    mockCacheGet.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(projection);
+    mockCacheSet.mockResolvedValue(undefined);
+
+    await expect(validateSession(validSessionToken)).resolves.toMatchObject({
+      sessionId: projection.sessionId,
+      userId: projection.userId,
+      organizationId: projection.organizationId,
+    });
+    expect(mockCacheSet).toHaveBeenCalledWith(
+      `session:${validSessionToken}`,
+      {
+        v: 1,
+        data: expect.objectContaining({
+          sessionId: projection.sessionId,
+          userId: projection.userId,
+          organizationId: projection.organizationId,
+        }),
+      },
+      60
+    );
+  });
+
+  it('replaces a cached projection when the live membership projection changes', async () => {
+    const cached = completeSnapshot();
+    const projection = liveProjection();
+    projection.expiresAt = new Date(cached.data.expiresAt);
+    projection.createdAt = new Date(cached.data.issuedAt);
+    projection.organization = {
+      ...projection.organization,
+      role: 'VIEWER',
+      canManageUsers: false,
+    };
+    mockCacheGet.mockResolvedValue(cached);
+    mockResolveSession.mockResolvedValue(projection);
+    mockCacheDelete.mockResolvedValue(undefined);
+    mockCacheSet.mockResolvedValue(undefined);
+
+    const result = await validateSession(validSessionToken);
+
+    expect(result.organization.role).toBe('VIEWER');
+    expect(mockCacheDelete).toHaveBeenCalledWith(`session:${validSessionToken}`);
+    expect(mockCacheSet).toHaveBeenCalledOnce();
+  });
+
+  it('retains the throttled activity refresh on an old constrained projection', async () => {
+    const projection = liveProjection();
+    projection.lastActiveAt = new Date(Date.now() - 6 * 60 * 1000);
+    mockCacheGet.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(projection);
+    mockCacheSet.mockResolvedValue(undefined);
+    mockSessionUpdate.mockResolvedValue({});
+
+    await validateSession(validSessionToken);
+
+    expect(mockSessionUpdate).toHaveBeenCalledWith({
+      where: { id: projection.sessionId },
+      data: {
+        lastActiveAt: expect.any(Date),
+        expiresAt: expect.any(Date),
+      },
+    });
   });
 });
