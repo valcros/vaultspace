@@ -181,6 +181,39 @@ describe('POST /api/auth/login', () => {
     expect(mockCompare).not.toHaveBeenCalled();
   });
 
+  it('logs only categorical fields when the rate limiter is unavailable', async () => {
+    process.env['SESSION_SECRET'] = 'test-session-secret';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockLoginByEmail.mockRejectedValueOnce(new Error('sensitive provider detail'));
+
+    try {
+      const response = await POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'user@example.com', password: 'password123' }),
+        })
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(body.error).toBe('Failed to sign in');
+      expect(mockFindLoginCandidate).not.toHaveBeenCalled();
+      expect(mockCompare).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledOnce();
+
+      const logged = consoleError.mock.calls[0]?.[0];
+      expect(typeof logged).toBe('string');
+      expect(JSON.parse(String(logged))).toEqual({
+        component: 'login-api',
+        outcome: 'rate-limiter-unavailable',
+        errorName: 'Error',
+      });
+      expect(String(logged)).not.toContain('sensitive provider detail');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('keeps a successful login available when the bounded audit write fails', async () => {
     process.env['SESSION_SECRET'] = 'test-session-secret';
     mockFindLoginCandidate.mockResolvedValue({

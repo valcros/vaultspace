@@ -45,7 +45,13 @@ export async function POST(request: NextRequest) {
           { status: 429 }
         );
       }
-      console.error('[LoginAPI] Rate limiter unavailable:', error);
+      console.error(
+        JSON.stringify({
+          component: 'login-api',
+          outcome: 'rate-limiter-unavailable',
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        })
+      );
       return NextResponse.json({ error: 'Failed to sign in' }, { status: 503 });
     }
 

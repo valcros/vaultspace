@@ -38,13 +38,14 @@ test, or Brightside access occurred during this preparation.
 The focused route and repository suite passed:
 
 - test files: 2 passed;
-- tests: 30 passed after the final route-source assertion was added; and
+- tests: 31 passed after the final route-source and categorical-logging assertions were added; and
 - failures: 0.
 
 Coverage includes:
 
 - static proof that the login route calls the narrow repository and contains no `bootstrapDb`;
 - rate-limit denial before candidate lookup or bcrypt;
+- rate-limiter provider failure logs categorical fields without provider error detail;
 - active candidate mapping;
 - signed 2FA temporary-token response;
 - successful password-login session creation;
@@ -208,9 +209,9 @@ The login route performs the same sequence with one bounded lookup substitution:
 9. Capture the bounded login audit event.
 10. Return the established user and organization projection.
 
-The generic error log was tightened to emit only component, categorical outcome, and error class
-name. It does not emit email, password, password hash, candidate row, query, token, or database
-error detail.
+The rate-limiter-unavailable and generic error logs were tightened to emit only component,
+categorical outcome, and error class name. They do not emit email, password, password hash,
+candidate row, query, token, provider detail, or database error detail.
 
 The function contract intentionally collapses unknown user, inactive user, inactive membership,
 and inactive organization into the same no-row result. The route maps that result to the existing
