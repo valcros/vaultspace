@@ -41,6 +41,19 @@ function sessionRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function organizationRow(overrides: Record<string, unknown> = {}) {
+  return {
+    organization_id: 'org-1',
+    organization_name: 'Test Organization',
+    organization_slug: 'test-organization',
+    organization_custom_domain: 'data-room.example.test',
+    organization_logo_url: 'https://assets.example.test/logo.png',
+    organization_primary_color: '#2563eb',
+    organization_favicon_url: null,
+    ...overrides,
+  };
+}
+
 function repositoryWithRows(rows: unknown[]) {
   const queryRaw = vi.fn().mockResolvedValue(rows);
   const repository = new BootstrapRepository({
@@ -212,5 +225,106 @@ describe('BootstrapRepository session resolve foundation', () => {
     ]);
 
     await expect(repository.resolveSession(token)).rejects.toThrow('BOOTSTRAP_SESSION_ROW_INVALID');
+  });
+});
+
+describe('BootstrapRepository organization resolve foundation', () => {
+  const expectedProjection = {
+    id: 'org-1',
+    name: 'Test Organization',
+    slug: 'test-organization',
+    customDomain: 'data-room.example.test',
+    logoUrl: 'https://assets.example.test/logo.png',
+    primaryColor: '#2563eb',
+    faviconUrl: null,
+  };
+
+  it('uses a parameterized exact slug lookup and maps only public organization fields', async () => {
+    const { repository, queryRaw } = repositoryWithRows([organizationRow()]);
+
+    await expect(repository.resolveOrganizationBySlug('  TEST-ORGANIZATION ')).resolves.toEqual(
+      expectedProjection
+    );
+
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const query = queryRaw.mock.calls[0]?.[0] as {
+      strings?: string[];
+      values?: unknown[];
+    };
+    expect(query.values).toEqual(['SLUG', 'test-organization']);
+    expect(query.strings?.join('')).toContain(
+      'FROM public.bootstrap_organization_resolve_v1(\n          ::text,\n          ::text\n        )'
+    );
+    expect(query.strings?.join('')).not.toContain('test-organization');
+  });
+
+  it('uses a parameterized exact custom-domain lookup', async () => {
+    const { repository, queryRaw } = repositoryWithRows([organizationRow()]);
+
+    await expect(
+      repository.resolveOrganizationByCustomDomain('  DATA-ROOM.EXAMPLE.TEST ')
+    ).resolves.toEqual(expectedProjection);
+
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const query = queryRaw.mock.calls[0]?.[0] as { values?: unknown[] };
+    expect(query.values).toEqual(['CUSTOM_DOMAIN', 'data-room.example.test']);
+  });
+
+  it('returns null when no active organization matches', async () => {
+    const { repository } = repositoryWithRows([]);
+    await expect(repository.resolveOrganizationBySlug('missing-org')).resolves.toBeNull();
+    await expect(
+      repository.resolveOrganizationByCustomDomain('missing.example.test')
+    ).resolves.toBeNull();
+  });
+
+  it('rejects malformed slugs without querying PostgreSQL', async () => {
+    const { repository, queryRaw } = repositoryWithRows([]);
+
+    await expect(repository.resolveOrganizationBySlug('')).resolves.toBeNull();
+    await expect(repository.resolveOrganizationBySlug('bad.slug')).resolves.toBeNull();
+    await expect(repository.resolveOrganizationBySlug('bad slug')).resolves.toBeNull();
+    await expect(repository.resolveOrganizationBySlug('x'.repeat(101))).resolves.toBeNull();
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed custom domains without querying PostgreSQL', async () => {
+    const { repository, queryRaw } = repositoryWithRows([]);
+
+    await expect(repository.resolveOrganizationByCustomDomain('')).resolves.toBeNull();
+    await expect(repository.resolveOrganizationByCustomDomain('localhost')).resolves.toBeNull();
+    await expect(
+      repository.resolveOrganizationByCustomDomain('https://data-room.example.test')
+    ).resolves.toBeNull();
+    await expect(
+      repository.resolveOrganizationByCustomDomain('data-room.example.test:443')
+    ).resolves.toBeNull();
+    await expect(
+      repository.resolveOrganizationByCustomDomain('data-room..example.test')
+    ).resolves.toBeNull();
+    await expect(
+      repository.resolveOrganizationByCustomDomain('x'.repeat(64) + '.example.test')
+    ).resolves.toBeNull();
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on an unexpected duplicate projection', async () => {
+    const { repository } = repositoryWithRows([organizationRow(), organizationRow()]);
+    await expect(repository.resolveOrganizationBySlug('test-organization')).rejects.toThrow(
+      'BOOTSTRAP_ORGANIZATION_DUPLICATE'
+    );
+  });
+
+  it('fails closed on an incomplete or malformed projection', async () => {
+    const { repository } = repositoryWithRows([
+      organizationRow({
+        organization_slug: 'INVALID.SLUG',
+        organization_primary_color: 'blue',
+      }),
+    ]);
+
+    await expect(repository.resolveOrganizationBySlug('test-organization')).rejects.toThrow(
+      'BOOTSTRAP_ORGANIZATION_ROW_INVALID'
+    );
   });
 });
