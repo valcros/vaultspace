@@ -5,16 +5,14 @@
  * Used by Next.js middleware to set organization context.
  *
  * PRE-RLS BOOTSTRAP: resolves which organization a request belongs to from the
- * domain/subdomain BEFORE any org context exists. It MUST use bootstrapDb (the
- * admin, BYPASSRLS connection). The regular `db` pool can carry a stale,
- * non-NULL `app.current_org_id` from a prior request; `org_bootstrap_lookup`
- * only permits the read when that setting IS NULL, so a poisoned connection
- * resolves to nothing and the subdomain fails to route.
+ * domain/subdomain BEFORE any org context exists. The ordinary runtime pool
+ * calls one reviewed SECURITY DEFINER function through BootstrapRepository, so
+ * stale tenant settings cannot authorize or suppress this public projection.
  *
  * Security: Only minimal public fields (id, slug) are selected. Active check enforced.
  */
 
-import { bootstrapDb } from '@/lib/db';
+import { bootstrapRepository } from '@/lib/auth/bootstrapRepository';
 
 export interface CustomDomainResult {
   organizationId: string;
@@ -48,17 +46,7 @@ export async function resolveCustomDomain(hostname: string): Promise<CustomDomai
   }
 
   try {
-    // Look up organization by custom domain
-    const organization = await bootstrapDb.organization.findFirst({
-      where: {
-        customDomain: domain,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        slug: true,
-      },
-    });
+    const organization = await bootstrapRepository.resolveOrganizationByCustomDomain(domain);
 
     if (!organization) {
       return null;
@@ -69,8 +57,14 @@ export async function resolveCustomDomain(hostname: string): Promise<CustomDomai
       organizationSlug: organization.slug,
       isCustomDomain: true,
     };
-  } catch (error) {
-    console.error('[CustomDomain] Resolution error:', error);
+  } catch {
+    console.error(
+      JSON.stringify({
+        component: 'organization-resolution',
+        event: 'custom_domain_lookup_failed',
+        outcome: 'denied',
+      })
+    );
     return null;
   }
 }
@@ -104,16 +98,7 @@ export async function resolveSubdomain(hostname: string): Promise<CustomDomainRe
   }
 
   try {
-    const organization = await bootstrapDb.organization.findFirst({
-      where: {
-        slug: subdomain,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        slug: true,
-      },
-    });
+    const organization = await bootstrapRepository.resolveOrganizationBySlug(subdomain);
 
     if (!organization) {
       return null;
@@ -124,8 +109,14 @@ export async function resolveSubdomain(hostname: string): Promise<CustomDomainRe
       organizationSlug: organization.slug,
       isCustomDomain: false,
     };
-  } catch (error) {
-    console.error('[Subdomain] Resolution error:', error);
+  } catch {
+    console.error(
+      JSON.stringify({
+        component: 'organization-resolution',
+        event: 'subdomain_lookup_failed',
+        outcome: 'denied',
+      })
+    );
     return null;
   }
 }

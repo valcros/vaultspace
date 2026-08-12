@@ -16,6 +16,7 @@ import {
 const APP_ROLE = 'vaultspace_app';
 const LOGIN_CANDIDATE_FUNCTION = 'public.bootstrap_login_candidate_v1(text)';
 const SESSION_RESOLVE_FUNCTION = 'public.bootstrap_session_resolve_v1(text)';
+const ORGANIZATION_RESOLVE_FUNCTION = 'public.bootstrap_organization_resolve_v1(text, text)';
 const REQUIRED_ALLOW_FLAG = 'true';
 
 function requireEnv(name: string): string {
@@ -142,6 +143,9 @@ async function main() {
     await admin.$executeRawUnsafe(
       `GRANT EXECUTE ON FUNCTION ${SESSION_RESOLVE_FUNCTION} TO ${APP_ROLE};`
     );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${ORGANIZATION_RESOLVE_FUNCTION} TO ${APP_ROLE};`
+    );
 
     const [bootstrapGrants] = await admin.$queryRawUnsafe<
       Array<{
@@ -150,6 +154,8 @@ async function main() {
         organization_execute: boolean;
         unexpected_login_acl_count: bigint;
         unexpected_session_acl_count: bigint;
+        unexpected_organization_acl_count: bigint;
+        unexpected_bootstrap_execute_count: bigint;
       }>
     >(
       `SELECT
@@ -160,7 +166,7 @@ async function main() {
            '${APP_ROLE}', '${SESSION_RESOLVE_FUNCTION}', 'EXECUTE'
          ) AS session_execute,
          pg_catalog.has_function_privilege(
-           '${APP_ROLE}', 'public.bootstrap_organization_resolve_v1(text, text)', 'EXECUTE'
+           '${APP_ROLE}', '${ORGANIZATION_RESOLVE_FUNCTION}', 'EXECUTE'
          ) AS organization_execute,
          (
            SELECT pg_catalog.count(*)
@@ -187,18 +193,49 @@ async function main() {
                function.proowner,
                (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = '${APP_ROLE}')
              )
-         ) AS unexpected_session_acl_count`
+         ) AS unexpected_session_acl_count,
+         (
+           SELECT pg_catalog.count(*)
+           FROM pg_catalog.pg_proc AS function
+           CROSS JOIN LATERAL pg_catalog.aclexplode(
+             COALESCE(function.proacl, pg_catalog.acldefault('f', function.proowner))
+           ) AS acl
+           WHERE function.oid = pg_catalog.to_regprocedure('${ORGANIZATION_RESOLVE_FUNCTION}')
+             AND acl.privilege_type = 'EXECUTE'
+             AND acl.grantee NOT IN (
+               function.proowner,
+               (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = '${APP_ROLE}')
+             )
+         ) AS unexpected_organization_acl_count,
+         (
+           SELECT pg_catalog.count(*)
+           FROM pg_catalog.pg_proc AS function
+           INNER JOIN pg_catalog.pg_namespace AS namespace
+             ON namespace.oid = function.pronamespace
+           WHERE namespace.nspname = 'public'
+             AND function.proname LIKE 'bootstrap!_%' ESCAPE '!'
+             AND pg_catalog.has_function_privilege(
+               '${APP_ROLE}', function.oid, 'EXECUTE'
+             )
+             AND function.oid NOT IN (
+               pg_catalog.to_regprocedure('${LOGIN_CANDIDATE_FUNCTION}'),
+               pg_catalog.to_regprocedure('${SESSION_RESOLVE_FUNCTION}'),
+               pg_catalog.to_regprocedure('${ORGANIZATION_RESOLVE_FUNCTION}')
+             )
+         ) AS unexpected_bootstrap_execute_count`
     );
 
     if (
       !bootstrapGrants?.login_execute ||
       !bootstrapGrants.session_execute ||
-      bootstrapGrants.organization_execute ||
+      !bootstrapGrants.organization_execute ||
       Number(bootstrapGrants.unexpected_login_acl_count) !== 0 ||
-      Number(bootstrapGrants.unexpected_session_acl_count) !== 0
+      Number(bootstrapGrants.unexpected_session_acl_count) !== 0 ||
+      Number(bootstrapGrants.unexpected_organization_acl_count) !== 0 ||
+      Number(bootstrapGrants.unexpected_bootstrap_execute_count) !== 0
     ) {
       throw new Error(
-        'runtime bootstrap function grants must match the routed login and session families only'
+        'runtime bootstrap function grants must match the routed login, session, and organization families only'
       );
     }
 

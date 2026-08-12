@@ -10,7 +10,10 @@
 
 import { redirect } from 'next/navigation';
 
-import { bootstrapDb } from '@/lib/db';
+import {
+  bootstrapRepository,
+  type BootstrapOrganizationProjection,
+} from '@/lib/auth/bootstrapRepository';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -19,19 +22,19 @@ interface PageProps {
 export default async function OrgLandingPage({ params }: PageProps) {
   const { slug } = await params;
 
-  // Public, pre-session org resolution: MUST use bootstrapDb (BYPASSRLS). The
-  // regular `db` pool can carry a stale app.current_org_id, which makes the
-  // org_bootstrap_lookup RLS policy return nothing -> "Organization Not Found".
-  const organization = await bootstrapDb.organization.findFirst({
-    where: { slug },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      logoUrl: true,
-      primaryColor: true,
-    },
-  });
+  let organization: BootstrapOrganizationProjection | null;
+  try {
+    organization = await bootstrapRepository.resolveOrganizationBySlug(slug);
+  } catch {
+    console.error(
+      JSON.stringify({
+        component: 'organization-landing',
+        event: 'organization_lookup_failed',
+        outcome: 'error',
+      })
+    );
+    throw new Error('ORGANIZATION_RESOLUTION_FAILED');
+  }
 
   if (!organization) {
     // Unknown org slug — show 404
