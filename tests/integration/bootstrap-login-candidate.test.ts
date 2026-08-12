@@ -393,7 +393,7 @@ describe('W1-2 routed login bootstrap candidate', () => {
     );
     expect(otherPrivileges).toEqual({
       session_execute: true,
-      organization_execute: false,
+      organization_execute: true,
     });
   });
 

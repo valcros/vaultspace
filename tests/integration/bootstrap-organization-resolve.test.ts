@@ -12,7 +12,6 @@ import {
 const OWNER_ROLE = 'vaultspace_bootstrap_owner';
 const RUNTIME_ROLE = 'vaultspace_app';
 const FUNCTION_NAME = 'bootstrap_organization_resolve_v1';
-const FUNCTION_SIGNATURE = 'public.bootstrap_organization_resolve_v1(text, text)';
 const FUNCTION_CONTRACT_COMMENT = 'vaultspace-contract:w1-2-organization-resolve-v1';
 const FUNCTION_SOURCE_SHA256 = '27cc50a7040e357fc49cb9a838432df9b0a5b9845aa49640acf2a71d4bc14df7';
 
@@ -58,28 +57,16 @@ async function functionExecuteAclRows() {
   );
 }
 
-async function withTemporaryRuntimeExecute<T>(
+async function withRuntimeOrganizationRepository<T>(
   operation: (repository: BootstrapRepository, tx: Prisma.TransactionClient) => Promise<T>
 ): Promise<T> {
-  return rawPrisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      'GRANT EXECUTE ON FUNCTION ' + FUNCTION_SIGNATURE + ' TO ' + RUNTIME_ROLE
-    );
-    await tx.$executeRawUnsafe('SET LOCAL ROLE ' + RUNTIME_ROLE);
-
-    try {
-      const repository = new BootstrapRepository(tx as unknown as BootstrapQueryClient);
-      return await operation(repository, tx);
-    } finally {
-      await tx.$executeRawUnsafe('RESET ROLE');
-      await tx.$executeRawUnsafe(
-        'REVOKE EXECUTE ON FUNCTION ' + FUNCTION_SIGNATURE + ' FROM ' + RUNTIME_ROLE
-      );
-    }
+  return runtimePrisma.$transaction(async (tx) => {
+    const repository = new BootstrapRepository(tx as unknown as BootstrapQueryClient);
+    return operation(repository, tx);
   });
 }
 
-describe('W1-2 additive organization resolve foundation', () => {
+describe('W1-2 routed organization resolve surface', () => {
   beforeAll(async () => {
     const activeOrganization = await rawPrisma.organization.create({
       data: {
@@ -187,7 +174,7 @@ describe('W1-2 additive organization resolve foundation', () => {
     expect(Number(sequencePrivilege?.count)).toBe(0);
   });
 
-  it('installs one exact static function with owner-only execution', async () => {
+  it('installs one exact static function with owner and runtime execution only', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         identity_arguments: string;
@@ -245,6 +232,7 @@ describe('W1-2 additive organization resolve foundation', () => {
     ).toBe(FUNCTION_SOURCE_SHA256);
 
     expect(await functionExecuteAclRows()).toEqual([
+      { grantee_name: RUNTIME_ROLE, privilege_type: 'EXECUTE' },
       { grantee_name: OWNER_ROLE, privilege_type: 'EXECUTE' },
     ]);
 
@@ -253,7 +241,19 @@ describe('W1-2 additive organization resolve foundation', () => {
       RUNTIME_ROLE,
       BOOTSTRAP_ORGANIZATION_RESOLVE_FUNCTION
     );
-    expect(runtimePrivilege?.can_execute).toBe(false);
+    expect(runtimePrivilege?.can_execute).toBe(true);
+
+    const [runtimeMatrix] = await rawPrisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT pg_catalog.count(*) AS count
+       FROM pg_catalog.pg_proc AS function
+       INNER JOIN pg_catalog.pg_namespace AS namespace
+         ON namespace.oid = function.pronamespace
+       WHERE namespace.nspname = 'public'
+         AND function.proname LIKE 'bootstrap!_%' ESCAPE '!'
+         AND pg_catalog.has_function_privilege($1, function.oid, 'EXECUTE')`,
+      RUNTIME_ROLE
+    );
+    expect(Number(runtimeMatrix?.count)).toBe(3);
 
     await expect(
       runtimePrisma.$queryRawUnsafe(
@@ -261,11 +261,11 @@ describe('W1-2 additive organization resolve foundation', () => {
         'SLUG',
         activeSlug
       )
-    ).rejects.toThrow();
+    ).resolves.toHaveLength(1);
   });
 
-  it('resolves only the active public projection under a temporary exact grant', async () => {
-    await withTemporaryRuntimeExecute(async (repository, tx) => {
+  it('resolves only the active public projection as the runtime role', async () => {
+    await withRuntimeOrganizationRepository(async (repository, tx) => {
       await tx.$executeRawUnsafe(
         "SELECT pg_catalog.set_config('search_path', 'pg_temp, public', true)"
       );
@@ -327,6 +327,7 @@ describe('W1-2 additive organization resolve foundation', () => {
     });
 
     expect(await functionExecuteAclRows()).toEqual([
+      { grantee_name: RUNTIME_ROLE, privilege_type: 'EXECUTE' },
       { grantee_name: OWNER_ROLE, privilege_type: 'EXECUTE' },
     ]);
   });
