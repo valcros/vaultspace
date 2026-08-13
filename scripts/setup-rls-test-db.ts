@@ -24,6 +24,11 @@ const SESSION_INVALIDATE_FUNCTION = 'public.bootstrap_session_invalidate_v1(text
 const SESSION_REVOKE_USER_ORG_FUNCTION = 'public.bootstrap_session_revoke_user_org_v1(text, text)';
 const SESSION_REVOKE_USER_GLOBAL_FUNCTION =
   'public.bootstrap_session_revoke_user_global_v1(text, text)';
+const SESSION_REVOKE_SELF_OTHERS_FUNCTION = 'public.bootstrap_session_revoke_self_others_v1(text)';
+const SESSION_REVOKE_ADMIN_USER_ORG_FUNCTION =
+  'public.bootstrap_session_revoke_admin_user_org_v1(text, text)';
+const SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION =
+  'public.bootstrap_session_revoke_admin_user_global_single_org_v1(text, text)';
 const REQUIRED_ALLOW_FLAG = 'true';
 
 function requireEnv(name: string): string {
@@ -162,6 +167,15 @@ async function main() {
     await admin.$executeRawUnsafe(
       `GRANT EXECUTE ON FUNCTION ${SESSION_INVALIDATE_FUNCTION} TO ${APP_ROLE};`
     );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${SESSION_REVOKE_SELF_OTHERS_FUNCTION} TO ${APP_ROLE};`
+    );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${SESSION_REVOKE_ADMIN_USER_ORG_FUNCTION} TO ${APP_ROLE};`
+    );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION} TO ${APP_ROLE};`
+    );
 
     const [bootstrapGrants] = await admin.$queryRawUnsafe<
       Array<{
@@ -173,6 +187,9 @@ async function main() {
         session_invalidate_execute: boolean;
         session_revoke_user_org_execute: boolean;
         session_revoke_user_global_execute: boolean;
+        session_revoke_self_others_execute: boolean;
+        session_revoke_admin_user_org_execute: boolean;
+        session_revoke_admin_user_global_single_org_execute: boolean;
         unexpected_login_acl_count: bigint;
         unexpected_session_acl_count: bigint;
         unexpected_organization_acl_count: bigint;
@@ -204,6 +221,15 @@ async function main() {
          pg_catalog.has_function_privilege(
            '${APP_ROLE}', '${SESSION_REVOKE_USER_GLOBAL_FUNCTION}', 'EXECUTE'
          ) AS session_revoke_user_global_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${SESSION_REVOKE_SELF_OTHERS_FUNCTION}', 'EXECUTE'
+         ) AS session_revoke_self_others_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${SESSION_REVOKE_ADMIN_USER_ORG_FUNCTION}', 'EXECUTE'
+         ) AS session_revoke_admin_user_org_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION}', 'EXECUTE'
+         ) AS session_revoke_admin_user_global_single_org_execute,
          (
            SELECT pg_catalog.count(*)
            FROM pg_catalog.pg_proc AS function
@@ -259,7 +285,10 @@ async function main() {
                pg_catalog.to_regprocedure('${ORGANIZATION_RESOLVE_FUNCTION}'),
                pg_catalog.to_regprocedure('${SESSION_CREATE_FUNCTION}'),
                pg_catalog.to_regprocedure('${SESSION_REFRESH_FUNCTION}'),
-               pg_catalog.to_regprocedure('${SESSION_INVALIDATE_FUNCTION}')
+               pg_catalog.to_regprocedure('${SESSION_INVALIDATE_FUNCTION}'),
+               pg_catalog.to_regprocedure('${SESSION_REVOKE_SELF_OTHERS_FUNCTION}'),
+               pg_catalog.to_regprocedure('${SESSION_REVOKE_ADMIN_USER_ORG_FUNCTION}'),
+               pg_catalog.to_regprocedure('${SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION}')
              )
          ) AS unexpected_bootstrap_execute_count`
     );
@@ -273,6 +302,9 @@ async function main() {
       !bootstrapGrants.session_invalidate_execute ||
       bootstrapGrants.session_revoke_user_org_execute ||
       bootstrapGrants.session_revoke_user_global_execute ||
+      !bootstrapGrants.session_revoke_self_others_execute ||
+      !bootstrapGrants.session_revoke_admin_user_org_execute ||
+      !bootstrapGrants.session_revoke_admin_user_global_single_org_execute ||
       Number(bootstrapGrants.unexpected_login_acl_count) !== 0 ||
       Number(bootstrapGrants.unexpected_session_acl_count) !== 0 ||
       Number(bootstrapGrants.unexpected_organization_acl_count) !== 0 ||

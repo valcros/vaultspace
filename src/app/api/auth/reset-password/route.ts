@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     // the password. With a unique id the claim matches 0 or 1 row; anything but
     // 1 means we lost the race and the transaction commits without touching the
     // password.
-    const sessionTokens = await db.$transaction(async (tx) => {
+    const sessionIds = await db.$transaction(async (tx) => {
       await lockPasswordResetUser(tx, resetToken.userId);
       // Use the same account lock as every issuance path. This prevents an old
       // token redemption and replacement-token issuance from interleaving
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const sessionTokens = await deactivateAllUserSessionsInTx(tx, resetToken.userId);
+      const revokedSessionIds = await deactivateAllUserSessionsInTx(tx, resetToken.userId);
 
       for (const membership of lockedUser.organizations) {
         await createSecurityAuditEvent(tx, {
@@ -219,7 +219,7 @@ export async function POST(request: NextRequest) {
           metadata: {
             outcome: 'success',
             stage: 'completed',
-            invalidatedSessionCount: sessionTokens.length,
+            invalidatedSessionCount: revokedSessionIds.length,
             initiationRequestId: resetToken.requestId ?? null,
           },
           ipAddress,
@@ -248,14 +248,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      return sessionTokens;
+      return revokedSessionIds;
     });
 
-    if (sessionTokens === null) {
+    if (sessionIds === null) {
       return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
     }
 
-    await clearSessionCache(sessionTokens);
+    await clearSessionCache(sessionIds);
 
     // eslint-disable-next-line no-console
     console.log(
@@ -265,7 +265,7 @@ export async function POST(request: NextRequest) {
         outcome: 'success',
         requestId: reqContext.requestId,
         correlationId: resetToken.id,
-        invalidatedSessionCount: sessionTokens.length,
+        invalidatedSessionCount: sessionIds.length,
       })
     );
 

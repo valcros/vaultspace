@@ -94,7 +94,7 @@ describe('auth session invalidation', () => {
     expect(mockMutationInvalidate).toHaveBeenCalledWith(validSessionToken);
     expect(mockSessionFindMany).not.toHaveBeenCalled();
     expect(mockSessionUpdateMany).not.toHaveBeenCalled();
-    expect(mockCacheDelete).toHaveBeenCalledWith(`session:${validSessionToken}`);
+    expect(mockCacheDelete).toHaveBeenCalledWith('session:v2:session-1');
   });
 
   it('creates a session through the constrained function without direct table writes', async () => {
@@ -141,7 +141,7 @@ describe('auth session invalidation', () => {
   });
 
   it('invalidates all user sessions and removes each cached token', async () => {
-    mockSessionFindMany.mockResolvedValue([{ token: 'token-1' }, { token: 'token-2' }]);
+    mockSessionFindMany.mockResolvedValue([{ id: 'session-1' }, { id: 'session-2' }]);
     mockSessionUpdateMany.mockResolvedValue({ count: 2 });
     mockCacheDelete.mockResolvedValue(undefined);
 
@@ -149,21 +149,21 @@ describe('auth session invalidation', () => {
 
     expect(mockSessionFindMany).toHaveBeenCalledWith({
       where: { userId: 'user-1', isActive: true },
-      select: { token: true },
+      select: { id: true },
     });
     expect(mockSessionUpdateMany).toHaveBeenCalledWith({
       where: { userId: 'user-1' },
       data: { isActive: false },
     });
-    expect(mockCacheDelete).toHaveBeenCalledWith('session:token-1');
-    expect(mockCacheDelete).toHaveBeenCalledWith('session:token-2');
+    expect(mockCacheDelete).toHaveBeenCalledWith('session:v2:session-1');
+    expect(mockCacheDelete).toHaveBeenCalledWith('session:v2:session-2');
   });
 
   it('treats cache cleanup failures as non-fatal once sessions are deactivated', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockCacheDelete.mockRejectedValue(new Error('cache unavailable'));
 
-    await expect(clearSessionCache(['token-1'])).resolves.toBeUndefined();
+    await expect(clearSessionCache(['session-1'])).resolves.toBeUndefined();
     const log = JSON.parse(String(consoleError.mock.calls[0]?.[0]));
     expect(log).toMatchObject({
       component: 'session-cache',
@@ -171,7 +171,7 @@ describe('auth session invalidation', () => {
       requestedCount: 1,
       failureCount: 1,
     });
-    expect(JSON.stringify(log)).not.toContain('token-1');
+    expect(JSON.stringify(log)).not.toContain('session-1');
   });
 
   it('does not trust a cached session once the constrained resolver rejects it', async () => {
@@ -189,7 +189,7 @@ describe('validateSession read-through cache', () => {
   const recentDate = () => new Date(Date.now() - 60 * 60 * 1000);
 
   const completeSnapshot = () => ({
-    v: 1,
+    v: 2,
     data: {
       sessionId: 'session-1',
       userId: 'user-1',
@@ -247,6 +247,7 @@ describe('validateSession read-through cache', () => {
     expect(result.organization.role).toBe('ADMIN');
     expect(result.expiresAt).toBeInstanceOf(Date);
     expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
+    expect(mockCacheGet).toHaveBeenCalledWith('session:v2:session-1');
     expect(mockCacheSet).not.toHaveBeenCalled();
   });
 
@@ -256,16 +257,20 @@ describe('validateSession read-through cache', () => {
     mockCacheDelete.mockResolvedValue(undefined);
 
     await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
-    expect(mockCacheDelete).toHaveBeenCalledWith(`session:${validSessionToken}`);
+    expect(mockCacheGet).not.toHaveBeenCalled();
+    expect(mockCacheDelete).not.toHaveBeenCalled();
   });
 
   it('falls through to full DB validation on a version mismatch', async () => {
     const stale = completeSnapshot();
     stale.v = 0;
     mockCacheGet.mockResolvedValue(stale);
-    mockResolveSession.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(liveProjection());
+    mockCacheSet.mockResolvedValue(undefined);
 
-    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    await expect(validateSession(validSessionToken)).resolves.toMatchObject({
+      sessionId: 'session-1',
+    });
     expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
@@ -274,9 +279,12 @@ describe('validateSession read-through cache', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (partial.data as any).organization;
     mockCacheGet.mockResolvedValue(partial);
-    mockResolveSession.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(liveProjection());
+    mockCacheSet.mockResolvedValue(undefined);
 
-    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    await expect(validateSession(validSessionToken)).resolves.toMatchObject({
+      sessionId: 'session-1',
+    });
     expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
@@ -284,9 +292,12 @@ describe('validateSession read-through cache', () => {
     const expired = completeSnapshot();
     expired.data.expiresAt = recentDate().toISOString();
     mockCacheGet.mockResolvedValue(expired);
-    mockResolveSession.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(liveProjection());
+    mockCacheSet.mockResolvedValue(undefined);
 
-    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    await expect(validateSession(validSessionToken)).resolves.toMatchObject({
+      sessionId: 'session-1',
+    });
     expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
@@ -294,17 +305,23 @@ describe('validateSession read-through cache', () => {
     const disabled = completeSnapshot();
     disabled.data.user.isActive = false;
     mockCacheGet.mockResolvedValue(disabled);
-    mockResolveSession.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(liveProjection());
+    mockCacheSet.mockResolvedValue(undefined);
 
-    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    await expect(validateSession(validSessionToken)).resolves.toMatchObject({
+      sessionId: 'session-1',
+    });
     expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
   it('validates against the database when the cache read itself fails', async () => {
     mockCacheGet.mockRejectedValue(new Error('redis down'));
-    mockResolveSession.mockResolvedValue(null);
+    mockResolveSession.mockResolvedValue(liveProjection());
+    mockCacheSet.mockResolvedValue(undefined);
 
-    await expect(validateSession(validSessionToken)).rejects.toBeInstanceOf(AuthenticationError);
+    await expect(validateSession(validSessionToken)).resolves.toMatchObject({
+      sessionId: 'session-1',
+    });
     expect(mockResolveSession).toHaveBeenCalledWith(validSessionToken);
   });
 
@@ -320,9 +337,9 @@ describe('validateSession read-through cache', () => {
       organizationId: projection.organizationId,
     });
     expect(mockCacheSet).toHaveBeenCalledWith(
-      `session:${validSessionToken}`,
+      'session:v2:session-1',
       {
-        v: 1,
+        v: 2,
         data: expect.objectContaining({
           sessionId: projection.sessionId,
           userId: projection.userId,
@@ -351,7 +368,7 @@ describe('validateSession read-through cache', () => {
     const result = await validateSession(validSessionToken);
 
     expect(result.organization.role).toBe('VIEWER');
-    expect(mockCacheDelete).toHaveBeenCalledWith(`session:${validSessionToken}`);
+    expect(mockCacheDelete).toHaveBeenCalledWith('session:v2:session-1');
     expect(mockCacheSet).toHaveBeenCalledOnce();
   });
 
@@ -371,7 +388,7 @@ describe('validateSession read-through cache', () => {
 
     await vi.waitFor(() => {
       expect(mockMutationRefresh).toHaveBeenCalledWith(validSessionToken);
-      expect(mockCacheDelete).toHaveBeenCalledWith(`session:${validSessionToken}`);
+      expect(mockCacheDelete).toHaveBeenCalledWith('session:v2:session-1');
     });
   });
 });
