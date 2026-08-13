@@ -315,6 +315,9 @@ describe('SessionMutationRepository', () => {
       resolve(process.cwd(), 'src/app/api/auth/reset-password/route.ts'),
       'utf8'
     );
-    expect(resetSource).toContain('deactivateAllUserSessionsInTx');
+    expect(resetSource).toContain('new PasswordResetCapabilityRepository(tx)');
+    expect(resetSource).toContain('clearSessionCache(redemption.revokedSessionIds)');
+    expect(resetSource).not.toContain('deactivateAllUserSessionsInTx');
+    expect(resetSource).not.toContain('bootstrapDb');
   });
 });
