@@ -38,10 +38,13 @@ describe('W1-2 organization route conversion source boundary', () => {
     expect(landing).toContain('bootstrapRepository.resolveOrganizationBySlug(slug)');
   });
 
-  it('does not change the session mutation implementation in this unit', () => {
+  it('keeps caller-selected bulk session mutations on their established paths', () => {
     const session = readFileSync(join(process.cwd(), 'src/lib/auth/session.ts'), 'utf8');
 
-    expect(session).toContain('await bootstrapDb.session.update({');
-    expect(session).toContain('const tokens = await deactivateSessions(db, { token });');
+    expect(session).toContain('const tokens = await deactivateSessions(db, { userId });');
+    expect(session).toContain('return deactivateSessions(tx, { userId });');
+    expect(session).toContain('return deactivateSessions(tx, { userId, organizationId });');
+    expect(session).not.toContain('sessionMutationRepository.revokeUserOrgSessions');
+    expect(session).not.toContain('sessionMutationRepository.revokeUserGlobalSessions');
   });
 });

@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { db } from '@/lib/db';
 
@@ -51,7 +51,7 @@ interface SessionIdRow {
   session_id: string;
 }
 
-export type SessionMutationQueryClient = Pick<PrismaClient, '$queryRaw'>;
+export type SessionMutationQueryClient = Pick<Prisma.TransactionClient, '$queryRaw'>;
 
 function validIdentifier(value: string): boolean {
   return IDENTIFIER_PATTERN.test(value);

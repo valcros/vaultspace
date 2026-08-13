@@ -12,6 +12,11 @@ const FUNCTION_NAMES = [
   'bootstrap_session_revoke_user_org_v1',
   'bootstrap_session_revoke_user_global_v1',
 ] as const;
+const RUNTIME_FUNCTION_NAMES = new Set([
+  'bootstrap_session_create_v1',
+  'bootstrap_session_refresh_v1',
+  'bootstrap_session_invalidate_v1',
+]);
 
 const EXPECTED_FUNCTIONS = [
   {
@@ -113,7 +118,7 @@ async function createRawSession(input: {
   });
 }
 
-describe('W1-2 inert session mutation foundation', () => {
+describe('W1-2 session mutation route conversion', () => {
   beforeAll(async () => {
     const [organizationA, organizationB, inactiveOrganization] = await Promise.all([
       rawPrisma.organization.create({
@@ -343,7 +348,7 @@ describe('W1-2 inert session mutation foundation', () => {
     expect(reachability?.reachable).toBe(false);
   });
 
-  it('installs five exact owner-only functions with stable contract markers', async () => {
+  it('installs five exact functions with stable contracts and narrow runtime ACLs', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         function_name: string;
@@ -415,11 +420,22 @@ describe('W1-2 inert session mutation foundation', () => {
       [...FUNCTION_NAMES]
     );
     expect(aclRows).toEqual(
-      [...FUNCTION_NAMES].sort().map((functionName) => ({
-        function_name: functionName,
-        grantee_name: OWNER_ROLE,
-        privilege_type: 'EXECUTE',
-      }))
+      [...FUNCTION_NAMES].sort().flatMap((functionName) => [
+        ...(RUNTIME_FUNCTION_NAMES.has(functionName)
+          ? [
+              {
+                function_name: functionName,
+                grantee_name: RUNTIME_ROLE,
+                privilege_type: 'EXECUTE',
+              },
+            ]
+          : []),
+        {
+          function_name: functionName,
+          grantee_name: OWNER_ROLE,
+          privilege_type: 'EXECUTE',
+        },
+      ])
     );
 
     await expect(
@@ -427,7 +443,66 @@ describe('W1-2 inert session mutation foundation', () => {
         'SELECT * FROM public.bootstrap_session_invalidate_v1($1::text)',
         token()
       )
+    ).resolves.toEqual([]);
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_user_org_v1($1::text, $2::text)',
+        activeUserId,
+        organizationAId
+      )
     ).rejects.toThrow();
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_user_global_v1($1::text, NULL)',
+        activeUserId
+      )
+    ).rejects.toThrow();
+  });
+
+  it('allows the runtime role to create, refresh, and invalidate one authorized session', async () => {
+    const runtimeToken = token();
+    const created = await runtimePrisma.$queryRawUnsafe<
+      Array<{
+        session_id: string;
+        session_created_at: Date;
+        session_expires_at: Date;
+      }>
+    >(
+      'SELECT * FROM public.bootstrap_session_create_v1($1::text, $2::text, $3::text, $4::timestamptz, $5::text, $6::text)',
+      activeUserId,
+      organizationAId,
+      runtimeToken,
+      new Date(Date.now() + 24 * 60 * 60 * 1000),
+      '192.0.2.20',
+      'runtime-integration-agent'
+    );
+    expect(created).toHaveLength(1);
+
+    await rawPrisma.session.update({
+      where: { id: created[0]!.session_id },
+      data: { lastActiveAt: new Date(Date.now() - 6 * 60 * 1000) },
+    });
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_refresh_v1($1::text)',
+        runtimeToken
+      )
+    ).resolves.toEqual([
+      expect.objectContaining({
+        session_id: created[0]!.session_id,
+        session_expires_at: expect.any(Date),
+      }),
+    ]);
+
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_invalidate_v1($1::text)',
+        runtimeToken
+      )
+    ).resolves.toEqual([{ session_id: created[0]!.session_id }]);
+    expect(
+      await rawPrisma.session.findUniqueOrThrow({ where: { id: created[0]!.session_id } })
+    ).toMatchObject({ isActive: false });
   });
 
   it('creates only an active organization-bound session and returns no raw token', async () => {

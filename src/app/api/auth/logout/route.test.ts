@@ -8,8 +8,7 @@ const mockCookieStore = {
 const mockInvalidateSession = vi.fn();
 const mockClearSessionCookie = vi.fn();
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
-const mockSessionFindUnique = vi.fn();
-const mockMembershipFindUnique = vi.fn();
+const mockResolveSession = vi.fn();
 
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => mockCookieStore),
@@ -30,12 +29,9 @@ vi.mock('@/lib/middleware', () => ({
   })),
 }));
 
-vi.mock('@/lib/db', () => ({
-  bootstrapDb: {
-    session: { findUnique: (...args: unknown[]) => mockSessionFindUnique(...args) },
-    userOrganization: {
-      findUnique: (...args: unknown[]) => mockMembershipFindUnique(...args),
-    },
+vi.mock('@/lib/auth/bootstrapRepository', () => ({
+  bootstrapRepository: {
+    resolveSession: (...args: unknown[]) => mockResolveSession(...args),
   },
 }));
 
@@ -51,13 +47,13 @@ describe('POST /api/auth/logout', () => {
     mockCookieStore.get.mockReturnValue({ value: 'session-token' });
     mockInvalidateSession.mockResolvedValue(undefined);
     mockClearSessionCookie.mockResolvedValue(undefined);
-    mockSessionFindUnique.mockResolvedValue({
-      id: 'auth-session-1',
+    mockResolveSession.mockResolvedValue({
+      sessionId: 'auth-session-1',
       userId: 'user-1',
       organizationId: 'org-1',
       user: { email: 'user@example.com' },
+      organization: { role: 'ADMIN' },
     });
-    mockMembershipFindUnique.mockResolvedValue({ role: 'ADMIN' });
     mockCaptureAccessAudit.mockResolvedValue('disabled');
   });
 
@@ -67,6 +63,7 @@ describe('POST /api/auth/logout', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
+    expect(mockResolveSession).toHaveBeenCalledWith('session-token');
     expect(mockInvalidateSession).toHaveBeenCalledWith('session-token');
     expect(mockClearSessionCookie).toHaveBeenCalledTimes(1);
     expect(mockCaptureAccessAudit).toHaveBeenCalledWith(

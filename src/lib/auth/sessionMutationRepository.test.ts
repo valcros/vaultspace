@@ -23,7 +23,7 @@ function queryParts(queryRaw: ReturnType<typeof vi.fn>) {
   };
 }
 
-describe('SessionMutationRepository inert foundation', () => {
+describe('SessionMutationRepository', () => {
   const token = 's'.repeat(43);
   const expiresAt = new Date('2026-08-13T00:00:00.000Z');
 
@@ -179,32 +179,76 @@ describe('SessionMutationRepository inert foundation', () => {
     );
   });
 
-  it('keeps the five functions owner-only and leaves live routes unrouted', () => {
-    const migration = readFileSync(
+  it('grants only create, refresh, and invalidate while keeping bulk revoke owner-only', () => {
+    const foundationMigration = readFileSync(
       resolve(
         process.cwd(),
         'prisma/migrations/20260812210000_w1_2_session_mutation_foundation/migration.sql'
       ),
       'utf8'
     );
-    expect(migration).toContain('REVOKE ALL ON FUNCTION public.bootstrap_session_create_v1(');
-    expect(migration).toContain(
+    expect(foundationMigration).toContain(
+      'REVOKE ALL ON FUNCTION public.bootstrap_session_create_v1('
+    );
+    expect(foundationMigration).toContain(
       'REVOKE ALL ON FUNCTION public.bootstrap_session_refresh_v1(text) FROM vaultspace_app;'
     );
-    expect(migration).not.toMatch(
+    expect(foundationMigration).not.toMatch(
       /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_(create|refresh|invalidate|revoke)/i
     );
-    expect(migration).not.toContain('DATABASE_URL_ADMIN');
+    expect(foundationMigration).not.toContain('DATABASE_URL_ADMIN');
 
-    const liveFiles = [
-      'src/lib/auth/session.ts',
+    const conversionMigration = readFileSync(
+      resolve(
+        process.cwd(),
+        'prisma/migrations/20260812230000_w1_2_session_mutation_route_conversion/migration.sql'
+      ),
+      'utf8'
+    );
+    expect(conversionMigration).toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_create_v1\(/i
+    );
+    expect(conversionMigration).toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_refresh_v1\(text\)/i
+    );
+    expect(conversionMigration).toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_invalidate_v1\(text\)/i
+    );
+    expect(conversionMigration).not.toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_revoke/i
+    );
+
+    const creationFiles = [
       'src/app/api/auth/login/route.ts',
-      'src/app/api/auth/logout/route.ts',
+      'src/app/api/auth/2fa/validate/route.ts',
+      'src/app/api/auth/register/route.ts',
+      'src/app/api/setup/route.ts',
+    ];
+    for (const file of creationFiles) {
+      const source = readFileSync(resolve(process.cwd(), file), 'utf8');
+      expect(source, file).toContain('createSession(');
+      expect(source, file).not.toMatch(/(?:db|bootstrapDb|tx)\.session\.create\(/);
+    }
+
+    const sessionSource = readFileSync(resolve(process.cwd(), 'src/lib/auth/session.ts'), 'utf8');
+    expect(sessionSource).toContain('sessionMutationRepository.refreshSession(token)');
+    expect(sessionSource).toContain('sessionMutationRepository.invalidateSession(token)');
+    expect(sessionSource).not.toContain('bootstrapDb');
+    expect(sessionSource).not.toMatch(/db\.session\.(create|update)\(/);
+
+    const logoutSource = readFileSync(
+      resolve(process.cwd(), 'src/app/api/auth/logout/route.ts'),
+      'utf8'
+    );
+    expect(logoutSource).toContain('bootstrapRepository.resolveSession(sessionToken)');
+    expect(logoutSource).not.toContain('bootstrapDb');
+
+    const bulkRouteFiles = [
       'src/app/api/auth/change-password/route.ts',
       'src/app/api/auth/reset-password/route.ts',
       'src/app/api/users/[userId]/route.ts',
     ];
-    for (const file of liveFiles) {
+    for (const file of bulkRouteFiles) {
       expect(readFileSync(resolve(process.cwd(), file), 'utf8'), file).not.toContain(
         'sessionMutationRepository'
       );

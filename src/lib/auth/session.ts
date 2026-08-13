@@ -8,11 +8,16 @@
 import type { Prisma, Session } from '@prisma/client';
 
 import { SESSION_CONFIG } from '../constants';
-import { bootstrapDb, db } from '../db';
+import { db } from '../db';
 import { AuthenticationError } from '../errors';
 import { getProviders } from '@/providers';
 
 import { BootstrapRepository, type BootstrapSessionProjection } from './bootstrapRepository';
+import {
+  SessionMutationRepository,
+  sessionMutationRepository,
+  type SessionMutationQueryClient,
+} from './sessionMutationRepository';
 import { generateSessionToken } from './token';
 
 export interface SessionUser {
@@ -42,6 +47,12 @@ export interface SessionData {
   issuedAt: Date;
 }
 
+export interface CreateSessionOptions {
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  expiresAt?: Date;
+}
+
 type SessionMutationClient = Pick<Prisma.TransactionClient, 'session'>;
 const bootstrapRepository = new BootstrapRepository();
 
@@ -51,23 +62,41 @@ const bootstrapRepository = new BootstrapRepository();
 export async function createSession(
   userId: string,
   organizationId: string,
-  metadata?: { ipAddress?: string; userAgent?: string }
+  options: CreateSessionOptions = {},
+  client?: SessionMutationQueryClient
 ): Promise<{ session: Session; token: string }> {
   const token = generateSessionToken();
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + SESSION_CONFIG.IDLE_TIMEOUT_HOURS * 60 * 60 * 1000);
-
-  const session = await db.session.create({
-    data: {
-      userId,
-      organizationId,
-      token,
-      expiresAt,
-      lastActiveAt: now,
-      ipAddress: metadata?.ipAddress,
-      userAgent: metadata?.userAgent,
-    },
+  const expiresAt =
+    options.expiresAt ??
+    new Date(now.getTime() + SESSION_CONFIG.IDLE_TIMEOUT_HOURS * 60 * 60 * 1000);
+  const repository = client ? new SessionMutationRepository(client) : sessionMutationRepository;
+  const created = await repository.createSession({
+    userId,
+    organizationId,
+    token,
+    expiresAt,
+    ipAddress: options.ipAddress,
+    userAgent: options.userAgent,
   });
+
+  if (!created) {
+    throw new Error('BOOTSTRAP_SESSION_CREATE_DENIED');
+  }
+
+  const session: Session = {
+    id: created.sessionId,
+    createdAt: created.createdAt,
+    updatedAt: created.createdAt,
+    userId,
+    organizationId,
+    token,
+    expiresAt: created.expiresAt,
+    lastActiveAt: created.createdAt,
+    ipAddress: options.ipAddress ?? null,
+    userAgent: options.userAgent ?? null,
+    isActive: true,
+  };
 
   // Deliberately NOT cached here: only validateSession writes the cache, and
   // only with a complete membership-checked snapshot. Caching a partial blob
@@ -211,7 +240,7 @@ export async function validateSession(token: string): Promise<SessionData> {
   // every request added a DB write per API call for a 24h idle window that
   // only needs minute-level resolution.
   if (now.getTime() - projection.lastActiveAt.getTime() > ACTIVITY_REFRESH_MIN_MS) {
-    refreshSessionActivity(projection.sessionId).catch(() => {});
+    refreshSessionActivity(token, projection.sessionId).catch(() => {});
   }
 
   return sessionData;
@@ -221,8 +250,8 @@ export async function validateSession(token: string): Promise<SessionData> {
  * Invalidate a session
  */
 export async function invalidateSession(token: string): Promise<void> {
-  const tokens = await deactivateSessions(db, { token });
-  await clearSessionCache(tokens);
+  await sessionMutationRepository.invalidateSession(token);
+  await clearSessionCache([token]);
 }
 
 /**
@@ -259,19 +288,20 @@ export async function deactivateUserOrgSessionsInTx(
 /**
  * Refresh session activity timestamp (sliding window)
  */
-async function refreshSessionActivity(sessionId: string): Promise<void> {
-  const now = new Date();
-  const newExpiresAt = new Date(now.getTime() + SESSION_CONFIG.IDLE_TIMEOUT_HOURS * 60 * 60 * 1000);
+async function refreshSessionActivity(token: string, expectedSessionId: string): Promise<void> {
+  const refreshed = await sessionMutationRepository.refreshSession(token);
+  if (!refreshed) {
+    return;
+  }
+  if (refreshed.sessionId !== expectedSessionId) {
+    await clearSessionCache([token]);
+    throw new Error('BOOTSTRAP_SESSION_REFRESH_ID_MISMATCH');
+  }
 
-  // Sessions table has no RLS, but using bootstrapDb for consistency with the
-  // rest of session lifecycle and to avoid any pool-state surprises.
-  await bootstrapDb.session.update({
-    where: { id: sessionId },
-    data: {
-      lastActiveAt: now,
-      expiresAt: newExpiresAt,
-    },
-  });
+  // The database projection is authoritative. Evict the prior token-keyed
+  // accelerator after a successful sliding refresh so the next acceptance
+  // caches the new expiry. Cache deletion remains non-fatal and categorical.
+  await clearSessionCache([token]);
 }
 
 async function deactivateSessions(

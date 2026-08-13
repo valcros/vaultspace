@@ -9,9 +9,9 @@ import { cookies } from 'next/headers';
 import { randomUUID } from 'crypto';
 
 import { invalidateSession } from '@/lib/auth';
+import { bootstrapRepository } from '@/lib/auth/bootstrapRepository';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { SESSION_CONFIG } from '@/lib/constants';
-import { bootstrapDb } from '@/lib/db';
 import { clearSessionCookie, getRequestContext } from '@/lib/middleware';
 
 export async function POST(request?: NextRequest) {
@@ -30,31 +30,14 @@ export async function POST(request?: NextRequest) {
       // Audit lookup is deliberately non-critical. A lookup failure must not
       // prevent session invalidation or cookie clearing.
       try {
-        const authSession = await bootstrapDb.session.findUnique({
-          where: { token: sessionToken },
-          select: {
-            id: true,
-            userId: true,
-            organizationId: true,
-            user: { select: { email: true } },
-          },
-        });
-        if (authSession?.organizationId) {
-          const membership = await bootstrapDb.userOrganization.findUnique({
-            where: {
-              organizationId_userId: {
-                organizationId: authSession.organizationId,
-                userId: authSession.userId,
-              },
-            },
-            select: { role: true },
-          });
+        const authSession = await bootstrapRepository.resolveSession(sessionToken);
+        if (authSession) {
           auditContext = {
-            id: authSession.id,
+            id: authSession.sessionId,
             userId: authSession.userId,
             organizationId: authSession.organizationId,
             email: authSession.user.email,
-            actorType: membership?.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+            actorType: authSession.organization.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
           };
         }
       } catch {

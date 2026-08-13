@@ -5,7 +5,7 @@ import { RateLimitError } from '@/lib/errors';
 
 const mockUserFindUnique = vi.fn();
 const mockUserUpdate = vi.fn();
-const mockSessionCreate = vi.fn();
+const mockCreateSession = vi.fn();
 const mockCaptureAccessAudit = vi.fn();
 const mockLoginByEmail = vi.fn().mockResolvedValue(undefined);
 const mockLoginByIp = vi.fn().mockResolvedValue(undefined);
@@ -16,8 +16,11 @@ vi.mock('@/lib/db', () => ({
       findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
       update: (...args: unknown[]) => mockUserUpdate(...args),
     },
-    session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
   },
+}));
+
+vi.mock('@/lib/auth', () => ({
+  createSession: (...args: unknown[]) => mockCreateSession(...args),
 }));
 
 vi.mock('@/lib/auth/twoFactorTempToken', () => ({
@@ -68,7 +71,10 @@ describe('POST /api/auth/2fa/validate', () => {
       ],
     });
     mockUserUpdate.mockResolvedValue({});
-    mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
+    mockCreateSession.mockResolvedValue({
+      session: { id: 'auth-session-1' },
+      token: 't'.repeat(43),
+    });
     mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockLoginByEmail.mockResolvedValue(undefined);
     mockLoginByIp.mockResolvedValue(undefined);
@@ -83,12 +89,15 @@ describe('POST /api/auth/2fa/validate', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockSessionCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+    expect(mockCreateSession).toHaveBeenCalledWith(
+      'user-1',
+      'org-1',
+      expect.objectContaining({
         ipAddress: '203.0.113.20',
         userAgent: '2fa-context-agent',
-      }),
-    });
+        expiresAt: expect.any(Date),
+      })
+    );
     expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         requestId: 'req-2fa',
@@ -113,6 +122,6 @@ describe('POST /api/auth/2fa/validate', () => {
     expect(body.error).toMatch(/too many/i);
     // Throttling happens after temp-token verification but before code checks.
     expect(mockUserFindUnique).not.toHaveBeenCalled();
-    expect(mockSessionCreate).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
   });
 });

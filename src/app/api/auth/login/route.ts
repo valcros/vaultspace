@@ -6,8 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
 
+import { createSession } from '@/lib/auth';
 import { generateTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
 import { bootstrapRepository } from '@/lib/auth/bootstrapRepository';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
@@ -79,8 +79,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Generate session token
-    const sessionToken = randomBytes(32).toString('base64url');
     const sessionDuration = rememberMe
       ? SESSION_CONFIG.EXTENDED_DURATION_DAYS * 24 * 60 * 60 * 1000
       : SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000;
@@ -88,25 +86,24 @@ export async function POST(request: NextRequest) {
 
     // Create the session and stamp the lastLoginAt atomically inside an org
     // context so RLS policies on the users table can verify membership.
-    const authSession = await withOrgContext(candidate.organizationId, async (tx) => {
-      const createdSession = await tx.session.create({
-        data: {
-          userId: candidate.userId,
-          organizationId: candidate.organizationId,
-          token: sessionToken,
-          expiresAt,
-          ipAddress,
-          userAgent,
-        },
-      });
+    const { session: authSession, token: sessionToken } = await withOrgContext(
+      candidate.organizationId,
+      async (tx) => {
+        const createdSession = await createSession(
+          candidate.userId,
+          candidate.organizationId,
+          { expiresAt, ipAddress, userAgent },
+          tx
+        );
 
-      await tx.user.update({
-        where: { id: candidate.userId },
-        data: { lastLoginAt: new Date() },
-      });
+        await tx.user.update({
+          where: { id: candidate.userId },
+          data: { lastLoginAt: new Date() },
+        });
 
-      return createdSession;
-    });
+        return createdSession;
+      }
+    );
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
