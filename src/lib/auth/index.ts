@@ -16,6 +16,9 @@ export {
   validateSession,
   invalidateSession,
   invalidateAllUserSessions,
+  revokeAdminUserGlobalSingleOrgSessionsInTx,
+  revokeAdminUserOrgSessionsInTx,
+  revokeSelfOtherSessionsInTx,
 } from './session';
 
 export type { SessionData, SessionUser, SessionOrganization } from './session';

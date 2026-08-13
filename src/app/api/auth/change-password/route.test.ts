@@ -1,17 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const mockRequireAuth = vi.fn();
+const mockRequireAuthCredential = vi.fn();
 const mockWithOrgContext = vi.fn();
 const mockUserFindUnique = vi.fn();
 const mockUserUpdate = vi.fn();
-const mockSessionUpdateMany = vi.fn();
+const mockRevokeSelfOtherSessionsInTx = vi.fn();
+const mockClearSessionCache = vi.fn();
 const mockHashPassword = vi.fn();
 const mockVerifyPassword = vi.fn();
 const mockValidatePassword = vi.fn();
 
 vi.mock('@/lib/middleware', () => ({
-  requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
+  requireAuthCredential: (...args: unknown[]) => mockRequireAuthCredential(...args),
+}));
+
+vi.mock('@/lib/auth', () => ({
+  clearSessionCache: (...args: unknown[]) => mockClearSessionCache(...args),
+  revokeSelfOtherSessionsInTx: (...args: unknown[]) => mockRevokeSelfOtherSessionsInTx(...args),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -29,14 +35,18 @@ import { POST } from './route';
 describe('POST /api/auth/change-password', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue({
-      userId: 'user-1',
-      sessionId: 'session-current',
-      organizationId: 'org-1',
+    mockRequireAuthCredential.mockResolvedValue({
+      token: 's'.repeat(43),
+      session: {
+        userId: 'user-1',
+        sessionId: 'session-current',
+        organizationId: 'org-1',
+      },
     });
     mockUserFindUnique.mockResolvedValue({ id: 'user-1', passwordHash: 'old-hash' });
     mockUserUpdate.mockResolvedValue({ id: 'user-1' });
-    mockSessionUpdateMany.mockResolvedValue({ count: 1 });
+    mockRevokeSelfOtherSessionsInTx.mockResolvedValue({ sessionIds: ['session-other'] });
+    mockClearSessionCache.mockResolvedValue(undefined);
     mockVerifyPassword.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     mockValidatePassword.mockReturnValue({ valid: true, errors: [] });
     mockHashPassword.mockResolvedValue('new-hash');
@@ -45,7 +55,6 @@ describe('POST /api/auth/change-password', () => {
         expect(organizationId).toBe('org-1');
         return operation({
           user: { findUnique: mockUserFindUnique, update: mockUserUpdate },
-          session: { updateMany: mockSessionUpdateMany },
         });
       }
     );
@@ -65,14 +74,11 @@ describe('POST /api/auth/change-password', () => {
       where: { id: 'user-1' },
       data: { passwordHash: 'new-hash' },
     });
-    expect(mockSessionUpdateMany).toHaveBeenCalledWith({
-      where: {
-        userId: 'user-1',
-        id: { not: 'session-current' },
-        isActive: true,
-      },
-      data: { isActive: false },
-    });
+    expect(mockRevokeSelfOtherSessionsInTx).toHaveBeenCalledWith(
+      expect.any(Object),
+      's'.repeat(43)
+    );
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-other']);
   });
 
   it('does not modify a user hidden by the session organization context', async () => {
@@ -87,14 +93,17 @@ describe('POST /api/auth/change-password', () => {
     expect(response.status).toBe(404);
     expect(mockWithOrgContext).toHaveBeenCalledTimes(1);
     expect(mockUserUpdate).not.toHaveBeenCalled();
-    expect(mockSessionUpdateMany).not.toHaveBeenCalled();
+    expect(mockRevokeSelfOtherSessionsInTx).not.toHaveBeenCalled();
   });
 
   it('rejects a session without organization context before parsing or querying', async () => {
-    mockRequireAuth.mockResolvedValue({
-      userId: 'user-1',
-      sessionId: 'session-current',
-      organizationId: null,
+    mockRequireAuthCredential.mockResolvedValue({
+      token: 's'.repeat(43),
+      session: {
+        userId: 'user-1',
+        sessionId: 'session-current',
+        organizationId: null,
+      },
     });
     const request = new NextRequest('http://localhost/api/auth/change-password', {
       method: 'POST',
@@ -106,5 +115,18 @@ describe('POST /api/auth/change-password', () => {
     expect(response.status).toBe(401);
     expect(mockWithOrgContext).not.toHaveBeenCalled();
     expect(mockUserUpdate).not.toHaveBeenCalled();
+  });
+
+  it('fails the password transaction closed when SQL does not prove the actor', async () => {
+    mockRevokeSelfOtherSessionsInTx.mockResolvedValue(null);
+    const request = new NextRequest('http://localhost/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword: 'OldPassword1!', newPassword: 'NewPassword2!' }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(500);
+    expect(mockClearSessionCache).not.toHaveBeenCalled();
   });
 });

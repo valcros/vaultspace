@@ -11,12 +11,14 @@ import { GET, DELETE, PATCH } from './route';
 // Mock auth middleware
 vi.mock('@/lib/middleware', () => ({
   requireAuth: vi.fn(),
+  requireAuthCredential: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({
   clearSessionCache: vi.fn(),
   deactivateAllUserSessionsInTx: vi.fn(),
-  deactivateUserOrgSessionsInTx: vi.fn(),
+  revokeAdminUserGlobalSingleOrgSessionsInTx: vi.fn(),
+  revokeAdminUserOrgSessionsInTx: vi.fn(),
 }));
 
 const mockCreateSecurityAuditEvent = vi.fn();
@@ -30,18 +32,23 @@ vi.mock('@/lib/db', () => ({
   bootstrapDb: { userOrganization: { count: vi.fn(), findMany: vi.fn() } },
 }));
 
-import { requireAuth } from '@/lib/middleware';
+import { requireAuth, requireAuthCredential } from '@/lib/middleware';
 import {
   clearSessionCache,
   deactivateAllUserSessionsInTx,
-  deactivateUserOrgSessionsInTx,
+  revokeAdminUserGlobalSingleOrgSessionsInTx,
+  revokeAdminUserOrgSessionsInTx,
 } from '@/lib/auth';
 import { withOrgContext, bootstrapDb } from '@/lib/db';
 
 const mockRequireAuth = vi.mocked(requireAuth);
+const mockRequireAuthCredential = vi.mocked(requireAuthCredential);
 const mockClearSessionCache = vi.mocked(clearSessionCache);
 const mockDeactivateAllUserSessionsInTx = vi.mocked(deactivateAllUserSessionsInTx);
-const mockDeactivateUserOrgSessionsInTx = vi.mocked(deactivateUserOrgSessionsInTx);
+const mockRevokeAdminUserGlobalSingleOrgSessionsInTx = vi.mocked(
+  revokeAdminUserGlobalSingleOrgSessionsInTx
+);
+const mockRevokeAdminUserOrgSessionsInTx = vi.mocked(revokeAdminUserOrgSessionsInTx);
 const mockWithOrgContext = vi.mocked(withOrgContext);
 const mockBootstrapCount = vi.mocked(bootstrapDb.userOrganization.count);
 const mockBootstrapFindMany = vi.mocked(bootstrapDb.userOrganization.findMany);
@@ -60,7 +67,7 @@ describe('GET /api/users/:userId', () => {
       mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
     );
     mockClearSessionCache.mockResolvedValue(undefined);
-    mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1']);
+    mockDeactivateAllUserSessionsInTx.mockResolvedValue(['session-legacy-1']);
     mockBootstrapFindMany.mockResolvedValue([{ organizationId: 'org-1' }] as never);
   });
 
@@ -387,7 +394,7 @@ describe('DELETE /api/users/:userId', () => {
 
     // Verify sessions were invalidated atomically and cache was cleared after commit
     expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-2');
-    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-legacy-1']);
     expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
@@ -415,6 +422,7 @@ describe('DELETE /api/users/:userId', () => {
 
 describe('PATCH /api/users/:userId', () => {
   const mockAdminSession = {
+    sessionId: 'admin-session-1',
     userId: 'admin-1',
     organizationId: 'org-1',
     organization: { role: 'ADMIN' },
@@ -426,9 +434,17 @@ describe('PATCH /api/users/:userId', () => {
     mockRequireAuth.mockResolvedValue(
       mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
     );
+    mockRequireAuthCredential.mockResolvedValue({
+      session: mockAdminSession,
+      token: 'a'.repeat(43),
+    } as Awaited<ReturnType<typeof requireAuthCredential>>);
     mockClearSessionCache.mockResolvedValue(undefined);
-    mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1']);
-    mockDeactivateUserOrgSessionsInTx.mockResolvedValue(['org-token-1']);
+    mockRevokeAdminUserGlobalSingleOrgSessionsInTx.mockResolvedValue({
+      sessionIds: ['session-global-1'],
+    });
+    mockRevokeAdminUserOrgSessionsInTx.mockResolvedValue({
+      sessionIds: ['session-org-1'],
+    });
     mockBootstrapCount.mockResolvedValue(1);
     mockBootstrapFindMany.mockResolvedValue([{ organizationId: 'org-1' }] as never);
   });
@@ -481,12 +497,15 @@ describe('PATCH /api/users/:userId', () => {
   const ctx = { params: Promise.resolve({ userId: 'user-2' }) };
 
   it('returns 403 for non-admin callers', async () => {
-    mockRequireAuth.mockResolvedValue({
-      userId: 'viewer-1',
-      organizationId: 'org-1',
-      organization: { role: 'VIEWER' },
-      user: { email: 'viewer@example.com' },
-    } as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuthCredential.mockResolvedValue({
+      token: 'v'.repeat(43),
+      session: {
+        userId: 'viewer-1',
+        organizationId: 'org-1',
+        organization: { role: 'VIEWER' },
+        user: { email: 'viewer@example.com' },
+      },
+    } as Awaited<ReturnType<typeof requireAuthCredential>>);
 
     const response = await PATCH(patchReq({ firstName: 'X' }), ctx);
     expect(response.status).toBe(403);
@@ -508,7 +527,7 @@ describe('PATCH /api/users/:userId', () => {
     useTx(tx);
     const response = await PATCH(patchReq({ role: 'VIEWER' }), ctx);
     expect(response.status).toBe(400);
-    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
+    expect(mockRevokeAdminUserOrgSessionsInTx).not.toHaveBeenCalled();
   });
 
   it('scopes session invalidation to this org on a role change (leaves other orgs signed in)', async () => {
@@ -516,45 +535,63 @@ describe('PATCH /api/users/:userId', () => {
     const response = await PATCH(patchReq({ role: 'ADMIN' }), ctx);
     expect(response.status).toBe(200);
     // Membership-only change -> org-scoped invalidation, NOT the global one.
-    expect(mockDeactivateUserOrgSessionsInTx).toHaveBeenCalledWith(
+    expect(mockRevokeAdminUserOrgSessionsInTx).toHaveBeenCalledWith(
       expect.anything(),
-      'user-2',
-      'org-1'
+      'a'.repeat(43),
+      'user-2'
     );
-    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
-    expect(mockClearSessionCache).toHaveBeenCalledWith(['org-token-1']);
+    expect(mockRevokeAdminUserGlobalSingleOrgSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-org-1']);
   });
 
   it('scopes session invalidation to this org on a membership active change', async () => {
     useTx(memberTx({ isActive: true }));
     const response = await PATCH(patchReq({ isActive: false }), ctx);
     expect(response.status).toBe(200);
-    expect(mockDeactivateUserOrgSessionsInTx).toHaveBeenCalledWith(
+    expect(mockRevokeAdminUserOrgSessionsInTx).toHaveBeenCalledWith(
       expect.anything(),
-      'user-2',
-      'org-1'
+      'a'.repeat(43),
+      'user-2'
     );
-    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
+    expect(mockRevokeAdminUserGlobalSingleOrgSessionsInTx).not.toHaveBeenCalled();
+  });
+
+  it('does not commit a membership change when SQL cannot prove admin scope', async () => {
+    const tx = memberTx();
+    mockRevokeAdminUserOrgSessionsInTx.mockResolvedValue(null);
+    useTx(tx);
+
+    const response = await PATCH(patchReq({ role: 'ADMIN' }), ctx);
+
+    expect(response.status).toBe(404);
+    expect(tx.userOrganization.update).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).not.toHaveBeenCalled();
   });
 
   it('invalidates ALL sessions on a login-email change (global identity)', async () => {
     useTx(memberTx());
     const response = await PATCH(patchReq({ email: 'moved@example.com' }), ctx);
     expect(response.status).toBe(200);
-    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.anything(), 'user-2');
-    expect(mockDeactivateUserOrgSessionsInTx).not.toHaveBeenCalled();
-    // The tokens from the GLOBAL helper (not the org-scoped one) must reach the
-    // cache — a discarded result would leave stale cached sessions valid.
-    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
+    expect(mockRevokeAdminUserGlobalSingleOrgSessionsInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      'a'.repeat(43),
+      'user-2'
+    );
+    expect(mockRevokeAdminUserOrgSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-global-1']);
   });
 
   it('invalidates ALL sessions on a two-factor reset (global identity)', async () => {
     useTx(memberTx());
     const response = await PATCH(patchReq({ resetTwoFactor: true }), ctx);
     expect(response.status).toBe(200);
-    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.anything(), 'user-2');
-    expect(mockDeactivateUserOrgSessionsInTx).not.toHaveBeenCalled();
-    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
+    expect(mockRevokeAdminUserGlobalSingleOrgSessionsInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      'a'.repeat(43),
+      'user-2'
+    );
+    expect(mockRevokeAdminUserOrgSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-global-1']);
   });
 
   it('a global identity change takes precedence over a membership change (email + role -> global)', async () => {
@@ -564,17 +601,21 @@ describe('PATCH /api/users/:userId', () => {
     // Even though role also changed, the email change forces GLOBAL invalidation
     // and the org-scoped helper must not be used (it would leave other-org
     // sessions on the old login identity alive).
-    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.anything(), 'user-2');
-    expect(mockDeactivateUserOrgSessionsInTx).not.toHaveBeenCalled();
-    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1']);
+    expect(mockRevokeAdminUserGlobalSingleOrgSessionsInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      'a'.repeat(43),
+      'user-2'
+    );
+    expect(mockRevokeAdminUserOrgSessionsInTx).not.toHaveBeenCalled();
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-global-1']);
   });
 
   it('does not invalidate sessions on a name-only change', async () => {
     useTx(memberTx());
     const response = await PATCH(patchReq({ firstName: 'Newname' }), ctx);
     expect(response.status).toBe(200);
-    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
-    expect(mockDeactivateUserOrgSessionsInTx).not.toHaveBeenCalled();
+    expect(mockRevokeAdminUserGlobalSingleOrgSessionsInTx).not.toHaveBeenCalled();
+    expect(mockRevokeAdminUserOrgSessionsInTx).not.toHaveBeenCalled();
   });
 
   it('returns 409 on a duplicate email', async () => {
@@ -591,7 +632,7 @@ describe('PATCH /api/users/:userId', () => {
   });
 
   it('rejects an email change for a user in multiple organizations (403)', async () => {
-    mockBootstrapCount.mockResolvedValue(2);
+    mockRevokeAdminUserGlobalSingleOrgSessionsInTx.mockResolvedValue(null);
     useTx(memberTx());
     const response = await PATCH(patchReq({ email: 'attacker@example.com' }), ctx);
     expect(response.status).toBe(403);
@@ -649,7 +690,7 @@ describe('PATCH /api/users/:userId', () => {
   });
 
   it('cancels account-global reset flows when the final active membership is deactivated', async () => {
-    mockBootstrapCount.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+    mockBootstrapCount.mockResolvedValue(1);
     mockBootstrapFindMany.mockResolvedValue([
       { organizationId: 'org-1' },
       { organizationId: 'org-2' },

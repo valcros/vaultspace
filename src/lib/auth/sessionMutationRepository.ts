@@ -12,6 +12,12 @@ export const BOOTSTRAP_SESSION_REVOKE_USER_ORG_FUNCTION =
   'public.bootstrap_session_revoke_user_org_v1(text, text)' as const;
 export const BOOTSTRAP_SESSION_REVOKE_USER_GLOBAL_FUNCTION =
   'public.bootstrap_session_revoke_user_global_v1(text, text)' as const;
+export const BOOTSTRAP_SESSION_REVOKE_SELF_OTHERS_FUNCTION =
+  'public.bootstrap_session_revoke_self_others_v1(text)' as const;
+export const BOOTSTRAP_SESSION_REVOKE_ADMIN_USER_ORG_FUNCTION =
+  'public.bootstrap_session_revoke_admin_user_org_v1(text, text)' as const;
+export const BOOTSTRAP_SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION =
+  'public.bootstrap_session_revoke_admin_user_global_single_org_v1(text, text)' as const;
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,255}$/;
@@ -49,6 +55,15 @@ interface RefreshedBootstrapSessionRow {
 
 interface SessionIdRow {
   session_id: string;
+}
+
+interface AuthorizedRevocationRow {
+  authorization_proven: boolean;
+  session_id: string | null;
+}
+
+export interface AuthorizedSessionRevocation {
+  sessionIds: string[];
 }
 
 export type SessionMutationQueryClient = Pick<Prisma.TransactionClient, '$queryRaw'>;
@@ -101,12 +116,31 @@ function mapAtMostOne<T>(rows: T[], errorCode: string): T | null {
   return rows[0]!;
 }
 
-function mapUniqueSessionIds(rows: SessionIdRow[]): string[] {
-  const sessionIds = rows.map(mapSessionId);
+function mapAuthorizedRevocation(
+  rows: AuthorizedRevocationRow[]
+): AuthorizedSessionRevocation | null {
+  if (rows.length === 0) {
+    return null;
+  }
+  if (rows.some((row) => row.authorization_proven !== true)) {
+    throw new Error('BOOTSTRAP_SESSION_REVOCATION_AUTHORIZATION_MARKER_INVALID');
+  }
+
+  const sentinelRows = rows.filter((row) => row.session_id === null);
+  if (sentinelRows.length > 0 && (rows.length !== 1 || sentinelRows.length !== 1)) {
+    throw new Error('BOOTSTRAP_SESSION_REVOCATION_SENTINEL_INVALID');
+  }
+
+  const sessionIds = rows
+    .filter(
+      (row): row is AuthorizedRevocationRow & { session_id: string } => row.session_id !== null
+    )
+    .map((row) => mapSessionId(row));
   if (new Set(sessionIds).size !== sessionIds.length) {
     throw new Error('BOOTSTRAP_SESSION_MUTATION_DUPLICATE_SESSION_ID');
   }
-  return sessionIds;
+
+  return { sessionIds };
 }
 
 export class SessionMutationRepository {
@@ -180,46 +214,61 @@ export class SessionMutationRepository {
     return row ? mapSessionId(row) : null;
   }
 
-  async revokeUserOrganizationSessions(userId: string, organizationId: string): Promise<string[]> {
-    if (!validIdentifier(userId) || !validIdentifier(organizationId)) {
-      return [];
+  async revokeSelfOtherSessions(actorToken: string): Promise<AuthorizedSessionRevocation | null> {
+    if (!validToken(actorToken)) {
+      return null;
     }
 
-    const rows = await this.client.$queryRaw<SessionIdRow[]>(
+    const rows = await this.client.$queryRaw<AuthorizedRevocationRow[]>(
       Prisma.sql`
-        SELECT session_id
-        FROM public.bootstrap_session_revoke_user_org_v1(
-          ${userId}::text,
-          ${organizationId}::text
-        )
+        SELECT authorization_proven, session_id
+        FROM public.bootstrap_session_revoke_self_others_v1(${actorToken}::text)
       `
     );
 
-    return mapUniqueSessionIds(rows);
+    return mapAuthorizedRevocation(rows);
   }
 
-  async revokeAllUserSessions(
-    userId: string,
-    preservedSessionId: string | null = null
-  ): Promise<string[]> {
-    if (
-      !validIdentifier(userId) ||
-      (preservedSessionId !== null && !validIdentifier(preservedSessionId))
-    ) {
-      return [];
+  async revokeAdminUserOrganizationSessions(
+    actorToken: string,
+    targetUserId: string
+  ): Promise<AuthorizedSessionRevocation | null> {
+    if (!validToken(actorToken) || !validIdentifier(targetUserId)) {
+      return null;
     }
 
-    const rows = await this.client.$queryRaw<SessionIdRow[]>(
+    const rows = await this.client.$queryRaw<AuthorizedRevocationRow[]>(
       Prisma.sql`
-        SELECT session_id
-        FROM public.bootstrap_session_revoke_user_global_v1(
-          ${userId}::text,
-          ${preservedSessionId}::text
+        SELECT authorization_proven, session_id
+        FROM public.bootstrap_session_revoke_admin_user_org_v1(
+          ${actorToken}::text,
+          ${targetUserId}::text
         )
       `
     );
 
-    return mapUniqueSessionIds(rows);
+    return mapAuthorizedRevocation(rows);
+  }
+
+  async revokeAdminUserGlobalSingleOrganizationSessions(
+    actorToken: string,
+    targetUserId: string
+  ): Promise<AuthorizedSessionRevocation | null> {
+    if (!validToken(actorToken) || !validIdentifier(targetUserId)) {
+      return null;
+    }
+
+    const rows = await this.client.$queryRaw<AuthorizedRevocationRow[]>(
+      Prisma.sql`
+        SELECT authorization_proven, session_id
+        FROM public.bootstrap_session_revoke_admin_user_global_single_org_v1(
+          ${actorToken}::text,
+          ${targetUserId}::text
+        )
+      `
+    );
+
+    return mapAuthorizedRevocation(rows);
   }
 }
 

@@ -25,10 +25,12 @@ export interface RequestContext {
   userAgent: string;
 }
 
-/**
- * Get session from cookies (for server components/API routes)
- */
-export async function getSession(): Promise<SessionData | null> {
+export interface AuthenticatedSessionCredential {
+  session: SessionData;
+  token: string;
+}
+
+async function getSessionCredential(): Promise<AuthenticatedSessionCredential | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_CONFIG.COOKIE_NAME)?.value;
 
@@ -37,10 +39,17 @@ export async function getSession(): Promise<SessionData | null> {
   }
 
   try {
-    return await validateSession(token);
+    return { session: await validateSession(token), token };
   } catch {
     return null;
   }
+}
+
+/**
+ * Get session from cookies (for server components/API routes)
+ */
+export async function getSession(): Promise<SessionData | null> {
+  return (await getSessionCredential())?.session ?? null;
 }
 
 /**
@@ -105,13 +114,21 @@ export async function requireAuthFromRequest(request: NextRequest): Promise<Sess
  * Require authentication - throws if not authenticated
  */
 export async function requireAuth(): Promise<SessionData> {
-  const session = await getSession();
+  return (await requireAuthCredential()).session;
+}
 
-  if (!session) {
+/**
+ * Require authentication and retain the exact server-side bearer proof for a
+ * credential-bound database operation. The token is never added to SessionData.
+ */
+export async function requireAuthCredential(): Promise<AuthenticatedSessionCredential> {
+  const credential = await getSessionCredential();
+
+  if (!credential) {
     throw new AuthenticationError('Authentication required');
   }
 
-  return session;
+  return credential;
 }
 
 /**
