@@ -468,11 +468,18 @@ describe('W1-2 session mutation route conversion', () => {
     >(
       'SELECT policyname AS policy_name, permissive, roles, qual AS using_expression ' +
         "FROM pg_catalog.pg_policies WHERE schemaname = 'public' " +
-        "AND tablename = 'user_organizations' AND policyname LIKE 'bootstrap_owner_%'"
+        "AND tablename = 'user_organizations' AND policyname LIKE 'bootstrap_owner_%' " +
+        'ORDER BY policyname'
     );
     expect(membershipPolicies).toEqual([
       {
         policy_name: 'bootstrap_owner_membership_inventory',
+        permissive: 'PERMISSIVE',
+        roles: [OWNER_ROLE],
+        using_expression: 'true',
+      },
+      {
+        policy_name: 'bootstrap_owner_membership_password_reset_lock',
         permissive: 'PERMISSIVE',
         roles: [OWNER_ROLE],
         using_expression: 'true',
