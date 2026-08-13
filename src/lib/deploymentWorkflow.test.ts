@@ -801,7 +801,10 @@ describe('staging deployment workflow boundary', () => {
       const source = readFileSync(`${repositoryRoot}/${migrationPath}`, 'utf8');
       expect(source).not.toContain('npx prisma migrate deploy');
     }
-    expect(deployWorkflow).toContain('MIGRATION_DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    expect(deployWorkflow).toContain(
+      'MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}'
+    );
+    expect(deployWorkflow).not.toContain('MIGRATION_DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(deployWorkflow).toContain('npm run db:migrate');
     const entrypoint = readFileSync(`${repositoryRoot}/docker-entrypoint.sh`, 'utf8');
     expect(entrypoint).not.toContain('db push --accept-data-loss');

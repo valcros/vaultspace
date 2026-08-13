@@ -1,10 +1,12 @@
-BEGIN;
-
-SET LOCAL lock_timeout = '10s';
-SET LOCAL statement_timeout = '120s';
-
 -- Unit 10 is an inert password-reset redemption foundation. Fail closed on
--- owner, privilege, policy, function, and exact nine-function runtime drift.
+-- owner, privilege, policy, function, exact nine-function runtime drift, and
+-- accidental use of the ordinary runtime credential. This read-only preflight
+-- intentionally runs before the explicit DDL transaction. PostgreSQL then
+-- reports its categorical guard directly instead of masking it with a later
+-- "current transaction is aborted" error.
+SET lock_timeout = '10s';
+SET statement_timeout = '120s';
+
 DO $$
 DECLARE
   owner_oid oid;
@@ -35,6 +37,21 @@ BEGIN
     RAISE EXCEPTION USING
       ERRCODE = 'P0001',
       MESSAGE = 'BOOTSTRAP_OWNER_POSTURE_INVALID';
+  END IF;
+
+  SELECT oid
+    INTO runtime_oid
+  FROM pg_catalog.pg_roles
+  WHERE rolname = 'vaultspace_app';
+
+  IF runtime_oid IS NOT NULL AND runtime_oid = (
+    SELECT oid
+    FROM pg_catalog.pg_roles
+    WHERE rolname = CURRENT_USER
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = 'P0001',
+      MESSAGE = 'BOOTSTRAP_MIGRATION_RUNTIME_CREDENTIAL_FORBIDDEN';
   END IF;
 
   SELECT COALESCE(
@@ -124,11 +141,6 @@ BEGIN
       ERRCODE = 'P0001',
       MESSAGE = 'BOOTSTRAP_OWNER_MEMBERSHIP_POLICY_INVALID';
   END IF;
-
-  SELECT oid
-    INTO runtime_oid
-  FROM pg_catalog.pg_roles
-  WHERE rolname = 'vaultspace_app';
 
   IF runtime_oid IS NULL THEN
     RETURN;
@@ -256,6 +268,13 @@ BEGIN
   END IF;
 END
 $$;
+
+-- All catalog mutations remain atomic after the read-only credential and
+-- prestate proof succeeds.
+BEGIN;
+
+SET LOCAL lock_timeout = '10s';
+SET LOCAL statement_timeout = '120s';
 
 -- Capture the ordinary role's reviewed reset-table residual exactly. The
 -- foundation neither broadens nor contracts this temporary W1-2 residual.
