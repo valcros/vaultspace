@@ -271,7 +271,7 @@ describe('W1-2 routed login bootstrap candidate', () => {
     expect(schemaPrivileges).toEqual({ can_use: true, can_create: false });
   });
 
-  it('installs only the reviewed owner policies, including the Unit 9 membership inventory', async () => {
+  it('installs only the reviewed owner policies through the Unit 10 foundation', async () => {
     const policies = await rawPrisma.$queryRawUnsafe<
       Array<{
         tablename: string;
@@ -284,7 +284,7 @@ describe('W1-2 routed login bootstrap candidate', () => {
     >(
       'SELECT tablename, policyname, permissive, roles, cmd, qual FROM pg_catalog.pg_policies ' +
         "WHERE schemaname = 'public' AND policyname LIKE 'bootstrap_owner_%' " +
-        'ORDER BY tablename'
+        'ORDER BY tablename, policyname'
     );
 
     expect(policies).toEqual([
@@ -292,6 +292,22 @@ describe('W1-2 routed login bootstrap candidate', () => {
         tablename: 'organizations',
         policyname: 'bootstrap_owner_active_organization_login_lookup',
         permissive: 'RESTRICTIVE',
+        roles: [OWNER_ROLE],
+        cmd: 'SELECT',
+        qual: '("isActive" IS TRUE)',
+      },
+      {
+        tablename: 'organizations',
+        policyname: 'bootstrap_owner_active_organization_password_reset_lock',
+        permissive: 'PERMISSIVE',
+        roles: [OWNER_ROLE],
+        cmd: 'UPDATE',
+        qual: '("isActive" IS TRUE)',
+      },
+      {
+        tablename: 'organizations',
+        policyname: 'bootstrap_owner_active_organization_password_reset_select',
+        permissive: 'PERMISSIVE',
         roles: [OWNER_ROLE],
         cmd: 'SELECT',
         qual: '("isActive" IS TRUE)',
@@ -305,11 +321,35 @@ describe('W1-2 routed login bootstrap candidate', () => {
         qual: 'true',
       },
       {
+        tablename: 'user_organizations',
+        policyname: 'bootstrap_owner_membership_password_reset_lock',
+        permissive: 'PERMISSIVE',
+        roles: [OWNER_ROLE],
+        cmd: 'UPDATE',
+        qual: 'true',
+      },
+      {
         tablename: 'users',
         policyname: 'bootstrap_owner_active_user_login_lookup',
         permissive: 'RESTRICTIVE',
         roles: [OWNER_ROLE],
         cmd: 'SELECT',
+        qual: '("isActive" IS TRUE)',
+      },
+      {
+        tablename: 'users',
+        policyname: 'bootstrap_owner_active_user_password_reset_select',
+        permissive: 'PERMISSIVE',
+        roles: [OWNER_ROLE],
+        cmd: 'SELECT',
+        qual: '("isActive" IS TRUE)',
+      },
+      {
+        tablename: 'users',
+        policyname: 'bootstrap_owner_active_user_password_reset_update',
+        permissive: 'PERMISSIVE',
+        roles: [OWNER_ROLE],
+        cmd: 'UPDATE',
         qual: '("isActive" IS TRUE)',
       },
     ]);
