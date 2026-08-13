@@ -29,6 +29,8 @@ const SESSION_REVOKE_ADMIN_USER_ORG_FUNCTION =
   'public.bootstrap_session_revoke_admin_user_org_v1(text, text)';
 const SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION =
   'public.bootstrap_session_revoke_admin_user_global_single_org_v1(text, text)';
+const PASSWORD_RESET_CANDIDATE_FUNCTION = 'public.bootstrap_password_reset_candidate_v1(text)';
+const PASSWORD_RESET_REDEEM_FUNCTION = 'public.bootstrap_password_reset_redeem_v1(text, text)';
 const REQUIRED_ALLOW_FLAG = 'true';
 
 function requireEnv(name: string): string {
@@ -176,6 +178,12 @@ async function main() {
     await admin.$executeRawUnsafe(
       `GRANT EXECUTE ON FUNCTION ${SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION} TO ${APP_ROLE};`
     );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${PASSWORD_RESET_CANDIDATE_FUNCTION} TO ${APP_ROLE};`
+    );
+    await admin.$executeRawUnsafe(
+      `GRANT EXECUTE ON FUNCTION ${PASSWORD_RESET_REDEEM_FUNCTION} TO ${APP_ROLE};`
+    );
 
     const [bootstrapGrants] = await admin.$queryRawUnsafe<
       Array<{
@@ -190,6 +198,8 @@ async function main() {
         session_revoke_self_others_execute: boolean;
         session_revoke_admin_user_org_execute: boolean;
         session_revoke_admin_user_global_single_org_execute: boolean;
+        password_reset_candidate_execute: boolean;
+        password_reset_redeem_execute: boolean;
         unexpected_login_acl_count: bigint;
         unexpected_session_acl_count: bigint;
         unexpected_organization_acl_count: bigint;
@@ -230,6 +240,12 @@ async function main() {
          pg_catalog.has_function_privilege(
            '${APP_ROLE}', '${SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION}', 'EXECUTE'
          ) AS session_revoke_admin_user_global_single_org_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${PASSWORD_RESET_CANDIDATE_FUNCTION}', 'EXECUTE'
+         ) AS password_reset_candidate_execute,
+         pg_catalog.has_function_privilege(
+           '${APP_ROLE}', '${PASSWORD_RESET_REDEEM_FUNCTION}', 'EXECUTE'
+         ) AS password_reset_redeem_execute,
          (
            SELECT pg_catalog.count(*)
            FROM pg_catalog.pg_proc AS function
@@ -288,7 +304,9 @@ async function main() {
                pg_catalog.to_regprocedure('${SESSION_INVALIDATE_FUNCTION}'),
                pg_catalog.to_regprocedure('${SESSION_REVOKE_SELF_OTHERS_FUNCTION}'),
                pg_catalog.to_regprocedure('${SESSION_REVOKE_ADMIN_USER_ORG_FUNCTION}'),
-               pg_catalog.to_regprocedure('${SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION}')
+               pg_catalog.to_regprocedure('${SESSION_REVOKE_ADMIN_USER_GLOBAL_SINGLE_ORG_FUNCTION}'),
+               pg_catalog.to_regprocedure('${PASSWORD_RESET_CANDIDATE_FUNCTION}'),
+               pg_catalog.to_regprocedure('${PASSWORD_RESET_REDEEM_FUNCTION}')
              )
          ) AS unexpected_bootstrap_execute_count`
     );
@@ -305,13 +323,15 @@ async function main() {
       !bootstrapGrants.session_revoke_self_others_execute ||
       !bootstrapGrants.session_revoke_admin_user_org_execute ||
       !bootstrapGrants.session_revoke_admin_user_global_single_org_execute ||
+      !bootstrapGrants.password_reset_candidate_execute ||
+      !bootstrapGrants.password_reset_redeem_execute ||
       Number(bootstrapGrants.unexpected_login_acl_count) !== 0 ||
       Number(bootstrapGrants.unexpected_session_acl_count) !== 0 ||
       Number(bootstrapGrants.unexpected_organization_acl_count) !== 0 ||
       Number(bootstrapGrants.unexpected_bootstrap_execute_count) !== 0
     ) {
       throw new Error(
-        'runtime bootstrap function grants must match the routed resolve and narrow session-mutation families only'
+        'runtime bootstrap function grants must match the exact routed resolve, session-mutation, and password-reset redemption families only'
       );
     }
 

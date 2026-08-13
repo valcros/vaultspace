@@ -7,21 +7,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
-import { clearSessionCache, deactivateAllUserSessionsInTx } from '@/lib/auth';
+import { clearSessionCache } from '@/lib/auth';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import {
-  lockPasswordResetUser,
-  passwordResetTokenMatchesStoredValue,
-  resolvePasswordResetTokenLookup,
-} from '@/lib/auth/passwordResetToken';
-import { bootstrapDb as db } from '@/lib/db';
+  PasswordResetCapabilityRepository,
+  passwordResetCapabilityRepository,
+} from '@/lib/auth/passwordResetCapabilityRepository';
+import { resolvePasswordResetTokenLookup } from '@/lib/auth/passwordResetToken';
+import { db, setBootstrapContext, setTransactionOrganizationContext } from '@/lib/db';
 import { getRequestContext } from '@/lib/middleware';
 import { z } from 'zod';
 
+const INVALID_RESET_TOKEN_MESSAGE = 'Invalid or expired password reset token';
+
 const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'Token is required').max(128, 'Invalid reset token'),
+  token: z.string().min(1, INVALID_RESET_TOKEN_MESSAGE).max(128, INVALID_RESET_TOKEN_MESSAGE),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
+
+function invalidResetTokenResponse() {
+  return NextResponse.json({ error: INVALID_RESET_TOKEN_MESSAGE }, { status: 400 });
+}
 
 export async function POST(request: NextRequest) {
   const reqContext = getRequestContext(request);
@@ -43,19 +49,16 @@ export async function POST(request: NextRequest) {
           errorCode: 'INVALID_OR_EXPIRED_TOKEN',
         })
       );
-      return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
+      return invalidResetTokenResponse();
     }
 
-    // Find valid reset token
-    const resetToken = await db.passwordResetToken.findFirst({
-      where: {
-        token: tokenLookup.storedToken,
-        expiresAt: { gt: new Date() },
-        usedAt: null,
-      },
-    });
-
-    if (!resetToken || !passwordResetTokenMatchesStoredValue(token, resetToken.token)) {
+    // Reject invalid, used, expired, or inactive capabilities before cost-12
+    // hashing. The candidate function returns only a proof marker and no
+    // identity or reset-flow metadata.
+    const candidateProven = await passwordResetCapabilityRepository.candidateProven(
+      tokenLookup.storedToken
+    );
+    if (!candidateProven) {
       console.warn(
         JSON.stringify({
           component: 'reset-password',
@@ -65,197 +68,91 @@ export async function POST(request: NextRequest) {
           errorCode: 'INVALID_OR_EXPIRED_TOKEN',
         })
       );
-      return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
+      return invalidResetTokenResponse();
     }
 
-    // Verify the user is active
-    const user = await db.user.findUnique({
-      where: { id: resetToken.userId },
-      select: {
-        id: true,
-        email: true,
-        isActive: true,
-        organizations: {
-          where: { isActive: true, organization: { isActive: true } },
-          select: { role: true, organizationId: true },
-        },
-      },
-    });
-
-    // Account-global password changes must have at least one active tenant in
-    // which the completion can be audited. This also blocks legacy tokens or
-    // tokens minted before a user's final membership was deactivated.
-    if (!user || !user.isActive || user.organizations.length === 0) {
-      return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
-    }
-
-    // Hash new password. The findFirst above already rejected invalid/used/
-    // expired tokens, so the only case where this hash is "wasted" is a genuine
-    // race where the token is consumed between validation and the claim below —
-    // near-never, and cheaper than splitting consume + password-update across
-    // two transactions.
+    // Candidate proof is deliberately non-authoritative. Redemption repeats
+    // every eligibility check under the account advisory and row locks.
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Consume the token, set the password, and deactivate sessions in ONE
-    // transaction. The first statement CLAIMS the token conditionally: it only
-    // succeeds while the token is still unused and unexpired, so a token
-    // invalidated after the findFirst above (e.g. by an email change that
-    // consumes outstanding tokens, or a concurrent reset) can no longer reset
-    // the password. With a unique id the claim matches 0 or 1 row; anything but
-    // 1 means we lost the race and the transaction commits without touching the
-    // password.
-    const sessionIds = await db.$transaction(async (tx) => {
-      await lockPasswordResetUser(tx, resetToken.userId);
-      // Use the same account lock as every issuance path. This prevents an old
-      // token redemption and replacement-token issuance from interleaving
-      // their token claims in opposite lock order.
-      await tx.$queryRaw`
-        SELECT 1 FROM users
-        WHERE id = ${resetToken.userId}
-        FOR UPDATE`;
+    const redemption = await db.$transaction(
+      async (tx) => {
+        await setBootstrapContext(tx);
+        const transactionRepository = new PasswordResetCapabilityRepository(tx);
+        const result = await transactionRepository.redeem(tokenLookup.storedToken, passwordHash);
+        if (!result) {
+          return null;
+        }
 
-      await tx.$queryRaw`
-        SELECT 1
-        FROM user_organizations uo
-        JOIN organizations o ON o.id = uo."organizationId"
-        WHERE uo."userId" = ${resetToken.userId}
-        FOR UPDATE OF uo, o`;
+        for (const auditOrganization of result.auditOrganizations) {
+          await setTransactionOrganizationContext(tx, auditOrganization.organizationId);
 
-      // Re-read account and membership eligibility under the locks. If a
-      // concurrent deactivation won before us, no token or password mutation
-      // occurs.
-      const lockedUser = await tx.user.findUnique({
-        where: { id: resetToken.userId },
-        select: {
-          id: true,
-          email: true,
-          isActive: true,
-          organizations: {
-            where: { isActive: true, organization: { isActive: true } },
-            select: { role: true, organizationId: true },
-          },
-        },
-      });
-
-      if (!lockedUser || !lockedUser.isActive || lockedUser.organizations.length === 0) {
-        return null;
-      }
-
-      const claim = await tx.passwordResetToken.updateMany({
-        where: {
-          id: resetToken.id,
-          usedAt: null,
-          expiresAt: { gt: new Date() },
-        },
-        data: { usedAt: new Date() },
-      });
-
-      if (claim.count !== 1) {
-        return null;
-      }
-      await tx.passwordResetRecovery.updateMany({
-        where: { flowId: resetToken.id, wipedAt: null },
-        data: {
-          cipherVersion: null,
-          keyId: null,
-          nonce: null,
-          ciphertext: null,
-          authTag: null,
-          wipedAt: new Date(),
-          enqueueStatus: 'REDEEMED',
-        },
-      });
-
-      await tx.user.update({
-        where: { id: resetToken.userId },
-        data: { passwordHash },
-      });
-
-      // Invalidate any other outstanding reset tokens for this user.
-      const supersededResetFlows = await tx.passwordResetToken.findMany({
-        where: {
-          userId: resetToken.userId,
-          id: { not: resetToken.id },
-          usedAt: null,
-        },
-        select: { id: true, requestId: true },
-      });
-      await tx.passwordResetToken.updateMany({
-        where: {
-          userId: resetToken.userId,
-          id: { not: resetToken.id },
-          usedAt: null,
-        },
-        data: { usedAt: new Date() },
-      });
-      await tx.passwordResetRecovery.updateMany({
-        where: {
-          resetToken: { userId: resetToken.userId, usedAt: { not: null } },
-          wipedAt: null,
-        },
-        data: {
-          cipherVersion: null,
-          keyId: null,
-          nonce: null,
-          ciphertext: null,
-          authTag: null,
-          wipedAt: new Date(),
-          enqueueStatus: 'SUPERSEDED',
-        },
-      });
-
-      const revokedSessionIds = await deactivateAllUserSessionsInTx(tx, resetToken.userId);
-
-      for (const membership of lockedUser.organizations) {
-        await createSecurityAuditEvent(tx, {
-          organizationId: membership.organizationId,
-          eventType: 'USER_PASSWORD_RESET',
-          actorType: membership.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
-          actorId: lockedUser.id,
-          actorEmail: lockedUser.email,
-          requestId: reqContext.requestId,
-          correlationId: resetToken.id,
-          description: 'User completed a password reset',
-          metadata: {
-            outcome: 'success',
-            stage: 'completed',
-            invalidatedSessionCount: revokedSessionIds.length,
-            initiationRequestId: resetToken.requestId ?? null,
-          },
-          ipAddress,
-          userAgent,
-        });
-        for (const superseded of supersededResetFlows) {
           await createSecurityAuditEvent(tx, {
-            organizationId: membership.organizationId,
+            organizationId: auditOrganization.organizationId,
             eventType: 'USER_PASSWORD_RESET',
-            actorType: membership.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
-            actorId: lockedUser.id,
-            actorEmail: lockedUser.email,
-            requestId: superseded.requestId ?? `recovery-${superseded.id}`,
-            correlationId: superseded.id,
-            idempotencyKey: `password-reset-${superseded.id}-superseded-${membership.organizationId}`,
-            description: 'Password reset flow was superseded by successful password redemption',
+            actorType: auditOrganization.actorType,
+            actorId: result.subjectUserId,
+            actorEmail: result.subjectEmail,
+            requestId: reqContext.requestId,
+            correlationId: result.flowId,
+            idempotencyKey: `password-reset-${result.flowId}-completed-${auditOrganization.organizationId}`,
+            description: 'User completed a password reset',
             metadata: {
-              outcome: 'cancelled',
-              stage: 'redemption_supersession',
-              replacementFlowId: resetToken.id,
-              errorCode: 'SUPERSEDED',
+              outcome: 'success',
+              stage: 'completed',
+              invalidatedSessionCount: result.revokedSessionIds.length,
+              initiationRequestId: result.initiationRequestId,
             },
             ipAddress,
             userAgent,
           });
+
+          for (const superseded of result.supersededFlows) {
+            await createSecurityAuditEvent(tx, {
+              organizationId: auditOrganization.organizationId,
+              eventType: 'USER_PASSWORD_RESET',
+              actorType: auditOrganization.actorType,
+              actorId: result.subjectUserId,
+              actorEmail: result.subjectEmail,
+              requestId: superseded.requestId ?? `recovery-${superseded.flowId}`,
+              correlationId: superseded.flowId,
+              idempotencyKey: `password-reset-${superseded.flowId}-superseded-${auditOrganization.organizationId}`,
+              description: 'Password reset flow was superseded by successful password redemption',
+              metadata: {
+                outcome: 'cancelled',
+                stage: 'redemption_supersession',
+                replacementFlowId: result.flowId,
+                errorCode: 'SUPERSEDED',
+              },
+              ipAddress,
+              userAgent,
+            });
+          }
         }
-      }
 
-      return revokedSessionIds;
-    });
+        return result;
+      },
+      { maxWait: 5_000, timeout: 30_000 }
+    );
 
-    if (sessionIds === null) {
-      return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
+    if (!redemption) {
+      return invalidResetTokenResponse();
     }
 
-    await clearSessionCache(sessionIds);
+    try {
+      await clearSessionCache(redemption.revokedSessionIds);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          component: 'reset-password',
+          event: 'revoked_session_cache_delete',
+          outcome: 'failed',
+          requestId: reqContext.requestId,
+          requestedCount: redemption.revokedSessionIds.length,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        })
+      );
+    }
 
     // eslint-disable-next-line no-console
     console.log(
@@ -264,14 +161,18 @@ export async function POST(request: NextRequest) {
         event: 'password_reset_completed',
         outcome: 'success',
         requestId: reqContext.requestId,
-        correlationId: resetToken.id,
-        invalidatedSessionCount: sessionIds.length,
+        correlationId: redemption.flowId,
+        invalidatedSessionCount: redemption.revokedSessionIds.length,
       })
     );
 
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof z.ZodError) {
+      if (error.issues.some((issue) => issue.path[0] === 'token')) {
+        return invalidResetTokenResponse();
+      }
+
       return NextResponse.json(
         { error: error.errors[0]?.message || 'Invalid input' },
         { status: 400 }

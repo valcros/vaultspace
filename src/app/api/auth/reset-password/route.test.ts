@@ -2,18 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mockHash = vi.fn();
-const mockFindFirst = vi.fn();
-const mockUserFindUnique = vi.fn();
-const mockUserUpdate = vi.fn();
-const mockLockedUserFindUnique = vi.fn();
-const mockLockUser = vi.fn();
-const mockAdvisoryLockUser = vi.fn();
-const mockTokenUpdate = vi.fn();
-const mockTokenUpdateMany = vi.fn();
-const mockTokenFindMany = vi.fn();
-const mockRecoveryUpdateMany = vi.fn();
+const mockCandidateProven = vi.fn();
+const mockRedeem = vi.fn();
+const mockRepositoryConstructor = vi.fn();
 const mockTransaction = vi.fn();
-const mockDeactivateAllUserSessionsInTx = vi.fn();
+const mockSetBootstrapContext = vi.fn();
+const mockSetTransactionOrganizationContext = vi.fn();
 const mockClearSessionCache = vi.fn();
 const mockCreateSecurityAuditEvent = vi.fn();
 
@@ -26,12 +20,27 @@ vi.mock('bcryptjs', () => ({
 vi.mock('@/lib/auth', () => ({
   clearSessionCache: (...args: Parameters<typeof mockClearSessionCache>) =>
     mockClearSessionCache(...args),
-  deactivateAllUserSessionsInTx: (...args: Parameters<typeof mockDeactivateAllUserSessionsInTx>) =>
-    mockDeactivateAllUserSessionsInTx(...args),
+}));
+
+vi.mock('@/lib/auth/passwordResetCapabilityRepository', () => ({
+  passwordResetCapabilityRepository: {
+    candidateProven: (...args: Parameters<typeof mockCandidateProven>) =>
+      mockCandidateProven(...args),
+  },
+  PasswordResetCapabilityRepository: class MockPasswordResetCapabilityRepository {
+    constructor(client: unknown) {
+      mockRepositoryConstructor(client);
+    }
+
+    redeem(...args: Parameters<typeof mockRedeem>) {
+      return mockRedeem(...args);
+    }
+  },
 }));
 
 vi.mock('@/lib/audit/securityAudit', () => ({
-  createSecurityAuditEvent: (...args: unknown[]) => mockCreateSecurityAuditEvent(...args),
+  createSecurityAuditEvent: (...args: Parameters<typeof mockCreateSecurityAuditEvent>) =>
+    mockCreateSecurityAuditEvent(...args),
 }));
 
 vi.mock('@/lib/middleware', () => ({
@@ -42,255 +51,205 @@ vi.mock('@/lib/middleware', () => ({
   })),
 }));
 
-vi.mock('@/lib/db', () => {
-  const client = {
-    passwordResetToken: {
-      findFirst: (...args: unknown[]) => mockFindFirst(...args),
-      update: (...args: unknown[]) => mockTokenUpdate(...args),
-      updateMany: (...args: unknown[]) => mockTokenUpdateMany(...args),
-      findMany: (...args: unknown[]) => mockTokenFindMany(...args),
-    },
-    passwordResetRecovery: {
-      updateMany: (...args: unknown[]) => mockRecoveryUpdateMany(...args),
-    },
-    user: {
-      findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
-      update: (...args: unknown[]) => mockUserUpdate(...args),
-    },
+vi.mock('@/lib/db', () => ({
+  db: {
     $transaction: (...args: Parameters<typeof mockTransaction>) => mockTransaction(...args),
-  };
-  return { db: client, bootstrapDb: client };
-});
+  },
+  setBootstrapContext: (...args: Parameters<typeof mockSetBootstrapContext>) =>
+    mockSetBootstrapContext(...args),
+  setTransactionOrganizationContext: (
+    ...args: Parameters<typeof mockSetTransactionOrganizationContext>
+  ) => mockSetTransactionOrganizationContext(...args),
+}));
 
 import { POST } from './route';
 import { createPasswordResetToken } from '@/lib/auth/passwordResetToken';
 
 const LEGACY_TOKEN = 'A'.repeat(43);
+const INVALID_RESET_RESPONSE = { error: 'Invalid or expired password reset token' };
+const tx = { $executeRaw: vi.fn(), $queryRaw: vi.fn() };
+const redemption = {
+  flowId: 'flow-1',
+  subjectUserId: 'user-1',
+  subjectEmail: 'user@example.test',
+  initiationRequestId: 'request-forgot-1',
+  auditOrganizations: [
+    { organizationId: 'org-1', actorType: 'ADMIN' },
+    { organizationId: 'org-2', actorType: 'VIEWER' },
+  ],
+  supersededFlows: [
+    { flowId: 'flow-2', requestId: 'request-forgot-2' },
+    { flowId: 'flow-3', requestId: null },
+  ],
+  revokedSessionIds: ['session-1', 'session-2'],
+};
+
+function resetRequest(token = LEGACY_TOKEN, password = 'password123') {
+  return new NextRequest('http://localhost/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  });
+}
 
 describe('POST /api/auth/reset-password', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env['SESSION_SECRET'] = 'test-session-secret';
+    delete process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'];
 
-    mockHash.mockResolvedValue('hashed-password');
-    mockFindFirst.mockResolvedValue({
-      id: 'reset-1',
-      userId: 'user-1',
-      requestId: 'req-forgot',
-      token: LEGACY_TOKEN,
-    });
-    mockUserFindUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'user@example.com',
-      isActive: true,
-      organizations: [{ role: 'ADMIN', organizationId: 'org-1' }],
-    });
-    mockDeactivateAllUserSessionsInTx.mockResolvedValue(['token-1', 'token-2']);
-    mockClearSessionCache.mockResolvedValue(undefined);
+    mockCandidateProven.mockResolvedValue(true);
+    mockHash.mockResolvedValue(`$2b$12$${'A'.repeat(53)}`);
+    mockRedeem.mockResolvedValue(redemption);
+    mockSetBootstrapContext.mockResolvedValue(undefined);
+    mockSetTransactionOrganizationContext.mockResolvedValue(undefined);
     mockCreateSecurityAuditEvent.mockResolvedValue('event-1');
-
-    // Default return values are configured OUTSIDE the transaction impl so a
-    // per-test override (e.g. the claim losing the race) is not clobbered each
-    // time the transaction callback rebuilds the tx object.
-    mockUserUpdate.mockResolvedValue(undefined);
-    mockLockedUserFindUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'user@example.com',
-      isActive: true,
-      organizations: [{ role: 'ADMIN', organizationId: 'org-1' }],
-    });
-    mockLockUser.mockResolvedValue([]);
-    mockAdvisoryLockUser.mockResolvedValue(1);
-    mockTokenUpdate.mockResolvedValue(undefined);
-    // The conditional claim (first updateMany) matched exactly one row.
-    mockTokenUpdateMany.mockResolvedValue({ count: 1 });
-    mockTokenFindMany.mockResolvedValue([]);
-    mockRecoveryUpdateMany.mockResolvedValue({ count: 1 });
-
-    mockTransaction.mockImplementation(async (callback) => {
-      const tx = {
-        user: { findUnique: mockLockedUserFindUnique, update: mockUserUpdate },
-        $queryRaw: mockLockUser,
-        $executeRaw: mockAdvisoryLockUser,
-        passwordResetToken: {
-          update: mockTokenUpdate,
-          updateMany: mockTokenUpdateMany,
-          findMany: mockTokenFindMany,
-        },
-        passwordResetRecovery: { updateMany: mockRecoveryUpdateMany },
-        session: {
-          findMany: vi.fn(),
-          updateMany: vi.fn(),
-        },
-      };
-
-      return callback(tx as Parameters<typeof callback>[0]);
-    });
+    mockClearSessionCache.mockResolvedValue(undefined);
+    mockTransaction.mockImplementation(async (callback) => callback(tx));
   });
 
-  it('deactivates sessions inside the password reset transaction and clears cache after commit', async () => {
-    const request = new NextRequest('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
-    });
-
-    const response = await POST(request);
-    const body = await response.json();
+  it('proves the candidate before bcrypt and composes redemption plus audits atomically', async () => {
+    const response = await POST(resetRequest());
 
     expect(response.status).toBe(200);
-    expect(mockLockUser).toHaveBeenCalledTimes(2);
-    expect(mockAdvisoryLockUser).toHaveBeenCalledTimes(1);
-    expect(body.success).toBe(true);
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
-    // The claim (first updateMany) must be gated on the token id AND still-unused
-    // AND still-unexpired — if any predicate is dropped the atomic guarantee is
-    // gone, so pin all three here.
-    expect(mockTokenUpdateMany).toHaveBeenNthCalledWith(1, {
-      where: { id: 'reset-1', usedAt: null, expiresAt: { gt: expect.any(Date) } },
-      data: { usedAt: expect.any(Date) },
+    await expect(response.json()).resolves.toEqual({ success: true });
+    expect(mockCandidateProven).toHaveBeenCalledWith(LEGACY_TOKEN);
+    expect(mockCandidateProven.mock.invocationCallOrder[0]).toBeLessThan(
+      mockHash.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER
+    );
+    expect(mockHash).toHaveBeenCalledWith('password123', 12);
+    expect(mockTransaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 5_000,
+      timeout: 30_000,
     });
-    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-1');
-    expect(mockClearSessionCache).toHaveBeenCalledWith(['token-1', 'token-2']);
+    expect(mockSetBootstrapContext).toHaveBeenCalledWith(tx);
+    expect(mockRepositoryConstructor).toHaveBeenCalledWith(tx);
+    expect(mockRedeem).toHaveBeenCalledWith(LEGACY_TOKEN, `$2b$12$${'A'.repeat(53)}`);
+    expect(mockSetTransactionOrganizationContext.mock.calls).toEqual([
+      [tx, 'org-1'],
+      [tx, 'org-2'],
+    ]);
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledTimes(6);
     expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({
-        eventType: 'USER_PASSWORD_RESET',
-        correlationId: 'reset-1',
-        requestId: 'req-reset',
-      })
-    );
-  });
-
-  it('audits every sibling flow superseded by successful redemption', async () => {
-    mockTokenFindMany.mockResolvedValue([{ id: 'reset-sibling', requestId: 'req-sibling' }]);
-
-    const response = await POST(
-      new NextRequest('http://localhost/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
-      })
-    );
-
-    expect(response.status).toBe(200);
-    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
-      expect.any(Object),
+      tx,
       expect.objectContaining({
         organizationId: 'org-1',
-        requestId: 'req-sibling',
-        correlationId: 'reset-sibling',
-        idempotencyKey: 'password-reset-reset-sibling-superseded-org-1',
+        correlationId: 'flow-1',
+        idempotencyKey: 'password-reset-flow-1-completed-org-1',
         metadata: expect.objectContaining({
-          outcome: 'cancelled',
-          stage: 'redemption_supersession',
-          replacementFlowId: 'reset-1',
-          errorCode: 'SUPERSEDED',
+          outcome: 'success',
+          stage: 'completed',
+          invalidatedSessionCount: 2,
         }),
       })
     );
+    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        organizationId: 'org-2',
+        correlationId: 'flow-3',
+        requestId: 'recovery-flow-3',
+        idempotencyKey: 'password-reset-flow-3-superseded-org-2',
+      })
+    );
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-1', 'session-2']);
+    expect(mockClearSessionCache.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mockTransaction.mock.invocationCallOrder[0] ?? 0
+    );
   });
 
-  it('claims the token atomically and never sets the password if it lost the race', async () => {
-    // The token passed the initial findFirst, but by the time the transaction
-    // runs it was already consumed elsewhere (e.g. an email change or a
-    // concurrent reset), so the conditional claim matches zero rows.
-    mockTokenUpdateMany.mockResolvedValue({ count: 0 });
+  it('uses the non-reversible HMAC lookup and never passes the public token to PostgreSQL', async () => {
+    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
+    const pair = createPasswordResetToken();
 
-    const request = new NextRequest('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
-    });
+    const response = await POST(resetRequest(pair.publicToken));
 
-    const response = await POST(request);
-    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(mockCandidateProven).toHaveBeenCalledWith(pair.storedToken);
+    expect(mockRedeem).toHaveBeenCalledWith(pair.storedToken, expect.any(String));
+    expect(JSON.stringify(mockCandidateProven.mock.calls)).not.toContain(pair.publicToken);
+    expect(JSON.stringify(mockRedeem.mock.calls)).not.toContain(pair.publicToken);
+  });
 
-    expect(response.status).toBe(400);
-    expect(body.error).toMatch(/invalid or expired/i);
-    // The claim was attempted with the full unused+unexpired predicate...
-    expect(mockTokenUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'reset-1', usedAt: null, expiresAt: { gt: expect.any(Date) } },
-      data: { usedAt: expect.any(Date) },
-    });
-    // ...and because it lost, it is the ONLY reset-token write (the "invalidate
-    // other tokens" updateMany never runs) and the password/session teardown
-    // must NOT happen.
-    expect(mockTokenUpdateMany).toHaveBeenCalledTimes(1);
-    expect(mockUserUpdate).not.toHaveBeenCalled();
-    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
+  it('returns one neutral response for malformed, candidate-denied, and redemption-race tokens', async () => {
+    const malformed = await POST(resetRequest('malformed'));
+    expect(malformed.status).toBe(400);
+    await expect(malformed.json()).resolves.toEqual(INVALID_RESET_RESPONSE);
+    expect(mockCandidateProven).not.toHaveBeenCalled();
+    expect(mockHash).not.toHaveBeenCalled();
+
+    mockCandidateProven.mockResolvedValueOnce(false);
+    const denied = await POST(resetRequest());
+    expect(denied.status).toBe(400);
+    await expect(denied.json()).resolves.toEqual(INVALID_RESET_RESPONSE);
+    expect(mockHash).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
+
+    mockRedeem.mockResolvedValueOnce(null);
+    const raced = await POST(resetRequest());
+    expect(raced.status).toBe(400);
+    await expect(raced.json()).resolves.toEqual(INVALID_RESET_RESPONSE);
+    expect(mockCreateSecurityAuditEvent).not.toHaveBeenCalled();
     expect(mockClearSessionCache).not.toHaveBeenCalled();
   });
 
-  it('redeems a new public token through its stored HMAC only', async () => {
-    process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
-    const pair = createPasswordResetToken();
-    mockFindFirst.mockResolvedValue({
-      id: 'reset-1',
-      userId: 'user-1',
-      requestId: 'req-forgot',
-      token: pair.storedToken,
-    });
-
-    const response = await POST(
-      new NextRequest('http://localhost/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ token: pair.publicToken, password: 'password123' }),
-      })
-    );
-
-    expect(response.status).toBe(200);
-    expect(mockFindFirst).toHaveBeenCalledWith({
-      where: {
-        token: pair.storedToken,
-        expiresAt: { gt: expect.any(Date) },
-        usedAt: null,
-      },
-    });
-  });
-
-  it('rejects stored-digest replay without querying the database', async () => {
+  it('rejects a stored digest replay before candidate lookup or bcrypt work', async () => {
     process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
     const pair = createPasswordResetToken();
 
-    const response = await POST(
-      new NextRequest('http://localhost/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ token: pair.storedToken, password: 'password123' }),
-      })
-    );
+    const response = await POST(resetRequest(pair.storedToken));
 
     expect(response.status).toBe(400);
-    expect(mockFindFirst).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual(INVALID_RESET_RESPONSE);
+    expect(mockCandidateProven).not.toHaveBeenCalled();
     expect(mockHash).not.toHaveBeenCalled();
   });
 
-  it('fails closed before token lookup when the reset secret is missing', async () => {
+  it('fails closed before lookup when SESSION_SECRET is absent', async () => {
     delete process.env['SESSION_SECRET'];
 
-    const response = await POST(
-      new NextRequest('http://localhost/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
-      })
-    );
+    const response = await POST(resetRequest());
 
     expect(response.status).toBe(500);
-    expect(mockFindFirst).not.toHaveBeenCalled();
+    expect(mockCandidateProven).not.toHaveBeenCalled();
     expect(mockHash).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
   });
 
-  it('does not log the public token, stored digest, or secret on lookup failure', async () => {
+  it('rolls the capability mutation back when an audit insert fails', async () => {
+    mockCreateSecurityAuditEvent.mockRejectedValueOnce(new Error('audit unavailable'));
+
+    const response = await POST(resetRequest());
+
+    expect(response.status).toBe(500);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(mockClearSessionCache).not.toHaveBeenCalled();
+  });
+
+  it('keeps a committed reset successful when best-effort cache eviction fails', async () => {
+    mockClearSessionCache.mockRejectedValueOnce(new Error('redis unavailable'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(resetRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ success: true });
+    const emitted = JSON.stringify(consoleError.mock.calls);
+    expect(emitted).toContain('revoked_session_cache_delete');
+    expect(emitted).toContain('requestedCount');
+    expect(emitted).not.toContain('session-1');
+    expect(emitted).not.toContain('session-2');
+    consoleError.mockRestore();
+  });
+
+  it('never logs the public token, stored digest, or reset secret on repository failure', async () => {
     process.env['PASSWORD_RESET_TOKEN_WRITE_MODE'] = 'hmac';
     const pair = createPasswordResetToken();
-    mockFindFirst.mockRejectedValue(
+    mockCandidateProven.mockRejectedValueOnce(
       new Error(`lookup rejected ${pair.publicToken} ${pair.storedToken} test-session-secret`)
     );
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const response = await POST(
-      new NextRequest('http://localhost/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ token: pair.publicToken, password: 'password123' }),
-      })
-    );
+    const response = await POST(resetRequest(pair.publicToken));
 
     expect(response.status).toBe(500);
     const emitted = JSON.stringify(consoleError.mock.calls);
@@ -300,75 +259,15 @@ describe('POST /api/auth/reset-password', () => {
     consoleError.mockRestore();
   });
 
-  it('rejects a valid token for an active orphan account without consuming it', async () => {
-    mockUserFindUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'orphan@example.com',
-      isActive: true,
-      organizations: [],
+  it('keeps password validation specific while token validation remains neutral', async () => {
+    const badToken = await POST(resetRequest(''));
+    expect(badToken.status).toBe(400);
+    await expect(badToken.json()).resolves.toEqual(INVALID_RESET_RESPONSE);
+
+    const badPassword = await POST(resetRequest(LEGACY_TOKEN, 'short'));
+    expect(badPassword.status).toBe(400);
+    await expect(badPassword.json()).resolves.toEqual({
+      error: 'Password must be at least 8 characters',
     });
-
-    const request = new NextRequest('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
-    });
-
-    const response = await POST(request);
-    const body = await response.json();
-
-    expect(response.status).toBe(400);
-    expect(body.error).toMatch(/invalid or expired/i);
-    expect(mockHash).not.toHaveBeenCalled();
-    expect(mockTransaction).not.toHaveBeenCalled();
-    expect(mockTokenUpdateMany).not.toHaveBeenCalled();
-    expect(mockUserUpdate).not.toHaveBeenCalled();
-    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
-    expect(mockClearSessionCache).not.toHaveBeenCalled();
-  });
-
-  it('rejects when the final membership becomes inactive before token claim', async () => {
-    mockLockedUserFindUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'user@example.com',
-      isActive: true,
-      organizations: [],
-    });
-
-    const request = new NextRequest('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
-    });
-
-    const response = await POST(request);
-    const body = await response.json();
-
-    expect(response.status).toBe(400);
-    expect(body.error).toMatch(/invalid or expired/i);
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
-    expect(mockTokenUpdateMany).not.toHaveBeenCalled();
-    expect(mockUserUpdate).not.toHaveBeenCalled();
-    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
-    expect(mockCreateSecurityAuditEvent).not.toHaveBeenCalled();
-  });
-
-  it('rejects when the account becomes inactive before the locked re-read', async () => {
-    mockLockedUserFindUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'user@example.com',
-      isActive: false,
-      organizations: [{ role: 'ADMIN', organizationId: 'org-1' }],
-    });
-
-    const request = new NextRequest('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ token: LEGACY_TOKEN, password: 'password123' }),
-    });
-
-    const response = await POST(request);
-
-    expect(response.status).toBe(400);
-    expect(mockTokenUpdateMany).not.toHaveBeenCalled();
-    expect(mockUserUpdate).not.toHaveBeenCalled();
-    expect(mockDeactivateAllUserSessionsInTx).not.toHaveBeenCalled();
   });
 });

@@ -144,34 +144,67 @@ describe('PasswordResetCapabilityRepository', () => {
     ).rejects.toThrow('BOOTSTRAP_PASSWORD_RESET_REDEMPTION_DUPLICATE');
   });
 
-  it('keeps the foundation owner-only and unrouted', () => {
-    const migration = readFileSync(
+  it('keeps the foundation unchanged and routes only the two bounded capabilities', () => {
+    const foundationMigration = readFileSync(
       resolve(
         process.cwd(),
         'prisma/migrations/20260813150000_w1_2_password_reset_redemption_foundation/migration.sql'
       ),
       'utf8'
     );
-    expect(migration).toContain(
+    expect(foundationMigration).toContain(
       'REVOKE ALL ON FUNCTION public.bootstrap_password_reset_candidate_v1(text) FROM PUBLIC;'
     );
-    expect(migration).toContain(
+    expect(foundationMigration).toContain(
       'REVOKE ALL ON FUNCTION public.bootstrap_password_reset_redeem_v1(text, text) FROM PUBLIC;'
     );
-    expect(migration).toContain(
+    expect(foundationMigration).toContain(
       'REVOKE ALL ON FUNCTION public.bootstrap_password_reset_candidate_v1(text)\n      FROM vaultspace_app;'
     );
-    expect(migration).not.toMatch(
+    expect(foundationMigration).not.toMatch(
       /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_password_reset_/i
     );
-    expect(migration).not.toContain('DATABASE_URL_ADMIN');
+    expect(foundationMigration).not.toContain('DATABASE_URL_ADMIN');
+
+    const routeMigration = readFileSync(
+      resolve(
+        process.cwd(),
+        'prisma/migrations/20260813220000_w1_2_password_reset_redemption_route_conversion/migration.sql'
+      ),
+      'utf8'
+    );
+    expect(routeMigration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.bootstrap_password_reset_candidate_v1(text)'
+    );
+    expect(routeMigration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.bootstrap_password_reset_redeem_v1(text, text)'
+    );
+    expect(routeMigration.match(/GRANT EXECUTE ON FUNCTION/g)).toHaveLength(2);
+    expect(routeMigration).toContain('BOOTSTRAP_RUNTIME_FUNCTION_MATRIX_INVALID');
+    expect(routeMigration).toContain('BOOTSTRAP_RUNTIME_RESET_PRIVILEGES_CHANGED');
+    expect(routeMigration).toContain('COLLATE pg_catalog."C"');
+    expect(routeMigration).not.toContain(
+      'GRANT EXECUTE ON FUNCTION public.bootstrap_session_revoke_user_org_v1'
+    );
+    expect(routeMigration).not.toContain(
+      'GRANT EXECUTE ON FUNCTION public.bootstrap_session_revoke_user_global_v1'
+    );
+    expect(routeMigration).not.toContain('DATABASE_URL_ADMIN');
 
     const route = readFileSync(
       resolve(process.cwd(), 'src/app/api/auth/reset-password/route.ts'),
       'utf8'
     );
-    expect(route).not.toContain('passwordResetCapabilityRepository');
-    expect(route).not.toContain('PasswordResetCapabilityRepository');
+    expect(route).toContain('passwordResetCapabilityRepository.candidateProven');
+    expect(route).toContain('new PasswordResetCapabilityRepository(tx)');
+    expect(route).toContain('db.$transaction');
+    expect(route).toContain('setTransactionOrganizationContext');
+    expect(route).toContain('clearSessionCache(redemption.revokedSessionIds)');
+    expect(route).not.toContain('bootstrapDb');
+    expect(route).not.toContain('withOrgContext');
+    expect(route).not.toMatch(
+      /(?:passwordResetToken|passwordResetRecovery|user|session)\.(?:find|update|create|delete)/
+    );
 
     const repository = readFileSync(
       resolve(process.cwd(), 'src/lib/auth/passwordResetCapabilityRepository.ts'),

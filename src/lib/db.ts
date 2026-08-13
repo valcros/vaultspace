@@ -148,6 +148,20 @@ export async function setBootstrapContext(
 }
 
 /**
+ * Change the organization RLS context inside an existing transaction.
+ *
+ * This helper never opens or commits a transaction. It is used when one
+ * account-global capability returns a database-derived list of tenant audit
+ * scopes that must remain atomic with the capability mutation.
+ */
+export async function setTransactionOrganizationContext(
+  tx: Pick<Prisma.TransactionClient, '$executeRaw'>,
+  organizationId: string
+): Promise<void> {
+  await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+}
+
+/**
  * Check if RLS is enabled in the current environment.
  */
 export function isRLSEnabled(): boolean {
