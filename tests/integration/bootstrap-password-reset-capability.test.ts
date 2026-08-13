@@ -2,8 +2,10 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { PrismaClient, UserRole } from '@prisma/client';
+import { ActorType, PrismaClient, UserRole } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 
 const OWNER_ROLE = 'vaultspace_bootstrap_owner';
 const RUNTIME_ROLE = 'vaultspace_app';
@@ -18,6 +20,8 @@ const EXPECTED_RUNTIME_FUNCTIONS = new Set([
   'bootstrap_session_revoke_self_others_v1',
   'bootstrap_session_revoke_admin_user_org_v1',
   'bootstrap_session_revoke_admin_user_global_single_org_v1',
+  'bootstrap_password_reset_candidate_v1',
+  'bootstrap_password_reset_redeem_v1',
 ]);
 
 interface CandidateRow {
@@ -73,14 +77,14 @@ async function callAsOwner<T>(sql: string, ...values: unknown[]): Promise<T[]> {
 }
 
 async function candidate(storedLookup: string): Promise<CandidateRow[]> {
-  return callAsOwner<CandidateRow>(
+  return runtimePrisma.$queryRawUnsafe<CandidateRow[]>(
     'SELECT candidate_proven FROM public.bootstrap_password_reset_candidate_v1($1::text)',
     storedLookup
   );
 }
 
 async function redeem(storedLookup: string, passwordHash = BCRYPT_COST_12_HASH) {
-  return callAsOwner<RedemptionRow>(
+  return runtimePrisma.$queryRawUnsafe<RedemptionRow[]>(
     `SELECT
        authorization_proven,
        flow_id,
@@ -177,7 +181,7 @@ async function createResetFlow(input: {
   });
 }
 
-describe('W1-2 password-reset redemption inert foundation', () => {
+describe('W1-2 password-reset redemption route conversion', () => {
   let activeOrganizationAId: string;
   let activeOrganizationBId: string;
   let inactiveOrganizationId: string;
@@ -209,7 +213,7 @@ describe('W1-2 password-reset redemption inert foundation', () => {
     await Promise.all([rawPrisma.$disconnect(), runtimePrisma.$disconnect()]);
   });
 
-  it('keeps exact function, owner, ACL, source, and nine-function runtime posture', async () => {
+  it('keeps exact function, owner, ACL, source, and eleven-function runtime posture', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         proname: string;
@@ -271,7 +275,7 @@ describe('W1-2 password-reset redemption inert foundation', () => {
       proconfig: ['search_path=pg_catalog'],
       source_md5: 'fb2338b2271dcbe38ddb05f4b7a55e65',
       comment: 'vaultspace-contract:w1-2-password-reset-candidate-v1',
-      runtime_execute: false,
+      runtime_execute: true,
       public_execute: false,
     });
     expect(functions[1]).toMatchObject({
@@ -285,7 +289,7 @@ describe('W1-2 password-reset redemption inert foundation', () => {
       proconfig: ['search_path=pg_catalog'],
       source_md5: 'be86d46853493dc7dba68cfba0b68c4b',
       comment: 'vaultspace-contract:w1-2-password-reset-redeem-v1',
-      runtime_execute: false,
+      runtime_execute: true,
       public_execute: false,
     });
 
@@ -301,12 +305,7 @@ describe('W1-2 password-reset redemption inert foundation', () => {
     );
     expect(new Set(runtimeFunctions.map((row) => row.proname))).toEqual(EXPECTED_RUNTIME_FUNCTIONS);
 
-    await expect(
-      runtimePrisma.$queryRawUnsafe(
-        'SELECT candidate_proven FROM public.bootstrap_password_reset_candidate_v1($1::text)',
-        currentLookup('runtime-denied')
-      )
-    ).rejects.toThrow();
+    await expect(candidate(currentLookup('runtime-neutral-deny'))).resolves.toEqual([]);
 
     const [owner] = await rawPrisma.$queryRawUnsafe<
       Array<{
@@ -699,9 +698,9 @@ describe('W1-2 password-reset redemption inert foundation', () => {
       },
     });
 
+    const auditIdempotencyKey = `password-reset-${flow.id}-completed-${activeOrganizationAId}`;
     await expect(
-      rawPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL ROLE ${OWNER_ROLE}`);
+      runtimePrisma.$transaction(async (tx) => {
         const result = await tx.$queryRawUnsafe<RedemptionRow[]>(
           `SELECT *
            FROM public.bootstrap_password_reset_redeem_v1($1::text, $2::text)`,
@@ -709,22 +708,40 @@ describe('W1-2 password-reset redemption inert foundation', () => {
           BCRYPT_COST_12_HASH
         );
         expect(result).toHaveLength(1);
+        await tx.$executeRawUnsafe(
+          `SELECT set_config('app.current_org_id', $1::text, true)`,
+          activeOrganizationAId
+        );
+        await createSecurityAuditEvent(tx, {
+          organizationId: activeOrganizationAId,
+          eventType: 'USER_PASSWORD_RESET',
+          actorType: ActorType.VIEWER,
+          actorId: user.id,
+          actorEmail: user.email,
+          requestId: `request-audit-rollback-${suffix}`.slice(0, 100),
+          correlationId: flow.id,
+          idempotencyKey: auditIdempotencyKey,
+          description: 'User completed a password reset',
+          metadata: { outcome: 'success', stage: 'completed' },
+        });
         throw new Error('EXPECTED_AUDIT_INSERT_FAILURE');
       })
     ).rejects.toThrow('EXPECTED_AUDIT_INSERT_FAILURE');
 
-    const [unchangedUser, unchangedFlow, unchangedSession] = await Promise.all([
+    const [unchangedUser, unchangedFlow, unchangedSession, rolledBackAudit] = await Promise.all([
       rawPrisma.user.findUniqueOrThrow({ where: { id: user.id } }),
       rawPrisma.passwordResetToken.findUniqueOrThrow({
         where: { id: flow.id },
         include: { recovery: true },
       }),
       rawPrisma.session.findUniqueOrThrow({ where: { id: session.id } }),
+      rawPrisma.event.findUnique({ where: { idempotencyKey: auditIdempotencyKey } }),
     ]);
     expect(unchangedUser.passwordHash).toBe('old-password-hash-audit-rollback');
     expect(unchangedFlow.usedAt).toBeNull();
     expect(unchangedFlow.recovery?.ciphertext).not.toBeNull();
     expect(unchangedSession.isActive).toBe(true);
+    expect(rolledBackAudit).toBeNull();
   });
 
   it('uses the account-global advisory lock before row locks and denies a deactivated account cleanly', async () => {
