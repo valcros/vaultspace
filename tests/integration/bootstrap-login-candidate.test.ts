@@ -271,7 +271,7 @@ describe('W1-2 routed login bootstrap candidate', () => {
     expect(schemaPrivileges).toEqual({ can_use: true, can_create: false });
   });
 
-  it('installs only the three active-row owner policies', async () => {
+  it('installs only the reviewed owner policies, including the Unit 9 membership inventory', async () => {
     const policies = await rawPrisma.$queryRawUnsafe<
       Array<{
         tablename: string;
@@ -283,7 +283,7 @@ describe('W1-2 routed login bootstrap candidate', () => {
       }>
     >(
       'SELECT tablename, policyname, permissive, roles, cmd, qual FROM pg_catalog.pg_policies ' +
-        "WHERE schemaname = 'public' AND policyname LIKE 'bootstrap_owner_%_login_lookup' " +
+        "WHERE schemaname = 'public' AND policyname LIKE 'bootstrap_owner_%' " +
         'ORDER BY tablename'
     );
 
@@ -298,11 +298,11 @@ describe('W1-2 routed login bootstrap candidate', () => {
       },
       {
         tablename: 'user_organizations',
-        policyname: 'bootstrap_owner_active_membership_login_lookup',
-        permissive: 'RESTRICTIVE',
+        policyname: 'bootstrap_owner_membership_inventory',
+        permissive: 'PERMISSIVE',
         roles: [OWNER_ROLE],
         cmd: 'SELECT',
-        qual: '("isActive" IS TRUE)',
+        qual: 'true',
       },
       {
         tablename: 'users',
