@@ -12,13 +12,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { db } from '@/lib/db';
+import { createSession } from '@/lib/auth';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { verifyTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
 import { getRequestContext, rateLimiters, setSessionCookie } from '@/lib/middleware';
 import { RateLimitError } from '@/lib/errors';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { verifyTOTP, verifyBackupCode } from '@/lib/totp';
-import { randomBytes } from 'crypto';
 
 const validateSchema = z.object({
   code: z.string().min(1, 'Code is required'),
@@ -115,20 +115,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Create full session (mirrors login route logic)
-    const sessionToken = randomBytes(32).toString('base64url');
     const sessionDuration = SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000;
     const expiresAt = new Date(Date.now() + sessionDuration);
 
-    const authSession = await db.session.create({
-      data: {
-        userId: user.id,
-        organizationId: userOrg.organization.id,
-        token: sessionToken,
-        expiresAt,
-        ipAddress,
-        userAgent,
-      },
-    });
+    const { session: authSession, token: sessionToken } = await createSession(
+      user.id,
+      userOrg.organization.id,
+      { expiresAt, ipAddress, userAgent }
+    );
 
     // Update last login
     await db.user.update({

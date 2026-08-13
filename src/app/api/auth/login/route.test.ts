@@ -9,7 +9,7 @@ import { RateLimitError } from '@/lib/errors';
 const mockCompare = vi.fn();
 const mockFindLoginCandidate = vi.fn();
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
-const mockSessionCreate = vi.fn();
+const mockCreateSession = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockLoginByEmail = vi.fn().mockResolvedValue(undefined);
 const mockLoginByIp = vi.fn().mockResolvedValue(undefined);
@@ -23,13 +23,15 @@ vi.mock('bcryptjs', () => ({
 vi.mock('@/lib/db', () => ({
   db: {
     user: { update: vi.fn() },
-    session: { create: vi.fn() },
   },
   withOrgContext: async (_orgId: string, fn: (tx: unknown) => Promise<unknown>) =>
     fn({
-      session: { create: (...args: unknown[]) => mockSessionCreate(...args) },
       user: { update: (...args: unknown[]) => mockUserUpdate(...args) },
     }),
+}));
+
+vi.mock('@/lib/auth', () => ({
+  createSession: (...args: unknown[]) => mockCreateSession(...args),
 }));
 
 vi.mock('@/lib/auth/bootstrapRepository', () => ({
@@ -75,7 +77,10 @@ describe('POST /api/auth/login', () => {
       organizationRole: 'ADMIN',
     });
     mockCompare.mockResolvedValue(true);
-    mockSessionCreate.mockResolvedValue({ id: 'auth-session-1' });
+    mockCreateSession.mockResolvedValue({
+      session: { id: 'auth-session-1' },
+      token: 't'.repeat(43),
+    });
     mockUserUpdate.mockResolvedValue({});
     mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockLoginByEmail.mockResolvedValue(undefined);
@@ -87,6 +92,8 @@ describe('POST /api/auth/login', () => {
 
     expect(source).toContain('bootstrapRepository.findLoginCandidate(email)');
     expect(source).not.toMatch(/\bbootstrapDb\b/);
+    expect(source).toContain('createSession(');
+    expect(source).not.toContain('tx.session.create');
   });
 
   it('returns 500 instead of using a weak fallback when SESSION_SECRET is missing', async () => {
@@ -154,12 +161,16 @@ describe('POST /api/auth/login', () => {
         userAgent: 'vitest',
       })
     );
-    expect(mockSessionCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+    expect(mockCreateSession).toHaveBeenCalledWith(
+      'user-1',
+      'org-1',
+      expect.objectContaining({
         ipAddress: '127.0.0.1',
         userAgent: 'vitest',
+        expiresAt: expect.any(Date),
       }),
-    });
+      expect.anything()
+    );
   });
 
   it('returns 429 and skips account lookup when the login rate limit is exceeded', async () => {
@@ -257,7 +268,7 @@ describe('POST /api/auth/login', () => {
     expect(body.error).toBe('Invalid email or password');
     expect(mockFindLoginCandidate).toHaveBeenCalledWith('missing@example.com');
     expect(mockCompare).not.toHaveBeenCalled();
-    expect(mockSessionCreate).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
   });
 
   it('preserves the neutral invalid-password response without creating a session', async () => {
@@ -276,7 +287,7 @@ describe('POST /api/auth/login', () => {
     expect(body.error).toBe('Invalid email or password');
     expect(mockFindLoginCandidate).toHaveBeenCalledWith('user@example.com');
     expect(mockCompare).toHaveBeenCalledWith('wrong-password', 'stored-hash');
-    expect(mockSessionCreate).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
   });
 
   it('fails closed when the narrow repository errors and does not create a session', async () => {
@@ -294,6 +305,6 @@ describe('POST /api/auth/login', () => {
     expect(response.status).toBe(500);
     expect(body.error).toBe('Failed to sign in');
     expect(mockCompare).not.toHaveBeenCalled();
-    expect(mockSessionCreate).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
   });
 });
