@@ -853,6 +853,10 @@ describe('W1-2 password-reset redemption inert foundation', () => {
     expect(migrationSource).toContain(
       "MESSAGE = 'BOOTSTRAP_MIGRATION_RUNTIME_CREDENTIAL_FORBIDDEN'"
     );
+    expect(
+      migrationSource.match(/array_agg\(acl_key ORDER BY acl_key COLLATE pg_catalog\."C"\)/g)
+    ).toHaveLength(2);
+    expect(migrationSource).not.toContain('array_agg(acl_key ORDER BY acl_key),');
     const initialLookup = migrationSource.indexOf(
       'SELECT reset_token."userId"\n    INTO candidate_user_id'
     );

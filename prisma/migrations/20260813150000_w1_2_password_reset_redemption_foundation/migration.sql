@@ -1059,11 +1059,19 @@ BEGIN
       MESSAGE = 'BOOTSTRAP_PASSWORD_RESET_ACL_INVALID';
   END IF;
 
-  SELECT COALESCE(pg_catalog.array_agg(acl_key ORDER BY acl_key), ARRAY[]::text[])
+  -- The temporary-table key and information_schema-derived key can inherit
+  -- different implicit collations. Compare identically sorted exact ACL keys.
+  SELECT COALESCE(
+    pg_catalog.array_agg(acl_key ORDER BY acl_key COLLATE pg_catalog."C"),
+    ARRAY[]::text[]
+  )
     INTO expected_runtime_reset_acl
   FROM unit10_runtime_reset_acl_prestate;
 
-  SELECT COALESCE(pg_catalog.array_agg(acl_key ORDER BY acl_key), ARRAY[]::text[])
+  SELECT COALESCE(
+    pg_catalog.array_agg(acl_key ORDER BY acl_key COLLATE pg_catalog."C"),
+    ARRAY[]::text[]
+  )
     INTO current_runtime_reset_acl
   FROM (
     SELECT
