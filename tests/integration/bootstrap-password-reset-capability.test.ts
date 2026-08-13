@@ -843,6 +843,16 @@ describe('W1-2 password-reset redemption inert foundation', () => {
       ),
       'utf8'
     );
+    const readOnlyPreflight = migrationSource.indexOf('DO $$');
+    const ddlTransaction = migrationSource.indexOf(
+      '-- All catalog mutations remain atomic after the read-only credential'
+    );
+    expect(readOnlyPreflight).toBeGreaterThan(-1);
+    expect(ddlTransaction).toBeGreaterThan(readOnlyPreflight);
+    expect(migrationSource.indexOf('BEGIN;')).toBeGreaterThan(ddlTransaction);
+    expect(migrationSource).toContain(
+      "MESSAGE = 'BOOTSTRAP_MIGRATION_RUNTIME_CREDENTIAL_FORBIDDEN'"
+    );
     const initialLookup = migrationSource.indexOf(
       'SELECT reset_token."userId"\n    INTO candidate_user_id'
     );
