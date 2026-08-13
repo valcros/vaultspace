@@ -11,10 +11,11 @@ import { Prisma } from '@prisma/client';
 import {
   clearSessionCache,
   deactivateAllUserSessionsInTx,
-  deactivateUserOrgSessionsInTx,
+  revokeAdminUserGlobalSingleOrgSessionsInTx,
+  revokeAdminUserOrgSessionsInTx,
 } from '@/lib/auth';
 import { isAuthenticationError } from '@/lib/errors';
-import { requireAuth } from '@/lib/middleware';
+import { requireAuth, requireAuthCredential } from '@/lib/middleware';
 import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
@@ -243,16 +244,16 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
         },
       });
 
-      const sessionTokens = await deactivateAllUserSessionsInTx(tx, userId);
+      const sessionIds = await deactivateAllUserSessionsInTx(tx, userId);
 
-      return { success: true, sessionTokens };
+      return { success: true, sessionIds };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    await clearSessionCache(result.sessionTokens);
+    await clearSessionCache(result.sessionIds);
 
     return NextResponse.json({
       success: true,
@@ -275,7 +276,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
  */
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
-    const session = await requireAuth();
+    const { session, token: actorToken } = await requireAuthCredential();
     const { userId } = await context.params;
 
     if (session.organization.role !== 'ADMIN') {
@@ -325,10 +326,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     }
 
-    // Cross-org membership count (bypasses RLS to see the user's other orgs);
-    // used for the shared-login-identity protection below.
-    const orgMembershipCount = await bootstrapDb.userOrganization.count({ where: { userId } });
-
     const result = await withOrgContext(session.organizationId, async (tx) => {
       // Security-sensitive identity changes use the same global lock order as
       // reset issuance, delivery, redemption, and deletion.
@@ -350,6 +347,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       const emailChanged = normalizedEmail !== undefined && normalizedEmail !== userOrg.user.email;
+      const roleChanged = role !== undefined && role !== userOrg.role;
+      const activeChanged = isActive !== undefined && isActive !== userOrg.isActive;
       const activeMembershipCount =
         isActive === false
           ? await bootstrapDb.userOrganization.count({
@@ -364,18 +363,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         isActive === false && userOrg.isActive && activeMembershipCount !== null
           ? activeMembershipCount <= 1
           : false;
-
-      // Cross-tenant protection: an org admin must not change a shared login
-      // identity (global email) or 2FA for a user who belongs to OTHER orgs —
-      // otherwise they could redirect a password reset and take over that user
-      // elsewhere.
-      if ((emailChanged || resetTwoFactor === true) && orgMembershipCount > 1) {
-        return {
-          error:
-            'This user belongs to multiple organizations; their login email and two-factor cannot be changed here.',
-          status: 403,
-        } as const;
-      }
 
       // The /api/users status is combined (membership AND global account); only
       // the membership flag is editable here, so refuse to "activate" a globally
@@ -422,6 +409,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             status: 400,
           } as const;
         }
+      }
+
+      let sessionIds: string[] = [];
+      if (emailChanged || resetTwoFactor === true) {
+        const revocation = await revokeAdminUserGlobalSingleOrgSessionsInTx(tx, actorToken, userId);
+        if (!revocation) {
+          return {
+            error:
+              'This user belongs to multiple organizations; their login email and two-factor cannot be changed here.',
+            status: 403,
+          } as const;
+        }
+        sessionIds = revocation.sessionIds;
+      } else if (roleChanged || activeChanged) {
+        const revocation = await revokeAdminUserOrgSessionsInTx(tx, actorToken, userId);
+        if (!revocation) {
+          return { error: 'User not found in organization', status: 404 } as const;
+        }
+        sessionIds = revocation.sessionIds;
       }
 
       // Global User fields (name / title / email / 2FA reset).
@@ -537,21 +543,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         await tx.userOrganization.update({ where: { id: userOrg.id }, data: memData });
       }
 
-      // Invalidate sessions when a security-relevant attribute changed. Global
-      // identity changes (email / 2FA) invalidate EVERY session the user holds,
-      // since the login identity moved everywhere. Membership-only changes
-      // (role / active) are scoped to THIS org so a multi-org user keeps their
-      // sessions in unaffected orgs. Email/2FA are already blocked for multi-org
-      // users above, so the global branch only ever hits single-org accounts.
-      const roleChanged = role !== undefined && role !== userOrg.role;
-      const activeChanged = isActive !== undefined && isActive !== userOrg.isActive;
-      let sessionTokens: string[] = [];
-      if (emailChanged || resetTwoFactor === true) {
-        sessionTokens = await deactivateAllUserSessionsInTx(tx, userId);
-      } else if (roleChanged || activeChanged) {
-        sessionTokens = await deactivateUserOrgSessionsInTx(tx, userId, session.organizationId);
-      }
-
       // Record only fields whose values actually changed (accurate audit trail).
       const firstNameChanged =
         firstName !== undefined && firstName.trim() !== userOrg.user.firstName;
@@ -581,16 +572,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
       return {
         success: true,
-        sessionTokens,
-        selfInvalidated: userId === session.userId && sessionTokens.length > 0,
+        sessionIds,
+        selfInvalidated: userId === session.userId && sessionIds.includes(session.sessionId),
       } as const;
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
-    if (result.sessionTokens.length > 0) {
-      await clearSessionCache(result.sessionTokens);
+    if (result.sessionIds.length > 0) {
+      await clearSessionCache(result.sessionIds);
     }
 
     return NextResponse.json({ success: true, selfSessionInvalidated: result.selfInvalidated });

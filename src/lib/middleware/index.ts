@@ -6,6 +6,7 @@ export {
   getSession,
   getSessionFromRequest,
   requireAuth,
+  requireAuthCredential,
   requireAuthFromRequest,
   requireAdmin,
   getRequestContext,
@@ -14,4 +15,4 @@ export {
   resolveOrganizationFromHeaders,
 } from './auth';
 
-export type { RequestContext, CustomDomainContext } from './auth';
+export type { AuthenticatedSessionCredential, RequestContext, CustomDomainContext } from './auth';

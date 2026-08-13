@@ -3,6 +3,16 @@ import { NextRequest } from 'next/server';
 
 const mockResolveOrganizationBySlug = vi.fn();
 const mockResolveOrganizationByCustomDomain = vi.fn();
+const mockValidateSession = vi.fn();
+const mockCookieGet = vi.fn();
+
+vi.mock('next/headers', () => ({
+  cookies: async () => ({ get: (...args: unknown[]) => mockCookieGet(...args) }),
+}));
+
+vi.mock('../auth', () => ({
+  validateSession: (...args: unknown[]) => mockValidateSession(...args),
+}));
 
 vi.mock('../auth/bootstrapRepository', () => ({
   BootstrapRepository: class {
@@ -17,7 +27,7 @@ vi.mock('../auth/bootstrapRepository', () => ({
   },
 }));
 
-import { getRequestContext, resolveOrganizationFromHeaders } from './auth';
+import { getRequestContext, requireAuthCredential, resolveOrganizationFromHeaders } from './auth';
 
 const organizationProjection = {
   id: 'org-1',
@@ -31,6 +41,27 @@ const organizationProjection = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('requireAuthCredential', () => {
+  it('returns the validated session and exact server-only cookie token', async () => {
+    const token = 's'.repeat(43);
+    const session = { sessionId: 'session-1', userId: 'user-1', organizationId: 'org-1' };
+    mockCookieGet.mockReturnValue({ value: token });
+    mockValidateSession.mockResolvedValue(session);
+
+    await expect(requireAuthCredential()).resolves.toEqual({ session, token });
+    expect(mockValidateSession).toHaveBeenCalledWith(token);
+  });
+
+  it('fails closed without returning the cookie when validation fails', async () => {
+    mockCookieGet.mockReturnValue({ value: 's'.repeat(43) });
+    mockValidateSession.mockRejectedValue(new Error('invalid session'));
+
+    await expect(requireAuthCredential()).rejects.toMatchObject({
+      name: 'AuthenticationError',
+    });
+  });
 });
 
 describe('getRequestContext request id validation', () => {

@@ -16,6 +16,7 @@ import { BootstrapRepository, type BootstrapSessionProjection } from './bootstra
 import {
   SessionMutationRepository,
   sessionMutationRepository,
+  type AuthorizedSessionRevocation,
   type SessionMutationQueryClient,
 } from './sessionMutationRepository';
 import { generateSessionToken } from './token';
@@ -118,7 +119,7 @@ export async function createSession(
 //   sessions and call clearSessionCache (see reset-password and user delete).
 // - Anything unexpected in a cached value falls through to full DB validation
 //   (fail closed on the cheap path, never on security).
-const SESSION_CACHE_VERSION = 1;
+const SESSION_CACHE_VERSION = 2;
 const SESSION_CACHE_TTL_SECONDS = 60;
 const ACTIVITY_REFRESH_MIN_MS = 5 * 60 * 1000;
 
@@ -193,33 +194,35 @@ function cachedSessionMatchesProjection(
 }
 
 export async function validateSession(token: string): Promise<SessionData> {
+  const projection = await bootstrapRepository.resolveSession(token);
+  if (!projection) {
+    throw new AuthenticationError('Invalid session');
+  }
+
   let cachedSession: SessionData | null = null;
+  const cacheKey = sessionCacheKey(projection.sessionId);
 
   // Redis remains an accelerator for the complete mapped snapshot, but the
-  // constrained resolver is the source of truth for every acceptance.
+  // constrained resolver is the source of truth before every cache read.
   try {
-    const cached = await getProviders().cache.get(`session:${token}`);
+    const cached = await getProviders().cache.get(cacheKey);
     cachedSession = reviveCachedSession(cached);
     if (cachedSession) {
-      const now = new Date();
+      const cacheReadTime = new Date();
       const absoluteMax = new Date(
         cachedSession.issuedAt.getTime() + SESSION_CONFIG.ABSOLUTE_MAX_DAYS * 24 * 60 * 60 * 1000
       );
-      if (cachedSession.expiresAt <= now || now > absoluteMax || !cachedSession.user.isActive) {
-        await getProviders().cache.delete(`session:${token}`);
+      if (
+        cachedSession.expiresAt <= cacheReadTime ||
+        cacheReadTime > absoluteMax ||
+        !cachedSession.user.isActive
+      ) {
+        await getProviders().cache.delete(cacheKey);
         cachedSession = null;
       }
     }
   } catch {
     cachedSession = null;
-  }
-
-  const projection = await bootstrapRepository.resolveSession(token);
-  if (!projection) {
-    if (cachedSession) {
-      await clearSessionCache([token]);
-    }
-    throw new AuthenticationError('Invalid session');
   }
 
   const now = new Date();
@@ -231,9 +234,9 @@ export async function validateSession(token: string): Promise<SessionData> {
 
   if (!cacheMatches) {
     if (cachedSession) {
-      await clearSessionCache([token]);
+      await clearSessionCache([projection.sessionId]);
     }
-    await cacheSessionData(token, sessionData);
+    await cacheSessionData(sessionData);
   }
 
   // Sliding-window refresh, throttled: writing lastActiveAt/expiresAt on
@@ -250,16 +253,18 @@ export async function validateSession(token: string): Promise<SessionData> {
  * Invalidate a session
  */
 export async function invalidateSession(token: string): Promise<void> {
-  await sessionMutationRepository.invalidateSession(token);
-  await clearSessionCache([token]);
+  const sessionId = await sessionMutationRepository.invalidateSession(token);
+  if (sessionId) {
+    await clearSessionCache([sessionId]);
+  }
 }
 
 /**
  * Invalidate all sessions for a user
  */
 export async function invalidateAllUserSessions(userId: string): Promise<void> {
-  const tokens = await deactivateSessions(db, { userId });
-  await clearSessionCache(tokens);
+  const sessionIds = await deactivateSessions(db, { userId });
+  await clearSessionCache(sessionIds);
 }
 
 export async function deactivateAllUserSessionsInTx(
@@ -285,6 +290,35 @@ export async function deactivateUserOrgSessionsInTx(
   return deactivateSessions(tx, { userId, organizationId });
 }
 
+export async function revokeSelfOtherSessionsInTx(
+  tx: SessionMutationQueryClient,
+  actorToken: string
+): Promise<AuthorizedSessionRevocation | null> {
+  return new SessionMutationRepository(tx).revokeSelfOtherSessions(actorToken);
+}
+
+export async function revokeAdminUserOrgSessionsInTx(
+  tx: SessionMutationQueryClient,
+  actorToken: string,
+  targetUserId: string
+): Promise<AuthorizedSessionRevocation | null> {
+  return new SessionMutationRepository(tx).revokeAdminUserOrganizationSessions(
+    actorToken,
+    targetUserId
+  );
+}
+
+export async function revokeAdminUserGlobalSingleOrgSessionsInTx(
+  tx: SessionMutationQueryClient,
+  actorToken: string,
+  targetUserId: string
+): Promise<AuthorizedSessionRevocation | null> {
+  return new SessionMutationRepository(tx).revokeAdminUserGlobalSingleOrganizationSessions(
+    actorToken,
+    targetUserId
+  );
+}
+
 /**
  * Refresh session activity timestamp (sliding window)
  */
@@ -294,14 +328,14 @@ async function refreshSessionActivity(token: string, expectedSessionId: string):
     return;
   }
   if (refreshed.sessionId !== expectedSessionId) {
-    await clearSessionCache([token]);
+    await clearSessionCache([refreshed.sessionId, expectedSessionId]);
     throw new Error('BOOTSTRAP_SESSION_REFRESH_ID_MISMATCH');
   }
 
-  // The database projection is authoritative. Evict the prior token-keyed
+  // The database projection is authoritative. Evict the session-ID-keyed
   // accelerator after a successful sliding refresh so the next acceptance
   // caches the new expiry. Cache deletion remains non-fatal and categorical.
-  await clearSessionCache([token]);
+  await clearSessionCache([refreshed.sessionId]);
 }
 
 async function deactivateSessions(
@@ -313,7 +347,7 @@ async function deactivateSessions(
       ...where,
       isActive: true,
     },
-    select: { token: true },
+    select: { id: true },
   });
 
   await client.session.updateMany({
@@ -321,12 +355,14 @@ async function deactivateSessions(
     data: { isActive: false },
   });
 
-  return sessions.map((session) => session.token);
+  return sessions.map((session) => session.id);
 }
 
-export async function clearSessionCache(tokens: string[]): Promise<void> {
+export async function clearSessionCache(sessionIds: string[]): Promise<void> {
   const cache = getProviders().cache;
-  const results = await Promise.allSettled(tokens.map((token) => cache.delete(`session:${token}`)));
+  const results = await Promise.allSettled(
+    sessionIds.map((sessionId) => cache.delete(sessionCacheKey(sessionId)))
+  );
   const failureCount = results.filter((result) => result.status === 'rejected').length;
   if (failureCount > 0) {
     console.error(
@@ -334,7 +370,7 @@ export async function clearSessionCache(tokens: string[]): Promise<void> {
         component: 'session-cache',
         event: 'revoked_session_cache_delete',
         outcome: 'partial_failure',
-        requestedCount: tokens.length,
+        requestedCount: sessionIds.length,
         failureCount,
       })
     );
@@ -344,8 +380,12 @@ export async function clearSessionCache(tokens: string[]): Promise<void> {
 /**
  * Cache a complete session snapshot in Redis (short TTL; accelerator only)
  */
-async function cacheSessionData(token: string, data: SessionData): Promise<void> {
+function sessionCacheKey(sessionId: string): string {
+  return `session:v2:${sessionId}`;
+}
+
+async function cacheSessionData(data: SessionData): Promise<void> {
   const cache = getProviders().cache;
   const envelope: CachedSessionEnvelope = { v: SESSION_CACHE_VERSION, data };
-  await cache.set(`session:${token}`, envelope, SESSION_CACHE_TTL_SECONDS);
+  await cache.set(sessionCacheKey(data.sessionId), envelope, SESSION_CACHE_TTL_SECONDS);
 }

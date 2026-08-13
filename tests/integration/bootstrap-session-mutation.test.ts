@@ -11,11 +11,17 @@ const FUNCTION_NAMES = [
   'bootstrap_session_invalidate_v1',
   'bootstrap_session_revoke_user_org_v1',
   'bootstrap_session_revoke_user_global_v1',
+  'bootstrap_session_revoke_self_others_v1',
+  'bootstrap_session_revoke_admin_user_org_v1',
+  'bootstrap_session_revoke_admin_user_global_single_org_v1',
 ] as const;
 const RUNTIME_FUNCTION_NAMES = new Set([
   'bootstrap_session_create_v1',
   'bootstrap_session_refresh_v1',
   'bootstrap_session_invalidate_v1',
+  'bootstrap_session_revoke_self_others_v1',
+  'bootstrap_session_revoke_admin_user_org_v1',
+  'bootstrap_session_revoke_admin_user_global_single_org_v1',
 ]);
 
 const EXPECTED_FUNCTIONS = [
@@ -50,6 +56,24 @@ const EXPECTED_FUNCTIONS = [
     comment: 'vaultspace-contract:w1-2-session-revoke-user-global-v1',
     language: 'sql',
   },
+  {
+    name: 'bootstrap_session_revoke_self_others_v1',
+    identityArguments: 'input_actor_token text',
+    comment: 'vaultspace-contract:w1-2-session-revoke-self-others-v1',
+    language: 'sql',
+  },
+  {
+    name: 'bootstrap_session_revoke_admin_user_org_v1',
+    identityArguments: 'input_actor_token text, input_target_user_id text',
+    comment: 'vaultspace-contract:w1-2-session-revoke-admin-user-org-v1',
+    language: 'sql',
+  },
+  {
+    name: 'bootstrap_session_revoke_admin_user_global_single_org_v1',
+    identityArguments: 'input_actor_token text, input_target_user_id text',
+    comment: 'vaultspace-contract:w1-2-session-revoke-admin-user-global-single-org-v1',
+    language: 'sql',
+  },
 ] as const;
 
 const EXPECTED_FUNCTION_SOURCE_SHA256 = {
@@ -61,6 +85,12 @@ const EXPECTED_FUNCTION_SOURCE_SHA256 = {
     '7f43a9adde04f440731baeb84eebd3f1740986a22640ad418aa05d2c27194b3d',
   bootstrap_session_revoke_user_global_v1:
     '8ce811e3be405f75f946793c3c6d752a2694ee4b44d66bca878ecd5b5151d35d',
+  bootstrap_session_revoke_self_others_v1:
+    '4e23e309a5a10ec0691eb2bea2181a8f0cf4ddef8c94a24c22ec7b566742a387',
+  bootstrap_session_revoke_admin_user_org_v1:
+    'ea43d78e7c5c1f35a0182de1c6f1404e96063d4cedad2f4ed11e8289ec02b470',
+  bootstrap_session_revoke_admin_user_global_single_org_v1:
+    'e8a5a54cc631ed26da6f6cf36260d2ba3d8f3d567bf081d4078a0e2ff87a9b2d',
 } as const;
 
 const rawPrisma = new PrismaClient({
@@ -90,6 +120,10 @@ let activeUserId: string;
 let inactiveUserId: string;
 let inactiveMembershipUserId: string;
 let inactiveOrganizationUserId: string;
+let singleOrganizationTargetUserId: string;
+let sharedTargetUserId: string;
+let viewerActorUserId: string;
+let organizationBOnlyUserId: string;
 
 async function callFunction<T>(sql: string, ...values: unknown[]): Promise<T[]> {
   return rawPrisma.$queryRawUnsafe<T[]>(sql, ...values);
@@ -145,46 +179,90 @@ describe('W1-2 session mutation route conversion', () => {
     organizationBId = organizationB.id;
     inactiveOrganizationId = inactiveOrganization.id;
 
-    const [activeUser, inactiveUser, inactiveMembershipUser, inactiveOrganizationUser] =
-      await Promise.all([
-        rawPrisma.user.create({
-          data: {
-            email: 'session-mutation-active-' + suffix + '@example.test',
-            passwordHash: 'session-mutation-hash-' + suffix,
-            firstName: 'Session',
-            lastName: 'Active',
-          },
-        }),
-        rawPrisma.user.create({
-          data: {
-            email: 'session-mutation-inactive-' + suffix + '@example.test',
-            passwordHash: 'session-mutation-hash-' + suffix,
-            firstName: 'Session',
-            lastName: 'Inactive',
-            isActive: false,
-          },
-        }),
-        rawPrisma.user.create({
-          data: {
-            email: 'session-mutation-membership-' + suffix + '@example.test',
-            passwordHash: 'session-mutation-hash-' + suffix,
-            firstName: 'Session',
-            lastName: 'Inactive Membership',
-          },
-        }),
-        rawPrisma.user.create({
-          data: {
-            email: 'session-mutation-organization-' + suffix + '@example.test',
-            passwordHash: 'session-mutation-hash-' + suffix,
-            firstName: 'Session',
-            lastName: 'Inactive Organization',
-          },
-        }),
-      ]);
+    const [
+      activeUser,
+      inactiveUser,
+      inactiveMembershipUser,
+      inactiveOrganizationUser,
+      singleOrganizationTarget,
+      sharedTarget,
+      viewerActor,
+      organizationBOnlyUser,
+    ] = await Promise.all([
+      rawPrisma.user.create({
+        data: {
+          email: 'session-mutation-active-' + suffix + '@example.test',
+          passwordHash: 'session-mutation-hash-' + suffix,
+          firstName: 'Session',
+          lastName: 'Active',
+        },
+      }),
+      rawPrisma.user.create({
+        data: {
+          email: 'session-mutation-inactive-' + suffix + '@example.test',
+          passwordHash: 'session-mutation-hash-' + suffix,
+          firstName: 'Session',
+          lastName: 'Inactive',
+          isActive: false,
+        },
+      }),
+      rawPrisma.user.create({
+        data: {
+          email: 'session-mutation-membership-' + suffix + '@example.test',
+          passwordHash: 'session-mutation-hash-' + suffix,
+          firstName: 'Session',
+          lastName: 'Inactive Membership',
+        },
+      }),
+      rawPrisma.user.create({
+        data: {
+          email: 'session-mutation-organization-' + suffix + '@example.test',
+          passwordHash: 'session-mutation-hash-' + suffix,
+          firstName: 'Session',
+          lastName: 'Inactive Organization',
+        },
+      }),
+      rawPrisma.user.create({
+        data: {
+          email: 'session-mutation-single-target-' + suffix + '@example.test',
+          passwordHash: 'session-mutation-hash-' + suffix,
+          firstName: 'Single',
+          lastName: 'Target',
+        },
+      }),
+      rawPrisma.user.create({
+        data: {
+          email: 'session-mutation-shared-target-' + suffix + '@example.test',
+          passwordHash: 'session-mutation-hash-' + suffix,
+          firstName: 'Shared',
+          lastName: 'Target',
+        },
+      }),
+      rawPrisma.user.create({
+        data: {
+          email: 'session-mutation-viewer-actor-' + suffix + '@example.test',
+          passwordHash: 'session-mutation-hash-' + suffix,
+          firstName: 'Viewer',
+          lastName: 'Actor',
+        },
+      }),
+      rawPrisma.user.create({
+        data: {
+          email: 'session-mutation-b-only-' + suffix + '@example.test',
+          passwordHash: 'session-mutation-hash-' + suffix,
+          firstName: 'Organization B',
+          lastName: 'Target',
+        },
+      }),
+    ]);
     activeUserId = activeUser.id;
     inactiveUserId = inactiveUser.id;
     inactiveMembershipUserId = inactiveMembershipUser.id;
     inactiveOrganizationUserId = inactiveOrganizationUser.id;
+    singleOrganizationTargetUserId = singleOrganizationTarget.id;
+    sharedTargetUserId = sharedTarget.id;
+    viewerActorUserId = viewerActor.id;
+    organizationBOnlyUserId = organizationBOnlyUser.id;
 
     await rawPrisma.userOrganization.createMany({
       data: [
@@ -220,6 +298,36 @@ describe('W1-2 session mutation route conversion', () => {
           organizationId: inactiveOrganizationId,
           role: UserRole.VIEWER,
         },
+        {
+          id: 'session-mutation-single-target-' + suffix,
+          userId: singleOrganizationTargetUserId,
+          organizationId: organizationAId,
+          role: UserRole.VIEWER,
+        },
+        {
+          id: 'session-mutation-shared-target-a-' + suffix,
+          userId: sharedTargetUserId,
+          organizationId: organizationAId,
+          role: UserRole.VIEWER,
+        },
+        {
+          id: 'session-mutation-shared-target-b-' + suffix,
+          userId: sharedTargetUserId,
+          organizationId: organizationBId,
+          role: UserRole.VIEWER,
+        },
+        {
+          id: 'session-mutation-viewer-actor-' + suffix,
+          userId: viewerActorUserId,
+          organizationId: organizationAId,
+          role: UserRole.VIEWER,
+        },
+        {
+          id: 'session-mutation-b-only-' + suffix,
+          userId: organizationBOnlyUserId,
+          organizationId: organizationBId,
+          role: UserRole.VIEWER,
+        },
       ],
     });
   });
@@ -233,6 +341,10 @@ describe('W1-2 session mutation route conversion', () => {
             inactiveUserId,
             inactiveMembershipUserId,
             inactiveOrganizationUserId,
+            singleOrganizationTargetUserId,
+            sharedTargetUserId,
+            viewerActorUserId,
+            organizationBOnlyUserId,
           ].filter(Boolean),
         },
       },
@@ -245,6 +357,10 @@ describe('W1-2 session mutation route conversion', () => {
             inactiveUserId,
             inactiveMembershipUserId,
             inactiveOrganizationUserId,
+            singleOrganizationTargetUserId,
+            sharedTargetUserId,
+            viewerActorUserId,
+            organizationBOnlyUserId,
           ].filter(Boolean),
         },
       },
@@ -346,9 +462,25 @@ describe('W1-2 session mutation route conversion', () => {
       'MEMBER'
     );
     expect(reachability?.reachable).toBe(false);
+
+    const membershipPolicies = await rawPrisma.$queryRawUnsafe<
+      Array<{ policy_name: string; permissive: string; roles: string[]; using_expression: string }>
+    >(
+      'SELECT policyname AS policy_name, permissive, roles, qual AS using_expression ' +
+        "FROM pg_catalog.pg_policies WHERE schemaname = 'public' " +
+        "AND tablename = 'user_organizations' AND policyname LIKE 'bootstrap_owner_%'"
+    );
+    expect(membershipPolicies).toEqual([
+      {
+        policy_name: 'bootstrap_owner_membership_inventory',
+        permissive: 'PERMISSIVE',
+        roles: [OWNER_ROLE],
+        using_expression: 'true',
+      },
+    ]);
   });
 
-  it('installs five exact functions with stable contracts and narrow runtime ACLs', async () => {
+  it('installs eight exact mutation functions with stable contracts and narrow runtime ACLs', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         function_name: string;
@@ -381,7 +513,7 @@ describe('W1-2 session mutation route conversion', () => {
       [...FUNCTION_NAMES]
     );
 
-    expect(functions).toHaveLength(5);
+    expect(functions).toHaveLength(8);
     for (const expected of EXPECTED_FUNCTIONS) {
       const functionRow = functions.find((row) => row.function_name === expected.name);
       expect(functionRow).toMatchObject({
@@ -457,6 +589,12 @@ describe('W1-2 session mutation route conversion', () => {
         activeUserId
       )
     ).rejects.toThrow();
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_self_others_v1($1::text)',
+        token()
+      )
+    ).resolves.toEqual([]);
   });
 
   it('allows the runtime role to create, refresh, and invalidate one authorized session', async () => {
@@ -672,6 +810,205 @@ describe('W1-2 session mutation route conversion', () => {
     await expect(
       callFunction('SELECT * FROM public.bootstrap_session_invalidate_v1($1::text)', logoutToken)
     ).resolves.toEqual([]);
+  });
+
+  it('self-bound revocation preserves the exact actor session and returns no bearer token', async () => {
+    const actorToken = token();
+    const [actorSession, otherOrganizationASession, otherOrganizationBSession] = await Promise.all([
+      createRawSession({ token: actorToken, organizationId: organizationAId }),
+      createRawSession({ organizationId: organizationAId }),
+      createRawSession({ organizationId: organizationBId }),
+    ]);
+
+    const revoked = await runtimePrisma.$queryRawUnsafe<
+      Array<{ authorization_proven: boolean; session_id: string | null }>
+    >('SELECT * FROM public.bootstrap_session_revoke_self_others_v1($1::text)', actorToken);
+
+    expect(revoked.every((row) => row.authorization_proven)).toBe(true);
+    expect(revoked.map((row) => row.session_id)).toEqual(
+      expect.arrayContaining([otherOrganizationASession.id, otherOrganizationBSession.id])
+    );
+    expect(revoked.map((row) => row.session_id)).not.toContain(actorSession.id);
+    expect(JSON.stringify(revoked)).not.toContain(actorToken);
+    expect(
+      await rawPrisma.session.findUniqueOrThrow({ where: { id: actorSession.id } })
+    ).toMatchObject({ isActive: true });
+  });
+
+  it('returns an authorized nullable sentinel when self-bound revocation has no other session', async () => {
+    const actorToken = token();
+    const actorSession = await createRawSession({
+      userId: viewerActorUserId,
+      organizationId: organizationAId,
+      token: actorToken,
+    });
+
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_self_others_v1($1::text)',
+        actorToken
+      )
+    ).resolves.toEqual([{ authorization_proven: true, session_id: null }]);
+    expect(
+      await rawPrisma.session.findUniqueOrThrow({ where: { id: actorSession.id } })
+    ).toMatchObject({ isActive: true });
+  });
+
+  it('admin organization revocation is actor-derived, target-bounded, and org-scoped', async () => {
+    const adminToken = token();
+    await createRawSession({ token: adminToken, organizationId: organizationAId });
+    const [targetA, targetB] = await Promise.all([
+      createRawSession({ userId: sharedTargetUserId, organizationId: organizationAId }),
+      createRawSession({ userId: sharedTargetUserId, organizationId: organizationBId }),
+    ]);
+
+    const revoked = await runtimePrisma.$queryRawUnsafe<
+      Array<{ authorization_proven: boolean; session_id: string | null }>
+    >(
+      'SELECT * FROM public.bootstrap_session_revoke_admin_user_org_v1($1::text, $2::text)',
+      adminToken,
+      sharedTargetUserId
+    );
+
+    expect(revoked).toEqual([{ authorization_proven: true, session_id: targetA.id }]);
+    expect(await rawPrisma.session.findUniqueOrThrow({ where: { id: targetB.id } })).toMatchObject({
+      isActive: true,
+    });
+  });
+
+  it('viewer, invalid, and cross-organization actors cannot authorize an admin revoke', async () => {
+    const viewerToken = token();
+    await createRawSession({
+      userId: viewerActorUserId,
+      organizationId: organizationAId,
+      token: viewerToken,
+    });
+    const organizationBTarget = await createRawSession({
+      userId: organizationBOnlyUserId,
+      organizationId: organizationBId,
+    });
+
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_admin_user_org_v1($1::text, $2::text)',
+        viewerToken,
+        singleOrganizationTargetUserId
+      )
+    ).resolves.toEqual([]);
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_admin_user_org_v1($1::text, $2::text)',
+        'malformed',
+        singleOrganizationTargetUserId
+      )
+    ).resolves.toEqual([]);
+
+    const adminToken = token();
+    await createRawSession({ token: adminToken, organizationId: organizationAId });
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_admin_user_org_v1($1::text, $2::text)',
+        adminToken,
+        organizationBOnlyUserId
+      )
+    ).resolves.toEqual([]);
+    expect(
+      await rawPrisma.session.findUniqueOrThrow({ where: { id: organizationBTarget.id } })
+    ).toMatchObject({ isActive: true });
+  });
+
+  it('global admin revocation accepts one membership and rejects shared identities', async () => {
+    const adminToken = token();
+    await createRawSession({ token: adminToken, organizationId: organizationAId });
+    const [singleA1, singleA2, sharedA, sharedB] = await Promise.all([
+      createRawSession({ userId: singleOrganizationTargetUserId, organizationId: organizationAId }),
+      createRawSession({ userId: singleOrganizationTargetUserId, organizationId: organizationAId }),
+      createRawSession({ userId: sharedTargetUserId, organizationId: organizationAId }),
+      createRawSession({ userId: sharedTargetUserId, organizationId: organizationBId }),
+    ]);
+
+    const singleRevoked = await runtimePrisma.$queryRawUnsafe<
+      Array<{ authorization_proven: boolean; session_id: string | null }>
+    >(
+      'SELECT * FROM public.bootstrap_session_revoke_admin_user_global_single_org_v1($1::text, $2::text)',
+      adminToken,
+      singleOrganizationTargetUserId
+    );
+    expect(singleRevoked.map((row) => row.session_id)).toEqual(
+      expect.arrayContaining([singleA1.id, singleA2.id])
+    );
+
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_admin_user_global_single_org_v1($1::text, $2::text)',
+        adminToken,
+        sharedTargetUserId
+      )
+    ).resolves.toEqual([]);
+    expect(await rawPrisma.session.findUniqueOrThrow({ where: { id: sharedA.id } })).toMatchObject({
+      isActive: true,
+    });
+    expect(await rawPrisma.session.findUniqueOrThrow({ where: { id: sharedB.id } })).toMatchObject({
+      isActive: true,
+    });
+  });
+
+  it('counts inactive memberships in the single-organization invariant', async () => {
+    await rawPrisma.userOrganization.create({
+      data: {
+        id: 'session-mutation-single-target-inactive-' + suffix,
+        userId: singleOrganizationTargetUserId,
+        organizationId: organizationBId,
+        role: UserRole.VIEWER,
+        isActive: false,
+      },
+    });
+    const adminToken = token();
+    await createRawSession({ token: adminToken, organizationId: organizationAId });
+    const targetSession = await createRawSession({
+      userId: singleOrganizationTargetUserId,
+      organizationId: organizationAId,
+    });
+
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        'SELECT * FROM public.bootstrap_session_revoke_admin_user_global_single_org_v1($1::text, $2::text)',
+        adminToken,
+        singleOrganizationTargetUserId
+      )
+    ).resolves.toEqual([]);
+    expect(
+      await rawPrisma.session.findUniqueOrThrow({ where: { id: targetSession.id } })
+    ).toMatchObject({ isActive: true });
+  });
+
+  it('hostile search_path and tenant GUC input cannot broaden wrapper authorization', async () => {
+    const adminToken = token();
+    await createRawSession({ token: adminToken, organizationId: organizationAId });
+    const targetSession = await createRawSession({
+      userId: organizationBOnlyUserId,
+      organizationId: organizationBId,
+    });
+
+    await runtimePrisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        "SELECT pg_catalog.set_config('search_path', 'pg_temp, public', true)"
+      );
+      await tx.$executeRawUnsafe(
+        "SELECT pg_catalog.set_config('app.current_org_id', $1, true)",
+        organizationBId
+      );
+      await expect(
+        tx.$queryRawUnsafe(
+          'SELECT * FROM public.bootstrap_session_revoke_admin_user_org_v1($1::text, $2::text)',
+          adminToken,
+          organizationBOnlyUserId
+        )
+      ).resolves.toEqual([]);
+    });
+    expect(
+      await rawPrisma.session.findUniqueOrThrow({ where: { id: targetSession.id } })
+    ).toMatchObject({ isActive: true });
   });
 
   it('revokes only the selected organization and returns session IDs', async () => {

@@ -118,10 +118,13 @@ describe('SessionMutationRepository', () => {
 
     await expect(repository.refreshSession('short')).resolves.toBeNull();
     await expect(repository.invalidateSession('short')).resolves.toBeNull();
-    await expect(repository.revokeUserOrganizationSessions('bad user', 'org-1')).resolves.toEqual(
-      []
-    );
-    await expect(repository.revokeAllUserSessions('user-1', 'bad session')).resolves.toEqual([]);
+    await expect(repository.revokeSelfOtherSessions('short')).resolves.toBeNull();
+    await expect(
+      repository.revokeAdminUserOrganizationSessions(token, 'bad user')
+    ).resolves.toBeNull();
+    await expect(
+      repository.revokeAdminUserGlobalSingleOrganizationSessions('short', 'user-1')
+    ).resolves.toBeNull();
     expect(queryRaw).not.toHaveBeenCalled();
   });
 
@@ -136,45 +139,75 @@ describe('SessionMutationRepository', () => {
     );
   });
 
-  it('parameterizes organization-scoped revocation and preserves returned order', async () => {
-    const { repository, queryRaw } = repositoryWithRows([
-      { session_id: 'session-1' },
-      { session_id: 'session-2' },
-    ]);
+  it('distinguishes an authorized zero-revocation sentinel from authorization failure', async () => {
+    const authorized = repositoryWithRows([
+      { authorization_proven: true, session_id: null },
+    ]).repository;
+    const denied = repositoryWithRows([]).repository;
 
-    await expect(repository.revokeUserOrganizationSessions('user-1', 'org-1')).resolves.toEqual([
-      'session-1',
-      'session-2',
-    ]);
-    const query = queryParts(queryRaw);
-    expect(query.values).toEqual(['user-1', 'org-1']);
-    expect(query.strings?.join('')).toContain('FROM public.bootstrap_session_revoke_user_org_v1(');
+    await expect(authorized.revokeSelfOtherSessions(token)).resolves.toEqual({ sessionIds: [] });
+    await expect(denied.revokeSelfOtherSessions(token)).resolves.toBeNull();
   });
 
-  it('parameterizes global revocation with an optional preserved session', async () => {
-    const { repository, queryRaw } = repositoryWithRows([{ session_id: 'session-2' }]);
-
-    await expect(repository.revokeAllUserSessions('user-1', 'session-1')).resolves.toEqual([
-      'session-2',
+  it('parameterizes credential-bound organization revocation and returns session IDs', async () => {
+    const { repository, queryRaw } = repositoryWithRows([
+      { authorization_proven: true, session_id: 'session-1' },
+      { authorization_proven: true, session_id: 'session-2' },
     ]);
+
+    await expect(repository.revokeAdminUserOrganizationSessions(token, 'user-1')).resolves.toEqual({
+      sessionIds: ['session-1', 'session-2'],
+    });
     const query = queryParts(queryRaw);
-    expect(query.values).toEqual(['user-1', 'session-1']);
+    expect(query.values).toEqual([token, 'user-1']);
     expect(query.strings?.join('')).toContain(
-      'FROM public.bootstrap_session_revoke_user_global_v1('
+      'FROM public.bootstrap_session_revoke_admin_user_org_v1('
     );
   });
 
-  it('fails closed on duplicate or malformed session IDs', async () => {
+  it('parameterizes the single-organization global wrapper without caller-selected scope', async () => {
+    const { repository, queryRaw } = repositoryWithRows([
+      { authorization_proven: true, session_id: 'session-2' },
+    ]);
+
+    await expect(
+      repository.revokeAdminUserGlobalSingleOrganizationSessions(token, 'user-1')
+    ).resolves.toEqual({ sessionIds: ['session-2'] });
+    const query = queryParts(queryRaw);
+    expect(query.values).toEqual([token, 'user-1']);
+    expect(query.strings?.join('')).toContain(
+      'FROM public.bootstrap_session_revoke_admin_user_global_single_org_v1('
+    );
+  });
+
+  it('fails closed on invalid envelopes, duplicate IDs, and malformed IDs', async () => {
+    const invalidMarker = repositoryWithRows([
+      { authorization_proven: false, session_id: null },
+    ]).repository;
+    await expect(invalidMarker.revokeSelfOtherSessions(token)).rejects.toThrow(
+      'BOOTSTRAP_SESSION_REVOCATION_AUTHORIZATION_MARKER_INVALID'
+    );
+
+    const mixedSentinel = repositoryWithRows([
+      { authorization_proven: true, session_id: null },
+      { authorization_proven: true, session_id: 'session-1' },
+    ]).repository;
+    await expect(mixedSentinel.revokeSelfOtherSessions(token)).rejects.toThrow(
+      'BOOTSTRAP_SESSION_REVOCATION_SENTINEL_INVALID'
+    );
+
     const duplicateRepository = repositoryWithRows([
-      { session_id: 'session-1' },
-      { session_id: 'session-1' },
+      { authorization_proven: true, session_id: 'session-1' },
+      { authorization_proven: true, session_id: 'session-1' },
     ]).repository;
     await expect(
-      duplicateRepository.revokeUserOrganizationSessions('user-1', 'org-1')
+      duplicateRepository.revokeAdminUserOrganizationSessions(token, 'user-1')
     ).rejects.toThrow('BOOTSTRAP_SESSION_MUTATION_DUPLICATE_SESSION_ID');
 
-    const malformedRepository = repositoryWithRows([{ session_id: 'bad session' }]).repository;
-    await expect(malformedRepository.invalidateSession(token)).rejects.toThrow(
+    const malformedRepository = repositoryWithRows([
+      { authorization_proven: true, session_id: 'bad session' },
+    ]).repository;
+    await expect(malformedRepository.revokeSelfOtherSessions(token)).rejects.toThrow(
       'BOOTSTRAP_SESSION_MUTATION_ROW_INVALID'
     );
   });
@@ -218,6 +251,26 @@ describe('SessionMutationRepository', () => {
       /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_revoke/i
     );
 
+    const boundedMigration = readFileSync(
+      resolve(
+        process.cwd(),
+        'prisma/migrations/20260813050000_w1_2_bounded_bulk_session_revocation/migration.sql'
+      ),
+      'utf8'
+    );
+    expect(boundedMigration).toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_revoke_self_others_v1\(text\)/i
+    );
+    expect(boundedMigration).toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_revoke_admin_user_org_v1\(text, text\)/i
+    );
+    expect(boundedMigration).toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_revoke_admin_user_global_single_org_v1\(/i
+    );
+    expect(boundedMigration).not.toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.bootstrap_session_revoke_user_(org|global)_v1/i
+    );
+
     const creationFiles = [
       'src/app/api/auth/login/route.ts',
       'src/app/api/auth/2fa/validate/route.ts',
@@ -243,15 +296,25 @@ describe('SessionMutationRepository', () => {
     expect(logoutSource).toContain('bootstrapRepository.resolveSession(sessionToken)');
     expect(logoutSource).not.toContain('bootstrapDb');
 
-    const bulkRouteFiles = [
-      'src/app/api/auth/change-password/route.ts',
-      'src/app/api/auth/reset-password/route.ts',
-      'src/app/api/users/[userId]/route.ts',
-    ];
-    for (const file of bulkRouteFiles) {
-      expect(readFileSync(resolve(process.cwd(), file), 'utf8'), file).not.toContain(
-        'sessionMutationRepository'
-      );
-    }
+    const passwordChangeSource = readFileSync(
+      resolve(process.cwd(), 'src/app/api/auth/change-password/route.ts'),
+      'utf8'
+    );
+    expect(passwordChangeSource).toContain('revokeSelfOtherSessionsInTx');
+    expect(passwordChangeSource).not.toMatch(/(?:bootstrapDb|tx)\.session\.updateMany/);
+
+    const adminUserSource = readFileSync(
+      resolve(process.cwd(), 'src/app/api/users/[userId]/route.ts'),
+      'utf8'
+    );
+    expect(adminUserSource).toContain('revokeAdminUserOrgSessionsInTx');
+    expect(adminUserSource).toContain('revokeAdminUserGlobalSingleOrgSessionsInTx');
+    expect(adminUserSource).not.toContain('deactivateUserOrgSessionsInTx');
+
+    const resetSource = readFileSync(
+      resolve(process.cwd(), 'src/app/api/auth/reset-password/route.ts'),
+      'utf8'
+    );
+    expect(resetSource).toContain('deactivateAllUserSessionsInTx');
   });
 });
