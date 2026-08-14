@@ -239,6 +239,73 @@ describe('GET /api/organization/activity', () => {
     );
   });
 
+  it('collapses duplicate actor events inside one minute while retaining later activity', async () => {
+    const eventFindMany = vi.fn().mockResolvedValue([
+      {
+        id: 'login-newest',
+        eventType: 'USER_LOGIN',
+        actorType: 'ADMIN',
+        actor: { id: 'user-1', firstName: 'Jane', lastName: 'Admin', email: 'jane@example.com' },
+        actorEmail: 'jane@example.com',
+        room: null,
+        description: 'Logged in',
+        ipAddress: '192.0.2.1',
+        createdAt: new Date('2026-08-13T12:02:00Z'),
+        documentId: null,
+        metadata: { source: 'native', authoritative: true },
+      },
+      {
+        id: 'login-duplicate',
+        eventType: 'USER_LOGIN',
+        actorType: 'ADMIN',
+        actor: { id: 'user-1', firstName: 'Jane', lastName: 'Admin', email: 'jane@example.com' },
+        actorEmail: 'jane@example.com',
+        room: null,
+        description: 'Logged in',
+        ipAddress: '192.0.2.1',
+        createdAt: new Date('2026-08-13T12:01:30Z'),
+        documentId: null,
+        metadata: { source: 'native', authoritative: true },
+      },
+      {
+        id: 'login-earlier',
+        eventType: 'USER_LOGIN',
+        actorType: 'ADMIN',
+        actor: { id: 'user-1', firstName: 'Jane', lastName: 'Admin', email: 'jane@example.com' },
+        actorEmail: 'jane@example.com',
+        room: null,
+        description: 'Logged in',
+        ipAddress: '192.0.2.1',
+        createdAt: new Date('2026-08-13T12:00:00Z'),
+        documentId: null,
+        metadata: { source: 'native', authoritative: true },
+      },
+    ]);
+
+    mockWithOrgContext.mockImplementation(async (_organizationId, callback) =>
+      callback({
+        event: { findMany: eventFindMany, count: vi.fn().mockResolvedValue(3) },
+        viewSession: {
+          findMany: vi.fn().mockResolvedValue([]),
+          count: vi.fn().mockResolvedValue(0),
+        },
+        organization: {
+          findUnique: vi.fn().mockResolvedValue({ auditCaptureMode: 'AUTHORITATIVE' }),
+        },
+        room: { findMany: vi.fn().mockResolvedValue([]) },
+        document: { findMany: vi.fn().mockResolvedValue([]) },
+      } as never)
+    );
+
+    const response = await GET(new NextRequest('http://localhost/api/organization/activity'));
+    const body = await response.json();
+    expect(body.events.map((event: { id: string }) => event.id)).toEqual([
+      'login-newest',
+      'login-earlier',
+    ]);
+    expect(body.pagination.total).toBe(2);
+  });
+
   it('filters by userId', async () => {
     mockWithOrgContext.mockResolvedValue(makeActivityResult([], 0));
 

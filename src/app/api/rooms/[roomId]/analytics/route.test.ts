@@ -331,6 +331,48 @@ describe('GET /api/rooms/:roomId/analytics', () => {
     expect(body.recentViewers[0].identityLabel).toBe('Anonymous viewer');
   });
 
+  it('groups anonymous share-link sessions and prioritizes identified viewers in recent activity', async () => {
+    const { body } = await getBody({
+      recentSessions: [
+        {
+          id: 'session-anon-new',
+          userId: null,
+          visitorEmail: null,
+          visitorName: null,
+          totalTimeSpentSeconds: 15,
+          lastActivityAt: new Date('2026-08-13T12:00:00Z'),
+          user: null,
+        },
+        {
+          id: 'session-anon-old',
+          userId: null,
+          visitorEmail: null,
+          visitorName: null,
+          totalTimeSpentSeconds: 10,
+          lastActivityAt: new Date('2026-08-13T11:00:00Z'),
+          user: null,
+        },
+        {
+          id: 'session-identified',
+          userId: null,
+          visitorEmail: 'known@example.com',
+          visitorName: 'Known Viewer',
+          totalTimeSpentSeconds: 5,
+          lastActivityAt: new Date('2026-08-13T10:00:00Z'),
+          user: null,
+        },
+      ],
+    });
+
+    expect(body.recentViewers).toHaveLength(2);
+    expect(body.recentViewers[0]).toEqual(
+      expect.objectContaining({ email: 'known@example.com', name: 'Known Viewer' })
+    );
+    expect(body.recentViewers[1]).toEqual(
+      expect.objectContaining({ email: null, identityLabel: 'Anonymous viewer' })
+    );
+  });
+
   it('keeps analytics admin-only', async () => {
     mockRequireAuth.mockResolvedValue({
       userId: 'viewer-1',

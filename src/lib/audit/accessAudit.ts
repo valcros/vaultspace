@@ -10,6 +10,8 @@ export const ACCESS_AUDIT_DEDUPE_MS = {
   DOCUMENT_VIEWED: 5 * 60 * 1000,
   DOCUMENT_DOWNLOADED: 3 * 1000,
   LINK_ACCESS_DENIED: 60 * 1000,
+  USER_LOGIN: 60 * 1000,
+  USER_LOGOUT: 60 * 1000,
 } as const;
 
 type AccessEventType =

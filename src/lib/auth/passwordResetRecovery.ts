@@ -2,7 +2,8 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEq
 
 import { passwordResetTokenMatchesStoredValue } from './passwordResetToken';
 
-const PURPOSE = 'vaultspace/password-reset-recovery/v1';
+const PURPOSE_V1 = 'vaultspace/password-reset-recovery/v1';
+const PURPOSE_V2 = 'vaultspace/password-reset-recovery/v2';
 const KEY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const PUBLIC_TOKEN_PATTERN = /^prt1_[A-Za-z0-9_-]{43}$/;
 const KEY_BYTES = 32;
@@ -32,8 +33,14 @@ export interface PasswordResetRecoveryContext {
   expiresAt: Date;
 }
 
+export interface PasswordResetRecoveryContextV2 {
+  flowId: string;
+  storedToken: string;
+  providerOperationId: string;
+}
+
 export interface PasswordResetRecoveryEnvelope {
-  cipherVersion: 1;
+  cipherVersion: 1 | 2;
   keyId: string;
   nonce: Buffer;
   ciphertext: Buffer;
@@ -95,10 +102,10 @@ function parseKeyRing(requireActiveKey = true): RecoveryKeyRing {
   return { activeKeyId, keys };
 }
 
-function aad(context: PasswordResetRecoveryContext, keyId: string): Buffer {
+function aadV1(context: PasswordResetRecoveryContext, keyId: string): Buffer {
   return Buffer.from(
     [
-      PURPOSE,
+      PURPOSE_V1,
       '1',
       keyId,
       context.flowId,
@@ -110,9 +117,29 @@ function aad(context: PasswordResetRecoveryContext, keyId: string): Buffer {
   );
 }
 
-function fingerprint(email: string, key: Buffer): string {
+function aadV2(
+  context: PasswordResetRecoveryContextV2,
+  keyId: string,
+  recipientFingerprint: string
+): Buffer {
+  return Buffer.from(
+    [
+      PURPOSE_V2,
+      '2',
+      keyId,
+      context.flowId,
+      context.storedToken,
+      context.providerOperationId,
+      recipientFingerprint,
+    ].join('\0'),
+    'utf8'
+  );
+}
+
+function fingerprint(email: string, key: Buffer, cipherVersion: 1 | 2): string {
+  const purpose = cipherVersion === 1 ? PURPOSE_V1 : PURPOSE_V2;
   return createHmac('sha256', key)
-    .update(`${PURPOSE}\0recipient\0${email.trim().toLowerCase()}`, 'utf8')
+    .update(`${purpose}\0recipient\0${email.trim().toLowerCase()}`, 'utf8')
     .digest('hex');
 }
 
@@ -137,7 +164,7 @@ export function encryptPasswordResetRecoveryToken(
   const key = ring.keys.get(activeKeyId)!;
   const nonce = randomBytes(NONCE_BYTES);
   const cipher = createCipheriv('aes-256-gcm', key, nonce, { authTagLength: TAG_BYTES });
-  cipher.setAAD(aad(context, activeKeyId));
+  cipher.setAAD(aadV1(context, activeKeyId));
   const ciphertext = Buffer.concat([cipher.update(publicToken, 'utf8'), cipher.final()]);
 
   return {
@@ -146,7 +173,34 @@ export function encryptPasswordResetRecoveryToken(
     nonce,
     ciphertext,
     authTag: cipher.getAuthTag(),
-    recipientFingerprint: fingerprint(recipientEmail, key),
+    recipientFingerprint: fingerprint(recipientEmail, key, 1),
+  };
+}
+
+export function encryptPasswordResetRecoveryTokenV2(
+  publicToken: string,
+  recipientEmail: string,
+  context: PasswordResetRecoveryContextV2
+): PasswordResetRecoveryEnvelope {
+  if (!PUBLIC_TOKEN_PATTERN.test(publicToken) || context.providerOperationId !== context.flowId) {
+    throw new PasswordResetRecoveryError('PASSWORD_RESET_RECOVERY_ENVELOPE_INVALID');
+  }
+  const ring = parseKeyRing();
+  const activeKeyId = ring.activeKeyId!;
+  const key = ring.keys.get(activeKeyId)!;
+  const recipientFingerprint = fingerprint(recipientEmail, key, 2);
+  const nonce = randomBytes(NONCE_BYTES);
+  const cipher = createCipheriv('aes-256-gcm', key, nonce, { authTagLength: TAG_BYTES });
+  cipher.setAAD(aadV2(context, activeKeyId, recipientFingerprint));
+  const ciphertext = Buffer.concat([cipher.update(publicToken, 'utf8'), cipher.final()]);
+
+  return {
+    cipherVersion: 2,
+    keyId: activeKeyId,
+    nonce,
+    ciphertext,
+    authTag: cipher.getAuthTag(),
+    recipientFingerprint,
   };
 }
 
@@ -157,7 +211,7 @@ export function decryptPasswordResetRecoveryToken(
   >,
   recipientEmail: string,
   expectedRecipientFingerprint: string,
-  context: PasswordResetRecoveryContext
+  context: PasswordResetRecoveryContext | PasswordResetRecoveryContextV2
 ): string {
   // Decryption needs only the key named by the row. A missing or stale active
   // writer key must not make a retained previous key unusable.
@@ -167,7 +221,7 @@ export function decryptPasswordResetRecoveryToken(
     throw new PasswordResetRecoveryError('PASSWORD_RESET_RECOVERY_KEY_UNAVAILABLE');
   }
   if (
-    envelope.cipherVersion !== 1 ||
+    (envelope.cipherVersion !== 1 && envelope.cipherVersion !== 2) ||
     envelope.nonce.length !== NONCE_BYTES ||
     envelope.authTag.length !== TAG_BYTES ||
     envelope.ciphertext.length < 48 ||
@@ -176,7 +230,7 @@ export function decryptPasswordResetRecoveryToken(
     throw new PasswordResetRecoveryError('PASSWORD_RESET_RECOVERY_ENVELOPE_INVALID');
   }
 
-  const actualFingerprint = fingerprint(recipientEmail, key);
+  const actualFingerprint = fingerprint(recipientEmail, key, envelope.cipherVersion);
   const expectedFingerprint = Buffer.from(expectedRecipientFingerprint, 'utf8');
   const actualFingerprintBytes = Buffer.from(actualFingerprint, 'utf8');
   if (
@@ -187,10 +241,22 @@ export function decryptPasswordResetRecoveryToken(
   }
 
   try {
+    let authenticatedData: Buffer;
+    if (envelope.cipherVersion === 1) {
+      if (!('userId' in context) || !('expiresAt' in context)) {
+        throw new PasswordResetRecoveryError('PASSWORD_RESET_RECOVERY_ENVELOPE_INVALID');
+      }
+      authenticatedData = aadV1(context, envelope.keyId);
+    } else {
+      if (!('providerOperationId' in context) || context.providerOperationId !== context.flowId) {
+        throw new PasswordResetRecoveryError('PASSWORD_RESET_RECOVERY_ENVELOPE_INVALID');
+      }
+      authenticatedData = aadV2(context, envelope.keyId, expectedRecipientFingerprint);
+    }
     const decipher = createDecipheriv('aes-256-gcm', key, envelope.nonce, {
       authTagLength: TAG_BYTES,
     });
-    decipher.setAAD(aad(context, envelope.keyId));
+    decipher.setAAD(authenticatedData);
     decipher.setAuthTag(envelope.authTag);
     const publicToken = Buffer.concat([
       decipher.update(envelope.ciphertext),

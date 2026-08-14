@@ -5,6 +5,7 @@ import { createPasswordResetToken } from './passwordResetToken';
 import {
   decryptPasswordResetRecoveryToken,
   encryptPasswordResetRecoveryToken,
+  encryptPasswordResetRecoveryTokenV2,
   PasswordResetRecoveryError,
   validatePasswordResetRecoveryConfiguration,
 } from './passwordResetRecovery';
@@ -51,6 +52,82 @@ describe('password reset recovery envelope', () => {
         context
       )
     ).toBe(pair.publicToken);
+  });
+
+  it('round trips a version 2 envelope without accepting a subject user id', () => {
+    const pair = createPasswordResetToken();
+    const context = {
+      flowId: 'flow-v2',
+      storedToken: pair.storedToken,
+      providerOperationId: 'flow-v2',
+    };
+    const envelope = encryptPasswordResetRecoveryTokenV2(
+      pair.publicToken,
+      'user@example.com',
+      context
+    );
+
+    expect(envelope.cipherVersion).toBe(2);
+    expect(
+      decryptPasswordResetRecoveryToken(
+        envelope,
+        'USER@example.com',
+        envelope.recipientFingerprint,
+        context
+      )
+    ).toBe(pair.publicToken);
+  });
+
+  it('binds version 2 to flow, lookup, operation, and recipient fingerprint', () => {
+    const pair = createPasswordResetToken();
+    const context = {
+      flowId: 'flow-v2',
+      storedToken: pair.storedToken,
+      providerOperationId: 'flow-v2',
+    };
+    const envelope = encryptPasswordResetRecoveryTokenV2(
+      pair.publicToken,
+      'user@example.com',
+      context
+    );
+
+    const invalidContexts = [
+      { ...context, flowId: 'other-flow' },
+      { ...context, storedToken: `prh1:${'0'.repeat(64)}` },
+      { ...context, providerOperationId: 'other-operation' },
+    ];
+    for (const invalidContext of invalidContexts) {
+      expect(() =>
+        decryptPasswordResetRecoveryToken(
+          envelope,
+          'user@example.com',
+          envelope.recipientFingerprint,
+          invalidContext
+        )
+      ).toThrow(PasswordResetRecoveryError);
+    }
+    expect(() =>
+      decryptPasswordResetRecoveryToken(
+        envelope,
+        'other@example.com',
+        envelope.recipientFingerprint,
+        context
+      )
+    ).toThrow(PasswordResetRecoveryError);
+    expect(() =>
+      decryptPasswordResetRecoveryToken(envelope, 'user@example.com', '0'.repeat(64), context)
+    ).toThrow(PasswordResetRecoveryError);
+  });
+
+  it('rejects version 2 creation when provider operation does not equal flow id', () => {
+    const pair = createPasswordResetToken();
+    expect(() =>
+      encryptPasswordResetRecoveryTokenV2(pair.publicToken, 'user@example.com', {
+        flowId: 'flow-v2',
+        storedToken: pair.storedToken,
+        providerOperationId: 'other-operation',
+      })
+    ).toThrow(PasswordResetRecoveryError);
   });
 
   it.each(['nonce', 'ciphertext', 'authTag'] as const)('rejects modified %s', (field) => {

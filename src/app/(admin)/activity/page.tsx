@@ -439,9 +439,9 @@ export default function ActivityPage() {
                                 <span>IP {event.ipAddress}</span>
                               </>
                             )}
-                            {event.auditStatus !== 'authoritative' && (
+                            {event.auditStatus === 'inferred' && (
                               <Badge variant="outline" className="text-[10px] capitalize">
-                                {event.auditStatus}
+                                Inferred
                               </Badge>
                             )}
                           </div>

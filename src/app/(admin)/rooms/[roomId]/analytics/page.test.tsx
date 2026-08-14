@@ -99,21 +99,11 @@ describe('Room Analytics page — recent viewers rendering', () => {
     expect(screen.getByText('Mary Member')).toBeInTheDocument();
     expect(screen.getByText('Guest Partner')).toBeInTheDocument();
 
-    // Access type is rendered for each.
-    expect(screen.getByText('Member')).toBeInTheDocument();
-    expect(screen.getByText('Share link')).toBeInTheDocument();
-
-    // Provenance + audit status rendered (member native/shadow; guest inferred).
-    expect(screen.getByText('Native')).toBeInTheDocument();
-    expect(screen.getByText('Shadow')).toBeInTheDocument();
-    expect(screen.getAllByText('Inferred').length).toBeGreaterThanOrEqual(1);
-
-    // Per-row: member row shows Member + Native; share-link row shows Share link.
+    // Per-row: member row shows Member; share-link row shows Share link.
     const memberRow = screen
       .getByText('Mary Member')
       .closest('[data-testid="recent-viewer"]') as HTMLElement;
     expect(within(memberRow).getByText('Member')).toBeInTheDocument();
-    expect(within(memberRow).getByText('Native')).toBeInTheDocument();
     const guestRow = screen
       .getByText('Guest Partner')
       .closest('[data-testid="recent-viewer"]') as HTMLElement;

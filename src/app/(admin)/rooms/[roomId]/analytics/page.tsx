@@ -92,22 +92,6 @@ const PROVENANCE_META: Record<RecentViewer['provenance'], { label: string; class
   },
 };
 
-const AUDIT_STATUS_META: Record<RecentViewer['auditStatus'], { label: string; className: string }> =
-  {
-    authoritative: {
-      label: 'Authoritative',
-      className: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
-    },
-    shadow: {
-      label: 'Shadow',
-      className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
-    },
-    inferred: {
-      label: 'Inferred',
-      className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-    },
-  };
-
 export default function RoomAnalyticsPage() {
   const params = useParams();
   const router = useRouter();
@@ -352,16 +336,11 @@ export default function RoomAnalyticsPage() {
                     >
                       {ACCESS_TYPE_META[viewer.accessType].label}
                     </span>
-                    <span
-                      className={`${BADGE_BASE} ${PROVENANCE_META[viewer.provenance].className}`}
-                    >
-                      {PROVENANCE_META[viewer.provenance].label}
-                    </span>
-                    <span
-                      className={`${BADGE_BASE} ${AUDIT_STATUS_META[viewer.auditStatus].className}`}
-                    >
-                      {AUDIT_STATUS_META[viewer.auditStatus].label}
-                    </span>
+                    {viewer.provenance === 'inferred' && (
+                      <span className={`${BADGE_BASE} ${PROVENANCE_META['inferred'].className}`}>
+                        Inferred
+                      </span>
+                    )}
                     <span className="text-xs text-neutral-500">
                       {viewer.lastActive
                         ? new Date(viewer.lastActive).toLocaleDateString('en-US', {
