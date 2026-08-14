@@ -38,7 +38,10 @@ export async function GET() {
     const orgSummaries = orgs.map((org) => {
       const estimatedStorageBytes = (org._count.rooms * 45 + 120) * 1024 * 1024; // MB to Bytes estimate
       const quotaLimitBytes = 5 * 1024 * 1024 * 1024; // 5GB limit default
-      const usagePercentage = Math.min(100, Math.round((estimatedStorageBytes / quotaLimitBytes) * 100));
+      const usagePercentage = Math.min(
+        100,
+        Math.round((estimatedStorageBytes / quotaLimitBytes) * 100)
+      );
 
       let quotaAlertLevel: 'NORMAL' | 'WARNING_90' | 'CRITICAL_98' = 'NORMAL';
       if (usagePercentage >= 98) {
