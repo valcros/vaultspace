@@ -383,9 +383,9 @@ export default function RoomAuditPage() {
                             <span>{event.actor.email}</span>
                           </>
                         )}
-                        {event.auditStatus !== 'authoritative' && (
+                        {event.auditStatus === 'inferred' && (
                           <Badge variant="outline" className="text-[10px] capitalize">
-                            {event.auditStatus}
+                            Inferred
                           </Badge>
                         )}
                       </div>

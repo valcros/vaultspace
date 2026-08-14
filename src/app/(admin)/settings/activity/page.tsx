@@ -417,9 +417,9 @@ export default function SettingsActivityPage() {
                           </Badge>
                         </>
                       )}
-                      {event.auditStatus !== 'authoritative' && (
+                      {event.auditStatus === 'inferred' && (
                         <Badge variant="outline" className="text-[10px] capitalize">
-                          {event.auditStatus}
+                          Inferred
                         </Badge>
                       )}
                     </div>

@@ -69,13 +69,6 @@ function legacyLookup(): string {
   return randomBytes(32).toString('base64url');
 }
 
-async function callAsOwner<T>(sql: string, ...values: unknown[]): Promise<T[]> {
-  return rawPrisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(`SET LOCAL ROLE ${OWNER_ROLE}`);
-    return tx.$queryRawUnsafe<T[]>(sql, ...values);
-  });
-}
-
 async function candidate(storedLookup: string): Promise<CandidateRow[]> {
   return runtimePrisma.$queryRawUnsafe<CandidateRow[]>(
     'SELECT candidate_proven FROM public.bootstrap_password_reset_candidate_v1($1::text)',
@@ -372,15 +365,34 @@ describe('W1-2 password-reset redemption route conversion', () => {
     });
     expect(owner?.write_column_privileges).toEqual([
       'organizations.updatedAt:UPDATE',
+      'password_reset_recoveries.authTag:INSERT',
       'password_reset_recoveries.authTag:UPDATE',
+      'password_reset_recoveries.cipherVersion:INSERT',
       'password_reset_recoveries.cipherVersion:UPDATE',
+      'password_reset_recoveries.ciphertext:INSERT',
       'password_reset_recoveries.ciphertext:UPDATE',
       'password_reset_recoveries.enqueueStatus:UPDATE',
+      'password_reset_recoveries.flowId:INSERT',
+      'password_reset_recoveries.keyId:INSERT',
       'password_reset_recoveries.keyId:UPDATE',
+      'password_reset_recoveries.nonce:INSERT',
       'password_reset_recoveries.nonce:UPDATE',
+      'password_reset_recoveries.providerOperationId:INSERT',
+      'password_reset_recoveries.recipientFingerprint:INSERT',
+      'password_reset_recoveries.updatedAt:INSERT',
       'password_reset_recoveries.updatedAt:UPDATE',
+      'password_reset_recoveries.userId:INSERT',
       'password_reset_recoveries.wipedAt:UPDATE',
+      'password_reset_tokens.auditOrganizationIds:INSERT',
+      'password_reset_tokens.deliveryStatus:INSERT',
+      'password_reset_tokens.expiresAt:INSERT',
+      'password_reset_tokens.id:INSERT',
+      'password_reset_tokens.organizationId:INSERT',
+      'password_reset_tokens.providerCorrelationSchemaVersion:INSERT',
+      'password_reset_tokens.requestId:INSERT',
+      'password_reset_tokens.token:INSERT',
       'password_reset_tokens.usedAt:UPDATE',
+      'password_reset_tokens.userId:INSERT',
       'sessions.createdAt:INSERT',
       'sessions.expiresAt:INSERT',
       'sessions.expiresAt:UPDATE',

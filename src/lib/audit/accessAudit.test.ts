@@ -27,6 +27,11 @@ describe('captureAccessAudit', () => {
     vi.clearAllMocks();
   });
 
+  it('uses a one-minute dedupe window for login and logout activity', () => {
+    expect(ACCESS_AUDIT_DEDUPE_MS.USER_LOGIN).toBe(60_000);
+    expect(ACCESS_AUDIT_DEDUPE_MS.USER_LOGOUT).toBe(60_000);
+  });
+
   it('does nothing when the organization mode is OFF', async () => {
     const eventCreate = vi.fn();
     mockWithOrgContext.mockImplementation(async (_orgId, operation) =>
