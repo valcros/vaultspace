@@ -2,14 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import {
-  Activity,
-  Terminal,
-  ShieldCheck,
-  CheckCircle2,
-  RefreshCw,
-  ArrowLeft,
-} from 'lucide-react';
+import { Activity, Terminal, ShieldCheck, CheckCircle2, RefreshCw, ArrowLeft } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,13 +27,13 @@ export default function SysOpRunnerPage() {
   return (
     <div className="space-y-6">
       {/* Title Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      <div className="flex flex-col justify-between gap-4 border-b border-slate-800 pb-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
+          <h1 className="flex items-center gap-3 text-2xl font-bold tracking-tight text-white">
             <Activity className="h-6 w-6 text-emerald-400" />
             Autonomous Agent Runner Status
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="mt-1 text-sm text-slate-400">
             24/7 background Lead Dev execution loop status and real-time output stream.
           </p>
         </div>
@@ -51,13 +44,18 @@ export default function SysOpRunnerPage() {
             size="sm"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white text-xs"
+            className="border-slate-800 bg-slate-900 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
           >
             <RefreshCw className={`mr-2 h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh Stream
           </Button>
 
-          <Button variant="outline" size="sm" asChild className="border-slate-800 bg-slate-900 text-slate-300 text-xs">
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            className="border-slate-800 bg-slate-900 text-xs text-slate-300"
+          >
             <Link href="/sysop">
               <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
               SysOp Overview
@@ -70,62 +68,56 @@ export default function SysOpRunnerPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-slate-800 bg-slate-900/60 backdrop-blur">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Runner Host Status
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-lg font-bold text-white flex items-center gap-2">
+              <span className="flex items-center gap-2 text-lg font-bold text-white">
                 <CheckCircle2 className="h-5 w-5 text-emerald-400" />
                 VM Running
               </span>
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+              <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-300">
                 24/7 Active
               </Badge>
             </div>
-            <p className="text-xs text-slate-400 font-mono">
+            <p className="font-mono text-xs text-slate-400">
               REDACTED (REDACTED)
             </p>
-            <p className="text-[11px] text-slate-500">
-              Standard_D4s_v5 (4 vCPU, 16GB RAM)
-            </p>
+            <p className="text-[11px] text-slate-500">Standard_D4s_v5 (4 vCPU, 16GB RAM)</p>
           </CardContent>
         </Card>
 
         <Card className="border-slate-800 bg-slate-900/60 backdrop-blur">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Active Roadmap Sprint
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-lg font-bold text-indigo-300">
-                Cluster 1: SysOp
-              </span>
-              <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+              <span className="text-lg font-bold text-indigo-300">Cluster 1: SysOp</span>
+              <Badge className="border-indigo-500/30 bg-indigo-500/20 text-indigo-300">
                 In Progress
               </Badge>
             </div>
             <p className="text-xs text-slate-400">
               F159 SysOp DevOps Control Plane (80/20 Value Architecture)
             </p>
-            <p className="text-[11px] text-slate-500">
-              Pragmatic 2-Screen Core Control Plane
-            </p>
+            <p className="text-[11px] text-slate-500">Pragmatic 2-Screen Core Control Plane</p>
           </CardContent>
         </Card>
 
         <Card className="border-slate-800 bg-slate-900/60 backdrop-blur">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Governance Framework
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-lg font-bold text-white flex items-center gap-2">
+              <span className="flex items-center gap-2 text-lg font-bold text-white">
                 <ShieldCheck className="h-5 w-5 text-indigo-400" />
                 DA-VAL-001
               </span>
@@ -133,12 +125,8 @@ export default function SysOpRunnerPage() {
                 Active
               </Badge>
             </div>
-            <p className="text-xs text-slate-400">
-              80/20 Pareto Value & Human Elevation Gate
-            </p>
-            <p className="text-[11px] text-slate-500">
-              Accountable Authority: Project Owner
-            </p>
+            <p className="text-xs text-slate-400">80/20 Pareto Value & Human Elevation Gate</p>
+            <p className="text-[11px] text-slate-500">Accountable Authority: Project Owner</p>
           </CardContent>
         </Card>
       </div>
@@ -147,21 +135,22 @@ export default function SysOpRunnerPage() {
       <Card className="border-slate-800 bg-slate-900/60 backdrop-blur">
         <CardHeader className="border-b border-slate-800/80 pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base text-white flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-base text-white">
               <Terminal className="h-5 w-5 text-emerald-400" />
               Live Execution Output Log
             </CardTitle>
-            <span className="text-xs text-slate-500 font-mono">
-              Auto-updating stream
-            </span>
+            <span className="font-mono text-xs text-slate-500">Auto-updating stream</span>
           </div>
         </CardHeader>
 
         <CardContent className="pt-4">
-          <div className="rounded-lg border border-slate-800 bg-slate-950 p-4 font-mono text-xs text-slate-300 space-y-2 max-h-96 overflow-y-auto">
+          <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 p-4 font-mono text-xs text-slate-300">
             {logs.map((log, i) => (
-              <div key={i} className="flex items-start space-x-2 border-b border-slate-900/60 pb-1.5">
-                <span className="text-indigo-400 select-none">&gt;</span>
+              <div
+                key={i}
+                className="flex items-start space-x-2 border-b border-slate-900/60 pb-1.5"
+              >
+                <span className="select-none text-indigo-400">&gt;</span>
                 <span className="leading-relaxed">{log}</span>
               </div>
             ))}
