@@ -152,6 +152,8 @@ Infrastructure primitives that other features build on. These must be implemente
 | F129 | Multi-room admin dashboard                   | V1       | Core         | F042, F121       | —          | Overview of all rooms with status, activity, and alerts. Quick access to any room.                                            |
 | F130 | Configurable room-level settings             | MVP      | Core         | F108             | —          | Per-room configuration: allow downloads, require NDA, enable watermark, set default expiry. Distinct from global settings.    |
 | F131 | Bulk viewer management (CSV import/export)   | V1       | Core         | F117             | —          | Import viewer lists from CSV. Export current viewer list with access status.                                                  |
+| F159 | System Operator (SysOp) DevOps Control Plane | V1       | Core         | F040, F100, F102, F142 | CC7.2, CC7.3 | **NEW.** Platform-wide DevOps & SysOp control plane (`app/(sysop)/`). Top-down observability and management across all tenants: org & user directory, storage quotas, worker queue telemetry (BullMQ), system health probes, and cross-tenant security logs (password reset probes, rate-limit blocks). Protected by SysOp role and zero-trust break-glass audit logging. See `docs/SYSOP_DEVOPS_CONTROL_PLANE_DESIGN.md`. |
+
 
 ### E-Signatures
 
@@ -535,6 +537,8 @@ F143 (Demo seed data) ← F128, F006, F108, F109
 **Checklists:** F110 → F123 (due diligence tracking)
 **Bulk ops:** F144 (bulk move/tag/delete/permissions)
 **External orgs:** F158 ← F020, F142
+**SysOp Control Plane:** F159 ← F040, F100, F102, F142
+
 
 ### V2 Critical Paths
 
