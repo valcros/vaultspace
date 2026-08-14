@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  ShieldCheck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
@@ -113,6 +114,20 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
             </Link>
           );
         })}
+
+        {(user.email.includes('munger') || user.email.includes('admin')) && (
+          <Link
+            href="/sysop"
+            className={clsx(
+              'mt-4 flex items-center gap-3 rounded-md border border-indigo-200 bg-indigo-50/50 px-3 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-800/60 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/50',
+              collapsed && 'justify-center px-2'
+            )}
+            title={collapsed ? 'SysOp Control Plane' : undefined}
+          >
+            <ShieldCheck className="h-5 w-5 flex-shrink-0 text-indigo-600 dark:text-indigo-400" />
+            {!collapsed && <span>SysOp Control Plane</span>}
+          </Link>
+        )}
       </nav>
 
       {/* Collapse button (when collapsed) */}
