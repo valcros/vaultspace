@@ -100,6 +100,17 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
             <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
+            {(user.email.includes('munger') || user.email.includes('admin')) && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  asChild
+                  className="cursor-pointer font-semibold text-indigo-600 dark:text-indigo-400"
+                >
+                  <Link href="/sysop">SysOp Control Plane</Link>
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-danger-600">
               Log out
