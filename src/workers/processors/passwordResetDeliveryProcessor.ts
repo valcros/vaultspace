@@ -863,9 +863,10 @@ export async function processPasswordResetDeliveryJob(
 
   let publicToken: string;
   try {
+    const cipherVersion = claimed.recovery.cipherVersion as 1 | 2;
     publicToken = decryptPasswordResetRecoveryToken(
       {
-        cipherVersion: claimed.recovery.cipherVersion as 1,
+        cipherVersion,
         keyId: claimed.recovery.keyId!,
         nonce: Buffer.from(claimed.recovery.nonce!),
         ciphertext: Buffer.from(claimed.recovery.ciphertext!),
@@ -873,12 +874,18 @@ export async function processPasswordResetDeliveryJob(
       },
       claimed.user.email,
       claimed.recovery.recipientFingerprint,
-      {
-        flowId,
-        userId: claimed.reset.userId,
-        storedToken: claimed.reset.token,
-        expiresAt: claimed.reset.expiresAt,
-      }
+      cipherVersion === 2
+        ? {
+            flowId,
+            storedToken: claimed.reset.token,
+            providerOperationId: claimed.recovery.providerOperationId,
+          }
+        : {
+            flowId,
+            userId: claimed.reset.userId,
+            storedToken: claimed.reset.token,
+            expiresAt: claimed.reset.expiresAt,
+          }
     );
   } catch (error) {
     const errorCode =

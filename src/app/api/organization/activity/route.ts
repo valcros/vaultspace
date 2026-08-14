@@ -354,9 +354,24 @@ export async function GET(request: NextRequest) {
           sourceMetadata: { source: 'view_session', sourceId: viewerSession.id },
         }));
 
-        const merged = [...nativeRecords, ...inferredRecords].sort(
+        const sortedMerged = [...nativeRecords, ...inferredRecords].sort(
           (a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id)
         );
+
+        const merged: ActivityRecord[] = [];
+        for (const record of sortedMerged) {
+          const last = merged[merged.length - 1];
+          const isDuplicate =
+            last &&
+            last.eventType === record.eventType &&
+            last.actor?.email === record.actor?.email &&
+            Math.abs(last.createdAt.getTime() - record.createdAt.getTime()) < 60_000;
+
+          if (!isDuplicate) {
+            merged.push(record);
+          }
+        }
+
         const exportTruncated = exportCsv && merged.length > EXPORT_ROW_LIMIT;
         const selected = exportCsv
           ? merged.slice(0, EXPORT_ROW_LIMIT)
@@ -377,7 +392,7 @@ export async function GET(request: NextRequest) {
 
         return {
           records: selected,
-          total: eventTotal + inferredTotal,
+          total: Math.max(0, eventTotal + inferredTotal - (sortedMerged.length - merged.length)),
           folderByDocId,
           auditCaptureMode: organization?.auditCaptureMode ?? 'OFF',
           exportTruncated,

@@ -57,7 +57,10 @@ vi.mock('@/providers', () => ({
 }));
 
 import { createPasswordResetToken } from '@/lib/auth/passwordResetToken';
-import { encryptPasswordResetRecoveryToken } from '@/lib/auth/passwordResetRecovery';
+import {
+  encryptPasswordResetRecoveryToken,
+  encryptPasswordResetRecoveryTokenV2,
+} from '@/lib/auth/passwordResetRecovery';
 import { EmailDeliveryError } from '@/providers/email/errors';
 import {
   processPasswordResetAcceptanceJob,
@@ -111,17 +114,24 @@ describe('password reset recovery delivery processor', () => {
     );
   });
 
-  function arrange() {
+  function arrange(cipherVersion: 1 | 2 = 1) {
     const flowId = 'flow-1';
     const userId = 'user-1';
     const expiresAt = new Date(Date.now() + 60 * 60_000);
     const pair = createPasswordResetToken();
-    const envelope = encryptPasswordResetRecoveryToken(pair.publicToken, 'user@example.com', {
-      flowId,
-      userId,
-      storedToken: pair.storedToken,
-      expiresAt,
-    });
+    const envelope =
+      cipherVersion === 2
+        ? encryptPasswordResetRecoveryTokenV2(pair.publicToken, 'user@example.com', {
+            flowId,
+            storedToken: pair.storedToken,
+            providerOperationId: flowId,
+          })
+        : encryptPasswordResetRecoveryToken(pair.publicToken, 'user@example.com', {
+            flowId,
+            userId,
+            storedToken: pair.storedToken,
+            expiresAt,
+          });
     const recovery = {
       flowId,
       userId,
@@ -288,6 +298,22 @@ describe('password reset recovery delivery processor', () => {
       mocks.eventCreateMany.mock.invocationCallOrder[0]!
     );
     expect(JSON.stringify(mocks.addJob.mock.calls)).not.toContain(pair.publicToken);
+  });
+
+  it('delivers a version 2 recovery envelope using flow-bound authenticated data', async () => {
+    const { pair, flowId } = arrange(2);
+    mocks.sendEmail.mockResolvedValue({ messageId: 'acs-message-v2' });
+
+    await processPasswordResetDeliveryJob(job(flowId));
+
+    expect(mocks.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'user@example.com',
+        operationId: flowId,
+        sensitiveContent: true,
+        html: expect.stringContaining(`#token=${pair.publicToken}`),
+      })
+    );
   });
 
   it('does not resend when both post-acceptance durability writes fail', async () => {

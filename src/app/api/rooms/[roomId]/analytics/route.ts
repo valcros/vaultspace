@@ -205,7 +205,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             user: { select: { firstName: true, lastName: true, email: true } },
           },
           orderBy: { lastActivityAt: 'desc' },
-          take: RECENT_VIEWERS_LIMIT,
+          take: 100,
         }),
 
         tx.event.findMany({
@@ -321,7 +321,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         const email = normalizeEmail(view.actorEmail ?? view.actor?.email ?? null);
         const key = viewerKey(email, view.actorId);
         const { provenance, auditStatus } = readEventProvenance(view.metadata);
-        mergeRecent(key ?? `anon:view-${view.id}`, {
+        mergeRecent(key ?? 'anonymous:share-link', {
           email,
           name: view.actor ? `${view.actor.firstName} ${view.actor.lastName}` : null,
           identityLabel: view.actor
@@ -348,7 +348,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           (viewerSession.user
             ? `${viewerSession.user.firstName} ${viewerSession.user.lastName}`
             : null);
-        mergeRecent(key ?? `anon:session-${viewerSession.id}`, {
+        mergeRecent(key ?? 'anonymous:share-link', {
           email,
           name,
           identityLabel: viewerSession.user
@@ -364,19 +364,28 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         });
       }
 
-      const recentViewers = Array.from(recentMap.values())
-        .sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime())
-        .slice(0, RECENT_VIEWERS_LIMIT)
-        .map((viewer) => ({
-          email: viewer.email,
-          name: viewer.name,
-          identityLabel: viewer.identityLabel,
-          accessType: viewer.accessType,
-          provenance: viewer.provenance,
-          auditStatus: viewer.auditStatus,
-          timeSpent: viewer.timeSpent,
-          lastActive: viewer.lastActive.toISOString(),
-        }));
+      const recentViewersList = Array.from(recentMap.values()).sort((a, b) => {
+        const aIdentified = Boolean(a.email || a.name);
+        const bIdentified = Boolean(b.email || b.name);
+        if (aIdentified && !bIdentified) {
+          return -1;
+        }
+        if (!aIdentified && bIdentified) {
+          return 1;
+        }
+        return b.lastActive.getTime() - a.lastActive.getTime();
+      });
+
+      const recentViewers = recentViewersList.slice(0, RECENT_VIEWERS_LIMIT).map((viewer) => ({
+        email: viewer.email,
+        name: viewer.name,
+        identityLabel: viewer.identityLabel,
+        accessType: viewer.accessType,
+        provenance: viewer.provenance,
+        auditStatus: viewer.auditStatus,
+        timeSpent: viewer.timeSpent,
+        lastActive: viewer.lastActive.toISOString(),
+      }));
 
       // Build daily view timeline over the period
       const dayCountMap = new Map<string, number>();
