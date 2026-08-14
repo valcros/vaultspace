@@ -6,6 +6,8 @@ import { requireAuth } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { Button } from '@/components/ui/button';
 
+export const dynamic = 'force-dynamic';
+
 export default async function SysOpLayout({ children }: { children: React.ReactNode }) {
   let session;
   try {
