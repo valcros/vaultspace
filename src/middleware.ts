@@ -78,7 +78,11 @@ export async function middleware(request: NextRequest) {
     process.env['MAIN_DOMAINS'] || 'vaultspace.org,vaultspace.app,vaultspace.local'
   ).split(',');
   const isMainDomain = mainDomains.some(
-    (d) => hostname === d || hostname === 'www.' + d || hostname.includes('azurecontainerapps.io')
+    (d) =>
+      hostname === d ||
+      hostname === 'www.' + d ||
+      hostname === 'staging.' + d ||
+      hostname.includes('azurecontainerapps.io')
   );
 
   if (!isMainDomain) {
