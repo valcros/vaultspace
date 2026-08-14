@@ -18,6 +18,7 @@ Lead Dev and the Review Board (Advisor, Historian, Simplifier) will execute thes
 ## 2. Detailed Cluster Specifications
 
 ### Cluster 1: SysOp DevOps Control Plane (F159) & Platform Telemetry
+
 - **Route Isolation:** `/sysop/*` (separate from tenant admin `/admin/*`). Mandatory 2FA and dedicated session token (`vaultspace-sysop-session`).
 - **Maintenance Policy:** Short zero-downtime deploys (<5 min) execute automatically. Longer maintenance runs schedule for **Saturday night / Sunday morning, 12:00 AM – 1:00 AM Pacific Time**.
 - **Storage Quota Engine:** Automated email notifications sent to organization owners when storage reaches **90%** and **98%** of quota.
@@ -26,25 +27,29 @@ Lead Dev and the Review Board (Advisor, Historian, Simplifier) will execute thes
 - **Zero-Trust Break-Glass Boundary:** SysOps cannot inspect customer documents without executing a logged, time-bound (1-hour) Break-Glass request with mandatory `EventBus` audit trail.
 
 ### Cluster 2: Advanced Analytics, Per-Viewer Heatmaps & AI Query (F027, F028, F031)
+
 - **Per-Viewer Page Heatmaps (F028):** Visual page-by-page time breakdown rendered for **individual viewers** (e.g. exact pages read and time spent by specific investors) as well as room aggregates.
-- **AI Natural Language Analytics Assistant:** Integrated chat assistant on the Analytics screen allowing admins to query analytics in natural language (e.g., *"Show me what pages Mark Munger viewed"*, *"Which investors spent >10 minutes on the Cap Table?"*).
+- **AI Natural Language Analytics Assistant:** Integrated chat assistant on the Analytics screen allowing admins to query analytics in natural language (e.g., _"Show me what pages Mark Munger viewed"_, _"Which investors spent >10 minutes on the Cap Table?"_).
 - **Flexible Scheduled Digests (F031):** Admins can configure digest emails to **Daily**, **Weekly (selectable day of week)**, or **Off**.
 - **Initial View Alerts:** Omitted (no instant email/push on first view to avoid notification fatigue).
 
 ### Cluster 3: Document Intelligence, Custom Binders & Change Intelligence (F112, F013, F156)
+
 - **Viewer Version Diffing (F112):** Both Viewers and Admins can view side-by-side or inline text diffs for published document revisions.
 - **Customizable PDF Deal Binders (F156):** Admins can compile master PDF Deal Binders with folder selection/exclusion, custom cover page titles, disclaimers, and org branding/logos.
 - **AI Change Intelligence Suite:**
-  - *Version Change Summary:* Automatic 3-bullet AI summary generated on new document version upload.
-  - *What Changed Since My Last Login:* Personalized AI welcome widget on room entry showing new documents, updated versions, and Q&A activity since previous session.
-  - *Date-Range Change Summarizer:* Admins and Viewers can select any date range (e.g. *July 1 – August 13*) and generate an AI executive summary of all data room activity.
+  - _Version Change Summary:_ Automatic 3-bullet AI summary generated on new document version upload.
+  - _What Changed Since My Last Login:_ Personalized AI welcome widget on room entry showing new documents, updated versions, and Q&A activity since previous session.
+  - _Date-Range Change Summarizer:_ Admins and Viewers can select any date range (e.g. _July 1 – August 13_) and generate an AI executive summary of all data room activity.
 
 ### Cluster 4: Legal, Compliance & NDA Gates (F018, F055, F133, F157)
+
 - **Custom NDA Text & HTML (F018):** Admins can paste custom NDA text or HTML formatting per room, or select from built-in legal templates.
 - **1-Click NDA Re-Acknowledgement Reset:** Admins can trigger a global NDA reset, forcing all returning viewers to sign updated agreement terms on their next login.
 - **Streamlined Legal Hold (F157):** Standard admin role authorization governs Legal Hold locks (disabling document deletion and trash purging during hold).
 
 ### Cluster 5: Developer Platform, API Keys & Webhooks (F135, F058, F061)
+
 - **Org-Scoped REST API Keys (F135):** Organization Admins can generate API keys (`vk_live_...` / `vk_test_...`) scoped to their specific organization and RLS boundaries, with fine-grained access levels (Read-only, Upload-only, Full Admin). Keys stored as SHA-256 hashes.
 - **Core Webhooks Engine (F058):** Event notifications via HTTP POST (`document.viewed`, `nda.accepted`, `access_request.created`, `signature.completed`) signed with HMAC SHA-256 header.
 - **Deferred Third-Party Integration Templates:** Pre-built Zapier/HubSpot templates deferred to future release.
@@ -73,5 +78,6 @@ To guarantee 100% security, performance, and stability during autonomous executi
 ---
 
 ## 5. Final Technical Sign-Off
+
 - **Claude (Master Spec Auditor):** APPROVED (100% Complete with Technical Guardrails)
 - **Codex (Infra & Execution Auditor):** APPROVED (100% Technical Sign-Off for Azure Staging Launch)

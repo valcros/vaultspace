@@ -90,6 +90,7 @@ The SysOp Control Plane is structured into three dedicated operational screens:
 Provides top-down management of all organizations, users, and rooms on the platform.
 
 #### Components:
+
 1. **Organization Directory & Quota Management:**
    - Table displaying: Organization Name, Slug, Tier, Created Date, Active Rooms, Active Users, Total Storage Used, Status (`ACTIVE`, `SUSPENDED`, `READ_ONLY`).
    - Actions: Provision New Tenant, Adjust Storage Quota (GB limit), Suspend Tenant, Toggle Maintenance Mode.
@@ -108,6 +109,7 @@ Provides top-down management of all organizations, users, and rooms on the platf
 Provides real-time health telemetry across all core infrastructure components, background workers, and storage providers.
 
 #### Components:
+
 1. **Infrastructure Component Health Grid:**
    - **PostgreSQL Database:** Active connections, idle connections, max connections, transaction latency, database disk usage.
    - **Redis Store:** Memory used, connected clients, hit/miss ratio, key count.
@@ -131,6 +133,7 @@ Provides real-time health telemetry across all core infrastructure components, b
 Provides real-time security observability and threat detection across all platform tenants.
 
 #### Components:
+
 1. **Real-Time Security Event Stream:**
    - Unified audit stream for security events: `USER_PASSWORD_RESET`, `LOGIN_FAILED`, `RATE_LIMIT_EXCEEDED`, `IP_BLOCKED`, `TWO_FACTOR_FAILED`, `SESSION_REVOKED`.
    - Live filter controls by event type, IP address, email fingerprint, date range, or organization.
@@ -148,18 +151,18 @@ Provides real-time security observability and threat detection across all platfo
 
 ## 4. API Specification (`src/app/api/sysop/*`)
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/api/sysop/health` | `GET` | Aggregated health check of DB, Redis, Storage, Gotenberg, ClamAV, and SMTP. |
-| `/api/sysop/metrics` | `GET` | Prometheus-compatible metrics endpoint (CPU, memory, storage, DB pool). |
-| `/api/sysop/queues` | `GET` | BullMQ queue statistics across all worker queues. |
-| `/api/sysop/queues/[queueName]/retry` | `POST` | Retry failed jobs in specified queue. |
-| `/api/sysop/organizations` | `GET`, `POST` | List and provision organizations. |
-| `/api/sysop/organizations/[orgId]` | `PATCH` | Update organization status, tier, or storage quota. |
-| `/api/sysop/users` | `GET` | Cross-tenant user directory search. |
-| `/api/sysop/users/[userId]/logout` | `POST` | Force-logout all sessions for a user globally. |
-| `/api/sysop/security/events` | `GET` | Cross-tenant security event stream. |
-| `/api/sysop/security/break-glass` | `POST` | Request audited break-glass access to a customer room. |
+| Endpoint                              | Method        | Description                                                                 |
+| :------------------------------------ | :------------ | :-------------------------------------------------------------------------- |
+| `/api/sysop/health`                   | `GET`         | Aggregated health check of DB, Redis, Storage, Gotenberg, ClamAV, and SMTP. |
+| `/api/sysop/metrics`                  | `GET`         | Prometheus-compatible metrics endpoint (CPU, memory, storage, DB pool).     |
+| `/api/sysop/queues`                   | `GET`         | BullMQ queue statistics across all worker queues.                           |
+| `/api/sysop/queues/[queueName]/retry` | `POST`        | Retry failed jobs in specified queue.                                       |
+| `/api/sysop/organizations`            | `GET`, `POST` | List and provision organizations.                                           |
+| `/api/sysop/organizations/[orgId]`    | `PATCH`       | Update organization status, tier, or storage quota.                         |
+| `/api/sysop/users`                    | `GET`         | Cross-tenant user directory search.                                         |
+| `/api/sysop/users/[userId]/logout`    | `POST`        | Force-logout all sessions for a user globally.                              |
+| `/api/sysop/security/events`          | `GET`         | Cross-tenant security event stream.                                         |
+| `/api/sysop/security/break-glass`     | `POST`        | Request audited break-glass access to a customer room.                      |
 
 ---
 
