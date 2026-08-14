@@ -6,12 +6,9 @@ import {
   Building2,
   Users,
   FolderLock,
-  HardDrive,
   AlertTriangle,
   Server,
   Activity,
-  ShieldCheck,
-  ExternalLink,
   RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,8 +61,8 @@ export default function SysOpOverviewPage() {
       }
       const json = await res.json();
       setData(json);
-    } catch (err: any) {
-      setError(err.message || 'Error fetching SysOp data');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error fetching SysOp data');
     } finally {
       setLoading(false);
     }
