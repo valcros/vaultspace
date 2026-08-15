@@ -486,7 +486,10 @@ export default function RoomSettingsPage() {
                     Watermarks ON
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[11px] text-slate-400">
+                  <Badge
+                    variant="outline"
+                    className="border-slate-300 text-[11px] font-medium text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                  >
                     Watermarks OFF
                   </Badge>
                 )
@@ -547,7 +550,10 @@ export default function RoomSettingsPage() {
                     Downloads Allowed
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[11px] text-slate-400">
+                  <Badge
+                    variant="outline"
+                    className="border-slate-300 text-[11px] font-medium text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                  >
                     View-Only
                   </Badge>
                 )
@@ -630,7 +636,10 @@ export default function RoomSettingsPage() {
                     NDA Required
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[11px] text-slate-400">
+                  <Badge
+                    variant="outline"
+                    className="border-slate-300 text-[11px] font-medium text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                  >
                     NDA Optional
                   </Badge>
                 )
