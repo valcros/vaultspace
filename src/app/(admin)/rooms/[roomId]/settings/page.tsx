@@ -412,8 +412,8 @@ export default function RoomSettingsPage() {
                   onClick={() => setOpenSections((prev) => ({ ...prev, danger: !prev['danger'] }))}
                   className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
                     openSections['danger']
-                      ? 'bg-red-50 font-semibold text-red-600 dark:bg-red-950/60 dark:text-red-400'
-                      : 'text-red-600/80 hover:bg-red-50 dark:text-red-400/80 dark:hover:bg-red-950/30'
+                      ? 'bg-red-50 font-semibold text-red-700 dark:bg-red-950/60 dark:text-red-300'
+                      : 'text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30'
                   }`}
                 >
                   <span className="flex items-center gap-2">
