@@ -7,8 +7,9 @@ WORKDIR /app
 ARG DEPLOYMENT_MODE=azure
 ENV DEPLOYMENT_MODE=${DEPLOYMENT_MODE}
 
-# Install OpenSSL for Prisma
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL and CA Certificates for Prisma and Google Fonts
+RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # Copy package files and Prisma schema first
 COPY package.json package-lock.json* ./

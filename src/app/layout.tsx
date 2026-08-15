@@ -5,7 +5,17 @@ import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({
+  subsets: ['latin'],
+  fallback: [
+    'system-ui',
+    '-apple-system',
+    'BlinkMacSystemFont',
+    'Segoe UI',
+    'Roboto',
+    'sans-serif',
+  ],
+});
 
 // Display face for page titles only (greeting, room/page headers). Body,
 // controls, tables, and metadata stay Inter — restraint is the point.
@@ -14,6 +24,14 @@ const bricolage = Bricolage_Grotesque({
   weight: ['500', '600', '700'],
   variable: '--font-display',
   display: 'swap',
+  fallback: [
+    'system-ui',
+    '-apple-system',
+    'BlinkMacSystemFont',
+    'Segoe UI',
+    'Roboto',
+    'sans-serif',
+  ],
 });
 
 export const metadata: Metadata = {
