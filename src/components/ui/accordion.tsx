@@ -17,6 +17,7 @@ interface AccordionItemProps {
 }
 
 export function AccordionItem({
+  id,
   title,
   description,
   badge,
@@ -26,6 +27,8 @@ export function AccordionItem({
   children,
   variant = 'default',
 }: AccordionItemProps) {
+  const contentId = `accordion-content-${id}`;
+
   return (
     <div
       className={clsx(
@@ -39,7 +42,9 @@ export function AccordionItem({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+        aria-expanded={isOpen}
+        aria-controls={contentId}
+        className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-slate-50/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-slate-800/40"
       >
         <div className="flex items-center space-x-3.5">
           {Icon && (
@@ -56,7 +61,7 @@ export function AccordionItem({
           )}
           <div>
             <div className="flex items-center space-x-3">
-              <h3
+              <span
                 className={clsx(
                   'text-base font-semibold tracking-tight',
                   variant === 'danger'
@@ -65,7 +70,7 @@ export function AccordionItem({
                 )}
               >
                 {title}
-              </h3>
+              </span>
               {badge}
             </div>
             {description && (
@@ -85,7 +90,9 @@ export function AccordionItem({
       </button>
 
       {isOpen && (
-        <div className="border-t border-slate-100 p-6 dark:border-slate-800/80">{children}</div>
+        <div id={contentId} className="border-t border-slate-100 p-6 dark:border-slate-800/80">
+          {children}
+        </div>
       )}
     </div>
   );

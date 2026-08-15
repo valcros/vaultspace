@@ -70,10 +70,10 @@ export default function RoomSettingsPage() {
   const [openSections, setOpenSections] = React.useState<Record<string, boolean>>({
     general: true,
     security: true,
-    access: false,
-    nda: false,
-    branding: false,
-    danger: false,
+    access: true,
+    nda: true,
+    branding: true,
+    danger: true,
   });
 
   const [formData, setFormData] = React.useState({
@@ -769,9 +769,9 @@ export default function RoomSettingsPage() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-semibold text-red-700 dark:text-red-400">
-                    Delete This Room
-                  </h4>
+                  <h3 className="text-sm font-semibold text-red-700 dark:text-red-400">
+                    Danger Zone
+                  </h3>
                   <p className="text-xs text-red-600/80 dark:text-red-400/70">
                     Permanently removes all documents, folders, permissions, and audit logs.
                   </p>
