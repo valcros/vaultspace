@@ -311,7 +311,7 @@ export default function RoomSettingsPage() {
           {/* Quick Index Sidebar (Sticky on Large Screens) */}
           <div className="sticky top-24 h-fit space-y-2 lg:col-span-1">
             <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
-              <h4 className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <h4 className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                 Settings Navigation
               </h4>
 
