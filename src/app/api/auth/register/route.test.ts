@@ -103,7 +103,11 @@ describe('POST /api/auth/register', () => {
     vi.clearAllMocks();
     mockRegistrationByIp.mockResolvedValue(undefined);
     mockUserFindUnique.mockResolvedValue(null);
-    mockUserCreate.mockResolvedValue({ id: 'user-new' });
+    mockUserCreate.mockResolvedValue({
+      id: 'user-new',
+      emailVerifiedAt: null,
+      firstName: 'Alice',
+    });
     mockTokenCreate.mockResolvedValue({});
     mockCreateVerificationToken.mockReturnValue({
       publicToken: 'evt1_' + 'a'.repeat(43),
@@ -174,6 +178,21 @@ describe('POST /api/auth/register', () => {
       const res = await POST(makeRequest(validBody));
       expect(res.status).toBe(429);
       expect(mockUserCreate).not.toHaveBeenCalled();
+    });
+
+    it('concurrent create (P2002 unique race): re-reads and still returns neutral 201', async () => {
+      // First lookup: not found -> attempt create. Create loses the race (P2002).
+      // Re-read then finds the concurrently-created pending account.
+      mockUserFindUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'raced', emailVerifiedAt: null, firstName: 'Alice' });
+      mockUserCreate.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+
+      const res = await POST(makeRequest(validBody));
+      expect(res.status).toBe(201);
+      expect(await res.json()).toEqual({ status: 'verification_sent' });
+      // The re-read account is pending, so a token is still issued (resend semantics).
+      expect(mockTokenCreate).toHaveBeenCalledOnce();
     });
   });
 

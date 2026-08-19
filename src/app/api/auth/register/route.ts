@@ -188,38 +188,67 @@ export async function POST(request: NextRequest) {
     //
     // Compute the password hash UNCONDITIONALLY, before the existence lookup, so
     // bcrypt cost (the dominant work) does not vary by whether the email already
-    // exists — otherwise response time leaks account existence.
+    // exists. This is BEST-EFFORT timing normalization (paired with the response
+    // pad and non-awaited email delivery below), not a strict guarantee: the
+    // new/pending branches still perform a couple of DB writes the verified/
+    // unknown branches skip. Strict account-existence privacy would require
+    // moving issuance onto a durable async workflow.
     const passwordHash = await bcrypt.hash(password, 12);
 
-    const existingUser = await db.user.findUnique({
+    let account = await db.user.findUnique({
       where: { email: normalizedEmail },
       select: { id: true, emailVerifiedAt: true, firstName: true },
     });
 
+    if (!account) {
+      try {
+        const created = await db.user.create({
+          data: {
+            email: normalizedEmail,
+            passwordHash,
+            firstName,
+            lastName,
+            title: title || null,
+            relationship: relationship || null,
+            isActive: true,
+            emailVerifiedAt: null,
+          },
+          select: { id: true, emailVerifiedAt: true, firstName: true },
+        });
+        account = created;
+      } catch (createError) {
+        // Concurrent registration for the same new email: the unique(email)
+        // constraint fires (Prisma P2002) for the loser. Treat it as a normal
+        // race — re-read and fall through to the identical neutral response.
+        // (Returning 500 here would leak account existence: new email => one
+        // 201 + one 500, distinguishable from an existing email => two 201s.)
+        if (
+          createError &&
+          typeof createError === 'object' &&
+          'code' in createError &&
+          (createError as { code?: string }).code === 'P2002'
+        ) {
+          account = await db.user.findUnique({
+            where: { email: normalizedEmail },
+            select: { id: true, emailVerifiedAt: true, firstName: true },
+          });
+        } else {
+          throw createError;
+        }
+      }
+    }
+
     let pendingUserId: string | null = null;
     let firstNameForEmail = firstName;
 
-    if (!existingUser) {
-      const user = await db.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          firstName,
-          lastName,
-          title: title || null,
-          relationship: relationship || null,
-          isActive: true,
-          emailVerifiedAt: null,
-        },
-      });
-      pendingUserId = user.id;
-    } else if (existingUser.emailVerifiedAt === null) {
-      // A pending (unverified) account is retrying registration — re-send.
-      pendingUserId = existingUser.id;
-      firstNameForEmail = existingUser.firstName;
+    // Issue a token only for a pending (unverified) account — whether freshly
+    // created, retrying, or observed via the concurrent-create re-read. A
+    // verified account (or a vanished row) issues nothing but returns the same
+    // neutral response.
+    if (account && account.emailVerifiedAt === null) {
+      pendingUserId = account.id;
+      firstNameForEmail = account.firstName;
     }
-    // else: a verified account already exists. Do nothing, but still return the
-    // identical neutral response below (no enumeration).
 
     if (pendingUserId) {
       const { publicToken, storedToken } = createEmailVerificationToken();
