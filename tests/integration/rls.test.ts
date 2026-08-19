@@ -1541,15 +1541,17 @@ describe('RLS Enforcement', () => {
           datasources: { db: { url: rollbackUrl } },
         });
         disposableClients.push(rollbackClient);
-        await rollbackClient.$connect();
-        const rollbackUser = await rollbackClient.user.create({
-          data: {
-            email: `migration-rollback-${randomUUID()}@example.com`,
-            passwordHash: 'migration-test-hash',
-            firstName: 'Migration',
-            lastName: 'Rollback',
-          },
-        });
+        const rollbackUserId = `usr_${randomUUID().replaceAll('-', '')}`;
+        const rollbackUserEmail = `migration-rollback-${randomUUID()}@example.com`;
+        await rollbackClient.$executeRawUnsafe(
+          `INSERT INTO "users" ("id", "email", "passwordHash", "firstName", "lastName", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+          rollbackUserId,
+          rollbackUserEmail,
+          'migration-test-hash',
+          'Migration',
+          'Rollback'
+        );
+        const rollbackUser = { id: rollbackUserId, email: rollbackUserEmail };
         const duplicateProviderMessageId = `duplicate-${randomUUID()}`;
         await seedMigrationAcceptance(rollbackClient, {
           flowId: `migration-conflict-a-${randomUUID()}`,
