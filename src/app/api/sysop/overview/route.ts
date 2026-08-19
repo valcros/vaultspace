@@ -74,13 +74,9 @@ export async function GET() {
         quotaAlertsCount,
       },
       infrastructure: {
-        environment: 'Azure Staging (<azure-resource-group>)',
-        subscription: 'Azure staging subscription (<azure-subscription-id>)',
-        webApp: '<web-container-app>--0000304',
-        databaseHost: 'REDACTED.postgres.database.azure.com',
-        aiService: 'REDACTED (S0 Tier)',
-        vmHost: 'REDACTED (Standard_D4s_v5 at REDACTED)',
+        environment: 'Azure Staging',
         governance: 'DA-VAL-001 Value & Simplicity Gate',
+        status: 'HEALTHY',
       },
       organizations: orgSummaries,
     });

@@ -40,12 +40,13 @@ interface SysOpOverviewData {
   };
   infrastructure: {
     environment: string;
-    subscription: string;
-    webApp: string;
-    databaseHost: string;
-    aiService: string;
-    vmHost: string;
-    governance: string;
+    governance?: string;
+    status?: string;
+    subscription?: string;
+    webApp?: string;
+    databaseHost?: string;
+    aiService?: string;
+    vmHost?: string;
   };
   organizations: Array<{
     id: string;
