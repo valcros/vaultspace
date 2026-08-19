@@ -1445,15 +1445,17 @@ describe('RLS Enforcement', () => {
           datasources: { db: { url: successfulUrl } },
         });
         disposableClients.push(successfulClient);
-        await successfulClient.$connect();
-        const successfulUser = await successfulClient.user.create({
-          data: {
-            email: `migration-success-${randomUUID()}@example.com`,
-            passwordHash: 'migration-test-hash',
-            firstName: 'Migration',
-            lastName: 'Success',
-          },
-        });
+        const userId = `usr_${randomUUID().replaceAll('-', '')}`;
+        const userEmail = `migration-success-${randomUUID()}@example.com`;
+        await successfulClient.$executeRawUnsafe(
+          `INSERT INTO "users" ("id", "email", "passwordHash", "firstName", "lastName", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+          userId,
+          userEmail,
+          'migration-test-hash',
+          'Migration',
+          'Success'
+        );
+        const successfulUser = { id: userId, email: userEmail };
         const trustedFlowId = `migration-trusted-${randomUUID()}`;
         const excludedFlowIds = [
           `migration-legacy-${randomUUID()}`,
