@@ -2,11 +2,22 @@ import { NextResponse } from 'next/server';
 import { requirePlatformOperator } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { bootstrapDb as db } from '@/lib/db';
+import { captureSecurityAudit } from '@/lib/audit/securityAudit';
 
 export async function POST(request: Request, context: { params: Promise<{ orgId: string }> }) {
   try {
     // Cross-tenant mutation: platform-operator grant required (not org role).
-    await requirePlatformOperator();
+    const session = await requirePlatformOperator();
+
+    await captureSecurityAudit({
+      organizationId: session.organizationId,
+      eventType: 'SYSOP_ACCESSED',
+      actorType: 'ADMIN',
+      actorId: session.userId,
+      requestId: `sysop_quota_${Date.now()}`,
+      description: 'SysOp storage quota updated by platform operator',
+      metadata: { route: '/api/sysop/organizations/[orgId]/quota' },
+    });
 
     const { orgId } = await context.params;
     const { quotaGb } = await request.json();
