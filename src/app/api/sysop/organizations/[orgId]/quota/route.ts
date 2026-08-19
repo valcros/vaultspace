@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/middleware';
+import { requirePlatformOperator } from '@/lib/middleware';
+import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { db } from '@/lib/db';
 
 export async function POST(request: Request, context: { params: Promise<{ orgId: string }> }) {
   try {
-    const session = await requireAuth();
-    if (!session?.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Cross-tenant mutation: platform-operator grant required (not org role).
+    await requirePlatformOperator();
 
     const { orgId } = await context.params;
     const { quotaGb } = await request.json();
@@ -33,6 +32,12 @@ export async function POST(request: Request, context: { params: Promise<{ orgId:
       message: `Storage quota for ${org.name} successfully updated to ${quotaGb} GB.`,
     });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (error instanceof AuthenticationError) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('SysOp quota update error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }

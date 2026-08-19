@@ -14,7 +14,8 @@ import {
   type BootstrapOrganizationProjection,
 } from '../auth/bootstrapRepository';
 import { SESSION_CONFIG } from '../constants';
-import { AuthenticationError } from '../errors';
+import { db } from '../db';
+import { AuthenticationError, AuthorizationError } from '../errors';
 
 import type { SessionData } from '../auth';
 
@@ -139,6 +140,32 @@ export async function requireAdmin(): Promise<SessionData> {
 
   if (session.organization.role !== 'ADMIN') {
     throw new AuthenticationError('Admin access required', 'FORBIDDEN');
+  }
+
+  return session;
+}
+
+/**
+ * Require platform-operator access for the cross-tenant SysOp control plane.
+ *
+ * This is a platform-level grant (`User.isPlatformOperator`), deliberately
+ * independent of any org role — an org ADMIN/OWNER is NOT an operator. Every
+ * `/sysop` page and `/api/sysop/*` route MUST call this before reading or
+ * mutating cross-tenant data.
+ *
+ * Throws AuthenticationError (401) if not signed in, AuthorizationError (403)
+ * if signed in without an active operator grant.
+ */
+export async function requirePlatformOperator(): Promise<SessionData> {
+  const session = await requireAuth();
+
+  const user = await db.user.findUnique({
+    where: { id: session.userId },
+    select: { isActive: true, isPlatformOperator: true },
+  });
+
+  if (!user?.isActive || !user.isPlatformOperator) {
+    throw new AuthorizationError('Platform operator access required');
   }
 
   return session;

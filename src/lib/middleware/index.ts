@@ -9,6 +9,7 @@ export {
   requireAuthCredential,
   requireAuthFromRequest,
   requireAdmin,
+  requirePlatformOperator,
   getRequestContext,
   setSessionCookie,
   clearSessionCookie,

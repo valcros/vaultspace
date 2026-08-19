@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/middleware';
+import { requirePlatformOperator } from '@/lib/middleware';
+import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { db } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const session = await requireAuth();
-    if (!session?.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Cross-tenant read: platform-operator grant required (not org role).
+    await requirePlatformOperator();
 
     // Fetch platform tenant metrics
     const [orgCount, userCount, roomCount, docCount, orgs] = await Promise.all([
@@ -86,10 +85,13 @@ export async function GET() {
       organizations: orgSummaries,
     });
   } catch (error) {
-    console.error('SysOp overview API error:', error);
-    if (error instanceof Error && error.message === 'Authentication required') {
+    if (error instanceof AuthorizationError) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    if (error instanceof AuthenticationError) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
+    console.error('SysOp overview API error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
