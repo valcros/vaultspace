@@ -2,13 +2,24 @@ import { NextResponse } from 'next/server';
 import { requirePlatformOperator } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { bootstrapDb as db } from '@/lib/db';
+import { captureSecurityAudit } from '@/lib/audit/securityAudit';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
     // Cross-tenant read: platform-operator grant required (not org role).
-    await requirePlatformOperator();
+    const session = await requirePlatformOperator();
+
+    await captureSecurityAudit({
+      organizationId: session.organizationId,
+      eventType: 'SYSOP_ACCESSED',
+      actorType: 'ADMIN',
+      actorId: session.userId,
+      requestId: `sysop_req_${Date.now()}`,
+      description: 'SysOp overview telemetry accessed by platform operator',
+      metadata: { route: '/api/sysop/overview' },
+    });
 
     // Fetch platform tenant metrics
     const [orgCount, userCount, roomCount, docCount, orgs] = await Promise.all([

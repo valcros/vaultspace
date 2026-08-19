@@ -73,6 +73,31 @@ async function main() {
     data: { isPlatformOperator: nextValue },
   });
 
+  // Find user's primary organization for audit logging
+  const userOrg = await prisma.userOrganization.findFirst({
+    where: { userId: user.id },
+    select: { organizationId: true },
+  });
+
+  if (userOrg?.organizationId) {
+    await prisma.event.create({
+      data: {
+        organizationId: userOrg.organizationId,
+        eventType: nextValue ? 'PLATFORM_OPERATOR_GRANTED' : 'PLATFORM_OPERATOR_REVOKED',
+        actorType: 'SYSTEM',
+        actorEmail: email,
+        requestId: `ops_grant_${Date.now()}`,
+        description: `Platform operator access ${nextValue ? 'granted' : 'revoked'} for ${email}`,
+        metadata: {
+          targetEmail: email,
+          targetUserId: user.id,
+          granted: nextValue,
+          source: 'ops-cli',
+        },
+      },
+    });
+  }
+
   console.log(`${nextValue ? 'Granted' : 'Revoked'} platform-operator access for ${email}.`);
 }
 

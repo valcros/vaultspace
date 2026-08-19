@@ -141,6 +141,11 @@ enum EventType {
   SYSTEM_BACKUP_STARTED
   SYSTEM_BACKUP_COMPLETED
   SYSTEM_JOB_FAILED
+
+  // SysOp platform operator governance
+  SYSOP_ACCESSED
+  PLATFORM_OPERATOR_GRANTED
+  PLATFORM_OPERATOR_REVOKED
 }
 
 // Q&A status - tracks question lifecycle

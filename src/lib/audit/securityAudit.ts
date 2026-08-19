@@ -7,7 +7,13 @@ type AuditClient = Prisma.TransactionClient;
 
 export interface SecurityAuditInput {
   organizationId: string;
-  eventType: 'USER_LOGIN' | 'USER_LOGOUT' | 'USER_PASSWORD_RESET';
+  eventType:
+    | 'USER_LOGIN'
+    | 'USER_LOGOUT'
+    | 'USER_PASSWORD_RESET'
+    | 'SYSOP_ACCESSED'
+    | 'PLATFORM_OPERATOR_GRANTED'
+    | 'PLATFORM_OPERATOR_REVOKED';
   actorType: ActorType;
   actorId?: string | null;
   actorEmail?: string | null;
