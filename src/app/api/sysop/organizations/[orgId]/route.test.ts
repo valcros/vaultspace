@@ -1,0 +1,108 @@
+/**
+ * SysOp organization PATCH (enable/disable) tests.
+ * Behavioral authorization contract + self-lockout guard + audit scoping.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
+
+import { AuthenticationError, AuthorizationError } from '@/lib/errors';
+
+const mockRequireOperator = vi.fn();
+const mockCaptureAudit = vi.fn().mockResolvedValue('captured');
+const mockQueryRaw = vi.fn();
+const mockUserOrgFindFirst = vi.fn();
+
+vi.mock('@/lib/middleware', () => ({
+  requirePlatformOperator: () => mockRequireOperator(),
+  getRequestContext: () => ({ requestId: 'req-1', ipAddress: '127.0.0.1', userAgent: 'vitest' }),
+}));
+
+vi.mock('@/lib/audit/securityAudit', () => ({
+  captureSecurityAudit: (input: unknown) => mockCaptureAudit(input),
+}));
+
+vi.mock('@/lib/db', () => {
+  const client = {
+    $queryRaw: (...a: unknown[]) => mockQueryRaw(...a),
+    userOrganization: { findFirst: (...a: unknown[]) => mockUserOrgFindFirst(...a) },
+  };
+  return { db: client, bootstrapDb: client };
+});
+
+import { PATCH } from './route';
+
+function makeRequest(body: unknown): NextRequest {
+  return new NextRequest('http://localhost/api/sysop/organizations/org-x', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+const params = { params: Promise.resolve({ orgId: 'org-x' }) };
+const operatorSession = {
+  userId: 'op-1',
+  organizationId: 'op-org',
+  user: { email: 'op@example.com' },
+};
+
+describe('PATCH /api/sysop/organizations/[orgId]', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireOperator.mockResolvedValue(operatorSession);
+    mockUserOrgFindFirst.mockResolvedValue(null);
+    mockQueryRaw.mockResolvedValue([
+      { org_id: 'org-x', org_name: 'Junk Org', org_slug: 'org-x', is_active: false },
+    ]);
+  });
+
+  it('unauthenticated → 401', async () => {
+    mockRequireOperator.mockRejectedValue(new AuthenticationError());
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(401);
+  });
+
+  it('authed non-operator → 403', async () => {
+    mockRequireOperator.mockRejectedValue(new AuthorizationError('nope'));
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(403);
+  });
+
+  it('operator disable → 200, function called, ORG_DISABLED audited under operator org', async () => {
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: 'org-x', isActive: false });
+    expect(mockQueryRaw).toHaveBeenCalledOnce();
+    expect(mockCaptureAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'op-org',
+        eventType: 'ORG_DISABLED',
+        metadata: expect.objectContaining({ targetOrgId: 'org-x' }),
+      })
+    );
+  });
+
+  it('operator enable → 200, ORG_ENABLED', async () => {
+    mockQueryRaw.mockResolvedValue([
+      { org_id: 'org-x', org_name: 'Org', org_slug: 'org-x', is_active: true },
+    ]);
+    const res = await PATCH(makeRequest({ isActive: true }), params);
+    expect(res.status).toBe(200);
+    expect(mockCaptureAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'ORG_ENABLED' })
+    );
+  });
+
+  it('self-lockout: disabling an org the operator belongs to → 409, no write', async () => {
+    mockUserOrgFindFirst.mockResolvedValue({ id: 'membership-1' });
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(409);
+    expect(mockQueryRaw).not.toHaveBeenCalled();
+  });
+
+  it('org not found (function returns no row) → 404', async () => {
+    mockQueryRaw.mockResolvedValue([]);
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(404);
+  });
+});
