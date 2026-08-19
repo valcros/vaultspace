@@ -69,6 +69,13 @@ export default function SysOpOverviewPage() {
   const [newQuotaGb, setNewQuotaGb] = React.useState('10');
   const [quotaUpdating, setQuotaUpdating] = React.useState(false);
   const [quotaSuccessMsg, setQuotaSuccessMsg] = React.useState<string | null>(null);
+  const [orgActionId, setOrgActionId] = React.useState<string | null>(null);
+  const [bulkPreview, setBulkPreview] = React.useState<{
+    count: number;
+    organizations: Array<{ id: string; name: string; slug: string }>;
+  } | null>(null);
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+  const [bulkResult, setBulkResult] = React.useState<string | null>(null);
 
   const fetchOverview = React.useCallback(async () => {
     setLoading(true);
@@ -129,6 +136,72 @@ export default function SysOpOverviewPage() {
       alert('Error saving quota update');
     } finally {
       setQuotaUpdating(false);
+    }
+  };
+
+  const handleDisableOrg = async (orgId: string) => {
+    setOrgActionId(orgId);
+    try {
+      const res = await fetch(`/api/sysop/organizations/${orgId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: false }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        alert(json.error || 'Failed to disable organization');
+      } else {
+        await fetchOverview();
+      }
+    } finally {
+      setOrgActionId(null);
+    }
+  };
+
+  const handleBulkDryRun = async () => {
+    setBulkBusy(true);
+    setBulkResult(null);
+    try {
+      const res = await fetch('/api/sysop/organizations/bulk-disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setBulkPreview({ count: json.count, organizations: json.organizations });
+      } else {
+        alert(json.error || 'Failed to preview cleanup');
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleBulkExecute = async () => {
+    if (!bulkPreview) {
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      const res = await fetch('/api/sysop/organizations/bulk-disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dryRun: false,
+          confirmIds: bulkPreview.organizations.map((o) => o.id),
+        }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setBulkResult(`Disabled ${json.disabledCount} organization(s).`);
+        setBulkPreview(null);
+        await fetchOverview();
+      } else {
+        alert(json.error || 'Failed to execute cleanup');
+      }
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -385,9 +458,52 @@ export default function SysOpOverviewPage() {
             Tenant Directory & Storage Management
           </CardTitle>
           <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
-            Organizations provisioned across the platform. Click &quot;Adjust Quota&quot; to
-            override tenant storage allocation.
+            Organizations provisioned across the platform. Only active tenants are listed. Disabling
+            a tenant blocks its logins immediately and is reversible.
           </CardDescription>
+          <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50/60 p-3 dark:border-rose-900/50 dark:bg-rose-950/20">
+            {bulkResult ? (
+              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                {bulkResult}
+              </p>
+            ) : bulkPreview ? (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-700 dark:text-slate-300">
+                  {bulkPreview.count} junk organization(s) match cleanup (0 rooms, ≤1 user;
+                  protected tenants excluded). Disable all? This is reversible.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={bulkBusy || bulkPreview.count === 0}
+                    onClick={handleBulkExecute}
+                    className="h-7 bg-rose-600 text-[11px] text-white hover:bg-rose-700"
+                  >
+                    {bulkBusy ? 'Disabling…' : `Disable ${bulkPreview.count}`}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={bulkBusy}
+                    onClick={() => setBulkPreview(null)}
+                    className="h-7 text-[11px]"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={bulkBusy}
+                onClick={handleBulkDryRun}
+                className="h-7 text-[11px] text-rose-700 hover:bg-rose-100 dark:text-rose-400 dark:hover:bg-rose-950/40"
+              >
+                {bulkBusy ? 'Scanning…' : 'Preview junk-org cleanup'}
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -457,15 +573,26 @@ export default function SysOpOverviewPage() {
                         )}
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedOrg({ id: org.id, name: org.name })}
-                          className="h-7 text-[11px] text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
-                        >
-                          <Sliders className="mr-1 h-3 w-3" />
-                          Adjust Quota
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedOrg({ id: org.id, name: org.name })}
+                            className="h-7 text-[11px] text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
+                          >
+                            <Sliders className="mr-1 h-3 w-3" />
+                            Adjust Quota
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={orgActionId === org.id}
+                            onClick={() => handleDisableOrg(org.id)}
+                            className="h-7 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                          >
+                            {orgActionId === org.id ? 'Disabling…' : 'Disable'}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
