@@ -60,6 +60,7 @@ function buildTx(opts: { claimCount: number; tokenUserId: string | null; user: u
   const userUpdate = vi.fn().mockResolvedValue({});
   return {
     tx: {
+      $executeRaw: vi.fn().mockResolvedValue(0),
       emailVerificationToken: {
         updateMany: vi.fn().mockResolvedValue({ count: opts.claimCount }),
         findFirst: vi

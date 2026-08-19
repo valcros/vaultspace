@@ -26,13 +26,13 @@ vi.mock('@/lib/middleware', () => ({
     userAgent: 'vitest',
   })),
   rateLimiters: {
-    emailVerificationResendByEmailFingerprint: (...a: unknown[]) => mockResendByEmail(...a),
-    emailVerificationResendByIp: (...a: unknown[]) => mockResendByIp(...a),
+    emailVerificationResendByEmailFingerprint: (key: string) => mockResendByEmail(key),
+    emailVerificationResendByIp: (ip: string) => mockResendByIp(ip),
   },
 }));
 
 vi.mock('@/lib/auth/emailVerificationToken', () => ({
-  createEmailVerificationToken: (...a: unknown[]) => mockCreateVerificationToken(...a),
+  createEmailVerificationToken: () => mockCreateVerificationToken(),
 }));
 
 vi.mock('@/lib/auth/emailVerificationDelivery', () => ({

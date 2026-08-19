@@ -98,32 +98,51 @@ export async function POST(request: NextRequest) {
       const organizationId = invitation.organizationId;
       const role = invitation.role as 'ADMIN' | 'VIEWER';
 
-      const result = await db.$transaction(async (tx) => {
-        await tx.invitation.update({
-          where: { id: invitation.id, status: 'PENDING' },
-          data: { status: 'ACCEPTED', acceptedAt: new Date() },
-        });
+      let result: {
+        user: { id: string; email: string; firstName: string; lastName: string };
+        organization: { id: string; name: string; slug: string };
+      };
+      try {
+        result = await db.$transaction(async (tx) => {
+          // Guarded acceptance: only flips a still-PENDING invitation. If a
+          // concurrent request already accepted it, this matches no row and
+          // Prisma throws P2025 (handled below as a deterministic 400).
+          await tx.invitation.update({
+            where: { id: invitation.id, status: 'PENDING' },
+            data: { status: 'ACCEPTED', acceptedAt: new Date() },
+          });
 
-        const user = await tx.user.create({
-          data: {
-            email: normalizedEmail,
-            passwordHash,
-            firstName,
-            lastName,
-            title: title || null,
-            relationship: relationship || null,
-            isActive: true,
-            // Invitation possession is the vetting for this sprint's scope.
-            emailVerifiedAt: new Date(),
-          },
-        });
+          const user = await tx.user.create({
+            data: {
+              email: normalizedEmail,
+              passwordHash,
+              firstName,
+              lastName,
+              title: title || null,
+              relationship: relationship || null,
+              isActive: true,
+              // Invitation possession is the vetting for this sprint's scope.
+              emailVerifiedAt: new Date(),
+            },
+          });
 
-        await tx.userOrganization.create({
-          data: { userId: user.id, organizationId, role, isActive: true },
-        });
+          await tx.userOrganization.create({
+            data: { userId: user.id, organizationId, role, isActive: true },
+          });
 
-        return { user, organization: invitation.organization };
-      });
+          return { user, organization: invitation.organization };
+        });
+      } catch (txError) {
+        if (
+          txError &&
+          typeof txError === 'object' &&
+          'code' in txError &&
+          (txError as { code?: string }).code === 'P2025'
+        ) {
+          return NextResponse.json({ error: 'Invitation has already been used' }, { status: 400 });
+        }
+        throw txError;
+      }
 
       const expiresAt = new Date(
         Date.now() + SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000
@@ -166,6 +185,12 @@ export async function POST(request: NextRequest) {
     // ----- SELF-SERVICE PATH: email-verification gated, deferred org creation -----
     // No organization, membership, or session is created here. The organization
     // is created only when the email is verified (see /api/auth/verify-email).
+    //
+    // Compute the password hash UNCONDITIONALLY, before the existence lookup, so
+    // bcrypt cost (the dominant work) does not vary by whether the email already
+    // exists — otherwise response time leaks account existence.
+    const passwordHash = await bcrypt.hash(password, 12);
+
     const existingUser = await db.user.findUnique({
       where: { email: normalizedEmail },
       select: { id: true, emailVerifiedAt: true, firstName: true },
@@ -175,7 +200,6 @@ export async function POST(request: NextRequest) {
     let firstNameForEmail = firstName;
 
     if (!existingUser) {
-      const passwordHash = await bcrypt.hash(password, 12);
       const user = await db.user.create({
         data: {
           email: normalizedEmail,
@@ -206,18 +230,17 @@ export async function POST(request: NextRequest) {
           expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
         },
       });
-      // Send after the token is committed. A delivery failure must not surface a
-      // distinct response (would leak account existence) or roll back the account;
+      // Fire-and-forget: do NOT await email-provider latency inside the response
+      // path — that latency (present only for new/pending branches) would
+      // differentiate timing and leak account existence. Failures are logged;
       // the resend endpoint is the recovery path.
-      try {
-        await sendEmailVerificationEmail({
-          to: normalizedEmail,
-          firstName: firstNameForEmail,
-          publicToken,
-        });
-      } catch (sendError) {
+      void sendEmailVerificationEmail({
+        to: normalizedEmail,
+        firstName: firstNameForEmail,
+        publicToken,
+      }).catch((sendError) => {
         console.error('[RegisterAPI] Verification email send failed:', sendError);
-      }
+      });
     }
 
     return await neutralVerificationResponse(startedAt);

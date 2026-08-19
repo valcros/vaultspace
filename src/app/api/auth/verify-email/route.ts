@@ -40,12 +40,6 @@ export async function POST(request: NextRequest) {
     const now = new Date();
 
     const outcome = await db.$transaction(async (tx) => {
-      // Atomic single-use claim: only one concurrent request can flip usedAt.
-      const claim = await tx.emailVerificationToken.updateMany({
-        where: { token: digest, usedAt: null, expiresAt: { gt: now } },
-        data: { usedAt: now },
-      });
-
       const tokenRow = await tx.emailVerificationToken.findFirst({
         where: { token: digest },
         select: { userId: true },
@@ -53,6 +47,16 @@ export async function POST(request: NextRequest) {
       if (!tokenRow) {
         return { status: 'invalid' as const };
       }
+
+      // Serialize ALL verification for this user, not just this token. A user can
+      // hold several valid tokens (register + resends); without a user-level lock
+      // two concurrent verifies with different tokens could each claim their own
+      // token and both create an organization. This advisory xact lock makes the
+      // verified-check-then-provision sequence atomic per user (mirrors the
+      // password-reset user lock).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(
+        hashtextextended(${`vaultspace/email-verification/user/${tokenRow.userId}`}, 0)
+      )`;
 
       const user = await tx.user.findUnique({
         where: { id: tokenRow.userId },
@@ -69,9 +73,16 @@ export async function POST(request: NextRequest) {
       }
 
       // Already verified (through this or another token) — idempotent success.
+      // Checked AFTER the lock, so a racing verify sees the committed result.
       if (user.emailVerifiedAt) {
         return { status: 'already_verified' as const };
       }
+
+      // Atomic single-use claim of this specific token.
+      const claim = await tx.emailVerificationToken.updateMany({
+        where: { token: digest, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
 
       // Claim did not land (already used or expired) and the user is not verified.
       if (claim.count !== 1) {
