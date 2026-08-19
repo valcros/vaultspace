@@ -1,18 +1,24 @@
 -- Privileged path for SysOp organization enable/disable.
 --
--- WHY THIS EXISTS: the app's cross-tenant client `bootstrapDb` connects as a role
--- (vaultspace_bootstrap_owner / DATABASE_URL_ADMIN) that is NOBYPASSRLS and holds
--- GRANT UPDATE("updatedAt") ONLY on organizations — it CANNOT write "isActive".
--- Following the codebase's SECURITY DEFINER pattern (bootstrap_login_candidate_v1),
--- org enable/disable goes through a definer function owned by a DEDICATED role with
--- exactly the isActive-write grant and its own broad row policies, isolated from the
--- login role's RESTRICTIVE isActive-filtering policies (which would otherwise hide a
--- disabled org and make re-enabling impossible).
+-- WHY THIS EXISTS (and an UNRESOLVED privilege-model question): org enable/disable
+-- needs to write organizations."isActive". This function follows the codebase's
+-- SECURITY DEFINER pattern (bootstrap_login_candidate_v1): a definer function owned
+-- by a DEDICATED least-privilege role with exactly the isActive-write grant and its
+-- own broad row policies, so it can also SEE a disabled org (to re-enable it), which
+-- the login role's RESTRICTIVE isActive-filtering policies would hide.
 --
--- ⚠️ VALIDATE ON A DATABASE CLONE BEFORE DEPLOY: the RLS policy interaction, the
--- UPDATE ... RETURNING visibility under RLS, and the EXECUTE privilege of the
--- DATABASE_URL_ADMIN role were designed to mirror the proven login function but
--- cannot be verified without a live database.
+-- ⚠️ THE PRIVILEGE MODEL IS UNVERIFIED AND POSSIBLY OVER-ENGINEERED. The role that
+-- the app's cross-tenant client `bootstrapDb` actually connects as is DATABASE_URL_ADMIN,
+-- which src/lib/rls-startup-guard.ts expects to have BYPASSRLS — a DIFFERENT role from
+-- the NOLOGIN `vaultspace_bootstrap_owner` whose "UPDATE(updatedAt) only" grant was
+-- cited as the blocker. If DATABASE_URL_ADMIN has BYPASSRLS + an UPDATE grant on
+-- organizations (plausible — the register route already INSERTs orgs via bootstrapDb),
+-- a DIRECT `bootstrapDb.organization.update({isActive})` may work and this whole
+-- function is unnecessary. RESOLVE ON A DB CLONE before deploy: (1) confirm whether a
+-- direct write works (simplest); (2) if not, confirm this function's EXECUTE grant to
+-- the exact DATABASE_URL_ADMIN principal, the RLS UPDATE...RETURNING behavior under
+-- FORCE ROW LEVEL SECURITY, and the disabled-org re-enable path. See the Postgres
+-- integration test that must accompany this before ship.
 
 -- 1. Dedicated NOLOGIN, NOBYPASSRLS owner role for the definer function.
 DO $$
