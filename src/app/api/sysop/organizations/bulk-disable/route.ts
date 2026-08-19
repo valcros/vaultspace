@@ -5,15 +5,9 @@ import { requirePlatformOperator, getRequestContext } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { bootstrapDb as db } from '@/lib/db';
 import { captureSecurityAudit } from '@/lib/audit/securityAudit';
+import { PROTECTED_ORG_SLUGS } from '@/lib/sysop/protectedOrgs';
 
 export const dynamic = 'force-dynamic';
-
-// The three real organizations that must never be disabled. The structural
-// classifier (0 rooms AND <=1 user) already excludes them (they all have rooms
-// and multiple members); this immutable keep-list is a second, explicit layer.
-const KEEP_LIST_SLUGS = ['brightside', 'series-a-funding'];
-// Sarah's org has a generated slug; keep by slug too if present.
-const KEEP_LIST_SLUGS_OPTIONAL = ['org-1774897343302-qzig5'];
 
 const BATCH_SIZE = 50;
 
@@ -37,9 +31,11 @@ export async function POST(request: NextRequest) {
     const { dryRun, confirmIds } = bodySchema.parse(await request.json().catch(() => ({})));
 
     // Resolve the keep-list to immutable IDs + the operator's own org IDs.
-    const keepSlugs = [...KEEP_LIST_SLUGS, ...KEEP_LIST_SLUGS_OPTIONAL];
     const [keepOrgs, operatorMemberships] = await Promise.all([
-      db.organization.findMany({ where: { slug: { in: keepSlugs } }, select: { id: true } }),
+      db.organization.findMany({
+        where: { slug: { in: PROTECTED_ORG_SLUGS } },
+        select: { id: true },
+      }),
       db.userOrganization.findMany({
         where: { userId: session.userId },
         select: { organizationId: true },
@@ -50,10 +46,11 @@ export async function POST(request: NextRequest) {
       ...operatorMemberships.map((m) => m.organizationId),
     ]);
 
-    // Structural classifier. bootstrapDb only sees active orgs (RLS), matching the
-    // isActive=true requirement. rooms none + <=1 member.
+    // Structural classifier: explicitly active, zero rooms, <=1 member.
+    // (bootstrapDb is also RLS-filtered to active orgs; isActive:true is belt-and-
+    // suspenders so the intent is not implicit.)
     const candidates = await db.organization.findMany({
-      where: { rooms: { none: {} } },
+      where: { isActive: true, rooms: { none: {} } },
       select: { id: true, name: true, slug: true, _count: { select: { users: true } } },
     });
     const eligible = candidates.filter((o) => o._count.users <= 1 && !protectedIds.has(o.id));
@@ -74,13 +71,15 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const uniqueConfirmIds = Array.from(new Set(confirmIds));
     const eligibleById = new Map(eligible.map((o) => [o.id, o]));
-    const toDisable = confirmIds.filter((id) => eligibleById.has(id));
-    const skipped = confirmIds.filter((id) => !eligibleById.has(id));
+    const toDisable = uniqueConfirmIds.filter((id) => eligibleById.has(id));
+    const skipped = uniqueConfirmIds.filter((id) => !eligibleById.has(id));
 
     const reqContext = getRequestContext(request);
     const disabled: string[] = [];
     const failed: string[] = [];
+    const auditFailed: string[] = [];
 
     for (let i = 0; i < toDisable.length; i += BATCH_SIZE) {
       const batch = toDisable.slice(i, i + BATCH_SIZE);
@@ -94,7 +93,7 @@ export async function POST(request: NextRequest) {
             continue;
           }
           disabled.push(id);
-          await captureSecurityAudit({
+          const outcome = await captureSecurityAudit({
             organizationId: session.organizationId,
             eventType: 'ORG_DISABLED',
             actorType: 'ADMIN',
@@ -109,6 +108,9 @@ export async function POST(request: NextRequest) {
               bulk: true,
             },
           });
+          if (outcome === 'failed') {
+            auditFailed.push(id);
+          }
         } catch (batchError) {
           console.error('SysOp bulk-disable item error:', id, batchError);
           failed.push(id);
@@ -122,6 +124,7 @@ export async function POST(request: NextRequest) {
       disabledCount: disabled.length,
       skipped,
       failed,
+      auditFailed,
     });
   } catch (error) {
     if (error instanceof AuthorizationError) {

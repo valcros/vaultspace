@@ -5,6 +5,7 @@ import { requirePlatformOperator, getRequestContext } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { bootstrapDb as db } from '@/lib/db';
 import { captureSecurityAudit } from '@/lib/audit/securityAudit';
+import { PROTECTED_ORG_SLUGS } from '@/lib/sysop/protectedOrgs';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,9 +27,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
     const { orgId } = await context.params;
     const { isActive } = patchSchema.parse(await request.json());
 
-    // Self-lockout guard: an operator must not disable an org they belong to —
-    // checked across ALL of their memberships, not just the current session org.
+    // Disable-only guards (enabling a protected/own org is harmless).
     if (!isActive) {
+      // Self-lockout: an operator must not disable an org they belong to —
+      // checked across ALL of their memberships, not just the session org.
       const ownMembership = await db.userOrganization.findFirst({
         where: { userId: session.userId, organizationId: orgId },
         select: { id: true },
@@ -36,6 +38,19 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
       if (ownMembership) {
         return NextResponse.json(
           { error: 'You cannot disable an organization you belong to.' },
+          { status: 409 }
+        );
+      }
+
+      // Keep-list: never disable a protected real org (enforced at THIS mutation
+      // boundary, not only in bulk-disable). Resolved to immutable IDs.
+      const protectedOrgs = await db.organization.findMany({
+        where: { slug: { in: PROTECTED_ORG_SLUGS } },
+        select: { id: true },
+      });
+      if (protectedOrgs.some((o) => o.id === orgId)) {
+        return NextResponse.json(
+          { error: 'This organization is protected and cannot be disabled.' },
           { status: 409 }
         );
       }
@@ -53,7 +68,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
     // Audit under the OPERATOR's org (never the target org — an org-scoped event
     // written under a deleted/target org can be cascade-erased); target in metadata.
     const reqContext = getRequestContext(request);
-    await captureSecurityAudit({
+    const auditOutcome = await captureSecurityAudit({
       organizationId: session.organizationId,
       eventType: isActive ? 'ORG_ENABLED' : 'ORG_DISABLED',
       actorType: 'ADMIN',
@@ -67,6 +82,16 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
         targetOrgName: org.org_name,
       },
     });
+
+    // The audit record is authoritative for this privileged action. If it could
+    // not be written, surface an error so the operator retries (the isActive
+    // write is reversible and re-applying is safe).
+    if (auditOutcome === 'failed') {
+      return NextResponse.json(
+        { error: 'The change was applied but its audit record failed to write. Please retry.' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       id: org.org_id,

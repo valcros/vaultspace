@@ -122,3 +122,41 @@ BEGIN
   END IF;
 END
 $$;
+
+-- 7. Fail-closed posture verification (mirrors the login function's guard): the
+--    migration aborts if the function's identity/owner/security posture drifted.
+--    ⚠️ EXECUTE grant to the exact DATABASE_URL_ADMIN production principal, and
+--    an integration test running as that non-superuser role, remain a required
+--    pre-deploy validation step (see the header note) — cannot be asserted here.
+DO $$
+DECLARE
+  fn_oid oid;
+BEGIN
+  SELECT p.oid INTO fn_oid
+  FROM pg_catalog.pg_proc p
+  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'sysop_set_organization_active';
+
+  IF fn_oid IS NULL THEN
+    RAISE EXCEPTION 'SYSOP_SET_ORG_ACTIVE_FUNCTION_MISSING';
+  END IF;
+
+  IF (SELECT pg_catalog.pg_get_userbyid(proowner) FROM pg_catalog.pg_proc WHERE oid = fn_oid)
+     IS DISTINCT FROM 'vaultspace_sysop_owner' THEN
+    RAISE EXCEPTION 'SYSOP_SET_ORG_ACTIVE_FUNCTION_OWNER_INVALID';
+  END IF;
+
+  IF NOT (SELECT prosecdef FROM pg_catalog.pg_proc WHERE oid = fn_oid) THEN
+    RAISE EXCEPTION 'SYSOP_SET_ORG_ACTIVE_FUNCTION_NOT_SECURITY_DEFINER';
+  END IF;
+
+  IF (SELECT proconfig FROM pg_catalog.pg_proc WHERE oid = fn_oid)
+     IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[] THEN
+    RAISE EXCEPTION 'SYSOP_SET_ORG_ACTIVE_FUNCTION_SEARCH_PATH_INVALID';
+  END IF;
+
+  IF pg_catalog.has_function_privilege('public', fn_oid, 'EXECUTE') THEN
+    RAISE EXCEPTION 'SYSOP_SET_ORG_ACTIVE_FUNCTION_PUBLIC_EXECUTE';
+  END IF;
+END
+$$;
