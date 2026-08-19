@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requirePlatformOperator } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
-import { db } from '@/lib/db';
+import { bootstrapDb as db } from '@/lib/db';
 
 export async function POST(request: Request, context: { params: Promise<{ orgId: string }> }) {
   try {
