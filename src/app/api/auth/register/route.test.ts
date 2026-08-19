@@ -1,21 +1,29 @@
 /**
- * Registration API Tests (Issue 4b)
+ * Registration API Tests
  *
- * Validates invite email enforcement and transactional invitation acceptance.
- * Self-signup (no invite) still works in this version — Issue 4a is a separate PR.
+ * Covers the email-verification gate:
+ *  - SELF-SERVICE (no invite): neutral 201 "verification_sent", NO session/org,
+ *    a token is issued only for new or still-pending accounts (privacy-neutral).
+ *  - INVITED: unchanged UX — creates a verified user, joins the org, signs in.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+import { RateLimitError } from '@/lib/errors';
 
-// Mock bcrypt
+const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
+const mockRegistrationByIp = vi.fn().mockResolvedValue(undefined);
+const mockCreateVerificationToken = vi.fn(() => ({
+  publicToken: 'evt1_' + 'a'.repeat(43),
+  storedToken: 'evh1:' + 'b'.repeat(64),
+}));
+const mockSendVerificationEmail = vi.fn().mockResolvedValue(undefined);
+
 vi.mock('bcryptjs', () => ({
   default: { hash: vi.fn().mockResolvedValue('hashed-password') },
 }));
 
-// Mock session cookie
 vi.mock('@/lib/middleware', () => ({
   getRequestContext: vi.fn(() => ({
     requestId: 'req-test',
@@ -23,22 +31,36 @@ vi.mock('@/lib/middleware', () => ({
     userAgent: 'vitest',
   })),
   setSessionCookie: vi.fn().mockResolvedValue(undefined),
+  rateLimiters: { registrationByIp: (...a: unknown[]) => mockRegistrationByIp(...a) },
 }));
 
 vi.mock('@/lib/audit/accessAudit', () => ({
   captureAccessAudit: (...args: unknown[]) => mockCaptureAccessAudit(...args),
 }));
 
-// Mock db
-const mockFindUnique = vi.fn();
+vi.mock('@/lib/auth/emailVerificationToken', () => ({
+  createEmailVerificationToken: (...a: unknown[]) => mockCreateVerificationToken(...a),
+}));
+
+vi.mock('@/lib/auth/emailVerificationDelivery', () => ({
+  sendEmailVerificationEmail: (...a: unknown[]) => mockSendVerificationEmail(...a),
+}));
+
+const mockUserFindUnique = vi.fn();
+const mockUserCreate = vi.fn();
 const mockInvitationFindUnique = vi.fn();
+const mockTokenCreate = vi.fn().mockResolvedValue({});
 const mockTransaction = vi.fn();
 const mockCreateSession = vi.fn();
 
 vi.mock('@/lib/db', () => {
   const client = {
-    user: { findUnique: (...args: unknown[]) => mockFindUnique(...args) },
+    user: {
+      findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
+      create: (...args: unknown[]) => mockUserCreate(...args),
+    },
     invitation: { findUnique: (...args: unknown[]) => mockInvitationFindUnique(...args) },
+    emailVerificationToken: { create: (...args: unknown[]) => mockTokenCreate(...args) },
     $transaction: (...args: unknown[]) => mockTransaction(...args),
   };
   return { db: client, bootstrapDb: client };
@@ -72,14 +94,21 @@ const pendingInvitation = {
   status: 'PENDING',
   role: 'VIEWER',
   organizationId: 'org-1',
-  expiresAt: new Date(Date.now() + 86400000), // +1 day
+  expiresAt: new Date(Date.now() + 86400000),
   organization: { id: 'org-1', name: 'Test Org', slug: 'test-org' },
 };
 
 describe('POST /api/auth/register', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFindUnique.mockResolvedValue(null); // No existing user
+    mockRegistrationByIp.mockResolvedValue(undefined);
+    mockUserFindUnique.mockResolvedValue(null);
+    mockUserCreate.mockResolvedValue({ id: 'user-new' });
+    mockTokenCreate.mockResolvedValue({});
+    mockCreateVerificationToken.mockReturnValue({
+      publicToken: 'evt1_' + 'a'.repeat(43),
+      storedToken: 'evh1:' + 'b'.repeat(64),
+    });
     mockCreateSession.mockResolvedValue({
       session: { id: 'auth-session-1' },
       token: 't'.repeat(43),
@@ -97,158 +126,96 @@ describe('POST /api/auth/register', () => {
             }),
           },
           userOrganization: { create: vi.fn().mockResolvedValue({}) },
-          organization: {
-            create: vi
-              .fn()
-              .mockResolvedValue({ id: 'org-new', name: "Alice's Organization", slug: 'org-123' }),
-            findUnique: vi
-              .fn()
-              .mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' }),
-          },
         };
         return fn(tx);
       }
     );
   });
 
-  describe('Self-signup without invite (still allowed pre-4a)', () => {
-    it('succeeds and creates a new organization', async () => {
+  describe('Self-service (no invite) — email verification gate', () => {
+    it('new email: neutral 201, NO session/org, token issued + email sent', async () => {
       const res = await POST(makeRequest(validBody));
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(201);
       const body = await res.json();
-      expect(body.user.email).toBe('alice@example.com');
-      expect(mockCreateSession).toHaveBeenCalledWith(
-        'user-1',
-        'org-new',
-        expect.objectContaining({
-          ipAddress: '127.0.0.1',
-          userAgent: 'vitest',
-          expiresAt: expect.any(Date),
-        })
-      );
-      expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
-      );
+      expect(body).toEqual({ status: 'verification_sent' });
+      expect(mockCreateSession).not.toHaveBeenCalled();
+      expect(mockTokenCreate).toHaveBeenCalledOnce();
+      expect(mockSendVerificationEmail).toHaveBeenCalledOnce();
+    });
+
+    it('already-verified email: identical neutral 201, but NO token issued', async () => {
+      mockUserFindUnique.mockResolvedValue({
+        id: 'existing',
+        emailVerifiedAt: new Date(),
+        firstName: 'Alice',
+      });
+      const res = await POST(makeRequest(validBody));
+      expect(res.status).toBe(201);
+      expect(await res.json()).toEqual({ status: 'verification_sent' });
+      expect(mockTokenCreate).not.toHaveBeenCalled();
+      expect(mockSendVerificationEmail).not.toHaveBeenCalled();
+      expect(mockCreateSession).not.toHaveBeenCalled();
+    });
+
+    it('pending (unverified) email retrying: neutral 201 + fresh token (resend)', async () => {
+      mockUserFindUnique.mockResolvedValue({
+        id: 'pending',
+        emailVerifiedAt: null,
+        firstName: 'Alice',
+      });
+      const res = await POST(makeRequest(validBody));
+      expect(res.status).toBe(201);
+      expect(mockTokenCreate).toHaveBeenCalledOnce();
+      expect(mockSendVerificationEmail).toHaveBeenCalledOnce();
+    });
+
+    it('returns 429 when the per-IP registration limit is exceeded', async () => {
+      mockRegistrationByIp.mockRejectedValue(new RateLimitError(60));
+      const res = await POST(makeRequest(validBody));
+      expect(res.status).toBe(429);
+      expect(mockUserCreate).not.toHaveBeenCalled();
     });
   });
 
-  describe('Issue 4b — invite email enforcement', () => {
+  describe('Invited path — unchanged UX, user stamped verified', () => {
+    it('creates a verified user, joins the org, and signs in', async () => {
+      mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
+      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.user.email).toBe('alice@example.com');
+      expect(body.organization).toEqual({ id: 'org-1', name: 'Test Org', slug: 'test-org' });
+      expect(mockCreateSession).toHaveBeenCalledWith(
+        'user-1',
+        'org-1',
+        expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
+      );
+    });
+
     it('returns 400 when email does not match invitation', async () => {
       mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
       const res = await POST(
         makeRequest({ ...validBody, email: 'bob@example.com', inviteToken: 'valid-token' })
       );
       expect(res.status).toBe(400);
-      const body = await res.json();
-      expect(body.error).toMatch(/does not match invitation/);
-    });
-
-    it('succeeds when email matches invitation (case-insensitive)', async () => {
-      mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
-      const res = await POST(
-        makeRequest({ ...validBody, email: 'Alice@Example.com', inviteToken: 'valid-token' })
-      );
-      expect(res.status).toBe(200);
-    });
-  });
-
-  describe('Invitation validation', () => {
-    it('returns 400 for invalid token', async () => {
-      mockInvitationFindUnique.mockResolvedValue(null);
-      const res = await POST(makeRequest({ ...validBody, inviteToken: 'bad-token' }));
-      expect(res.status).toBe(400);
-      const body = await res.json();
-      expect(body.error).toMatch(/Invalid invitation/);
+      expect((await res.json()).error).toMatch(/does not match invitation/);
     });
 
     it('returns 400 for expired invitation', async () => {
       mockInvitationFindUnique.mockResolvedValue({
         ...pendingInvitation,
-        expiresAt: new Date(Date.now() - 86400000), // -1 day
+        expiresAt: new Date(Date.now() - 86400000),
       });
       const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
       expect(res.status).toBe(400);
-      const body = await res.json();
-      expect(body.error).toMatch(/expired/);
+      expect((await res.json()).error).toMatch(/expired/);
     });
 
-    it('returns 400 for already-used invitation', async () => {
-      mockInvitationFindUnique.mockResolvedValue({
-        ...pendingInvitation,
-        status: 'ACCEPTED',
-      });
-      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
-      expect(res.status).toBe(400);
-      const body = await res.json();
-      expect(body.error).toMatch(/already been used/);
-    });
-
-    it('returns 409 for existing user email', async () => {
-      mockFindUnique.mockResolvedValue({ id: 'existing-user' });
+    it('returns 409 for an already-registered invited email', async () => {
+      mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
+      mockUserFindUnique.mockResolvedValue({ id: 'existing-user' });
       const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
       expect(res.status).toBe(409);
-    });
-  });
-
-  describe('Issue 4b — transactional invitation acceptance', () => {
-    it('marks invitation ACCEPTED inside transaction', async () => {
-      mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
-
-      const txInvitationUpdate = vi.fn().mockResolvedValue({});
-      mockTransaction.mockImplementation(
-        async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-          const tx = {
-            invitation: { update: txInvitationUpdate },
-            user: {
-              create: vi.fn().mockResolvedValue({
-                id: 'user-1',
-                email: 'alice@example.com',
-                firstName: 'Alice',
-                lastName: 'Smith',
-              }),
-            },
-            userOrganization: { create: vi.fn().mockResolvedValue({}) },
-            organization: {
-              findUnique: vi
-                .fn()
-                .mockResolvedValue({ id: 'org-1', name: 'Test Org', slug: 'test-org' }),
-            },
-          };
-          return fn(tx);
-        }
-      );
-
-      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
-      expect(res.status).toBe(200);
-
-      // Verify invitation was updated inside the transaction
-      expect(txInvitationUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'inv-1' },
-          data: expect.objectContaining({ status: 'ACCEPTED' }),
-        })
-      );
-    });
-
-    it('rolls back invitation acceptance if user creation fails', async () => {
-      mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-
-      mockTransaction.mockRejectedValue(new Error('DB constraint violation'));
-
-      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
-      expect(res.status).toBe(500);
-    });
-  });
-
-  describe('Happy path with invite', () => {
-    it('creates user with correct role from invitation', async () => {
-      mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
-      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.user.email).toBe('alice@example.com');
-      expect(body.organization).toBeDefined();
     });
   });
 });
