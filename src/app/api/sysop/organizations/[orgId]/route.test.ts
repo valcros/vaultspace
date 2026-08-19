@@ -12,6 +12,7 @@ const mockRequireOperator = vi.fn();
 const mockCaptureAudit = vi.fn().mockResolvedValue('captured');
 const mockQueryRaw = vi.fn();
 const mockUserOrgFindFirst = vi.fn();
+const mockOrgFindMany = vi.fn();
 
 vi.mock('@/lib/middleware', () => ({
   requirePlatformOperator: () => mockRequireOperator(),
@@ -26,6 +27,7 @@ vi.mock('@/lib/db', () => {
   const client = {
     $queryRaw: (...a: unknown[]) => mockQueryRaw(...a),
     userOrganization: { findFirst: (...a: unknown[]) => mockUserOrgFindFirst(...a) },
+    organization: { findMany: (...a: unknown[]) => mockOrgFindMany(...a) },
   };
   return { db: client, bootstrapDb: client };
 });
@@ -51,6 +53,8 @@ describe('PATCH /api/sysop/organizations/[orgId]', () => {
     vi.clearAllMocks();
     mockRequireOperator.mockResolvedValue(operatorSession);
     mockUserOrgFindFirst.mockResolvedValue(null);
+    mockOrgFindMany.mockResolvedValue([]); // no protected org matches by default
+    mockCaptureAudit.mockResolvedValue('captured');
     mockQueryRaw.mockResolvedValue([
       { org_id: 'org-x', org_name: 'Junk Org', org_slug: 'org-x', is_active: false },
     ]);
@@ -104,5 +108,18 @@ describe('PATCH /api/sysop/organizations/[orgId]', () => {
     mockQueryRaw.mockResolvedValue([]);
     const res = await PATCH(makeRequest({ isActive: false }), params);
     expect(res.status).toBe(404);
+  });
+
+  it('protected org (keep-list) → 409, no write', async () => {
+    mockOrgFindMany.mockResolvedValue([{ id: 'org-x' }]); // target is protected
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(409);
+    expect(mockQueryRaw).not.toHaveBeenCalled();
+  });
+
+  it('audit write failure → 500 (audit is authoritative)', async () => {
+    mockCaptureAudit.mockResolvedValue('failed');
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(500);
   });
 });
