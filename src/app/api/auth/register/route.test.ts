@@ -31,7 +31,7 @@ vi.mock('@/lib/middleware', () => ({
     userAgent: 'vitest',
   })),
   setSessionCookie: vi.fn().mockResolvedValue(undefined),
-  rateLimiters: { registrationByIp: (...a: unknown[]) => mockRegistrationByIp(...a) },
+  rateLimiters: { registrationByIp: (ip: string) => mockRegistrationByIp(ip) },
 }));
 
 vi.mock('@/lib/audit/accessAudit', () => ({
@@ -39,7 +39,7 @@ vi.mock('@/lib/audit/accessAudit', () => ({
 }));
 
 vi.mock('@/lib/auth/emailVerificationToken', () => ({
-  createEmailVerificationToken: (...a: unknown[]) => mockCreateVerificationToken(...a),
+  createEmailVerificationToken: () => mockCreateVerificationToken(),
 }));
 
 vi.mock('@/lib/auth/emailVerificationDelivery', () => ({

@@ -75,15 +75,16 @@ export async function POST(request: NextRequest) {
           expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
         },
       });
-      try {
-        await sendEmailVerificationEmail({
-          to: normalizedEmail,
-          firstName: user.firstName,
-          publicToken,
-        });
-      } catch (sendError) {
+      // Fire-and-forget: do not await email-provider latency in the response
+      // path — that latency occurs only for pending accounts and would leak
+      // account existence via timing. Failures are logged.
+      void sendEmailVerificationEmail({
+        to: normalizedEmail,
+        firstName: user.firstName,
+        publicToken,
+      }).catch((sendError) => {
         console.error('[ResendVerificationAPI] Verification email send failed:', sendError);
-      }
+      });
     }
 
     return await neutralResponse(startedAt);
