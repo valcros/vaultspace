@@ -74,13 +74,9 @@ export async function GET() {
         quotaAlertsCount,
       },
       infrastructure: {
-        environment: 'Azure Staging (rg-vaultspace-staging)',
-        subscription: 'Munger subscription 1 (041a67eb-fec8-41a4-9d70-c35863268cd6)',
-        webApp: 'ca-vaultspace-web--0000304',
-        databaseHost: 'psql-vaultspace-staging.postgres.database.azure.com',
-        aiService: 'aoai-vaultspace-staging (S0 Tier)',
-        vmHost: 'vm-vaultspace-agent-host (Standard_D4s_v5 at 4.154.18.36)',
+        environment: 'Azure Staging',
         governance: 'DA-VAL-001 Value & Simplicity Gate',
+        status: 'HEALTHY',
       },
       organizations: orgSummaries,
     });
