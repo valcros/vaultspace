@@ -19,6 +19,27 @@ Current active work before MVP launch readiness:
 - Create release notes, changelog entry, and an agreed release tag.
 - Smoke Docker Compose self-hosting before any public beta release.
 
+### Standalone Staging Environment Infrastructure Isolation (Roadmap Enhancement)
+
+**Status:** Planned / Architecture Settled
+**Requested:** 2026-08-19 (Stakeholder Directive)
+**Target Phase:** Post-MVP Infrastructure Hardening
+
+Currently, `staging.vaultspace.org` and `vaultspace.org` share a single Azure Container App instance (`ca-vaultspace-web`) and a single PostgreSQL database (`psql-vaultspace-staging`). Environment isolation is currently tenant-scoped via software Row-Level Security (RLS `organizationId`).
+
+To achieve true, physical infrastructure isolation where development and code changes land safely on staging without impacting live production tenants, the following technical execution specification must be followed when this roadmap item is pulled for execution:
+
+1. **Azure Physical Resource Provisioning:**
+   - **Isolated Database:** Provision dedicated Azure Database for PostgreSQL Flexible Server `psql-vaultspace-staging-isolated` (separate from `psql-vaultspace-production`).
+   - **Isolated Container App:** Provision dedicated Azure Container App `ca-vaultspace-web-staging` and background worker `ca-vaultspace-worker-staging` in resource group `rg-vaultspace-staging-isolated`.
+   - **Isolated Key Vault & Redis:** Provision separate Key Vault `kv-vaultspace-staging-iso` and Redis cache instance `redis-vaultspace-staging-iso`.
+2. **DNS & Routing Separation:**
+   - Re-point CNAME `staging.vaultspace.org` exclusively to the ingress endpoint of `ca-vaultspace-web-staging`.
+   - Ensure `vaultspace.org` (production) maps exclusively to `ca-vaultspace-web-prod`.
+3. **CI/CD Pipeline Separation (`.github/workflows/deploy-staging.yml` vs `deploy-prod.yml`):**
+   - Refactor `deploy-staging.yml` to target `rg-vaultspace-staging-isolated` credentials and database secrets.
+   - Decouple schema migration deployment (`prisma migrate deploy`) so staging migrations execute strictly against `psql-vaultspace-staging-isolated` before any production release cutover.
+
 ### Full User Profiles & NDA-on-File (Stakeholder Request)
 
 **Status:** Proposed
