@@ -15,7 +15,9 @@
 
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasourceUrl: process.env.DATABASE_URL_ADMIN || process.env.DATABASE_URL,
+});
 
 async function main() {
   const args = process.argv.slice(2);

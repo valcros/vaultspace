@@ -1,10 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { AuthenticationError } from '../errors';
 
 const mockResolveOrganizationBySlug = vi.fn();
 const mockResolveOrganizationByCustomDomain = vi.fn();
 const mockValidateSession = vi.fn();
 const mockCookieGet = vi.fn();
+const mockUserFindUnique = vi.fn();
+
+vi.mock('../db', () => ({
+  db: {
+    user: {
+      findUnique: (...args: unknown[]) => mockUserFindUnique(...args),
+    },
+  },
+}));
 
 vi.mock('next/headers', () => ({
   cookies: async () => ({ get: (...args: unknown[]) => mockCookieGet(...args) }),
@@ -27,7 +37,12 @@ vi.mock('../auth/bootstrapRepository', () => ({
   },
 }));
 
-import { getRequestContext, requireAuthCredential, resolveOrganizationFromHeaders } from './auth';
+import {
+  getRequestContext,
+  requireAuthCredential,
+  requirePlatformOperator,
+  resolveOrganizationFromHeaders,
+} from './auth';
 
 const organizationProjection = {
   id: 'org-1',
@@ -61,6 +76,50 @@ describe('requireAuthCredential', () => {
     await expect(requireAuthCredential()).rejects.toMatchObject({
       name: 'AuthenticationError',
     });
+  });
+});
+
+describe('requirePlatformOperator', () => {
+  it('throws AuthenticationError when not signed in', async () => {
+    mockCookieGet.mockReturnValue(undefined);
+    mockValidateSession.mockRejectedValue(new AuthenticationError('Authentication required'));
+
+    await expect(requirePlatformOperator()).rejects.toMatchObject({
+      name: 'AuthenticationError',
+    });
+  });
+
+  it('throws AuthorizationError when signed in user is not a platform operator', async () => {
+    const session = { sessionId: 'session-1', userId: 'user-1', organizationId: 'org-1' };
+    mockCookieGet.mockReturnValue({ value: 's'.repeat(43) });
+    mockValidateSession.mockResolvedValue(session);
+    mockUserFindUnique.mockResolvedValue({ isActive: true, isPlatformOperator: false });
+
+    await expect(requirePlatformOperator()).rejects.toMatchObject({
+      name: 'AuthorizationError',
+      message: 'Platform operator access required',
+    });
+  });
+
+  it('throws AuthorizationError when signed in user is inactive', async () => {
+    const session = { sessionId: 'session-1', userId: 'user-1', organizationId: 'org-1' };
+    mockCookieGet.mockReturnValue({ value: 's'.repeat(43) });
+    mockValidateSession.mockResolvedValue(session);
+    mockUserFindUnique.mockResolvedValue({ isActive: false, isPlatformOperator: true });
+
+    await expect(requirePlatformOperator()).rejects.toMatchObject({
+      name: 'AuthorizationError',
+      message: 'Platform operator access required',
+    });
+  });
+
+  it('returns session when user is active and granted platform operator access', async () => {
+    const session = { sessionId: 'session-1', userId: 'user-1', organizationId: 'org-1' };
+    mockCookieGet.mockReturnValue({ value: 's'.repeat(43) });
+    mockValidateSession.mockResolvedValue(session);
+    mockUserFindUnique.mockResolvedValue({ isActive: true, isPlatformOperator: true });
+
+    await expect(requirePlatformOperator()).resolves.toEqual(session);
   });
 });
 
