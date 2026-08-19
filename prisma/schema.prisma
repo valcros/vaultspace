@@ -380,6 +380,11 @@ model User {
   // Account status
   isActive Boolean @default(true)
 
+  // Platform operations
+  // Grants access to the cross-tenant SysOp control plane (/sysop, /api/sysop/*).
+  // This is an explicit, platform-level grant — NOT derived from any org role.
+  isPlatformOperator Boolean @default(false)
+
   // Relations
   organizations           UserOrganization[]
   permissions             Permission[]

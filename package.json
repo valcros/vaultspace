@@ -42,6 +42,7 @@
     "db:backup": "tsx scripts/backup.ts",
     "db:restore": "tsx scripts/restore.ts",
     "gdpr:export": "tsx scripts/gdpr-export.ts",
+    "ops:grant-operator": "tsx scripts/grant-platform-operator.ts",
     "rls:audit": "tsx scripts/rls-audit.ts",
     "worker": "tsx src/workers/index.ts",
     "worker:wake-delayed": "tsx src/workers/wakeDelayedJobs.ts",

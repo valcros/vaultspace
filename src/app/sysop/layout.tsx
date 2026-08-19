@@ -23,16 +23,24 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
 
   const user = await db.user.findUnique({
     where: { id: session.userId },
-    select: { id: true, email: true, firstName: true, lastName: true },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      isActive: true,
+      isPlatformOperator: true,
+    },
   });
 
   if (!user) {
     redirect('/auth/login');
   }
 
-  // SysOp RBAC Check: Ensure user is authorized
-  const isSysOp = user.email.includes('munger') || user.email.includes('admin');
-  if (!isSysOp) {
+  // SysOp RBAC: gate on the explicit platform-operator grant, NOT on org role
+  // or email spelling. See requirePlatformOperator() — the /api/sysop/* routes
+  // enforce the same grant server-side.
+  if (!user.isActive || !user.isPlatformOperator) {
     redirect('/dashboard');
   }
 

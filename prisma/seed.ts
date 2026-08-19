@@ -56,6 +56,10 @@ async function main() {
       lastName: 'Admin',
       isActive: true,
       emailVerifiedAt: new Date(),
+      // Explicit platform-operator grant so /sysop is reachable in a fresh seed.
+      // This is a demo/dev convenience; grant real operators via
+      // scripts/grant-platform-operator.ts, never by org role or email spelling.
+      isPlatformOperator: true,
     },
   });
 
