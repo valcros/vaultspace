@@ -146,6 +146,10 @@ enum EventType {
   SYSOP_ACCESSED
   PLATFORM_OPERATOR_GRANTED
   PLATFORM_OPERATOR_REVOKED
+
+  // SysOp organization lifecycle
+  ORG_DISABLED
+  ORG_ENABLED
 }
 
 // Q&A status - tracks question lifecycle
