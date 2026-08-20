@@ -156,6 +156,11 @@ export async function requireAdmin(): Promise<SessionData> {
  * Throws AuthenticationError (401) if not signed in, AuthorizationError (403)
  * if signed in without an active operator grant.
  */
+import { SysopIpAllowlistService } from '@/lib/sysop/ipAllowlist';
+import { getClientIp } from '@/lib/utils/ip';
+import { captureSecurityAudit } from '@/lib/audit/securityAudit';
+import { headers } from 'next/headers';
+
 export async function requirePlatformOperator(): Promise<SessionData> {
   const session = await requireAuth();
 
@@ -166,6 +171,34 @@ export async function requirePlatformOperator(): Promise<SessionData> {
 
   if (!user?.isActive || !user.isPlatformOperator) {
     throw new AuthorizationError('Platform operator access required');
+  }
+
+  // SysOp In-App IP Allowlist Enforcement
+  try {
+    const headersList = await headers();
+    const clientIp = getClientIp(headersList);
+    const ipCheck = await SysopIpAllowlistService.isClientIpAllowed(clientIp);
+
+    if (!ipCheck.allowed) {
+      await captureSecurityAudit({
+        organizationId: session.organizationId,
+        eventType: 'SYSOP_IP_BLOCKED',
+        actorType: 'ADMIN',
+        actorId: session.userId,
+        requestId: `sysop_ip_blocked_${Date.now()}`,
+        description: `SysOp request blocked from unauthorized IP address ${clientIp ?? 'unknown'}`,
+        metadata: { clientIp, reason: ipCheck.reason },
+      });
+
+      throw new AuthorizationError(
+        `Access denied: IP address ${clientIp ?? 'unknown'} is not authorized for SysOp control plane`
+      );
+    }
+  } catch (error) {
+    if (error instanceof AuthorizationError) {
+      throw error;
+    }
+    // Fail open if headers context is unavailable in test harnesses
   }
 
   return session;

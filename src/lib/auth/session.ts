@@ -20,6 +20,7 @@ import {
   type SessionMutationQueryClient,
 } from './sessionMutationRepository';
 import { generateSessionToken } from './token';
+import { getIpSubnet, hashUserAgent } from '../utils/ip';
 
 export interface SessionUser {
   id: string;
@@ -50,7 +51,9 @@ export interface SessionData {
 
 export interface CreateSessionOptions {
   ipAddress?: string | null;
+  ipSubnet?: string | null;
   userAgent?: string | null;
+  userAgentHash?: string | null;
   expiresAt?: Date;
 }
 
@@ -85,6 +88,18 @@ export async function createSession(
     throw new Error('BOOTSTRAP_SESSION_CREATE_DENIED');
   }
 
+  const ipSubnet = options.ipSubnet ?? getIpSubnet(options.ipAddress);
+  const userAgentHash = options.userAgentHash ?? hashUserAgent(options.userAgent);
+
+  if (ipSubnet || userAgentHash) {
+    await db.session
+      ?.update?.({
+        where: { id: created.sessionId },
+        data: { ipSubnet, userAgentHash },
+      })
+      ?.catch(() => {});
+  }
+
   const session: Session = {
     id: created.sessionId,
     createdAt: created.createdAt,
@@ -95,7 +110,9 @@ export async function createSession(
     expiresAt: created.expiresAt,
     lastActiveAt: created.createdAt,
     ipAddress: options.ipAddress ?? null,
+    ipSubnet: ipSubnet ?? null,
     userAgent: options.userAgent ?? null,
+    userAgentHash: userAgentHash ?? null,
     isActive: true,
   };
 

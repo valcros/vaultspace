@@ -146,6 +146,9 @@ enum EventType {
   SYSOP_ACCESSED
   PLATFORM_OPERATOR_GRANTED
   PLATFORM_OPERATOR_REVOKED
+  SYSOP_IP_ALLOWLIST_UPDATED
+  SYSOP_IP_BLOCKED
+  SESSION_HIJACKING_SUSPECTED
 }
 
 // Q&A status - tracks question lifecycle
@@ -465,8 +468,10 @@ model Session {
   lastActiveAt DateTime @default(now())
 
   // Metadata
-  ipAddress String? @db.VarChar(50)
-  userAgent String? @db.Text
+  ipAddress     String? @db.VarChar(50)
+  ipSubnet      String? @db.VarChar(50)
+  userAgent     String? @db.Text
+  userAgentHash String? @db.VarChar(64)
 
   // Status
   isActive Boolean @default(true)
@@ -2043,3 +2048,25 @@ model UserDashboardLayout {
   @@index([userId])
   @@map("user_dashboard_layouts")
 }
+
+model SysopIpAllowlist {
+  id              String   @id @default(cuid())
+  cidr            String   @unique @db.VarChar(100)
+  label           String?  @db.VarChar(255)
+  enabled         Boolean  @default(true)
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("sysop_ip_allowlists")
+}
+
+model SysopSecuritySettings {
+  id                 String   @id @default("global")
+  ipAllowlistEnabled Boolean  @default(false)
+  updatedByUserId    String?
+  updatedAt          DateTime @updatedAt
+
+  @@map("sysop_security_settings")
+}
+

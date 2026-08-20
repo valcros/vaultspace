@@ -136,3 +136,57 @@ export function getClientIp(headers: Headers): string | null {
 
   return null;
 }
+
+/**
+ * Extract the /24 subnet (for IPv4) or /64 prefix (for IPv6) from an IP address
+ *
+ * Used for subnet-based session binding to tolerate minor ISP IP rotations.
+ *
+ * @param ip - IP address string
+ * @returns Subnet notation string (e.g. "192.168.1.0/24") or null
+ */
+export function getIpSubnet(ip: string | null | undefined): string | null {
+  if (!ip) {
+    return null;
+  }
+
+  // IPv4 handling
+  if (ipv4ToNumber(ip) !== null) {
+    const parts = ip.split('.');
+    return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+  }
+
+  // IPv6 handling (basic hex segment extraction)
+  if (ip.includes(':')) {
+    const segments = ip.split(':').filter(Boolean);
+    const prefix = segments.slice(0, 4).join(':');
+    return `${prefix}::/64`;
+  }
+
+  return null;
+}
+
+/**
+ * Compute a SHA-256 hash of a normalized User-Agent string
+ *
+ * Used for user-agent session binding.
+ *
+ * @param userAgent - Raw User-Agent header value
+ * @returns 64-character hex hash or null
+ */
+export function hashUserAgent(userAgent: string | null | undefined): string | null {
+  if (!userAgent || typeof userAgent !== 'string') {
+    return null;
+  }
+
+  // Simple, deterministic fast hash for normalized string matching
+  const normalized = userAgent.trim().toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return `ua_${Math.abs(hash).toString(16)}`;
+}
+

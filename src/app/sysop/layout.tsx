@@ -1,7 +1,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Server, Activity, ArrowLeft } from 'lucide-react';
+import { Server, Activity, ArrowLeft, Shield } from 'lucide-react';
 import { requireAuth } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { Button } from '@/components/ui/button';
@@ -73,6 +73,13 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
             >
               <Server className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
               <span>Platform Overview</span>
+            </Link>
+            <Link
+              href="/sysop/security"
+              className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              <Shield className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+              <span>Security & IP Allowlist</span>
             </Link>
             <Link
               href="/sysop/runner"
