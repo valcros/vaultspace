@@ -149,6 +149,10 @@ enum EventType {
   SYSOP_IP_ALLOWLIST_UPDATED
   SYSOP_IP_BLOCKED
   SESSION_HIJACKING_SUSPECTED
+
+  // SysOp organization lifecycle
+  ORG_DISABLED
+  ORG_ENABLED
 }
 
 // Q&A status - tracks question lifecycle
