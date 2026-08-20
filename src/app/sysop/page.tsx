@@ -594,7 +594,7 @@ export default function SysOpOverviewPage() {
           ) : (
             <div className="space-y-4">
               {/* Search and Status Filter Controls */}
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+              <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
                 <div className="relative max-w-sm flex-1">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
                   <Input
@@ -610,7 +610,7 @@ export default function SysOpOverviewPage() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter('all')}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                       statusFilter === 'all'
                         ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
                         : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
@@ -621,7 +621,7 @@ export default function SysOpOverviewPage() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter('active')}
-                    className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                       statusFilter === 'active'
                         ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
                         : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
@@ -633,7 +633,7 @@ export default function SysOpOverviewPage() {
                   <button
                     type="button"
                     onClick={() => setStatusFilter('disabled')}
-                    className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                       statusFilter === 'disabled'
                         ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
                         : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
@@ -651,7 +651,7 @@ export default function SysOpOverviewPage() {
                     <tr>
                       <th
                         onClick={() => handleSort('name')}
-                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                        className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
                       >
                         Organization Name{' '}
                         {sortField !== 'name' ? (
@@ -664,7 +664,7 @@ export default function SysOpOverviewPage() {
                       </th>
                       <th
                         onClick={() => handleSort('slug')}
-                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                        className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
                       >
                         Slug{' '}
                         {sortField !== 'slug' ? (
@@ -677,7 +677,7 @@ export default function SysOpOverviewPage() {
                       </th>
                       <th
                         onClick={() => handleSort('roomCount')}
-                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                        className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
                       >
                         Rooms{' '}
                         {sortField !== 'roomCount' ? (
@@ -690,7 +690,7 @@ export default function SysOpOverviewPage() {
                       </th>
                       <th
                         onClick={() => handleSort('userCount')}
-                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                        className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
                       >
                         Users{' '}
                         {sortField !== 'userCount' ? (
@@ -703,7 +703,7 @@ export default function SysOpOverviewPage() {
                       </th>
                       <th
                         onClick={() => handleSort('usagePercentage')}
-                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                        className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
                       >
                         Storage Usage{' '}
                         {sortField !== 'usagePercentage' ? (
@@ -716,7 +716,7 @@ export default function SysOpOverviewPage() {
                       </th>
                       <th
                         onClick={() => handleSort('isActive')}
-                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                        className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
                       >
                         Status{' '}
                         {sortField !== 'isActive' ? (
@@ -742,101 +742,101 @@ export default function SysOpOverviewPage() {
                       </tr>
                     ) : (
                       filteredAndSortedOrgs.map((org) => (
-                    <tr
-                      key={org.id}
-                      className="transition-colors hover:bg-slate-100/60 dark:hover:bg-slate-800/40"
-                    >
-                      <td className="px-3 py-3 font-semibold text-slate-900 dark:text-white">
-                        {org.name}
-                      </td>
-                      <td className="px-3 py-3 font-mono text-slate-500 dark:text-slate-400">
-                        {org.slug}
-                      </td>
-                      <td className="px-3 py-3">{org.roomCount}</td>
-                      <td className="px-3 py-3">{org.userCount}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center space-x-2">
-                          <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                            <div
-                              className={`h-full ${
-                                org.usagePercentage >= 90 ? 'bg-rose-500' : 'bg-indigo-500'
-                              }`}
-                              style={{ width: `${org.usagePercentage}%` }}
-                            ></div>
-                          </div>
-                          <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                            {org.usagePercentage}%
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        {org.isActive === false ? (
-                          <Badge
-                            variant="outline"
-                            className="border-rose-500/30 bg-rose-500/10 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
-                          >
-                            Disabled
-                          </Badge>
-                        ) : org.quotaAlertLevel === 'CRITICAL_98' ? (
-                          <Badge className="border-rose-500/30 bg-rose-500/20 text-rose-700 dark:text-rose-300">
-                            Critical (98%)
-                          </Badge>
-                        ) : org.quotaAlertLevel === 'WARNING_90' ? (
-                          <Badge className="border-amber-500/30 bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                            Warning (90%)
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-400"
-                          >
-                            Normal
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedOrg({ id: org.id, name: org.name })}
-                            className="h-7 text-[11px] text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
-                          >
-                            <Sliders className="mr-1 h-3 w-3" />
-                            Adjust Quota
-                          </Button>
-                          {org.isActive === false ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={orgActionId === org.id}
-                              onClick={() => handleToggleOrg(org.id, true)}
-                              className="h-7 text-[11px] text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
-                            >
-                              {orgActionId === org.id ? 'Enabling…' : 'Enable'}
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={orgActionId === org.id}
-                              onClick={() => handleToggleOrg(org.id, false)}
-                              className="h-7 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                            >
-                              {orgActionId === org.id ? 'Disabling…' : 'Disable'}
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </CardContent>
+                        <tr
+                          key={org.id}
+                          className="transition-colors hover:bg-slate-100/60 dark:hover:bg-slate-800/40"
+                        >
+                          <td className="px-3 py-3 font-semibold text-slate-900 dark:text-white">
+                            {org.name}
+                          </td>
+                          <td className="px-3 py-3 font-mono text-slate-500 dark:text-slate-400">
+                            {org.slug}
+                          </td>
+                          <td className="px-3 py-3">{org.roomCount}</td>
+                          <td className="px-3 py-3">{org.userCount}</td>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center space-x-2">
+                              <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                                <div
+                                  className={`h-full ${
+                                    org.usagePercentage >= 90 ? 'bg-rose-500' : 'bg-indigo-500'
+                                  }`}
+                                  style={{ width: `${org.usagePercentage}%` }}
+                                ></div>
+                              </div>
+                              <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                                {org.usagePercentage}%
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            {org.isActive === false ? (
+                              <Badge
+                                variant="outline"
+                                className="border-rose-500/30 bg-rose-500/10 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                              >
+                                Disabled
+                              </Badge>
+                            ) : org.quotaAlertLevel === 'CRITICAL_98' ? (
+                              <Badge className="border-rose-500/30 bg-rose-500/20 text-rose-700 dark:text-rose-300">
+                                Critical (98%)
+                              </Badge>
+                            ) : org.quotaAlertLevel === 'WARNING_90' ? (
+                              <Badge className="border-amber-500/30 bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                                Warning (90%)
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-400"
+                              >
+                                Normal
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelectedOrg({ id: org.id, name: org.name })}
+                                className="h-7 text-[11px] text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
+                              >
+                                <Sliders className="mr-1 h-3 w-3" />
+                                Adjust Quota
+                              </Button>
+                              {org.isActive === false ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={orgActionId === org.id}
+                                  onClick={() => handleToggleOrg(org.id, true)}
+                                  className="h-7 text-[11px] text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                                >
+                                  {orgActionId === org.id ? 'Enabling…' : 'Enable'}
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={orgActionId === org.id}
+                                  onClick={() => handleToggleOrg(org.id, false)}
+                                  className="h-7 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                                >
+                                  {orgActionId === org.id ? 'Disabling…' : 'Disable'}
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {/* Adjust Quota Dialog Modal */}
