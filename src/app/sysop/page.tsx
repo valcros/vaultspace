@@ -52,6 +52,7 @@ interface SysOpOverviewData {
     id: string;
     name: string;
     slug: string;
+    isActive?: boolean;
     roomCount: number;
     userCount: number;
     usagePercentage: number;
@@ -139,17 +140,17 @@ export default function SysOpOverviewPage() {
     }
   };
 
-  const handleDisableOrg = async (orgId: string) => {
+  const handleToggleOrg = async (orgId: string, targetActive: boolean) => {
     setOrgActionId(orgId);
     try {
       const res = await fetch(`/api/sysop/organizations/${orgId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: false }),
+        body: JSON.stringify({ isActive: targetActive }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        alert(json.error || 'Failed to disable organization');
+        alert(json.error || `Failed to ${targetActive ? 'enable' : 'disable'} organization`);
       } else {
         await fetchOverview();
       }
@@ -555,7 +556,14 @@ export default function SysOpOverviewPage() {
                         </div>
                       </td>
                       <td className="px-3 py-3">
-                        {org.quotaAlertLevel === 'CRITICAL_98' ? (
+                        {org.isActive === false ? (
+                          <Badge
+                            variant="outline"
+                            className="border-rose-500/30 bg-rose-500/10 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                          >
+                            Disabled
+                          </Badge>
+                        ) : org.quotaAlertLevel === 'CRITICAL_98' ? (
                           <Badge className="border-rose-500/30 bg-rose-500/20 text-rose-700 dark:text-rose-300">
                             Critical (98%)
                           </Badge>
@@ -583,15 +591,27 @@ export default function SysOpOverviewPage() {
                             <Sliders className="mr-1 h-3 w-3" />
                             Adjust Quota
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={orgActionId === org.id}
-                            onClick={() => handleDisableOrg(org.id)}
-                            className="h-7 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                          >
-                            {orgActionId === org.id ? 'Disabling…' : 'Disable'}
-                          </Button>
+                          {org.isActive === false ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={orgActionId === org.id}
+                              onClick={() => handleToggleOrg(org.id, true)}
+                              className="h-7 text-[11px] text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                            >
+                              {orgActionId === org.id ? 'Enabling…' : 'Enable'}
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={orgActionId === org.id}
+                              onClick={() => handleToggleOrg(org.id, false)}
+                              className="h-7 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                            >
+                              {orgActionId === org.id ? 'Disabling…' : 'Disable'}
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

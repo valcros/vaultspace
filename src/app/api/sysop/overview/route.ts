@@ -32,6 +32,7 @@ export async function GET() {
           id: true,
           name: true,
           slug: true,
+          isActive: true,
           createdAt: true,
           _count: {
             select: {
@@ -40,7 +41,7 @@ export async function GET() {
             },
           },
         },
-        take: 20,
+        take: 25,
       }),
     ]);
 
@@ -64,6 +65,7 @@ export async function GET() {
         id: org.id,
         name: org.name,
         slug: org.slug,
+        isActive: org.isActive,
         roomCount: org._count.rooms,
         userCount: org._count.users,
         estimatedStorageBytes,
