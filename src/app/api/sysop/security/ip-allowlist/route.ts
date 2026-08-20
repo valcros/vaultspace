@@ -40,7 +40,10 @@ export async function GET() {
     if (error instanceof AuthorizationError) {
       return NextResponse.json({ error: error.message || 'Forbidden' }, { status: 403 });
     }
-    return NextResponse.json({ error: 'Failed to fetch IP allowlist configuration' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to fetch IP allowlist configuration' },
+      { status: 500 }
+    );
   }
 }
 
@@ -50,7 +53,10 @@ export async function POST(request: Request) {
     const { cidr, label } = await request.json();
 
     if (!cidr || typeof cidr !== 'string') {
-      return NextResponse.json({ error: 'Valid IP address or CIDR notation is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Valid IP address or CIDR notation is required' },
+        { status: 400 }
+      );
     }
 
     const entry = await SysopIpAllowlistService.addEntry(

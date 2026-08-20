@@ -5,10 +5,7 @@ import { SysopIpAllowlistService } from '@/lib/sysop/ipAllowlist';
 import { getClientIp } from '@/lib/utils/ip';
 import { headers } from 'next/headers';
 
-export async function DELETE(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await requirePlatformOperator();
     const headersList = await headers();

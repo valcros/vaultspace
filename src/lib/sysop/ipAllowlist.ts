@@ -20,7 +20,9 @@ export class SysopIpAllowlistService {
   /**
    * Check if a given client IP is authorized for SysOp access.
    */
-  static async isClientIpAllowed(clientIp: string | null): Promise<{ allowed: boolean; reason?: string }> {
+  static async isClientIpAllowed(
+    clientIp: string | null
+  ): Promise<{ allowed: boolean; reason?: string }> {
     // Environment bypass emergency override
     if (process.env['SYSOP_IP_ALLOWLIST_BYPASS'] === 'true') {
       return { allowed: true, reason: 'Bypassed via SYSOP_IP_ALLOWLIST_BYPASS env' };
@@ -52,7 +54,9 @@ export class SysopIpAllowlistService {
 
     return {
       allowed,
-      reason: allowed ? 'Client IP matched allowlist' : `IP address ${clientIp} not in SysOp allowlist`,
+      reason: allowed
+        ? 'Client IP matched allowlist'
+        : `IP address ${clientIp} not in SysOp allowlist`,
     };
   }
 
@@ -149,7 +153,10 @@ export class SysopIpAllowlistService {
         where: { enabled: true, NOT: { id: entryId } },
         select: { cidr: true },
       });
-      const allowed = isIpAllowed(currentClientIp, remainingEntries.map((e) => e.cidr));
+      const allowed = isIpAllowed(
+        currentClientIp,
+        remainingEntries.map((e) => e.cidr)
+      );
       if (!allowed) {
         throw new AuthorizationError(
           `Lockout prevented: Deleting this entry would block your current IP address (${currentClientIp}).`
@@ -189,6 +196,11 @@ export class SysopIpAllowlistService {
       return { valid: false };
     }
 
-    return { valid: isIpAllowed(clientIp, activeEntries.map((e) => e.cidr)) };
+    return {
+      valid: isIpAllowed(
+        clientIp,
+        activeEntries.map((e) => e.cidr)
+      ),
+    };
   }
 }

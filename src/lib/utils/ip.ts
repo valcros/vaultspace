@@ -189,4 +189,3 @@ export function hashUserAgent(userAgent: string | null | undefined): string | nu
   }
   return `ua_${Math.abs(hash).toString(16)}`;
 }
-

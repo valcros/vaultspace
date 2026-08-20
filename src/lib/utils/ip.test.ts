@@ -5,7 +5,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ipMatchesCidr, isIpAllowed, isValidIpOrCidr, getClientIp, getIpSubnet, hashUserAgent } from './ip';
+import {
+  ipMatchesCidr,
+  isIpAllowed,
+  isValidIpOrCidr,
+  getClientIp,
+  getIpSubnet,
+  hashUserAgent,
+} from './ip';
 
 describe('getIpSubnet', () => {
   it('extracts /24 subnet for IPv4 address', () => {
