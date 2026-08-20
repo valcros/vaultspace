@@ -19,7 +19,7 @@
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 
 const ALG = 'aes-256-gcm';
 const KEY_BYTES = 32;
@@ -75,8 +75,11 @@ function open(key: Buffer, sealed: SealedBlob): Buffer {
 function walkFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {walkFiles(full, acc);}
-    else {acc.push(full);}
+    if (statSync(full).isDirectory()) {
+      walkFiles(full, acc);
+    } else {
+      acc.push(full);
+    }
   }
   return acc;
 }
@@ -127,8 +130,13 @@ export async function decryptArchive(archiveDir: string): Promise<void> {
   }
   const dek = open(kek, manifest.wrappedDek);
 
+  const root = resolve(archiveDir);
   for (const rel of manifest.files) {
-    const encPath = join(archiveDir, rel);
+    // Reject path traversal: a tampered manifest must not write outside the archive.
+    const encPath = resolve(archiveDir, rel);
+    if (!encPath.startsWith(root + sep) && encPath !== root) {
+      throw new BackupCryptoError(`Refusing manifest path outside the archive: ${rel}`);
+    }
     const sealed = JSON.parse(readFileSync(encPath, 'utf8')) as SealedBlob;
     const plaintext = open(dek, sealed); // throws on tamper (bad auth tag)
     const outPath = encPath.slice(0, -ENCRYPTED_SUFFIX.length);

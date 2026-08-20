@@ -36,6 +36,7 @@ import {
   assertClassificationComplete,
   assertRestoreOrderComplete,
   backupModelNames,
+  userReferenceFields,
 } from '../src/lib/backup/tenantModelClassification';
 import { encryptArchiveFile } from '../src/lib/backup/archiveCrypto';
 
@@ -62,15 +63,38 @@ function sha256(buf: Buffer | string): string {
   return createHash('sha256').update(buf).digest('hex');
 }
 
-/** Collect every userId referenced by a row (memberships + any *UserId field). */
-function collectUserIds(rows: Record<string, unknown>[], into: Set<string>): void {
+/**
+ * Collect every referenced userId from a table's rows using the DMMF-derived
+ * User-FK columns for that model (catches Event.actorId, Permission.grantedById,
+ * etc. — not just *UserId).
+ */
+function collectUserIds(
+  rows: Record<string, unknown>[],
+  userFields: string[],
+  into: Set<string>
+): void {
   for (const row of rows) {
-    for (const [key, val] of Object.entries(row)) {
-      if (typeof val === 'string' && val && (key === 'userId' || /UserId$/.test(key))) {
-        into.add(val);
-      }
+    for (const field of userFields) {
+      const val = row[field];
+      if (typeof val === 'string' && val) into.add(val);
     }
   }
+}
+
+/**
+ * Deep-convert BigInt values to strings BEFORE JSON serialization. The global
+ * bigint serializer emits Number (lossy above 2^53); this preserves exact values,
+ * and restore revives them via the DMMF BigInt field list.
+ */
+function bigIntSafe(value: unknown): unknown {
+  if (typeof value === 'bigint') return value.toString();
+  if (Array.isArray(value)) return value.map(bigIntSafe);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = bigIntSafe(v);
+    return out;
+  }
+  return value;
 }
 
 async function main(): Promise<void> {
@@ -150,22 +174,25 @@ async function main(): Promise<void> {
           rows = await delegate.findMany({ where: { organizationId: org.id } });
         }
         perTable[modelName] = rows;
-        collectUserIds(rows, referencedUserIds);
+        collectUserIds(rows, userReferenceFields(modelName), referencedUserIds);
       }
+      // Read the Organization row itself INSIDE the snapshot (point-in-time).
+      perTable['Organization'] = (await (tx as unknown as Record<string, Delegate>)[
+        'organization'
+      ]!.findMany({ where: { id: org.id } })) as Record<string, unknown>[];
       return perTable;
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 120_000 }
   );
 
-  // Write per-table JSONL (+ the Organization row itself).
-  const orgRow = await db.organization.findUnique({ where: { id: org.id } });
+  // Write per-table JSONL (BigInt-safe: exact values, not lossy Number).
   const writeTable = (name: string, rows: unknown[]) => {
-    const jsonl = rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');
+    const jsonl =
+      rows.map((r) => JSON.stringify(bigIntSafe(r))).join('\n') + (rows.length ? '\n' : '');
     const file = join(dbDir, `${name}.jsonl`);
     writeFileSync(file, jsonl);
     manifest.tables[name] = { rows: rows.length, sha256: sha256(jsonl) };
   };
-  writeTable('Organization', orgRow ? [orgRow] : []);
   for (const [name, rows] of Object.entries(exported)) writeTable(name, rows);
 
   // Referenced users (create-if-absent on restore; never clobber a shared user).
