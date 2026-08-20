@@ -7,6 +7,8 @@ import {
   assertClassificationComplete,
   assertRestoreOrderComplete,
   backupModelNames,
+  userReferenceFields,
+  bigIntFieldNames,
 } from './tenantModelClassification';
 
 describe('tenant model classification (completeness drift guard)', () => {
@@ -75,6 +77,30 @@ describe('tenant model classification (completeness drift guard)', () => {
 
   it('Event is restored last (append-only)', () => {
     expect(RESTORE_ORDER[RESTORE_ORDER.length - 1]).toBe('Event');
+  });
+
+  it('userReferenceFields catches non-*UserId User FKs (e.g. Event.actorId)', () => {
+    // The name heuristic (*UserId) would MISS these — the DMMF relation graph does not.
+    expect(userReferenceFields('Event')).toContain('actorId');
+    expect(userReferenceFields('UserOrganization')).toContain('userId');
+  });
+
+  it('every backup model with a User relation exposes its FK columns', () => {
+    // Sanity: models that FK to User must yield at least one column so referenced
+    // users are collected (else restore hits a dangling non-nullable FK).
+    for (const name of backupModelNames()) {
+      const model = Prisma.dmmf.datamodel.models.find((m) => m.name === name)!;
+      const hasUserRelation = model.fields.some(
+        (f) => f.kind === 'object' && f.type === 'User' && (f.relationFromFields?.length ?? 0) > 0
+      );
+      if (hasUserRelation) {
+        expect(userReferenceFields(name).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('bigIntFieldNames reports BigInt columns (e.g. Organization.maxStorageBytes)', () => {
+    expect(bigIntFieldNames('Organization')).toContain('maxStorageBytes');
   });
 
   it('backup set excludes Session and the transient token tables', () => {

@@ -154,42 +154,54 @@ async function main(): Promise<void> {
     );
   }
 
-  // Users FIRST, create-if-absent (empty update — NEVER clobber a shared user).
   const users = readTable(dbDir, 'users_referenced');
-  const userBig = bigIntFields('User');
-  for (const u of users) {
-    const data = reviveRow(u, userBig);
-    await db.user.upsert({
-      where: { id: String(data['id']) },
-      create: data as never,
-      update: {}, // no-op on conflict: a user may belong to other, live orgs
-    });
-  }
 
-  // Organization next.
-  await db.organization.upsert({
-    where: { id: orgId },
-    create: reviveRow(orgRow, bigIntFields('Organization')) as never,
-    update: args.force ? (reviveRow(orgRow, bigIntFields('Organization')) as never) : {},
-  });
+  // ALL database inserts in ONE transaction: a partial failure rolls back cleanly
+  // (no half-restored org). The org GUCs are set so RLS-enabled tables accept the
+  // inserts under the tenant policies.
+  await db.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgId}, true)`;
+      await tx.$executeRaw`SELECT set_config('app.organization_id', ${orgId}, true)`;
 
-  // Tenant tables in FK order, org-scoped only.
-  for (const modelName of RESTORE_ORDER) {
-    let rows = readTable(dbDir, modelName);
-    if (rows.length === 0) continue;
-    if (modelName === 'Folder') rows = depthOrderFolders(rows);
-    const bigints = bigIntFields(modelName);
-    const delegate = (db as unknown as Record<string, Delegate>)[
-      modelName.charAt(0).toLowerCase() + modelName.slice(1)
-    ]!;
-    // Per-row create (createMany can't guarantee intra-table order for Folder, and
-    // per-row surfaces the exact failing row for diagnosis).
-    for (const row of rows) {
-      await delegate.create({ data: reviveRow(row, bigints) });
-    }
-  }
+      // Users FIRST — create-if-absent (never clobber a shared user's live creds).
+      const userBig = bigIntFields('User');
+      for (const u of users) {
+        const data = reviveRow(u, userBig);
+        await tx.user.upsert({
+          where: { id: String(data['id']) },
+          create: data as never,
+          update: {}, // no-op on conflict: a user may belong to other, live orgs
+        });
+      }
 
-  // Storage blobs back to their buckets/keys.
+      // Organization — create-if-absent, NEVER update with stale archived data
+      // (even under --force, which only bypasses the preflight refusal).
+      await tx.organization.upsert({
+        where: { id: orgId },
+        create: reviveRow(orgRow, bigIntFields('Organization')) as never,
+        update: {},
+      });
+
+      // Tenant tables in FK order, org-scoped only.
+      for (const modelName of RESTORE_ORDER) {
+        let rows = readTable(dbDir, modelName);
+        if (rows.length === 0) continue;
+        if (modelName === 'Folder') rows = depthOrderFolders(rows);
+        const bigints = bigIntFields(modelName);
+        const delegate = (tx as unknown as Record<string, Delegate>)[
+          modelName.charAt(0).toLowerCase() + modelName.slice(1)
+        ]!;
+        for (const row of rows) {
+          await delegate.create({ data: reviveRow(row, bigints) });
+        }
+      }
+    },
+    { timeout: 300_000 }
+  );
+
+  // Storage blobs back to their buckets/keys. Refuse to overwrite an existing
+  // object (a collision would clobber another tenant's blob).
   const storageObjects = JSON.parse(
     readFileSync(join(args.file, 'storage', 'objects.json'), 'utf8')
   ) as { bucket: string; key: string; sha256: string }[];
@@ -198,6 +210,19 @@ async function main(): Promise<void> {
     const data = readFileSync(join(args.file, 'storage', safeName));
     if (sha256(data) !== obj.sha256) {
       throw new Error(`Blob checksum mismatch: ${obj.bucket}/${obj.key}`);
+    }
+    let exists = false;
+    try {
+      await storage.get(obj.bucket, obj.key);
+      exists = true;
+    } catch {
+      exists = false; // not found — safe to write
+    }
+    if (exists && !args.force) {
+      throw new Error(
+        `Storage key already exists (would overwrite): ${obj.bucket}/${obj.key}. ` +
+          `Restore is for absent orgs.`
+      );
     }
     await storage.put(obj.bucket, obj.key, data);
   }

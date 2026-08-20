@@ -188,6 +188,33 @@ export function assertClassificationComplete(): void {
   }
 }
 
+/**
+ * Scalar FK columns on a model that reference User — derived from the DMMF
+ * relation graph, NOT a name heuristic (so it catches Event.actorId,
+ * Permission.grantedById, etc., which don't end in "UserId").
+ */
+export function userReferenceFields(modelName: string): string[] {
+  const model = Prisma.dmmf.datamodel.models.find((m) => m.name === modelName);
+  if (!model) {
+    return [];
+  }
+  const cols = new Set<string>();
+  for (const f of model.fields) {
+    if (f.kind === 'object' && f.type === 'User' && Array.isArray(f.relationFromFields)) {
+      for (const col of f.relationFromFields) {
+        cols.add(col);
+      }
+    }
+  }
+  return [...cols];
+}
+
+/** BigInt-typed field names on a model, from the DMMF. */
+export function bigIntFieldNames(modelName: string): string[] {
+  const model = Prisma.dmmf.datamodel.models.find((m) => m.name === modelName);
+  return (model?.fields ?? []).filter((f) => f.type === 'BigInt').map((f) => f.name);
+}
+
 /** The models that must be exported for a tenant (TENANT + PARENT_SCOPED). */
 export function backupModelNames(): string[] {
   return Object.entries(MODEL_CLASSIFICATION)
