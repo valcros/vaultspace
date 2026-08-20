@@ -1,0 +1,11 @@
+-- Grandfather existing users as email-verified.
+--
+-- The self-service email-verification gate applies only to NEW registrations
+-- (org creation is deferred until verification). This backfill marks every
+-- pre-existing user as verified so no current user is ever affected by an
+-- emailVerifiedAt-based check. Must run BEFORE the gated application code is live.
+--
+-- Note: this also stamps the ~278 junk self-registered users as verified. That is
+-- harmless — it does not reactivate or legitimize anything — and those orgs are
+-- handled by the separate SysOp org-management cleanup (Sprints 2/3 + action item).
+UPDATE "users" SET "emailVerifiedAt" = now() WHERE "emailVerifiedAt" IS NULL;
