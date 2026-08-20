@@ -56,14 +56,27 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
       }
     }
 
-    const rows = await db.$queryRaw<
-      Array<{ org_id: string; org_name: string; org_slug: string; is_active: boolean }>
-    >`SELECT * FROM public.sysop_set_organization_active(${orgId}, ${isActive})`;
-
-    if (rows.length === 0) {
-      return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
+    // Direct write via bootstrapDb (the DATABASE_URL_ADMIN role). ⚠️ Requires that
+    // role to hold an UPDATE grant on organizations.isActive and to be able to
+    // reach a disabled org for re-enable — validate at deploy (see migration notes).
+    let org: { id: string; name: string; slug: string; isActive: boolean };
+    try {
+      org = await db.organization.update({
+        where: { id: orgId },
+        data: { isActive },
+        select: { id: true, name: true, slug: true, isActive: true },
+      });
+    } catch (updateError) {
+      if (
+        updateError &&
+        typeof updateError === 'object' &&
+        'code' in updateError &&
+        (updateError as { code?: string }).code === 'P2025'
+      ) {
+        return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
+      }
+      throw updateError;
     }
-    const org = rows[0]!;
 
     // Audit under the OPERATOR's org (never the target org — an org-scoped event
     // written under a deleted/target org can be cascade-erased); target in metadata.
@@ -77,9 +90,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
       requestId: reqContext.requestId,
       description: `Organization ${isActive ? 'enabled' : 'disabled'} by platform operator`,
       metadata: {
-        targetOrgId: org.org_id,
-        targetOrgSlug: org.org_slug,
-        targetOrgName: org.org_name,
+        targetOrgId: org.id,
+        targetOrgSlug: org.slug,
+        targetOrgName: org.name,
       },
     });
 
@@ -94,10 +107,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
     }
 
     return NextResponse.json({
-      id: org.org_id,
-      name: org.org_name,
-      slug: org.org_slug,
-      isActive: org.is_active,
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      isActive: org.isActive,
     });
   } catch (error) {
     if (error instanceof AuthorizationError) {
