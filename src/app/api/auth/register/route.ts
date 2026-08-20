@@ -2,6 +2,15 @@
  * Registration API (F004)
  *
  * POST /api/auth/register - Create new user account
+ *
+ * Two paths:
+ *  - INVITED (valid inviteToken): the invitation is the vetting. Create the user
+ *    already verified, join the invited org, sign in. Unchanged UX.
+ *  - SELF-SERVICE (no invite): gated by email verification. Create ONLY a pending
+ *    (unverified) user + a verification token; do NOT create an organization,
+ *    membership, or session until the email is verified (see verify-email route).
+ *    The response is privacy-neutral and time-normalized so it cannot be used to
+ *    enumerate which emails already have accounts.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,9 +18,12 @@ import bcrypt from 'bcryptjs';
 
 import { createSession } from '@/lib/auth';
 import { bootstrapDb as db } from '@/lib/db';
+import { createEmailVerificationToken } from '@/lib/auth/emailVerificationToken';
+import { sendEmailVerificationEmail } from '@/lib/auth/emailVerificationDelivery';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
-import { getRequestContext, setSessionCookie } from '@/lib/middleware';
+import { getRequestContext, setSessionCookie, rateLimiters } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
+import { RateLimitError } from '@/lib/errors';
 import { z } from 'zod';
 
 const registerSchema = z.object({
@@ -24,7 +36,21 @@ const registerSchema = z.object({
   relationship: z.string().max(50).optional(),
 });
 
+const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+// Normalize self-service response time so "email already exists" (fast) is
+// indistinguishable from "new pending user" (slow, includes bcrypt).
+const MINIMUM_SELF_SERVICE_RESPONSE_MS = 350;
+
+async function neutralVerificationResponse(startedAt: number): Promise<NextResponse> {
+  const remaining = MINIMUM_SELF_SERVICE_RESPONSE_MS - (Date.now() - startedAt);
+  if (remaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
+  return NextResponse.json({ status: 'verification_sent' }, { status: 201 });
+}
+
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   try {
     const body = await request.json();
     const { firstName, lastName, email, password, inviteToken, title, relationship } =
@@ -35,23 +61,12 @@ export async function POST(request: NextRequest) {
 
     const normalizedEmail = email.toLowerCase();
 
-    // Check if user already exists
-    const existingUser = await db.user.findUnique({
-      where: { email: normalizedEmail },
-    });
-
-    if (existingUser) {
-      return NextResponse.json(
-        { error: 'An account with this email already exists' },
-        { status: 409 }
-      );
+    // Faucet control: rate-limit registration attempts per IP (fail-closed).
+    if (ipAddress) {
+      await rateLimiters.registrationByIp(ipAddress);
     }
 
-    // Handle invite token if provided
-    let organizationId: string | null = null;
-    let role: 'ADMIN' | 'VIEWER' = 'ADMIN';
-    let validatedInvitationId: string | null = null;
-
+    // ----- INVITED PATH: vetted by the invitation; create verified + sign in -----
     if (inviteToken) {
       const invitation = await db.invitation.findUnique({
         where: { invitationToken: inviteToken },
@@ -61,125 +76,210 @@ export async function POST(request: NextRequest) {
       if (!invitation) {
         return NextResponse.json({ error: 'Invalid invitation token' }, { status: 400 });
       }
-
       if (invitation.expiresAt < new Date()) {
         return NextResponse.json({ error: 'Invitation has expired' }, { status: 400 });
       }
-
       if (invitation.status !== 'PENDING') {
         return NextResponse.json({ error: 'Invitation has already been used' }, { status: 400 });
       }
-
-      // Email must match invitation (Issue 4b)
       if (invitation.email.toLowerCase() !== normalizedEmail) {
         return NextResponse.json({ error: 'Email does not match invitation' }, { status: 400 });
       }
 
-      organizationId = invitation.organizationId;
-      role = invitation.role as 'ADMIN' | 'VIEWER';
-      validatedInvitationId = invitation.id;
+      const existingUser = await db.user.findUnique({ where: { email: normalizedEmail } });
+      if (existingUser) {
+        return NextResponse.json(
+          { error: 'An account with this email already exists' },
+          { status: 409 }
+        );
+      }
+
+      const passwordHash = await bcrypt.hash(password, 12);
+      const organizationId = invitation.organizationId;
+      const role = invitation.role as 'ADMIN' | 'VIEWER';
+
+      let result: {
+        user: { id: string; email: string; firstName: string; lastName: string };
+        organization: { id: string; name: string; slug: string };
+      };
+      try {
+        result = await db.$transaction(async (tx) => {
+          // Guarded acceptance: only flips a still-PENDING invitation. If a
+          // concurrent request already accepted it, this matches no row and
+          // Prisma throws P2025 (handled below as a deterministic 400).
+          await tx.invitation.update({
+            where: { id: invitation.id, status: 'PENDING' },
+            data: { status: 'ACCEPTED', acceptedAt: new Date() },
+          });
+
+          const user = await tx.user.create({
+            data: {
+              email: normalizedEmail,
+              passwordHash,
+              firstName,
+              lastName,
+              title: title || null,
+              relationship: relationship || null,
+              isActive: true,
+              // Invitation possession is the vetting for this sprint's scope.
+              emailVerifiedAt: new Date(),
+            },
+          });
+
+          await tx.userOrganization.create({
+            data: { userId: user.id, organizationId, role, isActive: true },
+          });
+
+          return { user, organization: invitation.organization };
+        });
+      } catch (txError) {
+        if (
+          txError &&
+          typeof txError === 'object' &&
+          'code' in txError &&
+          (txError as { code?: string }).code === 'P2025'
+        ) {
+          return NextResponse.json({ error: 'Invitation has already been used' }, { status: 400 });
+        }
+        throw txError;
+      }
+
+      const expiresAt = new Date(
+        Date.now() + SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000
+      );
+      const { session: authSession, token: sessionToken } = await createSession(
+        result.user.id,
+        organizationId,
+        { expiresAt, ipAddress, userAgent }
+      );
+      await setSessionCookie(sessionToken, expiresAt);
+
+      await captureAccessAudit({
+        organizationId,
+        eventType: 'USER_LOGIN',
+        actorType: role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+        actorId: result.user.id,
+        actorEmail: result.user.email,
+        requestId: reqContext.requestId,
+        description: 'User registered via invitation and signed in',
+        metadata: { authSessionId: authSession.id, authenticationMethod: 'REGISTRATION' },
+        ipAddress,
+        userAgent,
+      });
+
+      return NextResponse.json({
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          firstName: result.user.firstName,
+          lastName: result.user.lastName,
+        },
+        organization: {
+          id: result.organization.id,
+          name: result.organization.name,
+          slug: result.organization.slug,
+        },
+      });
     }
 
-    // Hash password
+    // ----- SELF-SERVICE PATH: email-verification gated, deferred org creation -----
+    // No organization, membership, or session is created here. The organization
+    // is created only when the email is verified (see /api/auth/verify-email).
+    //
+    // Compute the password hash UNCONDITIONALLY, before the existence lookup, so
+    // bcrypt cost (the dominant work) does not vary by whether the email already
+    // exists. This is BEST-EFFORT timing normalization (paired with the response
+    // pad and non-awaited email delivery below), not a strict guarantee: the
+    // new/pending branches still perform a couple of DB writes the verified/
+    // unknown branches skip. Strict account-existence privacy would require
+    // moving issuance onto a durable async workflow.
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create user and organization in transaction (Issue 4b: invitation acceptance inside tx)
-    const result = await db.$transaction(async (tx) => {
-      // Mark invitation as accepted inside transaction (Issue 4b)
-      if (validatedInvitationId) {
-        await tx.invitation.update({
-          where: { id: validatedInvitationId },
-          data: { status: 'ACCEPTED', acceptedAt: new Date() },
-        });
-      }
+    let account = await db.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, emailVerifiedAt: true, firstName: true },
+    });
 
-      // Create user
-      const user = await tx.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          firstName,
-          lastName,
-          title: title || null,
-          relationship: relationship || null,
-          isActive: true,
-        },
-      });
-
-      // If no invite, create a new organization
-      if (!organizationId) {
-        const slug = `org-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        const org = await tx.organization.create({
+    if (!account) {
+      try {
+        const created = await db.user.create({
           data: {
-            name: `${firstName}'s Organization`,
-            slug,
+            email: normalizedEmail,
+            passwordHash,
+            firstName,
+            lastName,
+            title: title || null,
+            relationship: relationship || null,
             isActive: true,
+            emailVerifiedAt: null,
           },
+          select: { id: true, emailVerifiedAt: true, firstName: true },
         });
-        organizationId = org.id;
-        role = 'ADMIN';
+        account = created;
+      } catch (createError) {
+        // Concurrent registration for the same new email: the unique(email)
+        // constraint fires (Prisma P2002) for the loser. Treat it as a normal
+        // race — re-read and fall through to the identical neutral response.
+        // (Returning 500 here would leak account existence: new email => one
+        // 201 + one 500, distinguishable from an existing email => two 201s.)
+        if (
+          createError &&
+          typeof createError === 'object' &&
+          'code' in createError &&
+          (createError as { code?: string }).code === 'P2002'
+        ) {
+          account = await db.user.findUnique({
+            where: { email: normalizedEmail },
+            select: { id: true, emailVerifiedAt: true, firstName: true },
+          });
+        } else {
+          throw createError;
+        }
       }
+    }
 
-      // Add user to organization
-      await tx.userOrganization.create({
+    let pendingUserId: string | null = null;
+    let firstNameForEmail = firstName;
+
+    // Issue a token only for a pending (unverified) account — whether freshly
+    // created, retrying, or observed via the concurrent-create re-read. A
+    // verified account (or a vanished row) issues nothing but returns the same
+    // neutral response.
+    if (account && account.emailVerifiedAt === null) {
+      pendingUserId = account.id;
+      firstNameForEmail = account.firstName;
+    }
+
+    if (pendingUserId) {
+      const { publicToken, storedToken } = createEmailVerificationToken();
+      await db.emailVerificationToken.create({
         data: {
-          userId: user.id,
-          organizationId: organizationId!,
-          role,
-          isActive: true,
+          userId: pendingUserId,
+          token: storedToken,
+          expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
         },
       });
-
-      const organization = await tx.organization.findUnique({
-        where: { id: organizationId! },
-        select: { id: true, name: true, slug: true },
+      // Fire-and-forget: do NOT await email-provider latency inside the response
+      // path — that latency (present only for new/pending branches) would
+      // differentiate timing and leak account existence. Failures are logged;
+      // the resend endpoint is the recovery path.
+      void sendEmailVerificationEmail({
+        to: normalizedEmail,
+        firstName: firstNameForEmail,
+        publicToken,
+      }).catch((sendError) => {
+        console.error('[RegisterAPI] Verification email send failed:', sendError);
       });
+    }
 
-      return { user, organization };
-    });
-
-    const expiresAt = new Date(
-      Date.now() + SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000
-    );
-
-    // Create the session through the constrained runtime function. The
-    // registration transaction above remains on the established bootstrap
-    // path until that wider identity family is converted.
-    const { session: authSession, token: sessionToken } = await createSession(
-      result.user.id,
-      organizationId!,
-      { expiresAt, ipAddress, userAgent }
-    );
-
-    // Set session cookie
-    await setSessionCookie(sessionToken, expiresAt);
-
-    await captureAccessAudit({
-      organizationId: organizationId!,
-      eventType: 'USER_LOGIN',
-      actorType: role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
-      actorId: result.user.id,
-      actorEmail: result.user.email,
-      requestId: reqContext.requestId,
-      description: 'User registered and signed in',
-      metadata: {
-        authSessionId: authSession.id,
-        authenticationMethod: 'REGISTRATION',
-      },
-      ipAddress,
-      userAgent,
-    });
-
-    return NextResponse.json({
-      user: {
-        id: result.user.id,
-        email: result.user.email,
-        firstName: result.user.firstName,
-        lastName: result.user.lastName,
-      },
-      organization: result.organization,
-    });
+    return await neutralVerificationResponse(startedAt);
   } catch (error) {
+    if (error instanceof RateLimitError) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please try again later.' },
+        { status: 429 }
+      );
+    }
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: error.errors[0]?.message || 'Invalid input' },

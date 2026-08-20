@@ -104,6 +104,27 @@ export const rateLimiters = {
       prefix: 'password-reset:ip',
     }),
 
+  registrationByIp: (ip: string) =>
+    assertRateLimit(ip, {
+      limit: RATE_LIMIT_CONFIG.REGISTRATION_ATTEMPTS_PER_IP_PER_HOUR,
+      windowSeconds: 60 * 60,
+      prefix: 'registration:ip',
+    }),
+
+  emailVerificationResendByEmailFingerprint: (fingerprint: string) =>
+    assertRateLimit(fingerprint, {
+      limit: RATE_LIMIT_CONFIG.EMAIL_VERIFICATION_RESEND_PER_EMAIL_PER_HOUR,
+      windowSeconds: 60 * 60,
+      prefix: 'email-verification-resend:email',
+    }),
+
+  emailVerificationResendByIp: (ip: string) =>
+    assertRateLimit(ip, {
+      limit: RATE_LIMIT_CONFIG.EMAIL_VERIFICATION_RESEND_PER_IP_PER_HOUR,
+      windowSeconds: 60 * 60,
+      prefix: 'email-verification-resend:ip',
+    }),
+
   clientDiagnosticsByUser: (userId: string) =>
     assertRateLimit(userId, {
       limit: RATE_LIMIT_CONFIG.CLIENT_DIAGNOSTICS_PER_USER_PER_MINUTE,

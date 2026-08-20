@@ -50,6 +50,7 @@ function RegisterForm() {
   });
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [verificationSent, setVerificationSent] = React.useState(false);
   const [inviteInfo, setInviteInfo] = React.useState<InviteInfo | null>(null);
   const [inviteLoading, setInviteLoading] = React.useState(!!inviteToken);
 
@@ -118,6 +119,15 @@ function RegisterForm() {
         throw new Error(data.error || 'Failed to create account');
       }
 
+      // Self-service registration is email-verification gated: no session is
+      // issued until the email is verified. Show the "check your email" state
+      // instead of redirecting. Invited registrations return a session and
+      // proceed to the app.
+      if (data.status === 'verification_sent') {
+        setVerificationSent(true);
+        return;
+      }
+
       router.push('/rooms');
       router.refresh();
     } catch (err) {
@@ -126,6 +136,49 @@ function RegisterForm() {
       setIsLoading(false);
     }
   };
+
+  if (verificationSent) {
+    return (
+      <div className="text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary-50">
+          <svg
+            className="h-6 w-6 text-primary-600"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+            />
+          </svg>
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-950">Check your email</h1>
+        <p className="mt-3 text-sm text-slate-500">
+          We&apos;ve sent a verification link to{' '}
+          <span className="font-medium text-slate-700">{formData.email}</span>. Click it to finish
+          setting up your account. The link expires in 24 hours.
+        </p>
+        <p className="mt-6 text-sm text-slate-500">
+          Didn&apos;t get it?{' '}
+          <Link
+            href="/auth/resend-verification"
+            className="font-medium text-primary-600 hover:text-primary-700"
+          >
+            Resend verification email
+          </Link>
+        </p>
+        <p className="mt-2 text-sm text-slate-500">
+          <Link href="/auth/login" className="font-medium text-primary-600 hover:text-primary-700">
+            Back to sign in
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
