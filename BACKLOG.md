@@ -2,23 +2,28 @@
 
 Post-MVP enhancements and technical debt items.
 
-## Completed Items & Security Hardening (2026-08-19)
+## Completed Items & Security Hardening (2026-08-20)
 
-**Status:** Completed & Deployed to Staging (`ca-vaultspace-web--0000314`)
+**Status:** Completed & Deployed to Staging (`ca-vaultspace-web--0000317`)
 
-1. **In-App SysOp IP Allowlist & Self-Lockout Guard (`/sysop/security`):**
-   - Built in-app SysOp security management UI and REST control plane (`/api/sysop/security/ip-allowlist`).
-   - Implemented self-lockout guard: mutations to allowlist or global enforcement verify that the acting operator's active IP is included in the resulting allowlist, returning `HTTP 403 ("Lockout prevented")` if unlisted.
-   - Key Vault emergency override `SYSOP_IP_ALLOWLIST_BYPASS=true` supported.
-2. **Session Subnet & User-Agent Binding:**
-   - Applied DDL migration `20260819120000_add_sysop_ip_allowlist_and_session_binding` to the shared database.
-   - Enforces IPv4 `/24` (and IPv6 `/64`) subnet binding and User-Agent fingerprinting across all platform user sessions to prevent session hijacking.
-3. **Infrastructure Target Map Sanitization:**
-   - Redacted raw cloud subscription GUIDs, database host FQDNs, and VM IP addresses from `/api/sysop/overview` responses platform-wide.
-4. **Interactive UX & Focus Retention E2E Test Suite (`tests/e2e/interactive-ux-stress.spec.ts`):**
-   - Created Playwright E2E test suite running real-time keystroke typing (50ms intervals) against inputs, asserting DOM focus retention (`toBeFocused()`) and layout stability throughout asynchronous data re-fetches.
-5. **Room Audit Trail Focus & Layout Fix (`/rooms/[roomId]/audit`):**
-   - Resolved UX lockup caused by early-return skeleton unmounting during search and filtering in `src/app/(admin)/rooms/[roomId]/audit/page.tsx`. Header and filter controls now remain permanently mounted in the React DOM.
+1. **SysOp Interactive Column Sorting & Status Filtering (`/sysop`):**
+   - Added interactive click-to-sort on all Tenant Directory table headers (`Organization Name`, `Slug`, `Rooms`, `Users`, `Storage Usage`, `Status`) with visual sort direction indicators (`ArrowUpDown`, `ArrowUp`, `ArrowDown`).
+   - Added segmented status filter buttons (`All`, `Active`, `Disabled`) with real-time tenant count badges.
+   - Added live search query input filtering tenants by name or slug.
+   - Uncapped `/api/sysop/overview` telemetry query limit to return all platform tenants.
+2. **Organization Lifecycle Sprints Merged (Sprints 1–3):**
+   - **Sprint 1 (Email Verification Gate):** Registration requires email verification before org creation.
+   - **Sprint 2 (SysOp Tenant Management):** In-app tenant disable/enable and bulk-disable for 283 junk orgs.
+   - **Sprint 3 (Per-Tenant Backup & Restore Tooling):** Single-tenant encrypted backup/restore safety net scripts (`npm run ops:backup-org`).
+3. **In-App SysOp IP Allowlist & Self-Lockout Guard (`/sysop/security`):**
+   - SysOp security management UI and REST control plane (`/api/sysop/security/ip-allowlist`) with self-lockout guard.
+4. **Session Subnet & User-Agent Binding:**
+   - Applied DDL migration `20260819120000_add_sysop_ip_allowlist_and_session_binding`.
+   - Enforces IPv4 `/24` (and IPv6 `/64`) subnet binding and User-Agent fingerprinting across user sessions.
+5. **Interactive UX & Focus Retention E2E Test Suite (`tests/e2e/interactive-ux-stress.spec.ts`):**
+   - Playwright E2E test suite running real-time keystroke typing (50ms intervals) asserting DOM focus retention (`toBeFocused()`).
+6. **Room Audit Trail Focus & Layout Fix (`/rooms/[roomId]/audit`):**
+   - Resolved early-return layout unmounting bug in `src/app/(admin)/rooms/[roomId]/audit/page.tsx`.
 
 ---
 
