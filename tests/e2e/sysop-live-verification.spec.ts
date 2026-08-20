@@ -16,7 +16,9 @@ test.describe('Live Staging SysOp Security & IP Allowlist E2E Suite', () => {
     await expect(page.locator('h1')).toContainText('SysOp Security & In-App IP Allowlist');
 
     // 3. Verify Active Client IP recognition
-    const clientIpText = page.locator('p', { hasText: /^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]+$/ });
+    const clientIpText = page.locator('p', {
+      hasText: /^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]+$/,
+    });
     await expect(clientIpText).toBeVisible();
 
     const authorizedBadge = page.locator('text=IP Matched & Authorized');
@@ -33,7 +35,9 @@ test.describe('Live Staging SysOp Security & IP Allowlist E2E Suite', () => {
     await expect(page.locator('td', { hasText: 'Playwright E2E Subnet' })).toBeVisible();
 
     // 5. Test Remove CIDR Entry Flow
-    const removeBtn = page.locator('tr', { hasText: '198.51.100.0/24' }).locator('button', { hasText: 'Remove' });
+    const removeBtn = page
+      .locator('tr', { hasText: '198.51.100.0/24' })
+      .locator('button', { hasText: 'Remove' });
     await removeBtn.click();
     await expect(page.locator('td', { hasText: '198.51.100.0/24' })).not.toBeVisible();
 
