@@ -15,7 +15,9 @@ export interface SecurityAuditInput {
     | 'PLATFORM_OPERATOR_GRANTED'
     | 'PLATFORM_OPERATOR_REVOKED'
     | 'SYSOP_IP_ALLOWLIST_UPDATED'
-    | 'SYSOP_IP_BLOCKED';
+    | 'SYSOP_IP_BLOCKED'
+    | 'ORG_DISABLED'
+    | 'ORG_ENABLED';
   actorType: ActorType;
   actorId?: string | null;
   actorEmail?: string | null;
@@ -46,7 +48,11 @@ function eventData(input: SecurityAuditInput) {
     metadata: {
       ...input.metadata,
       source: 'native',
-      category: 'authentication',
+      // Org lifecycle events are platform operations, not authentication events.
+      category:
+        input.eventType === 'ORG_DISABLED' || input.eventType === 'ORG_ENABLED'
+          ? 'platform_operations'
+          : 'authentication',
       schemaVersion: 1,
       authoritative: true,
     } as Prisma.InputJsonValue,
