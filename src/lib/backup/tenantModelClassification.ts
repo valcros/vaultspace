@@ -92,6 +92,14 @@ export const MODEL_CLASSIFICATION: Record<string, ModelClassification> = {
     kind: 'EXCLUDE',
     reason: 'global provider webhook inbox; not org-scoped tenant data',
   },
+  SysopIpAllowlist: {
+    kind: 'EXCLUDE',
+    reason: 'global SysOp platform allowlist; not single-tenant data',
+  },
+  SysopSecuritySettings: {
+    kind: 'EXCLUDE',
+    reason: 'global SysOp security configuration; not single-tenant data',
+  },
 };
 
 /**
