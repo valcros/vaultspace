@@ -18,8 +18,10 @@ const patchSchema = z.object({ isActive: z.boolean() });
  * immediately: the session resolver INNER JOINs on organization.isActive, so a
  * disabled org's users lose both API and page access on their next request.
  *
- * The write goes through the SECURITY DEFINER function sysop_set_organization_active
- * because bootstrapDb's role cannot UPDATE organizations.isActive directly.
+ * The write is a direct bootstrapDb (DATABASE_URL_ADMIN) update. See the
+ * DEPLOY-VALIDATION note at the update call: this requires the admin role to have
+ * both an UPDATE grant on organizations.isActive AND the RLS ability to update
+ * active AND inactive orgs (BYPASSRLS, or a narrow reviewed UPDATE policy).
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ orgId: string }> }) {
   try {
@@ -56,9 +58,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
       }
     }
 
-    // Direct write via bootstrapDb (the DATABASE_URL_ADMIN role). ⚠️ Requires that
-    // role to hold an UPDATE grant on organizations.isActive and to be able to
-    // reach a disabled org for re-enable — validate at deploy (see migration notes).
+    // Direct write via bootstrapDb (the DATABASE_URL_ADMIN role).
+    // ⚠️ DEPLOY VALIDATION (both are required; verify with a smoke test that disables
+    // then re-enables a disposable org as the exact DATABASE_URL_ADMIN identity):
+    //   1. UPDATE grant on organizations.isActive (column-level is fine); and
+    //   2. RLS ability to update ACTIVE and INACTIVE orgs with no tenant context —
+    //      i.e. BYPASSRLS (rls-startup-guard expects it) OR a narrow reviewed sysop
+    //      UPDATE policy. Without (2), disable/enable is RLS-blocked. If neither holds,
+    //      restore the SECURITY DEFINER function path (recoverable from git history).
     let org: { id: string; name: string; slug: string; isActive: boolean };
     try {
       org = await db.organization.update({
