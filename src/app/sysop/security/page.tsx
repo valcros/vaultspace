@@ -169,7 +169,8 @@ export default function SysOpSecurityPage() {
             SysOp Security & In-App IP Allowlist
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Configure application-level IP allowlisting and self-lockout enforcement for the /sysop control plane.
+            Configure application-level IP allowlisting and self-lockout enforcement for the /sysop
+            control plane.
           </p>
         </div>
 
@@ -215,7 +216,8 @@ export default function SysOpSecurityPage() {
                 Active Client Network Connection
               </CardTitle>
               <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
-                Self-lockout guard validates your active connection before applying enforcement changes.
+                Self-lockout guard validates your active connection before applying enforcement
+                changes.
               </CardDescription>
             </div>
 
@@ -265,7 +267,8 @@ export default function SysOpSecurityPage() {
                 Toggle In-App IP Allowlist Enforcement
               </p>
               <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80">
-                When enabled, non-matching IPs are blocked with HTTP 403. Self-lockout guard prevents enabling if your current IP is missing.
+                When enabled, non-matching IPs are blocked with HTTP 403. Self-lockout guard
+                prevents enabling if your current IP is missing.
               </p>
             </div>
 
@@ -313,7 +316,8 @@ export default function SysOpSecurityPage() {
             </div>
           ) : config?.entries.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              No IP allowlist entries configured. Click &quot;Add IP / CIDR&quot; to authorize an admin network subnet.
+              No IP allowlist entries configured. Click &quot;Add IP / CIDR&quot; to authorize an
+              admin network subnet.
             </div>
           ) : (
             <div className="overflow-x-auto">
