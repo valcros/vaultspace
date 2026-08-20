@@ -37,6 +37,8 @@ import {
   assertRestoreOrderComplete,
   backupModelNames,
   userReferenceFields,
+  bigIntFieldNames,
+  stringifyBigintFields,
 } from '../src/lib/backup/tenantModelClassification';
 import { encryptArchiveFile } from '../src/lib/backup/archiveCrypto';
 
@@ -79,22 +81,6 @@ function collectUserIds(
       if (typeof val === 'string' && val) into.add(val);
     }
   }
-}
-
-/**
- * Deep-convert BigInt values to strings BEFORE JSON serialization. The global
- * bigint serializer emits Number (lossy above 2^53); this preserves exact values,
- * and restore revives them via the DMMF BigInt field list.
- */
-function bigIntSafe(value: unknown): unknown {
-  if (typeof value === 'bigint') return value.toString();
-  if (Array.isArray(value)) return value.map(bigIntSafe);
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = bigIntSafe(v);
-    return out;
-  }
-  return value;
 }
 
 async function main(): Promise<void> {
@@ -185,10 +171,12 @@ async function main(): Promise<void> {
     { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 120_000 }
   );
 
-  // Write per-table JSONL (BigInt-safe: exact values, not lossy Number).
-  const writeTable = (name: string, rows: unknown[]) => {
+  // Write per-table JSONL (BigInt columns → exact strings, not lossy Number).
+  const writeTable = (name: string, rows: Record<string, unknown>[]) => {
+    const bigints = bigIntFieldNames(name === 'users_referenced' ? 'User' : name);
     const jsonl =
-      rows.map((r) => JSON.stringify(bigIntSafe(r))).join('\n') + (rows.length ? '\n' : '');
+      rows.map((r) => JSON.stringify(stringifyBigintFields(r, bigints))).join('\n') +
+      (rows.length ? '\n' : '');
     const file = join(dbDir, `${name}.jsonl`);
     writeFileSync(file, jsonl);
     manifest.tables[name] = { rows: rows.length, sha256: sha256(jsonl) };

@@ -9,6 +9,7 @@ import {
   backupModelNames,
   userReferenceFields,
   bigIntFieldNames,
+  stringifyBigintFields,
 } from './tenantModelClassification';
 
 describe('tenant model classification (completeness drift guard)', () => {
@@ -101,6 +102,30 @@ describe('tenant model classification (completeness drift guard)', () => {
 
   it('bigIntFieldNames reports BigInt columns (e.g. Organization.maxStorageBytes)', () => {
     expect(bigIntFieldNames('Organization')).toContain('maxStorageBytes');
+  });
+
+  it('stringifyBigintFields converts BigInt losslessly and PRESERVES Date/other fields', () => {
+    const createdAt = new Date('2026-08-19T12:00:00.000Z');
+    const huge = BigInt('9007199254740993'); // > Number.MAX_SAFE_INTEGER (would lose precision as Number)
+    const row = {
+      id: 'x',
+      maxStorageBytes: huge,
+      createdAt,
+      name: "Alice's Org",
+      nested: { a: 1 },
+    };
+
+    const out = stringifyBigintFields(row, ['maxStorageBytes']);
+    // BigInt → exact string (not lossy Number)
+    expect(out['maxStorageBytes']).toBe('9007199254740993');
+    // Date and everything else untouched (the recursive-walk regression is gone)
+    expect(out['createdAt']).toBe(createdAt);
+    expect(out['createdAt']).toBeInstanceOf(Date);
+    expect(out['nested']).toBe(row.nested);
+    // Round-trips through JSON with the ISO date preserved
+    const json = JSON.parse(JSON.stringify(out));
+    expect(json.createdAt).toBe('2026-08-19T12:00:00.000Z');
+    expect(json.maxStorageBytes).toBe('9007199254740993');
   });
 
   it('backup set excludes Session and the transient token tables', () => {

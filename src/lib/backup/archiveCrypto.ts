@@ -18,8 +18,8 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
-import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'fs';
-import { join, resolve, sep } from 'path';
+import { readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { dirname, join, resolve, sep } from 'path';
 
 const ALG = 'aes-256-gcm';
 const KEY_BYTES = 32;
@@ -131,11 +131,18 @@ export async function decryptArchive(archiveDir: string): Promise<void> {
   const dek = open(kek, manifest.wrappedDek);
 
   const root = resolve(archiveDir);
+  const realRoot = realpathSync(archiveDir);
   for (const rel of manifest.files) {
     // Reject path traversal: a tampered manifest must not write outside the archive.
     const encPath = resolve(archiveDir, rel);
     if (!encPath.startsWith(root + sep) && encPath !== root) {
       throw new BackupCryptoError(`Refusing manifest path outside the archive: ${rel}`);
+    }
+    // Symlink-safe: the real directory of the target must stay inside the archive
+    // (a lexical `nested/x` can escape if `nested` is a symlink out of the archive).
+    const realDir = realpathSync(dirname(encPath));
+    if (realDir !== realRoot && !realDir.startsWith(realRoot + sep)) {
+      throw new BackupCryptoError(`Refusing symlinked path outside the archive: ${rel}`);
     }
     const sealed = JSON.parse(readFileSync(encPath, 'utf8')) as SealedBlob;
     const plaintext = open(dek, sealed); // throws on tamper (bad auth tag)
