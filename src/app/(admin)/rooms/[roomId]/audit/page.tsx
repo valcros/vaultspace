@@ -219,26 +219,6 @@ export default function RoomAuditPage() {
     return 'default';
   };
 
-  if (isLoading && page === 1) {
-    return (
-      <div className="p-6">
-        <Skeleton className="mb-4 h-8 w-64" />
-        <Skeleton className="mb-8 h-4 w-96" />
-        <div className="space-y-4">
-          {[...Array(10)].map((_, i) => (
-            <div key={i} className="flex items-start gap-4 rounded-lg border p-4">
-              <Skeleton className="h-10 w-10 rounded-full" />
-              <div className="flex-1">
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="mt-2 h-3 w-1/2" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
       <PageHeader
@@ -246,7 +226,7 @@ export default function RoomAuditPage() {
         description="Complete history of all room activity"
         breadcrumbs={[
           { label: 'Rooms', href: '/rooms' },
-          { label: roomName, href: `/rooms/${roomId}` },
+          { label: roomName || 'Room', href: `/rooms/${roomId}` },
           { label: 'Audit' },
         ]}
         actions={
@@ -322,7 +302,19 @@ export default function RoomAuditPage() {
         )}
 
         {/* Audit Events */}
-        {!auditData || auditData.events.length === 0 ? (
+        {isLoading && !auditData ? (
+          <div className="space-y-4">
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="flex items-start gap-4 rounded-lg border p-4">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="flex-1">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="mt-2 h-3 w-1/2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !auditData || auditData.events.length === 0 ? (
           <Card className="p-12 text-center">
             <Activity className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
             <h3 className="mb-2 text-lg font-semibold text-neutral-900">No audit events</h3>
@@ -331,7 +323,7 @@ export default function RoomAuditPage() {
             </p>
           </Card>
         ) : (
-          <>
+          <div className={isLoading ? 'opacity-60 transition-opacity' : ''}>
             <div className="space-y-2">
               {auditData.events.map((event) => {
                 const Icon = eventIcons[event.eventType] || Activity;
@@ -426,7 +418,7 @@ export default function RoomAuditPage() {
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </>
