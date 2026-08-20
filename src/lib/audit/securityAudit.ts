@@ -13,7 +13,9 @@ export interface SecurityAuditInput {
     | 'USER_PASSWORD_RESET'
     | 'SYSOP_ACCESSED'
     | 'PLATFORM_OPERATOR_GRANTED'
-    | 'PLATFORM_OPERATOR_REVOKED';
+    | 'PLATFORM_OPERATOR_REVOKED'
+    | 'SYSOP_IP_ALLOWLIST_UPDATED'
+    | 'SYSOP_IP_BLOCKED';
   actorType: ActorType;
   actorId?: string | null;
   actorEmail?: string | null;

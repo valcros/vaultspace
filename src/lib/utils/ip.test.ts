@@ -5,7 +5,45 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ipMatchesCidr, isIpAllowed, isValidIpOrCidr, getClientIp } from './ip';
+import { ipMatchesCidr, isIpAllowed, isValidIpOrCidr, getClientIp, getIpSubnet, hashUserAgent } from './ip';
+
+describe('getIpSubnet', () => {
+  it('extracts /24 subnet for IPv4 address', () => {
+    expect(getIpSubnet('192.168.1.100')).toBe('192.168.1.0/24');
+    expect(getIpSubnet('10.0.5.42')).toBe('10.0.5.0/24');
+  });
+
+  it('extracts /64 prefix for IPv6 address', () => {
+    expect(getIpSubnet('2001:db8:85a3:8d3d:8a2e:370:7334')).toBe('2001:db8:85a3:8d3d::/64');
+  });
+
+  it('returns null for empty or invalid IP', () => {
+    expect(getIpSubnet(null)).toBe(null);
+    expect(getIpSubnet(undefined)).toBe(null);
+    expect(getIpSubnet('invalid')).toBe(null);
+  });
+});
+
+describe('hashUserAgent', () => {
+  it('computes deterministic hash for user agent', () => {
+    const ua1 = hashUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
+    const ua2 = hashUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
+    expect(ua1).toBe(ua2);
+    expect(ua1).toMatch(/^ua_[0-9a-f]+$/);
+  });
+
+  it('returns distinct hashes for different user agents', () => {
+    const ua1 = hashUserAgent('Mozilla/5.0 (Macintosh)');
+    const ua2 = hashUserAgent('Mozilla/5.0 (Windows NT 10.0)');
+    expect(ua1).not.toBe(ua2);
+  });
+
+  it('returns null for empty or invalid input', () => {
+    expect(hashUserAgent(null)).toBe(null);
+    expect(hashUserAgent(undefined)).toBe(null);
+    expect(hashUserAgent('')).toBe(null);
+  });
+});
 
 describe('ipMatchesCidr', () => {
   describe('exact IP matching', () => {
