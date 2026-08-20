@@ -2,12 +2,32 @@
 
 Post-MVP enhancements and technical debt items.
 
+## Completed Items & Security Hardening (2026-08-19)
+
+**Status:** Completed & Deployed to Staging (`ca-vaultspace-web--0000314`)
+
+1. **In-App SysOp IP Allowlist & Self-Lockout Guard (`/sysop/security`):**
+   - Built in-app SysOp security management UI and REST control plane (`/api/sysop/security/ip-allowlist`).
+   - Implemented self-lockout guard: mutations to allowlist or global enforcement verify that the acting operator's active IP is included in the resulting allowlist, returning `HTTP 403 ("Lockout prevented")` if unlisted.
+   - Key Vault emergency override `SYSOP_IP_ALLOWLIST_BYPASS=true` supported.
+2. **Session Subnet & User-Agent Binding:**
+   - Applied DDL migration `20260819120000_add_sysop_ip_allowlist_and_session_binding` to the shared database.
+   - Enforces IPv4 `/24` (and IPv6 `/64`) subnet binding and User-Agent fingerprinting across all platform user sessions to prevent session hijacking.
+3. **Infrastructure Target Map Sanitization:**
+   - Redacted raw cloud subscription GUIDs, database host FQDNs, and VM IP addresses from `/api/sysop/overview` responses platform-wide.
+4. **Interactive UX & Focus Retention E2E Test Suite (`tests/e2e/interactive-ux-stress.spec.ts`):**
+   - Created Playwright E2E test suite running real-time keystroke typing (50ms intervals) against inputs, asserting DOM focus retention (`toBeFocused()`) and layout stability throughout asynchronous data re-fetches.
+5. **Room Audit Trail Focus & Layout Fix (`/rooms/[roomId]/audit`):**
+   - Resolved UX lockup caused by early-return skeleton unmounting during search and filtering in `src/app/(admin)/rooms/[roomId]/audit/page.tsx`. Header and filter controls now remain permanently mounted in the React DOM.
+
+---
+
 ## High Priority
 
 ### MVP Launch Closeout (Active)
 
 **Status:** In progress
-**Updated:** 2026-06-30
+**Updated:** 2026-08-19
 
 Current active work before MVP launch readiness:
 
