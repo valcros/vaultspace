@@ -41,6 +41,8 @@
     "db:studio": "DEPLOYMENT_MODE=standalone prisma studio",
     "db:backup": "tsx scripts/backup.ts",
     "db:restore": "tsx scripts/restore.ts",
+    "ops:backup-org": "tsx scripts/backup-org.ts",
+    "ops:restore-org": "tsx scripts/restore-org.ts",
     "gdpr:export": "tsx scripts/gdpr-export.ts",
     "ops:grant-operator": "tsx scripts/grant-platform-operator.ts",
     "rls:audit": "tsx scripts/rls-audit.ts",
