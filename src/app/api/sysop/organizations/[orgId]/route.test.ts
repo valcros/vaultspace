@@ -1,6 +1,6 @@
 /**
  * SysOp organization PATCH (enable/disable) tests.
- * Behavioral authorization contract + self-lockout guard + audit scoping.
+ * Behavioral authorization contract + self-lockout + keep-list + audit scoping.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -10,7 +10,7 @@ import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 
 const mockRequireOperator = vi.fn();
 const mockCaptureAudit = vi.fn().mockResolvedValue('captured');
-const mockQueryRaw = vi.fn();
+const mockOrgUpdate = vi.fn();
 const mockUserOrgFindFirst = vi.fn();
 const mockOrgFindMany = vi.fn();
 
@@ -25,9 +25,11 @@ vi.mock('@/lib/audit/securityAudit', () => ({
 
 vi.mock('@/lib/db', () => {
   const client = {
-    $queryRaw: (...a: unknown[]) => mockQueryRaw(...a),
     userOrganization: { findFirst: (...a: unknown[]) => mockUserOrgFindFirst(...a) },
-    organization: { findMany: (...a: unknown[]) => mockOrgFindMany(...a) },
+    organization: {
+      findMany: (...a: unknown[]) => mockOrgFindMany(...a),
+      update: (...a: unknown[]) => mockOrgUpdate(...a),
+    },
   };
   return { db: client, bootstrapDb: client };
 });
@@ -55,9 +57,12 @@ describe('PATCH /api/sysop/organizations/[orgId]', () => {
     mockUserOrgFindFirst.mockResolvedValue(null);
     mockOrgFindMany.mockResolvedValue([]); // no protected org matches by default
     mockCaptureAudit.mockResolvedValue('captured');
-    mockQueryRaw.mockResolvedValue([
-      { org_id: 'org-x', org_name: 'Junk Org', org_slug: 'org-x', is_active: false },
-    ]);
+    mockOrgUpdate.mockResolvedValue({
+      id: 'org-x',
+      name: 'Junk Org',
+      slug: 'org-x',
+      isActive: false,
+    });
   });
 
   it('unauthenticated → 401', async () => {
@@ -72,11 +77,11 @@ describe('PATCH /api/sysop/organizations/[orgId]', () => {
     expect(res.status).toBe(403);
   });
 
-  it('operator disable → 200, function called, ORG_DISABLED audited under operator org', async () => {
+  it('operator disable → 200, update called, ORG_DISABLED audited under operator org', async () => {
     const res = await PATCH(makeRequest({ isActive: false }), params);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ id: 'org-x', isActive: false });
-    expect(mockQueryRaw).toHaveBeenCalledOnce();
+    expect(mockOrgUpdate).toHaveBeenCalledOnce();
     expect(mockCaptureAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: 'op-org',
@@ -87,9 +92,7 @@ describe('PATCH /api/sysop/organizations/[orgId]', () => {
   });
 
   it('operator enable → 200, ORG_ENABLED', async () => {
-    mockQueryRaw.mockResolvedValue([
-      { org_id: 'org-x', org_name: 'Org', org_slug: 'org-x', is_active: true },
-    ]);
+    mockOrgUpdate.mockResolvedValue({ id: 'org-x', name: 'Org', slug: 'org-x', isActive: true });
     const res = await PATCH(makeRequest({ isActive: true }), params);
     expect(res.status).toBe(200);
     expect(mockCaptureAudit).toHaveBeenCalledWith(
@@ -101,20 +104,20 @@ describe('PATCH /api/sysop/organizations/[orgId]', () => {
     mockUserOrgFindFirst.mockResolvedValue({ id: 'membership-1' });
     const res = await PATCH(makeRequest({ isActive: false }), params);
     expect(res.status).toBe(409);
-    expect(mockQueryRaw).not.toHaveBeenCalled();
-  });
-
-  it('org not found (function returns no row) → 404', async () => {
-    mockQueryRaw.mockResolvedValue([]);
-    const res = await PATCH(makeRequest({ isActive: false }), params);
-    expect(res.status).toBe(404);
+    expect(mockOrgUpdate).not.toHaveBeenCalled();
   });
 
   it('protected org (keep-list) → 409, no write', async () => {
     mockOrgFindMany.mockResolvedValue([{ id: 'org-x' }]); // target is protected
     const res = await PATCH(makeRequest({ isActive: false }), params);
     expect(res.status).toBe(409);
-    expect(mockQueryRaw).not.toHaveBeenCalled();
+    expect(mockOrgUpdate).not.toHaveBeenCalled();
+  });
+
+  it('org not found (update throws P2025) → 404', async () => {
+    mockOrgUpdate.mockRejectedValue(Object.assign(new Error('not found'), { code: 'P2025' }));
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(404);
   });
 
   it('audit write failure → 500 (audit is authoritative)', async () => {

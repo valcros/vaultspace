@@ -10,7 +10,7 @@ import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 
 const mockRequireOperator = vi.fn();
 const mockCaptureAudit = vi.fn().mockResolvedValue('captured');
-const mockQueryRaw = vi.fn();
+const mockOrgUpdate = vi.fn();
 const mockOrgFindMany = vi.fn();
 const mockUserOrgFindMany = vi.fn();
 
@@ -23,8 +23,10 @@ vi.mock('@/lib/audit/securityAudit', () => ({
 }));
 vi.mock('@/lib/db', () => {
   const client = {
-    $queryRaw: (...a: unknown[]) => mockQueryRaw(...a),
-    organization: { findMany: (...a: unknown[]) => mockOrgFindMany(...a) },
+    organization: {
+      findMany: (...a: unknown[]) => mockOrgFindMany(...a),
+      update: (...a: unknown[]) => mockOrgUpdate(...a),
+    },
     userOrganization: { findMany: (...a: unknown[]) => mockUserOrgFindMany(...a) },
   };
   return { db: client, bootstrapDb: client };
@@ -64,7 +66,7 @@ describe('POST /api/sysop/organizations/bulk-disable', () => {
       return Promise.resolve(candidates);
     });
     mockUserOrgFindMany.mockResolvedValue([{ organizationId: 'op-org' }]);
-    mockQueryRaw.mockResolvedValue([{ org_slug: 'org-1-a', org_name: 'gibberish' }]);
+    mockOrgUpdate.mockResolvedValue({ slug: 'org-1-a', name: 'gibberish' });
   });
 
   it('unauthenticated → 401', async () => {
@@ -88,13 +90,13 @@ describe('POST /api/sysop/organizations/bulk-disable', () => {
     expect(ids).not.toContain('keep-brightside');
     expect(ids).not.toContain('op-org');
     expect(ids).not.toContain('too-many-users');
-    expect(mockQueryRaw).not.toHaveBeenCalled();
+    expect(mockOrgUpdate).not.toHaveBeenCalled();
   });
 
   it('execute without confirmIds → 400', async () => {
     const res = await POST(makeRequest({ dryRun: false }));
     expect(res.status).toBe(400);
-    expect(mockQueryRaw).not.toHaveBeenCalled();
+    expect(mockOrgUpdate).not.toHaveBeenCalled();
   });
 
   it('execute disables only confirmIds ∩ eligible; skips the rest', async () => {
@@ -106,7 +108,7 @@ describe('POST /api/sysop/organizations/bulk-disable', () => {
     const body = await res.json();
     expect(body.disabled).toEqual(['junk-1']);
     expect(body.skipped).toEqual(expect.arrayContaining(['keep-brightside', 'stale-id']));
-    expect(mockQueryRaw).toHaveBeenCalledOnce(); // only junk-1 written
+    expect(mockOrgUpdate).toHaveBeenCalledOnce(); // only junk-1 written
     expect(mockCaptureAudit).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'ORG_DISABLED', organizationId: 'op-org' })
     );

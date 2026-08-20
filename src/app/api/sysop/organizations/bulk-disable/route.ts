@@ -85,13 +85,11 @@ export async function POST(request: NextRequest) {
       const batch = toDisable.slice(i, i + BATCH_SIZE);
       for (const id of batch) {
         try {
-          const rows = await db.$queryRaw<Array<{ org_slug: string; org_name: string }>>`
-            SELECT org_slug, org_name FROM public.sysop_set_organization_active(${id}, ${false})
-          `;
-          if (rows.length === 0) {
-            failed.push(id);
-            continue;
-          }
+          const updated = await db.organization.update({
+            where: { id },
+            data: { isActive: false },
+            select: { slug: true, name: true },
+          });
           disabled.push(id);
           const outcome = await captureSecurityAudit({
             organizationId: session.organizationId,
@@ -103,8 +101,8 @@ export async function POST(request: NextRequest) {
             description: 'Organization disabled via bulk cleanup by platform operator',
             metadata: {
               targetOrgId: id,
-              targetOrgSlug: rows[0]!.org_slug,
-              targetOrgName: rows[0]!.org_name,
+              targetOrgSlug: updated.slug,
+              targetOrgName: updated.name,
               bulk: true,
             },
           });
