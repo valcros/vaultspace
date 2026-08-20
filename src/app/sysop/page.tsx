@@ -12,6 +12,10 @@ import {
   RefreshCw,
   Sliders,
   CheckCircle2,
+  Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -61,6 +65,9 @@ interface SysOpOverviewData {
   }>;
 }
 
+type SortField = 'name' | 'slug' | 'roomCount' | 'userCount' | 'usagePercentage' | 'isActive';
+type StatusFilter = 'all' | 'active' | 'disabled';
+
 export default function SysOpOverviewPage() {
   const [data, setData] = React.useState<SysOpOverviewData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -77,6 +84,78 @@ export default function SysOpOverviewPage() {
   } | null>(null);
   const [bulkBusy, setBulkBusy] = React.useState(false);
   const [bulkResult, setBulkResult] = React.useState<string | null>(null);
+
+  // Sorting & Filtering State
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
+  const [sortField, setSortField] = React.useState<SortField>('name');
+  const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const activeCount = React.useMemo(
+    () => data?.organizations.filter((o) => o.isActive !== false).length ?? 0,
+    [data?.organizations]
+  );
+  const disabledCount = React.useMemo(
+    () => data?.organizations.filter((o) => o.isActive === false).length ?? 0,
+    [data?.organizations]
+  );
+
+  const filteredAndSortedOrgs = React.useMemo(() => {
+    if (!data?.organizations) {
+      return [];
+    }
+    let list = [...data.organizations];
+
+    // Status filter
+    if (statusFilter === 'active') {
+      list = list.filter((o) => o.isActive !== false);
+    } else if (statusFilter === 'disabled') {
+      list = list.filter((o) => o.isActive === false);
+    }
+
+    // Search query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (o) => o.name.toLowerCase().includes(q) || o.slug.toLowerCase().includes(q)
+      );
+    }
+
+    // Sorting
+    list.sort((a, b) => {
+      let valA: string | number = (a[sortField] as string | number | undefined) ?? 0;
+      let valB: string | number = (b[sortField] as string | number | undefined) ?? 0;
+
+      if (sortField === 'isActive') {
+        valA = a.isActive !== false ? 1 : 0;
+        valB = b.isActive !== false ? 1 : 0;
+      }
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const cmp = valA.localeCompare(valB);
+        return sortDirection === 'asc' ? cmp : -cmp;
+      }
+
+      if (valA < valB) {
+        return sortDirection === 'asc' ? -1 : 1;
+      }
+      if (valA > valB) {
+        return sortDirection === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+
+    return list;
+  }, [data?.organizations, statusFilter, searchQuery, sortField, sortDirection]);
 
   const fetchOverview = React.useCallback(async () => {
     setLoading(true);
@@ -513,21 +592,156 @@ export default function SysOpOverviewPage() {
               <Skeleton className="h-10 w-full bg-slate-200 dark:bg-slate-800" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
-                <thead className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                  <tr>
-                    <th className="px-3 py-2.5">Organization Name</th>
-                    <th className="px-3 py-2.5">Slug</th>
-                    <th className="px-3 py-2.5">Rooms</th>
-                    <th className="px-3 py-2.5">Users</th>
-                    <th className="px-3 py-2.5">Storage Usage</th>
-                    <th className="px-3 py-2.5">Quota Status</th>
-                    <th className="px-3 py-2.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
-                  {data?.organizations.map((org) => (
+            <div className="space-y-4">
+              {/* Search and Status Filter Controls */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-3 dark:border-slate-800">
+                <div className="relative max-w-sm flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    type="text"
+                    placeholder="Search tenants by name or slug..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-9 pl-9 text-xs"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 rounded-lg bg-slate-100 p-1 dark:bg-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      statusFilter === 'all'
+                        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                  >
+                    All ({data?.organizations.length ?? 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('active')}
+                    className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      statusFilter === 'active'
+                        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                  >
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    Active ({activeCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('disabled')}
+                    className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      statusFilter === 'disabled'
+                        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                  >
+                    <span className="h-2 w-2 rounded-full bg-rose-500" />
+                    Disabled ({disabledCount})
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+                  <thead className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                    <tr>
+                      <th
+                        onClick={() => handleSort('name')}
+                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                      >
+                        Organization Name{' '}
+                        {sortField !== 'name' ? (
+                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                        ) : sortDirection === 'asc' ? (
+                          <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <ArrowDown className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </th>
+                      <th
+                        onClick={() => handleSort('slug')}
+                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                      >
+                        Slug{' '}
+                        {sortField !== 'slug' ? (
+                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                        ) : sortDirection === 'asc' ? (
+                          <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <ArrowDown className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </th>
+                      <th
+                        onClick={() => handleSort('roomCount')}
+                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                      >
+                        Rooms{' '}
+                        {sortField !== 'roomCount' ? (
+                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                        ) : sortDirection === 'asc' ? (
+                          <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <ArrowDown className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </th>
+                      <th
+                        onClick={() => handleSort('userCount')}
+                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                      >
+                        Users{' '}
+                        {sortField !== 'userCount' ? (
+                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                        ) : sortDirection === 'asc' ? (
+                          <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <ArrowDown className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </th>
+                      <th
+                        onClick={() => handleSort('usagePercentage')}
+                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                      >
+                        Storage Usage{' '}
+                        {sortField !== 'usagePercentage' ? (
+                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                        ) : sortDirection === 'asc' ? (
+                          <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <ArrowDown className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </th>
+                      <th
+                        onClick={() => handleSort('isActive')}
+                        className="group cursor-pointer px-3 py-2.5 select-none hover:text-slate-900 dark:hover:text-white"
+                      >
+                        Status{' '}
+                        {sortField !== 'isActive' ? (
+                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                        ) : sortDirection === 'asc' ? (
+                          <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <ArrowDown className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </th>
+                      <th className="px-3 py-2.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
+                    {filteredAndSortedOrgs.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="py-8 text-center text-xs text-slate-500 dark:text-slate-400"
+                        >
+                          No tenant organizations match the selected filter or search query.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredAndSortedOrgs.map((org) => (
                     <tr
                       key={org.id}
                       className="transition-colors hover:bg-slate-100/60 dark:hover:bg-slate-800/40"
@@ -615,12 +829,14 @@ export default function SysOpOverviewPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </CardContent>
       </Card>
 
       {/* Adjust Quota Dialog Modal */}

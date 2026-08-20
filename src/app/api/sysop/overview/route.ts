@@ -41,7 +41,7 @@ export async function GET() {
             },
           },
         },
-        take: 25,
+        orderBy: { name: 'asc' },
       }),
     ]);
 
