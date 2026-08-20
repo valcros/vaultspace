@@ -215,6 +215,27 @@ export function bigIntFieldNames(modelName: string): string[] {
   return (model?.fields ?? []).filter((f) => f.type === 'BigInt').map((f) => f.name);
 }
 
+/**
+ * Convert ONLY the named (DMMF BigInt) top-level fields to strings for lossless
+ * JSON serialization. Narrow BY DESIGN — a recursive walk would corrupt Date,
+ * Buffer, Decimal, and JSON-column values. Restore revives the same fields.
+ */
+export function stringifyBigintFields(
+  row: Record<string, unknown>,
+  bigIntFields: string[]
+): Record<string, unknown> {
+  if (bigIntFields.length === 0) {
+    return row;
+  }
+  const out = { ...row };
+  for (const f of bigIntFields) {
+    if (typeof out[f] === 'bigint') {
+      out[f] = (out[f] as bigint).toString();
+    }
+  }
+  return out;
+}
+
 /** The models that must be exported for a tenant (TENANT + PARENT_SCOPED). */
 export function backupModelNames(): string[] {
   return Object.entries(MODEL_CLASSIFICATION)

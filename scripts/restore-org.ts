@@ -211,17 +211,12 @@ async function main(): Promise<void> {
     if (sha256(data) !== obj.sha256) {
       throw new Error(`Blob checksum mismatch: ${obj.bucket}/${obj.key}`);
     }
-    let exists = false;
-    try {
-      await storage.get(obj.bucket, obj.key);
-      exists = true;
-    } catch {
-      exists = false; // not found — safe to write
-    }
-    if (exists && !args.force) {
+    // Never overwrite an existing object — that would clobber another tenant's
+    // blob. This is a hard safety contract, enforced even under --force.
+    if (await storage.exists(obj.bucket, obj.key)) {
       throw new Error(
-        `Storage key already exists (would overwrite): ${obj.bucket}/${obj.key}. ` +
-          `Restore is for absent orgs.`
+        `Storage key already exists — refusing to overwrite (would clobber another ` +
+          `tenant's blob): ${obj.bucket}/${obj.key}. Restore is for absent orgs.`
       );
     }
     await storage.put(obj.bucket, obj.key, data);
