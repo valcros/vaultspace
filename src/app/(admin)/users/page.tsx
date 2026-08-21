@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -86,12 +87,19 @@ interface ViewerLinkInvite {
   expiresAt: string | null;
 }
 
+interface AssignableRoom {
+  id: string;
+  name: string;
+  description: string | null;
+}
+
 export default function UsersPage() {
   useRequireAdmin();
   const { toast } = useToast();
   const [users, setUsers] = React.useState<User[]>([]);
   const [pendingInvites, setPendingInvites] = React.useState<PendingInvite[]>([]);
   const [viewerLinkInvites, setViewerLinkInvites] = React.useState<ViewerLinkInvite[]>([]);
+  const [assignableRooms, setAssignableRooms] = React.useState<AssignableRoom[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showInviteDialog, setShowInviteDialog] = React.useState(false);
@@ -101,9 +109,14 @@ export default function UsersPage() {
     onConfirm: () => Promise<void>;
   } | null>(null);
   const [isInviting, setIsInviting] = React.useState(false);
-  const [inviteData, setInviteData] = React.useState<{ email: string; role: 'ADMIN' | 'VIEWER' }>({
+  const [inviteData, setInviteData] = React.useState<{
+    email: string;
+    role: 'ADMIN' | 'VIEWER';
+    roomIds: string[];
+  }>({
     email: '',
     role: 'VIEWER',
+    roomIds: [],
   });
   const [inviteError, setInviteError] = React.useState<string | null>(null);
   // Compose-email dialog: sends via the VaultSpace platform (org sender), not
@@ -127,6 +140,7 @@ export default function UsersPage() {
 
   React.useEffect(() => {
     fetchUsers();
+    fetchAssignableRooms();
   }, []);
 
   const fetchUsers = async () => {
@@ -147,8 +161,26 @@ export default function UsersPage() {
     }
   };
 
+  const fetchAssignableRooms = async () => {
+    try {
+      const response = await fetch('/api/rooms?status=ACTIVE&limit=100', {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setAssignableRooms(data.rooms || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch active rooms:', error);
+    }
+  };
+
   const handleInvite = async () => {
     if (!inviteData.email.trim()) {
+      return;
+    }
+    if (inviteData.role === 'VIEWER' && inviteData.roomIds.length === 0) {
+      setInviteError('Select at least one active data room for this viewer.');
       return;
     }
 
@@ -166,7 +198,7 @@ export default function UsersPage() {
 
       if (response.ok) {
         setShowInviteDialog(false);
-        setInviteData({ email: '', role: 'VIEWER' });
+        setInviteData({ email: '', role: 'VIEWER', roomIds: [] });
         setInviteError(null);
         fetchUsers();
       } else {
@@ -921,7 +953,11 @@ export default function UsersPage() {
               <Select
                 value={inviteData.role}
                 onValueChange={(value) =>
-                  setInviteData({ ...inviteData, role: value as 'ADMIN' | 'VIEWER' })
+                  setInviteData({
+                    ...inviteData,
+                    role: value as 'ADMIN' | 'VIEWER',
+                    roomIds: value === 'ADMIN' ? [] : inviteData.roomIds,
+                  })
                 }
               >
                 <SelectTrigger>
@@ -943,12 +979,67 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {inviteData.role === 'VIEWER' && (
+              <div className="space-y-2">
+                <Label>Assigned Data Rooms</Label>
+                <p className="text-xs text-neutral-500">
+                  Viewers can access only the rooms selected here.
+                </p>
+                {assignableRooms.length === 0 ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    No active data rooms are available. Create or activate a room before inviting a
+                    viewer.
+                  </div>
+                ) : (
+                  <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-neutral-200 p-3">
+                    {assignableRooms.map((room) => {
+                      const checked = inviteData.roomIds.includes(room.id);
+                      return (
+                        <div key={room.id} className="flex items-start gap-3">
+                          <Checkbox
+                            id={`invite-room-${room.id}`}
+                            checked={checked}
+                            onCheckedChange={(nextChecked) => {
+                              setInviteData((current) => ({
+                                ...current,
+                                roomIds: nextChecked
+                                  ? [...current.roomIds, room.id]
+                                  : current.roomIds.filter((id) => id !== room.id),
+                              }));
+                              setInviteError(null);
+                            }}
+                          />
+                          <label
+                            htmlFor={`invite-room-${room.id}`}
+                            className="cursor-pointer text-sm leading-5 text-neutral-700"
+                          >
+                            <span className="font-medium">{room.name}</span>
+                            {room.description && (
+                              <span className="block text-xs text-neutral-500">
+                                {room.description}
+                              </span>
+                            )}
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleInvite} loading={isInviting} disabled={!inviteData.email.trim()}>
+            <Button
+              onClick={handleInvite}
+              loading={isInviting}
+              disabled={
+                !inviteData.email.trim() ||
+                (inviteData.role === 'VIEWER' && inviteData.roomIds.length === 0)
+              }
+            >
               Send Invitation
             </Button>
           </DialogFooter>

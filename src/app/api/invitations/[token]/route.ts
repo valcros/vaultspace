@@ -32,6 +32,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             slug: true,
           },
         },
+        _count: {
+          select: { roomAssignments: true },
+        },
       },
     });
 
@@ -47,10 +50,21 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Invitation expired' }, { status: 410 });
     }
 
+    // Do not let a legacy viewer invitation reach the registration form. It
+    // predates explicit room assignment and would otherwise create an account
+    // with no discoverable rooms.
+    if (invitation.role === 'VIEWER' && invitation._count.roomAssignments === 0) {
+      return NextResponse.json(
+        { error: 'This viewer invitation must be reissued with room access' },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json({
       email: invitation.email,
       role: invitation.role,
       organizationName: invitation.organization.name,
+      roomCount: invitation._count.roomAssignments,
     });
   } catch (error) {
     console.error('[InvitationAPI] Error:', error);
