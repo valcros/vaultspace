@@ -63,6 +63,10 @@ interface User {
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+  archivedAt?: string | null;
+  archivedByUserId?: string | null;
+  archiveReason?: string | null;
+  lifecycleStatus?: 'ACTIVE' | 'ARCHIVED_MEMBERSHIP' | 'DEACTIVATED_ACCOUNT';
 }
 
 interface PendingInvite {
@@ -97,6 +101,9 @@ export default function UsersPage() {
   useRequireAdmin();
   const { toast } = useToast();
   const [users, setUsers] = React.useState<User[]>([]);
+  const [archivedUsers, setArchivedUsers] = React.useState<User[]>([]);
+  const [userView, setUserView] = React.useState<'active' | 'archived'>('active');
+  const [isArchivedLoading, setIsArchivedLoading] = React.useState(false);
   const [pendingInvites, setPendingInvites] = React.useState<PendingInvite[]>([]);
   const [viewerLinkInvites, setViewerLinkInvites] = React.useState<ViewerLinkInvite[]>([]);
   const [assignableRooms, setAssignableRooms] = React.useState<AssignableRoom[]>([]);
@@ -158,6 +165,23 @@ export default function UsersPage() {
       console.error('Failed to fetch users:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchArchivedUsers = async () => {
+    setIsArchivedLoading(true);
+    try {
+      const response = await fetch('/api/users?view=archived', {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setArchivedUsers(data.users || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch archived users:', error);
+    } finally {
+      setIsArchivedLoading(false);
     }
   };
 
@@ -333,6 +357,13 @@ export default function UsersPage() {
       user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const filteredArchivedUsers = archivedUsers.filter(
+    (user) =>
+      user.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) {
       return 'Never';
@@ -360,26 +391,129 @@ export default function UsersPage() {
       <AdminPageContent>
         <AdminToolbar
           title="Team directory"
-          description="Search members, review roles, and invite collaborators without leaving the page."
+          description={
+            userView === 'active'
+              ? 'Search active members and pending invitations, review roles, and invite collaborators.'
+              : 'Archived members have no access to this organization or its rooms.'
+          }
           actions={
             <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-              {filteredUsers.length} visible
+              {userView === 'active' ? filteredUsers.length : filteredArchivedUsers.length} visible
             </div>
           }
         >
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              placeholder="Search users by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
-            />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="Search users by name or email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-11 rounded-xl border-slate-200 bg-white pl-10 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+              />
+            </div>
+            <div className="flex rounded-lg border border-slate-200 p-1 dark:border-slate-700">
+              <Button
+                type="button"
+                size="sm"
+                variant={userView === 'active' ? 'secondary' : 'ghost'}
+                onClick={() => setUserView('active')}
+              >
+                Active & invited
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={userView === 'archived' ? 'secondary' : 'ghost'}
+                onClick={() => {
+                  setUserView('archived');
+                  fetchArchivedUsers();
+                }}
+              >
+                Archived users
+              </Button>
+            </div>
           </div>
         </AdminToolbar>
 
         {/* Users Table */}
-        {isLoading ? (
+        {userView === 'archived' ? (
+          isArchivedLoading ? (
+            <AdminSurface className="space-y-4">
+              {[...Array(3)].map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </AdminSurface>
+          ) : filteredArchivedUsers.length === 0 ? (
+            <AdminEmptyState
+              icon={<Trash2 className="h-6 w-6" />}
+              title="No archived users"
+              description="Members archived from this organization will appear here. Their account and memberships in other organizations are not changed."
+            />
+          ) : (
+            <AdminSurface className="overflow-hidden p-0">
+              <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-800">
+                <p className="text-xs font-medium text-primary-600 dark:text-primary-400">
+                  Archived organization access
+                </p>
+                <h2 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">
+                  Former members
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
+                    <tr>
+                      <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
+                        User
+                      </th>
+                      <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
+                        Former role
+                      </th>
+                      <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
+                        Archived
+                      </th>
+                      <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
+                        Current access
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredArchivedUsers.map((user) => (
+                      <tr
+                        key={user.id}
+                        className="border-b border-slate-200/70 last:border-0 dark:border-slate-800"
+                      >
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <UserAvatar name={`${user.firstName} ${user.lastName}`} size="sm" />
+                            <div>
+                              <div className="font-medium text-slate-950 dark:text-white">
+                                {user.firstName} {user.lastName}
+                              </div>
+                              <div className="text-sm text-slate-500 dark:text-slate-400">
+                                {user.email}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <Badge variant="secondary">{user.role.toLowerCase()}</Badge>
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
+                          {formatDate(user.archivedAt ?? null)}
+                        </td>
+                        <td className="px-5 py-4">
+                          <Badge variant="outline">No organization access</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </AdminSurface>
+          )
+        ) : isLoading ? (
           <AdminSurface className="space-y-4">
             {[...Array(5)].map((_, i) => (
               <div
@@ -582,8 +716,8 @@ export default function UsersPage() {
                               className="text-danger-600"
                               onClick={() => {
                                 setConfirmAction({
-                                  title: 'Remove User',
-                                  description: `Remove ${user.firstName} ${user.lastName} from the organization? This cannot be undone.`,
+                                  title: 'Archive from organization',
+                                  description: `Remove ${user.firstName} ${user.lastName}'s access to this organization and its rooms? Their account and access in other organizations will not be changed.`,
                                   onConfirm: async () => {
                                     try {
                                       const res = await fetch(`/api/users/${user.id}`, {
@@ -601,7 +735,7 @@ export default function UsersPage() {
                               }}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
-                              Remove
+                              Archive from organization
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

@@ -16,20 +16,62 @@ import { useRouter } from 'next/navigation';
 
 export type OrgRole = 'ADMIN' | 'VIEWER';
 
-const RoleContext = React.createContext<OrgRole>('VIEWER');
+export interface Capabilities {
+  canManageOrganizationSettings: boolean;
+  canManageUsers: boolean;
+  canAccessSysOp: boolean;
+}
 
-export function RoleProvider({ role, children }: { role: OrgRole; children: React.ReactNode }) {
-  return <RoleContext.Provider value={role}>{children}</RoleContext.Provider>;
+interface RoleContextValue {
+  role: OrgRole;
+  capabilities: Capabilities;
+}
+
+const viewerCapabilities: Capabilities = {
+  canManageOrganizationSettings: false,
+  canManageUsers: false,
+  canAccessSysOp: false,
+};
+
+const RoleContext = React.createContext<RoleContextValue>({
+  role: 'VIEWER',
+  capabilities: viewerCapabilities,
+});
+
+export function RoleProvider({
+  role,
+  isPlatformOperator = false,
+  children,
+}: {
+  role: OrgRole;
+  isPlatformOperator?: boolean;
+  children: React.ReactNode;
+}) {
+  const capabilities = React.useMemo<Capabilities>(
+    () => ({
+      canManageOrganizationSettings: role === 'ADMIN',
+      canManageUsers: role === 'ADMIN',
+      canAccessSysOp: isPlatformOperator,
+    }),
+    [isPlatformOperator, role]
+  );
+
+  return <RoleContext.Provider value={{ role, capabilities }}>{children}</RoleContext.Provider>;
 }
 
 /** Returns the authenticated org role. Defaults to the least-privileged 'VIEWER'. */
 export function useRole(): OrgRole {
-  return React.useContext(RoleContext);
+  return React.useContext(RoleContext).role;
 }
 
 /** Convenience: true when the authenticated org role is ADMIN. */
 export function useIsAdmin(): boolean {
-  return React.useContext(RoleContext) === 'ADMIN';
+  return React.useContext(RoleContext).role === 'ADMIN';
+}
+
+/** Server-derived capabilities used only for navigation and UI affordances. */
+export function useCapabilities(): Capabilities {
+  return React.useContext(RoleContext).capabilities;
 }
 
 /**
@@ -39,7 +81,7 @@ export function useIsAdmin(): boolean {
  * a page can `if (!useRequireAdmin()) return null;` to avoid a content flash.
  */
 export function useRequireAdmin(): boolean {
-  const role = React.useContext(RoleContext);
+  const role = React.useContext(RoleContext).role;
   const router = useRouter();
   React.useEffect(() => {
     if (role !== 'ADMIN') {

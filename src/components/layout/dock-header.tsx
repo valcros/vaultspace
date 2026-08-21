@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { clsx } from 'clsx';
+import { useCapabilities } from './role-provider';
 
 interface DockHeaderProps {
   user: {
@@ -41,6 +42,7 @@ interface DockHeaderProps {
 
 export function DockHeader({ user, organization, onSearchClick }: DockHeaderProps) {
   const router = useRouter();
+  const { canAccessSysOp } = useCapabilities();
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -136,7 +138,7 @@ export function DockHeader({ user, organization, onSearchClick }: DockHeaderProp
             <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
-            {(user.email.includes('munger') || user.email.includes('admin')) && (
+            {canAccessSysOp && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

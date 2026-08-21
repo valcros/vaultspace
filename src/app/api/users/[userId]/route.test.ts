@@ -16,7 +16,6 @@ vi.mock('@/lib/middleware', () => ({
 
 vi.mock('@/lib/auth', () => ({
   clearSessionCache: vi.fn(),
-  deactivateAllUserSessionsInTx: vi.fn(),
   revokeAdminUserGlobalSingleOrgSessionsInTx: vi.fn(),
   revokeAdminUserOrgSessionsInTx: vi.fn(),
 }));
@@ -35,7 +34,6 @@ vi.mock('@/lib/db', () => ({
 import { requireAuth, requireAuthCredential } from '@/lib/middleware';
 import {
   clearSessionCache,
-  deactivateAllUserSessionsInTx,
   revokeAdminUserGlobalSingleOrgSessionsInTx,
   revokeAdminUserOrgSessionsInTx,
 } from '@/lib/auth';
@@ -44,7 +42,6 @@ import { withOrgContext, bootstrapDb } from '@/lib/db';
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockRequireAuthCredential = vi.mocked(requireAuthCredential);
 const mockClearSessionCache = vi.mocked(clearSessionCache);
-const mockDeactivateAllUserSessionsInTx = vi.mocked(deactivateAllUserSessionsInTx);
 const mockRevokeAdminUserGlobalSingleOrgSessionsInTx = vi.mocked(
   revokeAdminUserGlobalSingleOrgSessionsInTx
 );
@@ -67,7 +64,6 @@ describe('GET /api/users/:userId', () => {
       mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
     );
     mockClearSessionCache.mockResolvedValue(undefined);
-    mockDeactivateAllUserSessionsInTx.mockResolvedValue(['session-legacy-1']);
     mockBootstrapFindMany.mockResolvedValue([{ organizationId: 'org-1' }] as never);
   });
 
@@ -228,13 +224,15 @@ describe('DELETE /api/users/:userId', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireAuth.mockResolvedValue(
-      mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
-    );
+    mockRequireAuthCredential.mockResolvedValue({
+      session: mockAdminSession,
+      token: 'a'.repeat(43),
+    } as Awaited<ReturnType<typeof requireAuthCredential>>);
+    mockRevokeAdminUserOrgSessionsInTx.mockResolvedValue({ sessionIds: ['session-org-1'] });
   });
 
   it('returns 401 for unauthenticated requests', async () => {
-    mockRequireAuth.mockRejectedValue(new Error('Authentication required'));
+    mockRequireAuthCredential.mockRejectedValue(new Error('Authentication required'));
 
     const request = new NextRequest('http://localhost/api/users/user-1', {
       method: 'DELETE',
@@ -246,11 +244,15 @@ describe('DELETE /api/users/:userId', () => {
   });
 
   it('returns 403 for non-admin users', async () => {
-    mockRequireAuth.mockResolvedValue({
-      userId: 'user-1',
-      organizationId: 'org-1',
-      organization: { role: 'VIEWER' },
-    } as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never);
+    mockRequireAuthCredential.mockResolvedValue({
+      token: 'v'.repeat(43),
+      session: {
+        userId: 'user-1',
+        organizationId: 'org-1',
+        organization: { role: 'VIEWER' },
+        user: { email: 'viewer@example.com' },
+      },
+    } as Awaited<ReturnType<typeof requireAuthCredential>>);
 
     const request = new NextRequest('http://localhost/api/users/user-2', {
       method: 'DELETE',
@@ -296,19 +298,13 @@ describe('DELETE /api/users/:userId', () => {
     expect(body.error).toContain('not found');
   });
 
-  it('deletes user, preserves immutable audit events, and redacts mutable data', async () => {
-    const mockUserUpdate = vi.fn().mockResolvedValue({});
+  it('archives only the current organization membership and revokes scoped access', async () => {
     const mockUserOrgUpdate = vi.fn().mockResolvedValue({});
-    const mockDocVersionUpdateMany = vi.fn().mockResolvedValue({ count: 3 });
-    const mockPermissionDeleteMany = vi.fn().mockResolvedValue({ count: 2 });
-    const mockRoleDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
-    const mockResetFindMany = vi
-      .fn()
-      .mockResolvedValue([{ id: 'reset-global', requestId: 'request-global' }]);
-    mockBootstrapFindMany.mockResolvedValue([
-      { organizationId: 'org-1' },
-      { organizationId: 'org-2' },
-    ] as never);
+    const mockPermissionUpdateMany = vi.fn().mockResolvedValue({ count: 2 });
+    const mockResetFindMany = vi.fn().mockResolvedValue([{ id: 'reset-org-1' }]);
+    const mockResetUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const mockRecoveryUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const mockEventCreate = vi.fn().mockResolvedValue({});
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
@@ -316,19 +312,31 @@ describe('DELETE /api/users/:userId', () => {
           findFirst: vi.fn().mockResolvedValue({
             id: 'uo-1',
             userId: 'user-2',
-            user: { id: 'user-2', email: 'user@example.com' },
+            role: 'VIEWER',
+            isActive: true,
+            user: { id: 'user-2', email: 'user@example.com', isActive: true },
           }),
+          count: vi.fn().mockResolvedValue(2),
           update: mockUserOrgUpdate,
         },
-        user: { update: mockUserUpdate },
         passwordResetToken: {
           findMany: mockResetFindMany,
-          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+          updateMany: mockResetUpdateMany,
         },
-        passwordResetRecovery: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-        documentVersion: { updateMany: mockDocVersionUpdateMany },
-        permission: { deleteMany: mockPermissionDeleteMany },
-        roleAssignment: { deleteMany: mockRoleDeleteMany },
+        passwordResetRecovery: { updateMany: mockRecoveryUpdateMany },
+        permission: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: 'permission-1', roomId: 'room-1', resourceType: 'ROOM', permissionLevel: 'VIEW' },
+            {
+              id: 'permission-2',
+              roomId: null,
+              resourceType: 'ORGANIZATION',
+              permissionLevel: 'VIEW',
+            },
+          ]),
+          updateMany: mockPermissionUpdateMany,
+        },
+        event: { create: mockEventCreate },
         $queryRaw: vi.fn().mockResolvedValue([]),
         $executeRaw: vi.fn().mockResolvedValue(1),
       };
@@ -345,62 +353,41 @@ describe('DELETE /api/users/:userId', () => {
 
     const body = await response.json();
     expect(body.success).toBe(true);
-    expect(body.message).toContain('GDPR');
+    expect(body.message).toContain('archived from this organization');
 
-    // Verify user was soft deleted with PII redacted
-    expect(mockUserUpdate).toHaveBeenCalledWith({
-      where: { id: 'user-2' },
-      data: {
-        isActive: false,
-        firstName: 'Deleted',
-        lastName: 'User',
-      },
-    });
-
-    // Verify membership was deactivated
+    // The identity is not mutated. Only this organization membership changes.
     expect(mockUserOrgUpdate).toHaveBeenCalledWith({
       where: { id: 'uo-1' },
+      data: expect.objectContaining({
+        isActive: false,
+        archivedByUserId: 'admin-1',
+        archivedAt: expect.any(Date),
+      }),
+    });
+    expect(mockPermissionUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['permission-1', 'permission-2'] } },
       data: { isActive: false },
     });
-
-    // Verify document versions were redacted
-    expect(mockDocVersionUpdateMany).toHaveBeenCalledWith({
-      where: {
-        organizationId: 'org-1',
-        uploadedByUserId: 'user-2',
-      },
-      data: {
-        uploadedByUserId: null,
-        uploadedByEmail: 'deleted_user@redacted',
-      },
+    expect(mockResetUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['reset-org-1'] } },
+      data: { usedAt: expect.any(Date), deliveryStatus: 'CANCELLED' },
     });
-
-    // Verify permissions were deleted
-    expect(mockPermissionDeleteMany).toHaveBeenCalledWith({
-      where: {
-        organizationId: 'org-1',
-        granteeType: 'USER',
-        userId: 'user-2',
-      },
+    expect(mockRecoveryUpdateMany).toHaveBeenCalledWith({
+      where: { flowId: { in: ['reset-org-1'] }, wipedAt: null },
+      data: expect.objectContaining({
+        wipedAt: expect.any(Date),
+        enqueueStatus: 'MEMBERSHIP_ARCHIVED',
+      }),
     });
-
-    // Verify role assignments were deleted
-    expect(mockRoleDeleteMany).toHaveBeenCalledWith({
-      where: {
-        organizationId: 'org-1',
-        userId: 'user-2',
-      },
-    });
-
-    // Verify sessions were invalidated atomically and cache was cleared after commit
-    expect(mockDeactivateAllUserSessionsInTx).toHaveBeenCalledWith(expect.any(Object), 'user-2');
-    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-legacy-1']);
-    expect(mockCreateSecurityAuditEvent).toHaveBeenCalledWith(
+    expect(mockRevokeAdminUserOrgSessionsInTx).toHaveBeenCalledWith(
       expect.any(Object),
+      'a'.repeat(43),
+      'user-2'
+    );
+    expect(mockClearSessionCache).toHaveBeenCalledWith(['session-org-1']);
+    expect(mockEventCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        organizationId: 'org-2',
-        correlationId: 'reset-global',
-        idempotencyKey: 'password-reset-reset-global-account-deactivated-org-2',
+        data: expect.objectContaining({ eventType: 'USER_DELETED' }),
       })
     );
   });
