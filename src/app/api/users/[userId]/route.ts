@@ -18,6 +18,7 @@ import { requireAuth, requireAuthCredential } from '@/lib/middleware';
 import { bootstrapDb, withOrgContext } from '@/lib/db';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
+import { lockUserAccessMutation } from '@/lib/permissions/userAccessMutationLock';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -114,6 +115,9 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
     // Use RLS context for all organization-scoped archive work.
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      // All direct-user permission writers use this lock before inspecting or
+      // mutating grants, so an archive cannot miss a concurrent new grant.
+      await lockUserAccessMutation(tx, session.organizationId, userId);
       // Match the existing membership mutation lock order so archive and
       // demotion/deactivation cannot race the last-admin safety check.
       await lockPasswordResetUser(tx, userId);
@@ -349,6 +353,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      // Serialize membership lifecycle changes with all direct-user permission
+      // writers before taking the password-reset lock. A temporary suspension
+      // deliberately preserves prior direct grants for an explicit later
+      // reactivation, but no grant can be added concurrently after suspension
+      // commits. Archive remains the security-removal action that revokes them.
+      await lockUserAccessMutation(tx, session.organizationId, userId);
       // Security-sensitive identity changes use the same global lock order as
       // reset issuance, delivery, redemption, and deletion.
       await lockPasswordResetUser(tx, userId);

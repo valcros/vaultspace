@@ -11,6 +11,7 @@ import { PermissionLevel } from '@prisma/client';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { lockUserAccessMutation } from '@/lib/permissions/userAccessMutationLock';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,7 +134,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
 
       // Get existing permission
-      const existing = await tx.permission.findFirst({
+      let existing = await tx.permission.findFirst({
         where: {
           id: permissionId,
           roomId,
@@ -143,6 +144,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
       if (!existing) {
         return { error: 'Permission not found', status: 404 };
+      }
+      if (existing.userId) {
+        await lockUserAccessMutation(tx, session.organizationId, existing.userId);
+        // Re-read after the shared writer lock. A concurrent room-access
+        // reconciliation may have retired this direct grant while this request
+        // was waiting for the lock.
+        existing = await tx.permission.findFirst({
+          where: {
+            id: permissionId,
+            roomId,
+            organizationId: session.organizationId,
+            isActive: true,
+          },
+        });
+        if (!existing) {
+          return { error: 'Permission not found', status: 404 };
+        }
       }
 
       // Update permission
@@ -229,7 +247,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       }
 
       // Get existing permission
-      const existing = await tx.permission.findFirst({
+      let existing = await tx.permission.findFirst({
         where: {
           id: permissionId,
           roomId,
@@ -253,6 +271,24 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
       if (!existing) {
         return { error: 'Permission not found', status: 404 };
+      }
+      if (existing.userId) {
+        await lockUserAccessMutation(tx, session.organizationId, existing.userId);
+        existing = await tx.permission.findFirst({
+          where: {
+            id: permissionId,
+            roomId,
+            organizationId: session.organizationId,
+            isActive: true,
+          },
+          include: {
+            user: { select: { id: true, email: true } },
+            group: { select: { id: true, name: true } },
+          },
+        });
+        if (!existing) {
+          return { error: 'Permission not found', status: 404 };
+        }
       }
 
       // Soft delete by setting isActive = false

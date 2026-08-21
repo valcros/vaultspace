@@ -92,7 +92,10 @@ describe('GET /api/rooms/:roomId/permissions', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
+        userOrganization: { findFirst: vi.fn().mockResolvedValue({ id: 'membership-1' }) },
         permission: { findMany: vi.fn().mockResolvedValue(mockPermissions) },
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
@@ -240,7 +243,10 @@ describe('POST /api/rooms/:roomId/permissions', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
+        userOrganization: { findFirst: vi.fn().mockResolvedValue({ id: 'membership-1' }) },
         permission: {
           findFirst: vi.fn().mockResolvedValue(null), // No existing permission
           create: vi.fn().mockResolvedValue(newPermission),
@@ -287,7 +293,10 @@ describe('POST /api/rooms/:roomId/permissions', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
+        userOrganization: { findFirst: vi.fn().mockResolvedValue({ id: 'membership-1' }) },
         permission: {
           findFirst: vi.fn().mockResolvedValue(existingPermission),
           update: vi.fn().mockResolvedValue(updatedPermission),
@@ -332,7 +341,10 @@ describe('POST /api/rooms/:roomId/permissions', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
+        userOrganization: { findFirst: vi.fn().mockResolvedValue({ id: 'membership-1' }) },
         permission: {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue(newPermission),
@@ -374,7 +386,10 @@ describe('POST /api/rooms/:roomId/permissions', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
+        userOrganization: { findFirst: vi.fn().mockResolvedValue({ id: 'membership-1' }) },
         document: { findFirst: vi.fn().mockResolvedValue({ id: 'doc-1' }) },
         permission: {
           findFirst: vi.fn().mockResolvedValue(null),
@@ -418,8 +433,11 @@ describe('POST /api/rooms/:roomId/permissions', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
         user: { findUnique: vi.fn().mockResolvedValue({ id: 'user-found' }) },
+        userOrganization: { findFirst: vi.fn().mockResolvedValue({ id: 'membership-1' }) },
         permission: {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue(newPermission),
