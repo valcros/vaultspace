@@ -442,6 +442,13 @@ model UserOrganization {
   canManageUsers Boolean @default(false)
   canManageRooms Boolean @default(false)
 
+  // Organization-scoped membership archive. This is deliberately separate
+  // from the global User account state so an organization administrator cannot
+  // disable a person's access to another organization.
+  archivedAt       DateTime?
+  archivedByUserId String?
+  archiveReason    String? @db.Text
+
   // Relations
   organization            Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -452,6 +459,8 @@ model UserOrganization {
   @@index([organizationId])
   @@index([userId])
   @@index([role])
+  @@index([organizationId, isActive, archivedAt])
+  @@index([organizationId, archivedAt])
   @@map("user_organizations")
 }
 
