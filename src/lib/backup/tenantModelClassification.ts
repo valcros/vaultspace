@@ -77,6 +77,11 @@ export const MODEL_CLASSIFICATION: Record<string, ModelClassification> = {
 
   // Parent-scoped (no organizationId column)
   GroupMembership: { kind: 'PARENT_SCOPED', scopeField: 'groupId', parentModel: 'Group' },
+  InvitationRoomAssignment: {
+    kind: 'PARENT_SCOPED',
+    scopeField: 'invitationId',
+    parentModel: 'Invitation',
+  },
 
   // Deliberately excluded — transient auth/security state. Users re-authenticate;
   // restoring these would resurrect stale/again-usable secrets.
@@ -144,6 +149,7 @@ export const RESTORE_ORDER: string[] = [
   'NotificationTemplate',
   'UserDashboardLayout',
   'Invitation',
+  'InvitationRoomAssignment',
   'Event', // append-only; last
 ];
 

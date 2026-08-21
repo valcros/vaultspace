@@ -93,13 +93,13 @@ This is the smallest durable repair because it uses the existing authorization m
 
 Assume the repair failed in production. The likely failure modes and controls are:
 
-| Failure mode | Early warning | Control |
-| --- | --- | --- |
-| A viewer is invited with no room selected | Invite form succeeds with empty selection | Require at least one active room for a viewer in both UI and API validation. |
-| A room from another organization is assigned | A submitted ID is accepted despite tenant mismatch | Validate each room under the inviting organization's RLS context, then enforce the same check in the database transaction. |
-| Acceptance consumes an invite but creates incomplete access | Invitation is `ACCEPTED`, but no permission exists | Create all four records atomically and test rollback on each failed write. |
-| A repair broadens access to unrelated rooms | A viewer sees a second Brightside room in the list | Retain `PermissionEngine` default deny and test the negative multi-room case. |
-| Existing affected viewers remain stranded | Support reports continue after deployment | Run an audited remediation report for accepted legacy viewer invitations, have an admin map each to intended rooms, then verify per-user access. |
+| Failure mode                                                | Early warning                                      | Control                                                                                                                                          |
+| ----------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A viewer is invited with no room selected                   | Invite form succeeds with empty selection          | Require at least one active room for a viewer in both UI and API validation.                                                                     |
+| A room from another organization is assigned                | A submitted ID is accepted despite tenant mismatch | Validate each room under the inviting organization's RLS context, then enforce the same check in the database transaction.                       |
+| Acceptance consumes an invite but creates incomplete access | Invitation is `ACCEPTED`, but no permission exists | Create all four records atomically and test rollback on each failed write.                                                                       |
+| A repair broadens access to unrelated rooms                 | A viewer sees a second Brightside room in the list | Retain `PermissionEngine` default deny and test the negative multi-room case.                                                                    |
+| Existing affected viewers remain stranded                   | Support reports continue after deployment          | Run an audited remediation report for accepted legacy viewer invitations, have an admin map each to intended rooms, then verify per-user access. |
 
 ## Rollout and rollback
 

@@ -639,17 +639,18 @@ describe('password reset provider-final evidence envelope', () => {
       try {
         executeSql(databaseUrl, migrationSqlThrough(PREDECESSOR));
         await Promise.all([blocker.$connect(), verifier.$connect()]);
-        await blocker.$executeRawUnsafe('BEGIN');
-        await blocker.$executeRawUnsafe(
-          'LOCK TABLE public.password_reset_tokens IN ACCESS SHARE MODE'
-        );
-        const startedAt = Date.now();
-        expect(() => executeSql(databaseUrl, migrationSql(MIGRATION))).toThrow();
-        expect(Date.now() - startedAt).toBeGreaterThanOrEqual(9_000);
-        expect(Date.now() - startedAt).toBeLessThan(30_000);
-        const [posture] = await verifier.$queryRaw<
-          Array<{ constraintRows: number; triggerRows: number; functionName: string | null }>
-        >`
+        await blocker.$transaction(
+          async (tx) => {
+            await tx.$executeRawUnsafe(
+              'LOCK TABLE public.password_reset_tokens IN ACCESS SHARE MODE'
+            );
+            const startedAt = Date.now();
+            expect(() => executeSql(databaseUrl, migrationSql(MIGRATION))).toThrow();
+            expect(Date.now() - startedAt).toBeGreaterThanOrEqual(9_000);
+            expect(Date.now() - startedAt).toBeLessThan(30_000);
+            const [posture] = await verifier.$queryRaw<
+              Array<{ constraintRows: number; triggerRows: number; functionName: string | null }>
+            >`
         SELECT
           (
             SELECT count(*)::int FROM pg_constraint
@@ -662,8 +663,10 @@ describe('password reset provider-final evidence envelope', () => {
               AND tgname = 'password_reset_provider_final_evidence_guard'
           ) AS "triggerRows",
           to_regprocedure('public.guard_password_reset_provider_final_evidence()')::text AS "functionName"`;
-        expect(posture).toEqual({ constraintRows: 0, triggerRows: 0, functionName: null });
-        await blocker.$executeRawUnsafe('ROLLBACK');
+            expect(posture).toEqual({ constraintRows: 0, triggerRows: 0, functionName: null });
+          },
+          { maxWait: 10_000, timeout: 40_000 }
+        );
         executeSql(databaseUrl, migrationSql(MIGRATION));
       } finally {
         await blocker.$executeRawUnsafe('ROLLBACK').catch(() => undefined);
