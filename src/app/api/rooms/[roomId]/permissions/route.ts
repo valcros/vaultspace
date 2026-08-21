@@ -12,6 +12,7 @@ import { PermissionGranteeType, PermissionLevel, PermissionResourceType } from '
 import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { lockUserAccessMutation } from '@/lib/permissions/userAccessMutationLock';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -173,6 +174,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
           return { error: 'User not found', status: 404 };
         }
         targetUserId = user.id;
+      }
+
+      // Every direct-user grant participates in the same per-membership lock as
+      // the User editor. Without this, an insert into an initially empty grant
+      // set could race a room-access removal after that removal has read rows.
+      if (granteeType === 'USER' && targetUserId) {
+        await lockUserAccessMutation(tx, session.organizationId, targetUserId);
+        const activeMembership = await tx.userOrganization.findFirst({
+          where: {
+            organizationId: session.organizationId,
+            userId: targetUserId,
+            isActive: true,
+            user: { isActive: true },
+          },
+          select: { id: true },
+        });
+        if (!activeMembership) {
+          return { error: 'User is not an active member of this organization', status: 409 };
+        }
       }
 
       // Validate group if granteeType is GROUP

@@ -68,13 +68,6 @@ export async function POST(request: NextRequest) {
       ),
     ];
 
-    if (role === 'VIEWER' && normalizedRoomIds.length === 0) {
-      return NextResponse.json(
-        { error: 'At least one active room must be assigned to a viewer invitation' },
-        { status: 400 }
-      );
-    }
-
     if (role === 'ADMIN' && normalizedRoomIds.length > 0) {
       return NextResponse.json(
         { error: 'Administrator invitations cannot be scoped to individual rooms' },
@@ -99,19 +92,44 @@ export async function POST(request: NextRequest) {
     let result;
     try {
       result = await withOrgContext(session.organizationId, async (tx) => {
+        // A single-room organization has no room-selection decision to make.
+        // Resolve that default server-side so API clients receive the same safe
+        // behavior as the UI. Multi-room organizations still require an explicit
+        // viewer assignment; there is never an organization-wide Viewer fallback.
+        let assignedRoomIds = normalizedRoomIds;
+        if (role === 'VIEWER' && assignedRoomIds.length === 0) {
+          const activeRooms = await tx.room.findMany({
+            where: { organizationId: session.organizationId, status: 'ACTIVE' },
+            select: { id: true },
+            take: 2,
+          });
+          const onlyActiveRoom = activeRooms[0];
+          if (activeRooms.length === 1 && onlyActiveRoom) {
+            assignedRoomIds = [onlyActiveRoom.id];
+          } else {
+            return {
+              error:
+                activeRooms.length === 0
+                  ? 'At least one active room is required before inviting a viewer'
+                  : 'Select at least one active room for this viewer invitation',
+              status: 400,
+            };
+          }
+        }
+
         // The Strawman alternative would make every organization viewer see every
         // room. Instead, validate the administrator's explicit assignment here,
         // under the inviting organization context, before an email is issued.
-        if (normalizedRoomIds.length > 0) {
+        if (assignedRoomIds.length > 0) {
           const assignedRooms = await tx.room.findMany({
             where: {
-              id: { in: normalizedRoomIds },
+              id: { in: assignedRoomIds },
               organizationId: session.organizationId,
               status: 'ACTIVE',
             },
             select: { id: true },
           });
-          if (assignedRooms.length !== normalizedRoomIds.length) {
+          if (assignedRooms.length !== assignedRoomIds.length) {
             return {
               error: 'Every assigned room must be active and belong to this organization',
               status: 400,
@@ -202,9 +220,9 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        if (normalizedRoomIds.length > 0) {
+        if (assignedRoomIds.length > 0) {
           await tx.invitationRoomAssignment.createMany({
-            data: normalizedRoomIds.map((roomId) => ({ invitationId: invitation.id, roomId })),
+            data: assignedRoomIds.map((roomId) => ({ invitationId: invitation.id, roomId })),
           });
         }
 
@@ -218,8 +236,8 @@ export async function POST(request: NextRequest) {
             description: `Invited ${normalizedEmail} to the organization`,
             metadata: {
               role,
-              roomCount: normalizedRoomIds.length,
-              roomIds: normalizedRoomIds,
+              roomCount: assignedRoomIds.length,
+              roomIds: assignedRoomIds,
               reissuedLegacyInvitationCount: legacyViewerInviteIds.length,
               reissuedLegacyInvitationIds: legacyViewerInviteIds,
             },
@@ -237,6 +255,7 @@ export async function POST(request: NextRequest) {
           organizationName: organization?.name,
           emailSenderName: organization?.emailSenderName ?? null,
           emailSenderAddress: organization?.emailSenderAddress ?? null,
+          assignedRoomIds,
         };
       });
     } catch (error) {
@@ -253,7 +272,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const { invitation, organizationName, emailSenderName, emailSenderAddress } = result;
+    const { invitation, organizationName, emailSenderName, emailSenderAddress, assignedRoomIds } =
+      result;
 
     // Send invitation email (outside RLS context - email is external)
     try {
@@ -301,7 +321,7 @@ export async function POST(request: NextRequest) {
           invitedBy: invitation.invitedByUser
             ? (invitation.invitedByUser.firstName + ' ' + invitation.invitedByUser.lastName).trim()
             : null,
-          roomCount: normalizedRoomIds.length,
+          roomCount: assignedRoomIds.length,
         },
       },
       { status: 201 }
