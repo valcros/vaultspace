@@ -64,14 +64,20 @@ function RegisterForm() {
         if (res.ok) {
           return res.json();
         }
-        throw new Error('Invalid invitation');
+        return res.json().then((data) => {
+          throw new Error(data.error || 'Invalid invitation');
+        });
       })
       .then((data: InviteInfo) => {
         setInviteInfo(data);
         setFormData((prev) => ({ ...prev, email: data.email }));
       })
-      .catch(() => {
-        setError('This invitation is invalid or has expired.');
+      .catch((inviteError: unknown) => {
+        setError(
+          inviteError instanceof Error
+            ? inviteError.message
+            : 'This invitation is invalid or has expired.'
+        );
       })
       .finally(() => {
         setInviteLoading(false);

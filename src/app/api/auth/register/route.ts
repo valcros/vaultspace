@@ -15,9 +15,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
+import { Prisma } from '@prisma/client';
 
 import { createSession } from '@/lib/auth';
-import { bootstrapDb as db } from '@/lib/db';
+import { bootstrapDb as db, setTransactionOrganizationContext } from '@/lib/db';
 import { createEmailVerificationToken } from '@/lib/auth/emailVerificationToken';
 import { sendEmailVerificationEmail } from '@/lib/auth/emailVerificationDelivery';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
@@ -40,6 +41,10 @@ const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 // Normalize self-service response time so "email already exists" (fast) is
 // indistinguishable from "new pending user" (slow, includes bcrypt).
 const MINIMUM_SELF_SERVICE_RESPONSE_MS = 350;
+
+class InvitationRoomAssignmentUnavailableError extends Error {}
+class InvitationAlreadyUsedError extends Error {}
+class InvitationExpiredError extends Error {}
 
 async function neutralVerificationResponse(startedAt: number): Promise<NextResponse> {
   const remaining = MINIMUM_SELF_SERVICE_RESPONSE_MS - (Date.now() - startedAt);
@@ -70,7 +75,7 @@ export async function POST(request: NextRequest) {
     if (inviteToken) {
       const invitation = await db.invitation.findUnique({
         where: { invitationToken: inviteToken },
-        include: { organization: true },
+        include: { organization: true, roomAssignments: { select: { roomId: true } } },
       });
 
       if (!invitation) {
@@ -97,42 +102,172 @@ export async function POST(request: NextRequest) {
       const passwordHash = await bcrypt.hash(password, 12);
       const organizationId = invitation.organizationId;
       const role = invitation.role as 'ADMIN' | 'VIEWER';
+      const assignedRoomIds = (invitation.roomAssignments ?? []).map(
+        (assignment) => assignment.roomId
+      );
+
+      // A legacy viewer invitation has no persisted room assignment. Accepting
+      // it would recreate the reported empty-room failure, so preserve the
+      // pending invitation and require an administrator to reissue it safely.
+      if (role === 'VIEWER' && assignedRoomIds.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              'This viewer invitation must be reissued with room access before it can be accepted',
+          },
+          { status: 409 }
+        );
+      }
 
       let result: {
         user: { id: string; email: string; firstName: string; lastName: string };
         organization: { id: string; name: string; slug: string };
       };
       try {
-        result = await db.$transaction(async (tx) => {
-          // Guarded acceptance: only flips a still-PENDING invitation. If a
-          // concurrent request already accepted it, this matches no row and
-          // Prisma throws P2025 (handled below as a deterministic 400).
-          await tx.invitation.update({
-            where: { id: invitation.id, status: 'PENDING' },
-            data: { status: 'ACCEPTED', acceptedAt: new Date() },
-          });
+        result = await db.$transaction(
+          async (tx) => {
+            const user = await tx.user.create({
+              data: {
+                email: normalizedEmail,
+                passwordHash,
+                firstName,
+                lastName,
+                title: title || null,
+                relationship: relationship || null,
+                isActive: true,
+                // Invitation possession is the vetting for this sprint's scope.
+                emailVerifiedAt: new Date(),
+              },
+            });
 
-          const user = await tx.user.create({
-            data: {
-              email: normalizedEmail,
-              passwordHash,
-              firstName,
-              lastName,
-              title: title || null,
-              relationship: relationship || null,
-              isActive: true,
-              // Invitation possession is the vetting for this sprint's scope.
-              emailVerifiedAt: new Date(),
-            },
-          });
+            await tx.userOrganization.create({
+              data: { userId: user.id, organizationId, role, isActive: true },
+            });
 
-          await tx.userOrganization.create({
-            data: { userId: user.id, organizationId, role, isActive: true },
-          });
+            // The bootstrap policies allow the new identity and membership to
+            // be created without tenant context. Every subsequent resource
+            // mutation must run under the invited organization, including the
+            // new permission grant, because production forces RLS for owners.
+            await setTransactionOrganizationContext(tx, organizationId);
 
-          return { user, organization: invitation.organization };
-        });
+            // Load the assignments only after the transaction is scoped to the
+            // invited tenant. This prevents a future assignment-management
+            // surface from changing the invite between token validation and the
+            // direct permission grants below.
+            const currentInvitation = await tx.invitation.findUnique({
+              where: { id: invitation.id },
+              include: { roomAssignments: { select: { roomId: true } } },
+            });
+            if (!currentInvitation || currentInvitation.status !== 'PENDING') {
+              throw new InvitationAlreadyUsedError();
+            }
+            if (currentInvitation.expiresAt < new Date()) {
+              throw new InvitationExpiredError();
+            }
+            const currentAssignedRoomIds = currentInvitation.roomAssignments.map(
+              (assignment) => assignment.roomId
+            );
+            if (role === 'VIEWER' && currentAssignedRoomIds.length === 0) {
+              throw new InvitationRoomAssignmentUnavailableError();
+            }
+
+            // Revalidate in the acceptance transaction. A room can be archived or
+            // deleted after the invite is issued; consuming the invitation in that
+            // state would recreate the empty-room incident.
+            if (currentAssignedRoomIds.length > 0) {
+              const activeAssignedRooms = await tx.room.findMany({
+                where: {
+                  id: { in: currentAssignedRoomIds },
+                  organizationId,
+                  status: 'ACTIVE',
+                },
+                select: { id: true },
+              });
+              if (activeAssignedRooms.length !== currentAssignedRoomIds.length) {
+                throw new InvitationRoomAssignmentUnavailableError();
+              }
+            }
+
+            // Guarded acceptance: only flips a still-PENDING invitation. If a
+            // concurrent request already accepted it, this matches no row and
+            // Prisma throws P2025 (handled below as a deterministic 400).
+            await tx.invitation.update({
+              where: { id: invitation.id, status: 'PENDING' },
+              data: { status: 'ACCEPTED', acceptedAt: new Date() },
+            });
+
+            if (currentAssignedRoomIds.length > 0) {
+              await tx.permission.createMany({
+                data: currentAssignedRoomIds.map((roomId) => ({
+                  organizationId,
+                  resourceType: 'ROOM' as const,
+                  roomId,
+                  granteeType: 'USER' as const,
+                  userId: user.id,
+                  permissionLevel: 'VIEW' as const,
+                  grantedByUserId: invitation.invitedByUserId,
+                })),
+              });
+            }
+
+            await tx.event.create({
+              data: {
+                organizationId,
+                eventType: 'USER_ACCEPTED_INVITATION',
+                actorType: role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
+                actorId: user.id,
+                actorEmail: user.email,
+                description: 'User registered via invitation',
+                metadata: {
+                  role,
+                  roomCount: currentAssignedRoomIds.length,
+                  roomIds: currentAssignedRoomIds,
+                },
+              },
+            });
+
+            return { user, organization: invitation.organization };
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        );
       } catch (txError) {
+        if (txError instanceof InvitationAlreadyUsedError) {
+          return NextResponse.json({ error: 'Invitation has already been used' }, { status: 400 });
+        }
+        if (txError instanceof InvitationExpiredError) {
+          return NextResponse.json({ error: 'Invitation has expired' }, { status: 400 });
+        }
+        if (txError instanceof InvitationRoomAssignmentUnavailableError) {
+          return NextResponse.json(
+            {
+              error:
+                'One or more assigned rooms are no longer available. Ask an administrator to reissue the invitation.',
+            },
+            { status: 409 }
+          );
+        }
+        if (
+          txError &&
+          typeof txError === 'object' &&
+          'code' in txError &&
+          (txError as { code?: string }).code === 'P2034'
+        ) {
+          return NextResponse.json(
+            { error: 'Invitation acceptance conflicted with a room update. Please try again.' },
+            { status: 409 }
+          );
+        }
+        if (
+          txError &&
+          typeof txError === 'object' &&
+          'code' in txError &&
+          (txError as { code?: string }).code === 'P2002'
+        ) {
+          return NextResponse.json(
+            { error: 'An account with this email already exists or this invitation was accepted' },
+            { status: 409 }
+          );
+        }
         if (
           txError &&
           typeof txError === 'object' &&

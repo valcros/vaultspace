@@ -30,6 +30,7 @@ const EXPECTED_RLS_TABLES = [
   'extracted_texts',
   'watermark_configs',
   'invitations',
+  'invitation_room_assignments',
 ];
 
 async function main() {

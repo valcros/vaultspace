@@ -46,6 +46,7 @@ ALTER TABLE extracted_texts ENABLE ROW LEVEL SECURITY;
 -- watermark_configs is V1-deferred (no Prisma model, no migration). When the
 -- table is added, restore: ALTER TABLE watermark_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invitation_room_assignments ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- STEP 2: Create policies using SET LOCAL context variable
@@ -280,6 +281,41 @@ CREATE POLICY invitation_org_isolation ON invitations
     "organizationId" = current_setting('app.current_org_id', true)
   );
 
+-- Invitation room assignments inherit tenant identity from their invitation.
+-- Registration reads them before a session exists, after looking up the
+-- unguessable invitation token, so the bootstrap client needs the same
+-- no-context SELECT behavior as invitations themselves.
+DROP POLICY IF EXISTS invitation_room_assignment_bootstrap_lookup ON invitation_room_assignments;
+CREATE POLICY invitation_room_assignment_bootstrap_lookup ON invitation_room_assignments
+  FOR SELECT
+  USING (NULLIF(current_setting('app.current_org_id', true), '') IS NULL);
+
+DROP POLICY IF EXISTS invitation_room_assignment_org_isolation ON invitation_room_assignments;
+CREATE POLICY invitation_room_assignment_org_isolation ON invitation_room_assignments
+  FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM invitations invitation
+      WHERE invitation.id = invitation_room_assignments."invitationId"
+        AND invitation."organizationId" = current_setting('app.current_org_id', true)
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM invitations invitation
+      WHERE invitation.id = invitation_room_assignments."invitationId"
+        AND invitation."organizationId" = current_setting('app.current_org_id', true)
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM rooms room
+      WHERE room.id = invitation_room_assignments."roomId"
+        AND room."organizationId" = current_setting('app.current_org_id', true)
+    )
+  );
+
 -- ============================================================================
 -- STEP 3: FORCE ROW LEVEL SECURITY on every org-scoped table
 -- ============================================================================
@@ -307,6 +343,7 @@ ALTER TABLE events FORCE ROW LEVEL SECURITY;
 ALTER TABLE search_indexes FORCE ROW LEVEL SECURITY;
 ALTER TABLE extracted_texts FORCE ROW LEVEL SECURITY;
 ALTER TABLE invitations FORCE ROW LEVEL SECURITY;
+ALTER TABLE invitation_room_assignments FORCE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- STEP 3b: Revoke UPDATE/DELETE on immutable audit tables
@@ -317,6 +354,11 @@ ALTER TABLE invitations FORCE ROW LEVEL SECURITY;
 -- This makes SEC-013 (no update) and SEC-014 (no delete) structural at
 -- the database layer, complementing the EventBus design.
 REVOKE UPDATE, DELETE ON events FROM vaultspace_app;
+
+-- Invitation assignments are immutable after creation. Keeping UPDATE/DELETE
+-- unavailable prevents a compromised runtime role from changing a viewer's
+-- accepted room scope, including after the broad repair grant is rerun.
+REVOKE UPDATE, DELETE ON invitation_room_assignments FROM vaultspace_app;
 
 -- Provider delivery evidence is global, not tenant-scoped. It is owned by a
 -- separate ingress/processor trust boundary and is never available to the
@@ -340,6 +382,7 @@ REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_ap
 --   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO vaultspace_app;
 --   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO vaultspace_app;
 --   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO vaultspace_app;
+--   REVOKE UPDATE, DELETE ON invitation_room_assignments FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_app;
 --   GRANT EXECUTE ON FUNCTION password_reset_provider_correlation_preflight_counts() TO vaultspace_app;
