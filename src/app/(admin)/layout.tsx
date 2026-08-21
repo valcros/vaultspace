@@ -12,6 +12,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect('/auth/login');
   }
 
+  const platformAccess = await withOrgContext(session.organizationId, (tx) =>
+    tx.user.findUnique({
+      where: { id: session.userId },
+      select: { isActive: true, isPlatformOperator: true },
+    })
+  ).catch(() => null);
+
   const user = {
     name: `${session.user.firstName} ${session.user.lastName}`,
     email: session.user.email,
@@ -31,7 +38,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   };
 
   return (
-    <RoleProvider role={session.role}>
+    <RoleProvider
+      role={session.role}
+      isPlatformOperator={Boolean(platformAccess?.isActive && platformAccess.isPlatformOperator)}
+    >
       <DockShell user={user} organization={organization}>
         {children}
       </DockShell>

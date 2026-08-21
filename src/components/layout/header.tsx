@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { useCapabilities } from './role-provider';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +30,7 @@ interface HeaderProps {
 
 export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
   const router = useRouter();
+  const { canAccessSysOp } = useCapabilities();
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -100,7 +102,7 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
             <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
-            {(user.email.includes('munger') || user.email.includes('admin')) && (
+            {canAccessSysOp && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

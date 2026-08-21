@@ -18,6 +18,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
 import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
+import { useCapabilities } from '@/components/layout/role-provider';
 
 interface SettingsSection {
   id: string;
@@ -25,6 +26,7 @@ interface SettingsSection {
   description: string;
   icon: React.ElementType;
   href: string;
+  adminOnly?: boolean;
 }
 
 const settingsSections: SettingsSection[] = [
@@ -34,6 +36,7 @@ const settingsSections: SettingsSection[] = [
     description: 'Manage organization name, logo, and branding settings',
     icon: Building2,
     href: '/settings/organization',
+    adminOnly: true,
   },
   {
     id: 'team',
@@ -41,6 +44,7 @@ const settingsSections: SettingsSection[] = [
     description: 'Manage users, roles, and permissions',
     icon: Users,
     href: '/users',
+    adminOnly: true,
   },
   {
     id: 'security',
@@ -62,6 +66,7 @@ const settingsSections: SettingsSection[] = [
     description: 'Configure webhook endpoints for event notifications',
     icon: Webhook,
     href: '/settings/webhooks',
+    adminOnly: true,
   },
   {
     id: 'activity',
@@ -69,6 +74,7 @@ const settingsSections: SettingsSection[] = [
     description: 'View settings changes and security events',
     icon: Activity,
     href: '/settings/activity',
+    adminOnly: true,
   },
   {
     id: 'api',
@@ -95,6 +101,10 @@ const settingsSections: SettingsSection[] = [
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { canManageOrganizationSettings } = useCapabilities();
+  const visibleSettingsSections = settingsSections.filter(
+    (section) => !section.adminOnly || canManageOrganizationSettings
+  );
 
   return (
     <>
@@ -109,7 +119,7 @@ export default function SettingsPage() {
           description="Everything below maps to a distinct operational area so teams can move quickly without guessing where controls live."
         />
         <div className="grid gap-5 md:grid-cols-2">
-          {settingsSections.map((section) => {
+          {visibleSettingsSections.map((section) => {
             const Icon = section.icon;
             return (
               <Card

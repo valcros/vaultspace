@@ -18,6 +18,7 @@ import { clsx } from 'clsx';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { useCapabilities } from './role-provider';
 
 interface NavItem {
   label: string;
@@ -46,6 +47,7 @@ interface SidebarProps {
 export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { canAccessSysOp } = useCapabilities();
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -115,7 +117,7 @@ export function Sidebar({ user, collapsed = false, onCollapsedChange }: SidebarP
           );
         })}
 
-        {(user.email.includes('munger') || user.email.includes('admin')) && (
+        {canAccessSysOp && (
           <Link
             href="/sysop"
             className={clsx(
