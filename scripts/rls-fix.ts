@@ -42,6 +42,7 @@ const FORCE_RLS_TABLES = [
   'search_indexes',
   'extracted_texts',
   'invitations',
+  'invitation_room_assignments',
   // watermark_configs intentionally omitted — V1-deferred, table not yet created
 ];
 
@@ -111,9 +112,10 @@ async function main() {
   console.log('\n=== Step 4b: Revoke UPDATE/DELETE on immutable audit tables ===');
   // The audit trail must be append-only at the database layer. Revoking
   // UPDATE and DELETE on the events table from the application role makes
-  // SEC-013 (no update) and SEC-014 (no delete) structural — even a
-  // compromised application cannot tamper with the audit trail.
-  for (const table of ['events']) {
+  // Keep append-only security records immutable even after the broad repair
+  // grant above. A compromised runtime role must not tamper with audit events
+  // or alter a viewer's room scope after invitation creation.
+  for (const table of ['events', 'invitation_room_assignments']) {
     try {
       await prisma.$executeRawUnsafe(`REVOKE UPDATE, DELETE ON ${table} FROM ${APP_ROLE};`);
       console.log(`  REVOKED UPDATE, DELETE: ${table} from ${APP_ROLE}`);
