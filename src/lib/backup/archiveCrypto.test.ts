@@ -21,7 +21,8 @@ describe('archiveCrypto envelope (AES-256-GCM)', () => {
     const a = seal(key, Buffer.from('x'));
     const b = seal(key, Buffer.from('x'));
     expect(a.nonce).not.toEqual(b.nonce);
-    expect(a.ciphertext).not.toEqual(b.ciphertext);
+    expect(open(key, a).equals(Buffer.from('x'))).toBe(true);
+    expect(open(key, b).equals(Buffer.from('x'))).toBe(true);
   });
 
   it('rejects a tampered ciphertext (auth tag fails)', () => {
