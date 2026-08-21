@@ -45,6 +45,7 @@ describe('POST /api/users/invite', () => {
     userId: 'user-1',
     organizationId: 'org-1',
     organization: { role: 'ADMIN' },
+    user: { email: 'admin@example.com' },
   };
 
   beforeEach(() => {
@@ -134,7 +135,7 @@ describe('POST /api/users/invite', () => {
 
     const request = new NextRequest('http://localhost/api/users/invite', {
       method: 'POST',
-      body: JSON.stringify({ email: 'existing@example.com' }),
+      body: JSON.stringify({ email: 'existing@example.com', role: 'ADMIN' }),
     });
 
     const response = await POST(request);
@@ -152,7 +153,9 @@ describe('POST /api/users/invite', () => {
       const tx = {
         user: { findUnique: vi.fn().mockResolvedValue(null) },
         invitation: {
-          findFirst: vi.fn().mockResolvedValue({ id: 'invite-pending' }),
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ id: 'invite-pending', role: 'ADMIN', roomAssignments: [] }]),
         },
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
@@ -160,7 +163,7 @@ describe('POST /api/users/invite', () => {
 
     const request = new NextRequest('http://localhost/api/users/invite', {
       method: 'POST',
-      body: JSON.stringify({ email: 'pending@example.com' }),
+      body: JSON.stringify({ email: 'pending@example.com', role: 'ADMIN' }),
     });
 
     const response = await POST(request);
@@ -170,6 +173,7 @@ describe('POST /api/users/invite', () => {
   });
 
   it('creates invitation successfully with default VIEWER role', async () => {
+    const createAssignments = vi.fn().mockResolvedValue({ count: 1 });
     const mockInvitation = {
       id: 'invite-1',
       email: 'new@example.com',
@@ -182,11 +186,14 @@ describe('POST /api/users/invite', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        room: { findMany: vi.fn().mockResolvedValue([{ id: 'room-1' }]) },
         user: { findUnique: vi.fn().mockResolvedValue(null) },
         invitation: {
-          findFirst: vi.fn().mockResolvedValue(null),
+          findMany: vi.fn().mockResolvedValue([]),
           create: vi.fn().mockResolvedValue(mockInvitation),
         },
+        invitationRoomAssignment: { createMany: createAssignments },
+        event: { create: vi.fn().mockResolvedValue({}) },
         organization: {
           findUnique: vi.fn().mockResolvedValue({ name: 'Acme Corp' }),
         },
@@ -196,7 +203,7 @@ describe('POST /api/users/invite', () => {
 
     const request = new NextRequest('http://localhost/api/users/invite', {
       method: 'POST',
-      body: JSON.stringify({ email: 'new@example.com' }),
+      body: JSON.stringify({ email: 'new@example.com', roomIds: ['room-1'] }),
     });
 
     const response = await POST(request);
@@ -206,6 +213,10 @@ describe('POST /api/users/invite', () => {
     expect(body.invitation.email).toBe('new@example.com');
     expect(body.invitation.role).toBe('VIEWER');
     expect(body.invitation.status).toBe('PENDING');
+    expect(body.invitation.roomCount).toBe(1);
+    expect(createAssignments).toHaveBeenCalledWith({
+      data: [{ invitationId: 'invite-1', roomId: 'room-1' }],
+    });
   });
 
   it('creates invitation with ADMIN role', async () => {
@@ -223,9 +234,10 @@ describe('POST /api/users/invite', () => {
       const tx = {
         user: { findUnique: vi.fn().mockResolvedValue(null) },
         invitation: {
-          findFirst: vi.fn().mockResolvedValue(null),
+          findMany: vi.fn().mockResolvedValue([]),
           create: vi.fn().mockResolvedValue(mockInvitation),
         },
+        event: { create: vi.fn().mockResolvedValue({}) },
         organization: {
           findUnique: vi.fn().mockResolvedValue({ name: 'Acme Corp' }),
         },
@@ -243,6 +255,84 @@ describe('POST /api/users/invite', () => {
 
     const body = await response.json();
     expect(body.invitation.role).toBe('ADMIN');
+  });
+
+  it('rejects a viewer invitation without room assignments', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/users/invite', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'viewer@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/at least one active room/i);
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
+  });
+
+  it('rejects a room that is not active in the inviting organization', async () => {
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      const tx = { room: { findMany: vi.fn().mockResolvedValue([]) } };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/users/invite', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'viewer@example.com', roomIds: ['foreign-room'] }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/belong to this organization/i);
+  });
+
+  it('reissues a legacy viewer invitation by rejecting the unscoped pending row', async () => {
+    const rejectLegacyInvite = vi.fn().mockResolvedValue({ count: 1 });
+    const createAssignments = vi.fn().mockResolvedValue({ count: 1 });
+    const mockInvitation = {
+      id: 'new-invite-1',
+      email: 'viewer@example.com',
+      role: 'VIEWER',
+      status: 'PENDING',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      invitationUrl: 'https://example.com/auth/register?token=new-token',
+      invitedByUser: { firstName: 'Admin', lastName: 'User', email: 'admin@example.com' },
+    };
+
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      const tx = {
+        room: { findMany: vi.fn().mockResolvedValue([{ id: 'room-1' }]) },
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
+        invitation: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ id: 'legacy-invite', role: 'VIEWER', roomAssignments: [] }]),
+          updateMany: rejectLegacyInvite,
+          create: vi.fn().mockResolvedValue(mockInvitation),
+        },
+        invitationRoomAssignment: { createMany: createAssignments },
+        event: { create: vi.fn().mockResolvedValue({}) },
+        organization: { findUnique: vi.fn().mockResolvedValue({ name: 'Acme Corp' }) },
+      };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/users/invite', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'viewer@example.com', roomIds: ['room-1'] }),
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(rejectLegacyInvite).toHaveBeenCalledWith({
+      where: { id: { in: ['legacy-invite'] }, status: 'PENDING' },
+      data: { status: 'REJECTED' },
+    });
+    expect(createAssignments).toHaveBeenCalledWith({
+      data: [{ invitationId: 'new-invite-1', roomId: 'room-1' }],
+    });
   });
 });
 

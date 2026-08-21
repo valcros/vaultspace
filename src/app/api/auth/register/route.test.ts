@@ -52,6 +52,9 @@ const mockInvitationFindUnique = vi.fn();
 const mockTokenCreate = vi.fn().mockResolvedValue({});
 const mockTransaction = vi.fn();
 const mockCreateSession = vi.fn();
+const mockPermissionCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+const mockEventCreate = vi.fn().mockResolvedValue({});
+const mockSetTransactionOrganizationContext = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/lib/db', () => {
   const client = {
@@ -63,7 +66,12 @@ vi.mock('@/lib/db', () => {
     emailVerificationToken: { create: (...args: unknown[]) => mockTokenCreate(...args) },
     $transaction: (...args: unknown[]) => mockTransaction(...args),
   };
-  return { db: client, bootstrapDb: client };
+  return {
+    db: client,
+    bootstrapDb: client,
+    setTransactionOrganizationContext: (...args: unknown[]) =>
+      mockSetTransactionOrganizationContext(...args),
+  };
 });
 
 vi.mock('@/lib/auth', () => ({
@@ -94,8 +102,10 @@ const pendingInvitation = {
   status: 'PENDING',
   role: 'VIEWER',
   organizationId: 'org-1',
+  invitedByUserId: 'inviter-1',
   expiresAt: new Date(Date.now() + 86400000),
   organization: { id: 'org-1', name: 'Test Org', slug: 'test-org' },
+  roomAssignments: [{ roomId: 'room-1' }],
 };
 
 describe('POST /api/auth/register', () => {
@@ -117,10 +127,15 @@ describe('POST /api/auth/register', () => {
       session: { id: 'auth-session-1' },
       token: 't'.repeat(43),
     });
+    mockSetTransactionOrganizationContext.mockResolvedValue(undefined);
     mockTransaction.mockImplementation(
       async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
         const tx = {
-          invitation: { update: vi.fn().mockResolvedValue({}) },
+          $executeRaw: vi.fn().mockResolvedValue(1),
+          invitation: {
+            findUnique: vi.fn().mockResolvedValue(pendingInvitation),
+            update: vi.fn().mockResolvedValue({}),
+          },
           user: {
             create: vi.fn().mockResolvedValue({
               id: 'user-1',
@@ -130,6 +145,9 @@ describe('POST /api/auth/register', () => {
             }),
           },
           userOrganization: { create: vi.fn().mockResolvedValue({}) },
+          room: { findMany: vi.fn().mockResolvedValue([{ id: 'room-1' }]) },
+          permission: { createMany: mockPermissionCreateMany },
+          event: { create: mockEventCreate },
         };
         return fn(tx);
       }
@@ -209,6 +227,112 @@ describe('POST /api/auth/register', () => {
         'org-1',
         expect.objectContaining({ ipAddress: '127.0.0.1', userAgent: 'vitest' })
       );
+      expect(mockPermissionCreateMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            organizationId: 'org-1',
+            roomId: 'room-1',
+            userId: 'user-1',
+            permissionLevel: 'VIEW',
+            grantedByUserId: 'inviter-1',
+          }),
+        ],
+      });
+      expect(mockSetTransactionOrganizationContext).toHaveBeenCalledWith(
+        expect.anything(),
+        'org-1'
+      );
+      expect(mockEventCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            eventType: 'USER_ACCEPTED_INVITATION',
+            metadata: { role: 'VIEWER', roomCount: 1, roomIds: ['room-1'] },
+          }),
+        })
+      );
+    });
+
+    it('refuses a legacy viewer invitation with no persisted room assignment', async () => {
+      mockInvitationFindUnique.mockResolvedValue({ ...pendingInvitation, roomAssignments: [] });
+
+      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toMatch(/reissued with room access/i);
+      expect(mockTransaction).not.toHaveBeenCalled();
+      expect(mockCreateSession).not.toHaveBeenCalled();
+    });
+
+    it('keeps administrator invitations organization-wide', async () => {
+      const administratorInvitation = {
+        ...pendingInvitation,
+        role: 'ADMIN',
+        roomAssignments: [],
+      };
+      mockInvitationFindUnique.mockResolvedValue(administratorInvitation);
+      mockTransaction.mockImplementationOnce(
+        async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+          const tx = {
+            $executeRaw: vi.fn().mockResolvedValue(1),
+            invitation: {
+              findUnique: vi.fn().mockResolvedValue(administratorInvitation),
+              update: vi.fn().mockResolvedValue({}),
+            },
+            user: {
+              create: vi.fn().mockResolvedValue({
+                id: 'user-1',
+                email: 'alice@example.com',
+                firstName: 'Alice',
+                lastName: 'Smith',
+              }),
+            },
+            userOrganization: { create: vi.fn().mockResolvedValue({}) },
+            room: { findMany: vi.fn().mockResolvedValue([]) },
+            permission: { createMany: mockPermissionCreateMany },
+            event: { create: mockEventCreate },
+          };
+          return fn(tx);
+        }
+      );
+
+      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
+
+      expect(res.status).toBe(200);
+      expect(mockPermissionCreateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not consume an invitation when an assigned room is no longer active', async () => {
+      mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
+      mockTransaction.mockImplementationOnce(
+        async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+          const tx = {
+            $executeRaw: vi.fn().mockResolvedValue(1),
+            room: { findMany: vi.fn().mockResolvedValue([]) },
+            invitation: {
+              findUnique: vi.fn().mockResolvedValue(pendingInvitation),
+              update: vi.fn().mockResolvedValue({}),
+            },
+            user: {
+              create: vi.fn().mockResolvedValue({
+                id: 'user-1',
+                email: 'alice@example.com',
+                firstName: 'Alice',
+                lastName: 'Smith',
+              }),
+            },
+            userOrganization: { create: vi.fn().mockResolvedValue({}) },
+            permission: { createMany: vi.fn() },
+            event: { create: vi.fn() },
+          };
+          return fn(tx);
+        }
+      );
+
+      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toMatch(/no longer available/i);
+      expect(mockCreateSession).not.toHaveBeenCalled();
     });
 
     it('returns 400 when email does not match invitation', async () => {
@@ -235,6 +359,16 @@ describe('POST /api/auth/register', () => {
       mockUserFindUnique.mockResolvedValue({ id: 'existing-user' });
       const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
       expect(res.status).toBe(409);
+    });
+
+    it('returns a controlled conflict for a concurrent account creation race', async () => {
+      mockInvitationFindUnique.mockResolvedValue(pendingInvitation);
+      mockTransaction.mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }));
+
+      const res = await POST(makeRequest({ ...validBody, inviteToken: 'valid-token' }));
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toMatch(/already exists|accepted/i);
     });
   });
 });

@@ -17,6 +17,8 @@ import { getProviders } from '@/providers';
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 
+class LegacyInvitationReissueConflictError extends Error {}
+
 /**
  * POST /api/users/invite
  * Send invitation to a new team member
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { email, role = 'VIEWER' } = body;
+    const { email, role = 'VIEWER', roomIds } = body;
 
     // Validate email
     if (!email || typeof email !== 'string') {
@@ -50,6 +52,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid role. Must be ADMIN or VIEWER' }, { status: 400 });
     }
 
+    if (
+      roomIds !== undefined &&
+      (!Array.isArray(roomIds) || !roomIds.every((id) => typeof id === 'string'))
+    ) {
+      return NextResponse.json({ error: 'roomIds must be an array of room IDs' }, { status: 400 });
+    }
+
+    const normalizedRoomIds: string[] = [
+      ...new Set(
+        (Array.isArray(roomIds) ? roomIds : [])
+          .filter((id): id is string => typeof id === 'string')
+          .map((id) => id.trim())
+          .filter(Boolean)
+      ),
+    ];
+
+    if (role === 'VIEWER' && normalizedRoomIds.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one active room must be assigned to a viewer invitation' },
+        { status: 400 }
+      );
+    }
+
+    if (role === 'ADMIN' && normalizedRoomIds.length > 0) {
+      return NextResponse.json(
+        { error: 'Administrator invitations cannot be scoped to individual rooms' },
+        { status: 400 }
+      );
+    }
+
     // Generate invitation token
     const invitationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
@@ -64,72 +96,158 @@ export async function POST(request: NextRequest) {
     const invitationUrl = baseUrl + '/auth/register?token=' + invitationToken;
 
     // Use RLS context for all org-scoped operations
-    const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Under org context, RLS reveals an existing user only when that user is
-      // already a member of this organization. Users in other tenants remain
-      // undisclosed and can still be invited through the normal acceptance flow.
-      const existingUser = await tx.user.findUnique({
-        where: { email: normalizedEmail },
-        include: {
-          organizations: {
-            where: { organizationId: session.organizationId },
-          },
-        },
-      });
+    let result;
+    try {
+      result = await withOrgContext(session.organizationId, async (tx) => {
+        // The Strawman alternative would make every organization viewer see every
+        // room. Instead, validate the administrator's explicit assignment here,
+        // under the inviting organization context, before an email is issued.
+        if (normalizedRoomIds.length > 0) {
+          const assignedRooms = await tx.room.findMany({
+            where: {
+              id: { in: normalizedRoomIds },
+              organizationId: session.organizationId,
+              status: 'ACTIVE',
+            },
+            select: { id: true },
+          });
+          if (assignedRooms.length !== normalizedRoomIds.length) {
+            return {
+              error: 'Every assigned room must be active and belong to this organization',
+              status: 400,
+            };
+          }
+        }
 
-      if (existingUser && existingUser.organizations.length > 0) {
-        return { error: 'User is already a member of this organization', status: 400 };
-      }
-
-      // Check for existing pending invitation
-      const existingInvite = await tx.invitation.findFirst({
-        where: {
-          organizationId: session.organizationId,
-          email: normalizedEmail,
-          status: 'PENDING',
-          expiresAt: { gt: new Date() },
-        },
-      });
-
-      if (existingInvite) {
-        return { error: 'An invitation is already pending for this email', status: 400 };
-      }
-
-      // Create invitation
-      const invitation = await tx.invitation.create({
-        data: {
-          organizationId: session.organizationId,
-          email: normalizedEmail,
-          role: role as 'ADMIN' | 'VIEWER',
-          invitationToken,
-          invitationUrl,
-          expiresAt,
-          invitedByUserId: session.userId,
-        },
-        include: {
-          invitedByUser: {
-            select: {
-              firstName: true,
-              lastName: true,
-              email: true,
+        // Under org context, RLS reveals an existing user only when that user is
+        // already a member of this organization. Users in other tenants remain
+        // undisclosed and can still be invited through the normal acceptance flow.
+        const existingUser = await tx.user.findUnique({
+          where: { email: normalizedEmail },
+          include: {
+            organizations: {
+              where: { organizationId: session.organizationId },
             },
           },
-        },
-      });
+        });
 
-      // Get organization name + sender identity for the email
-      const organization = await tx.organization.findUnique({
-        where: { id: session.organizationId },
-        select: { name: true, emailSenderName: true, emailSenderAddress: true },
-      });
+        if (existingUser && existingUser.organizations.length > 0) {
+          return { error: 'User is already a member of this organization', status: 400 };
+        }
 
-      return {
-        invitation,
-        organizationName: organization?.name,
-        emailSenderName: organization?.emailSenderName ?? null,
-        emailSenderAddress: organization?.emailSenderAddress ?? null,
-      };
-    });
+        // A legacy viewer invitation has no room assignments and must not block a
+        // correct reissue. Atomically reject those stale invitations, while still
+        // preserving the duplicate-invite guard for current scoped invites and
+        // all administrator invites.
+        const existingInvites = await tx.invitation.findMany({
+          where: {
+            organizationId: session.organizationId,
+            email: normalizedEmail,
+            status: 'PENDING',
+            expiresAt: { gt: new Date() },
+          },
+          select: {
+            id: true,
+            role: true,
+            roomAssignments: { select: { id: true } },
+          },
+        });
+
+        const legacyViewerInviteIds =
+          role === 'VIEWER'
+            ? existingInvites
+                .filter(
+                  (existingInvite) =>
+                    existingInvite.role === 'VIEWER' && existingInvite.roomAssignments.length === 0
+                )
+                .map((existingInvite) => existingInvite.id)
+            : [];
+        const hasBlockingInvite = existingInvites.some(
+          (existingInvite) => !legacyViewerInviteIds.includes(existingInvite.id)
+        );
+
+        if (hasBlockingInvite) {
+          return { error: 'An invitation is already pending for this email', status: 400 };
+        }
+
+        if (legacyViewerInviteIds.length > 0) {
+          const invalidated = await tx.invitation.updateMany({
+            where: { id: { in: legacyViewerInviteIds }, status: 'PENDING' },
+            data: { status: 'REJECTED' },
+          });
+          if (invalidated.count !== legacyViewerInviteIds.length) {
+            throw new LegacyInvitationReissueConflictError();
+          }
+        }
+
+        // Create invitation
+        const invitation = await tx.invitation.create({
+          data: {
+            organizationId: session.organizationId,
+            email: normalizedEmail,
+            role: role as 'ADMIN' | 'VIEWER',
+            invitationToken,
+            invitationUrl,
+            expiresAt,
+            invitedByUserId: session.userId,
+          },
+          include: {
+            invitedByUser: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        });
+
+        if (normalizedRoomIds.length > 0) {
+          await tx.invitationRoomAssignment.createMany({
+            data: normalizedRoomIds.map((roomId) => ({ invitationId: invitation.id, roomId })),
+          });
+        }
+
+        await tx.event.create({
+          data: {
+            organizationId: session.organizationId,
+            eventType: 'USER_INVITED',
+            actorType: 'ADMIN',
+            actorId: session.userId,
+            actorEmail: session.user.email,
+            description: `Invited ${normalizedEmail} to the organization`,
+            metadata: {
+              role,
+              roomCount: normalizedRoomIds.length,
+              roomIds: normalizedRoomIds,
+              reissuedLegacyInvitationCount: legacyViewerInviteIds.length,
+              reissuedLegacyInvitationIds: legacyViewerInviteIds,
+            },
+          },
+        });
+
+        // Get organization name + sender identity for the email
+        const organization = await tx.organization.findUnique({
+          where: { id: session.organizationId },
+          select: { name: true, emailSenderName: true, emailSenderAddress: true },
+        });
+
+        return {
+          invitation,
+          organizationName: organization?.name,
+          emailSenderName: organization?.emailSenderName ?? null,
+          emailSenderAddress: organization?.emailSenderAddress ?? null,
+        };
+      });
+    } catch (error) {
+      if (error instanceof LegacyInvitationReissueConflictError) {
+        return NextResponse.json(
+          { error: 'The legacy invitation changed before it could be reissued. Please try again.' },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
@@ -183,6 +301,7 @@ export async function POST(request: NextRequest) {
           invitedBy: invitation.invitedByUser
             ? (invitation.invitedByUser.firstName + ' ' + invitation.invitedByUser.lastName).trim()
             : null,
+          roomCount: normalizedRoomIds.length,
         },
       },
       { status: 201 }

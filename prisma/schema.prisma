@@ -562,22 +562,23 @@ model Room {
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  folders           Folder[]
-  documents         Document[]
-  links             Link[]
-  permissions       Permission[]
-  events            Event[]
-  linkVisits        LinkVisit[]
-  viewSessions      ViewSession[]
-  questions         Question[]
-  checklists        Checklist[]
-  calendarEvents    CalendarEvent[]
-  bookmarks         Bookmark[]
-  accessRequests    AccessRequest[]
-  messages          Message[]
-  pageViews         PageView[]
-  webhooks          Webhook[]
-  signatureRequests SignatureRequest[]
+  folders               Folder[]
+  documents             Document[]
+  links                 Link[]
+  permissions           Permission[]
+  events                Event[]
+  linkVisits            LinkVisit[]
+  viewSessions          ViewSession[]
+  questions             Question[]
+  checklists            Checklist[]
+  calendarEvents        CalendarEvent[]
+  bookmarks             Bookmark[]
+  accessRequests        AccessRequest[]
+  messages              Message[]
+  pageViews             PageView[]
+  webhooks              Webhook[]
+  signatureRequests     SignatureRequest[]
+  invitationAssignments InvitationRoomAssignment[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -1374,8 +1375,9 @@ model Invitation {
   invitationUrl   String @db.VarChar(500)
 
   // Relations
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  invitedByUser   User?        @relation(fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  organization    Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedByUser   User?                      @relation(fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  roomAssignments InvitationRoomAssignment[]
   invitedByUserId String?
 
   @@index([organizationId])
@@ -1383,6 +1385,26 @@ model Invitation {
   @@index([status])
   @@index([expiresAt])
   @@map("invitations")
+}
+
+// InvitationRoomAssignment (explicit room access promised to a viewer)
+//
+// Viewer organization membership deliberately does not imply room access. This
+// relation records the room selection at invitation time so acceptance can
+// atomically create the corresponding direct ROOM/USER/VIEW permissions.
+model InvitationRoomAssignment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  invitationId String
+  roomId       String
+
+  invitation Invitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  room       Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([invitationId, roomId])
+  @@index([roomId])
+  @@map("invitation_room_assignments")
 }
 
 // PasswordResetToken (Password Reset)
@@ -2073,4 +2095,3 @@ model SysopSecuritySettings {
 
   @@map("sysop_security_settings")
 }
-
