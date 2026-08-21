@@ -19,10 +19,15 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const session = await requireAuthFromRequest(request);
+    const view = new URL(request.url).searchParams.get('view') ?? 'active';
 
     // Check admin permission
     if (session.organization.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+
+    if (view !== 'active' && view !== 'archived') {
+      return NextResponse.json({ error: 'Invalid users view' }, { status: 400 });
     }
 
     // Use RLS context for org-scoped queries
@@ -33,6 +38,9 @@ export async function GET(request: NextRequest) {
         const userOrgs = await tx.userOrganization.findMany({
           where: {
             organizationId: session.organizationId,
+            ...(view === 'active'
+              ? { isActive: true, user: { isActive: true } }
+              : { OR: [{ isActive: false }, { user: { isActive: false } }] }),
           },
           include: {
             user: {
@@ -53,45 +61,53 @@ export async function GET(request: NextRequest) {
         });
 
         // Also get pending invitations
-        const invitations = await tx.invitation.findMany({
-          where: {
-            organizationId: session.organizationId,
-            status: 'PENDING',
-            expiresAt: { gt: new Date() },
-          },
-          select: {
-            id: true,
-            email: true,
-            role: true,
-            createdAt: true,
-            expiresAt: true,
-          },
-          orderBy: { createdAt: 'desc' },
-        });
+        const invitations =
+          view === 'active'
+            ? await tx.invitation.findMany({
+                where: {
+                  organizationId: session.organizationId,
+                  status: 'PENDING',
+                  expiresAt: { gt: new Date() },
+                },
+                select: {
+                  id: true,
+                  email: true,
+                  role: true,
+                  createdAt: true,
+                  expiresAt: true,
+                },
+                orderBy: { createdAt: 'desc' },
+              })
+            : [];
 
         // Active viewer-link invites (email-gated links to specific rooms).
         // These are external parties who have not yet accessed the link.
-        const viewerLinkInvites = await tx.link.findMany({
-          where: {
-            organizationId: session.organizationId,
-            isActive: true,
-            allowedEmails: { isEmpty: false },
-          },
-          select: {
-            id: true,
-            slug: true,
-            allowedEmails: true,
-            inviteeName: true,
-            inviteeCompany: true,
-            lastAccessedAt: true,
-            inviteEmailSentAt: true,
-            createdAt: true,
-            expiresAt: true,
-            room: { select: { id: true, name: true } },
-            createdByUser: { select: { firstName: true, lastName: true, email: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
+        const viewerLinkInvites =
+          view === 'active'
+            ? await tx.link.findMany({
+                where: {
+                  organizationId: session.organizationId,
+                  isActive: true,
+                  allowedEmails: { isEmpty: false },
+                  lastAccessedAt: null,
+                  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                },
+                select: {
+                  id: true,
+                  slug: true,
+                  allowedEmails: true,
+                  inviteeName: true,
+                  inviteeCompany: true,
+                  lastAccessedAt: true,
+                  inviteEmailSentAt: true,
+                  createdAt: true,
+                  expiresAt: true,
+                  room: { select: { id: true, name: true } },
+                  createdByUser: { select: { firstName: true, lastName: true, email: true } },
+                },
+                orderBy: { createdAt: 'desc' },
+              })
+            : [];
 
         return { userOrgs, invitations, viewerLinkInvites };
       }
@@ -105,6 +121,15 @@ export async function GET(request: NextRequest) {
         lastName: uo.user.lastName,
         role: uo.role,
         isActive: uo.isActive && uo.user.isActive,
+        archivedAt: uo.archivedAt?.toISOString() ?? null,
+        archivedByUserId: uo.archivedByUserId,
+        archiveReason: uo.archiveReason,
+        lifecycleStatus:
+          view === 'archived'
+            ? uo.archivedAt
+              ? 'ARCHIVED_MEMBERSHIP'
+              : 'DEACTIVATED_ACCOUNT'
+            : 'ACTIVE',
         createdAt: uo.user.createdAt.toISOString(),
         lastLoginAt: uo.user.lastLoginAt?.toISOString() || null,
       })),

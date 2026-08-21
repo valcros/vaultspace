@@ -2,8 +2,9 @@ import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Server, Activity, ArrowLeft, Shield } from 'lucide-react';
-import { requireAuth } from '@/lib/middleware';
+import { requirePlatformOperator } from '@/lib/middleware';
 import { db } from '@/lib/db';
+import { isAuthenticationError } from '@/lib/errors';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 
@@ -12,13 +13,14 @@ export const dynamic = 'force-dynamic';
 export default async function SysOpLayout({ children }: { children: React.ReactNode }) {
   let session;
   try {
-    session = await requireAuth();
-  } catch {
-    redirect('/auth/login?redirect=/sysop');
-  }
-
-  if (!session?.userId) {
-    redirect('/auth/login?redirect=/sysop');
+    session = await requirePlatformOperator();
+  } catch (error) {
+    if (isAuthenticationError(error)) {
+      redirect('/auth/login?redirect=/sysop');
+    }
+    // Do not advertise a platform-only surface to authenticated people who
+    // lack this capability or fail the IP allowlist.
+    redirect('/dashboard');
   }
 
   const user = await db.user.findUnique({
@@ -33,14 +35,11 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
     },
   });
 
-  if (!user) {
-    redirect('/auth/login');
-  }
-
-  // SysOp RBAC: gate on the explicit platform-operator grant, NOT on org role
-  // or email spelling. See requirePlatformOperator() — the /api/sysop/* routes
-  // enforce the same grant server-side.
-  if (!user.isActive || !user.isPlatformOperator) {
+  // requirePlatformOperator is the authoritative authorization gate, including
+  // IP allowlisting. Re-check the current persisted flags before rendering so
+  // an account disabled between the initial check and this render cannot be
+  // shown a privileged shell.
+  if (!user || !user.isActive || !user.isPlatformOperator) {
     redirect('/dashboard');
   }
 

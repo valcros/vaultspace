@@ -10,7 +10,6 @@ import { Prisma } from '@prisma/client';
 
 import {
   clearSessionCache,
-  deactivateAllUserSessionsInTx,
   revokeAdminUserGlobalSingleOrgSessionsInTx,
   revokeAdminUserOrgSessionsInTx,
 } from '@/lib/auth';
@@ -91,14 +90,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
 /**
  * DELETE /api/users/:userId
- * GDPR-compliant user deletion
- * - Soft deletes user
- * - Preserves immutable audit events
- * - Transfers room ownership if needed
+ * Archive a user membership from the current organization only.
+ *
+ * This deliberately does NOT delete or deactivate the global User account.
+ * Ordinary organization administrators must not affect the target's other
+ * organizations, sessions, or identity. Account-wide GDPR erasure requires a
+ * separately authorized platform workflow.
  */
 export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
-    const session = await requireAuth();
+    const { session, token: actorToken } = await requireAuthCredential();
     const { userId } = await context.params;
 
     // Check admin permission
@@ -111,10 +112,10 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 });
     }
 
-    // Use RLS context for all org-scoped operations
+    // Use RLS context for all organization-scoped archive work.
     const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Match password-reset issuance/redemption lock order so account
-      // deactivation cannot race a newly minted flow or deadlock with it.
+      // Match the existing membership mutation lock order so archive and
+      // demotion/deactivation cannot race the last-admin safety check.
       await lockPasswordResetUser(tx, userId);
       await tx.$queryRaw`SELECT 1 FROM users WHERE id = ${userId} FOR UPDATE`;
       await tx.$queryRaw`
@@ -123,57 +124,83 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
         JOIN organizations o ON o.id = uo."organizationId"
         WHERE uo."userId" = ${userId}
         FOR UPDATE OF uo, o`;
-      // Verify user is in organization
+      // Verify an active membership in the caller's organization.
       const userOrg = await tx.userOrganization.findFirst({
         where: {
           userId,
           organizationId: session.organizationId,
         },
         include: {
-          user: true,
+          user: {
+            select: { id: true, email: true, firstName: true, lastName: true, isActive: true },
+          },
         },
       });
 
       if (!userOrg) {
         return { error: 'User not found in organization', status: 404 };
       }
+      if (!userOrg.isActive) {
+        return { error: 'User is already archived in this organization', status: 409 };
+      }
 
-      const accountOrganizationIds = new Set(
-        (
-          await bootstrapDb.userOrganization.findMany({
-            where: { userId },
-            select: { organizationId: true },
-          })
-        ).map((membership) => membership.organizationId)
-      );
-      accountOrganizationIds.add(session.organizationId);
+      if (userOrg.role === 'ADMIN' && userOrg.user.isActive) {
+        await tx.$queryRaw`
+          SELECT 1 FROM user_organizations
+          WHERE "organizationId" = ${session.organizationId}
+            AND role::text = 'ADMIN' AND "isActive" = true
+          FOR UPDATE`;
+        const activeAdmins = await tx.userOrganization.count({
+          where: {
+            organizationId: session.organizationId,
+            role: 'ADMIN',
+            isActive: true,
+            user: { isActive: true },
+          },
+        });
+        if (activeAdmins <= 1) {
+          return { error: 'Cannot archive the last active admin of the organization', status: 400 };
+        }
+      }
 
-      // 1. Soft delete the user by deactivating and redacting PII
-      await tx.user.update({
-        where: { id: userId },
+      const activePermissions = await tx.permission.findMany({
+        where: {
+          organizationId: session.organizationId,
+          granteeType: 'USER',
+          userId,
+          isActive: true,
+        },
+        select: { id: true, roomId: true, resourceType: true, permissionLevel: true },
+      });
+      const revocation = await revokeAdminUserOrgSessionsInTx(tx, actorToken, userId);
+      if (!revocation) {
+        return { error: 'User not found in organization', status: 404 };
+      }
+
+      const archivedAt = new Date();
+      const correlationId = `membership-archive-${userOrg.id}-${archivedAt.getTime()}`;
+      await tx.userOrganization.update({
+        where: { id: userOrg.id },
         data: {
           isActive: false,
-          // Redact PII
-          firstName: 'Deleted',
-          lastName: 'User',
+          archivedAt,
+          archivedByUserId: session.userId,
         },
       });
 
-      // 2. Deactivate user organization membership
-      await tx.userOrganization.update({
-        where: { id: userOrg.id },
-        data: { isActive: false },
+      // A reset token issued for this organization remains a bearer path into
+      // the organization until it expires. Consume any outstanding scoped
+      // reset flows and wipe their recovery material in the same transaction
+      // as the access revocation.
+      const resetFlows = await tx.passwordResetToken.findMany({
+        where: { userId, organizationId: session.organizationId, usedAt: null },
+        select: { id: true },
       });
-
-      const cancelledResetFlows = await tx.passwordResetToken.findMany({
-        where: { userId, usedAt: null },
-        select: { id: true, requestId: true },
-      });
-      if (cancelledResetFlows.length > 0) {
-        const flowIds = cancelledResetFlows.map((flow) => flow.id);
+      if (resetFlows.length > 0) {
+        const flowIds = resetFlows.map((flow) => flow.id);
         await tx.passwordResetToken.updateMany({
           where: { id: { in: flowIds } },
-          data: { usedAt: new Date(), deliveryStatus: 'CANCELLED' },
+          data: { usedAt: archivedAt, deliveryStatus: 'CANCELLED' },
         });
         await tx.passwordResetRecovery.updateMany({
           where: { flowId: { in: flowIds }, wipedAt: null },
@@ -183,70 +210,65 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
             nonce: null,
             ciphertext: null,
             authTag: null,
-            wipedAt: new Date(),
-            enqueueStatus: 'ACCOUNT_DEACTIVATED',
+            wipedAt: archivedAt,
+            enqueueStatus: 'MEMBERSHIP_ARCHIVED',
           },
         });
-        for (const organizationId of accountOrganizationIds) {
-          await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
-          for (const flow of cancelledResetFlows) {
-            await createSecurityAuditEvent(tx, {
-              organizationId,
-              eventType: 'USER_PASSWORD_RESET',
-              actorType: 'ADMIN',
-              actorId: session.userId,
-              actorEmail: session.user.email,
-              requestId: flow.requestId ?? `recovery-${flow.id}`,
-              correlationId: flow.id,
-              idempotencyKey: `password-reset-${flow.id}-account-deactivated-${organizationId}`,
-              description: 'Password reset flow was cancelled when the account was deactivated',
-              metadata: {
-                outcome: 'cancelled',
-                stage: 'account_lifecycle',
-                targetUserId: userId,
-                errorCode: 'ACCOUNT_DEACTIVATED',
-                initiatingOrganizationId: session.organizationId,
-              },
-            });
-          }
-        }
-        await tx.$executeRaw`SELECT set_config('app.current_org_id', ${session.organizationId}, true)`;
+      }
+      if (activePermissions.length > 0) {
+        await tx.permission.updateMany({
+          where: { id: { in: activePermissions.map((permission) => permission.id) } },
+          data: { isActive: false },
+        });
       }
 
-      // 3. Preserve audit events as append-only records. The user row was redacted above.
-
-      // 4. Redact document versions uploaded by user
-      await tx.documentVersion.updateMany({
-        where: {
-          organizationId: session.organizationId,
-          uploadedByUserId: userId,
-        },
+      await tx.event.create({
         data: {
-          uploadedByUserId: null,
-          uploadedByEmail: 'deleted_user@redacted',
-        },
-      });
-
-      // 5. Remove permissions granted to user
-      await tx.permission.deleteMany({
-        where: {
           organizationId: session.organizationId,
-          granteeType: 'USER',
-          userId,
+          eventType: 'USER_DELETED',
+          actorType: 'ADMIN',
+          actorId: session.userId,
+          actorEmail: session.user.email,
+          description: `Archived ${userOrg.user.email} from the organization`,
+          metadata: {
+            lifecycleAction: 'MEMBERSHIP_ARCHIVED',
+            targetUserId: userId,
+            targetMembershipId: userOrg.id,
+            priorRole: userOrg.role,
+            archivedAt: archivedAt.toISOString(),
+            formerPermissionIds: activePermissions.map((permission) => permission.id),
+            formerRoomIds: activePermissions.flatMap((permission) =>
+              permission.roomId ? [permission.roomId] : []
+            ),
+            cancelledPasswordResetFlowIds: resetFlows.map((flow) => flow.id),
+            correlationId,
+          },
         },
       });
+      for (const permission of activePermissions) {
+        await tx.event.create({
+          data: {
+            organizationId: session.organizationId,
+            eventType: 'PERMISSION_REVOKED',
+            actorType: 'ADMIN',
+            actorId: session.userId,
+            actorEmail: session.user.email,
+            description: `Revoked archived member permission for ${userOrg.user.email}`,
+            metadata: {
+              lifecycleAction: 'MEMBERSHIP_ARCHIVED',
+              targetUserId: userId,
+              targetMembershipId: userOrg.id,
+              permissionId: permission.id,
+              roomId: permission.roomId,
+              resourceType: permission.resourceType,
+              permissionLevel: permission.permissionLevel,
+              correlationId,
+            },
+          },
+        });
+      }
 
-      // 6. Remove role assignments
-      await tx.roleAssignment.deleteMany({
-        where: {
-          organizationId: session.organizationId,
-          userId,
-        },
-      });
-
-      const sessionIds = await deactivateAllUserSessionsInTx(tx, userId);
-
-      return { success: true, sessionIds };
+      return { success: true, sessionIds: revocation.sessionIds };
     });
 
     if ('error' in result) {
@@ -257,7 +279,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
-      message: 'User deleted and data redacted per GDPR requirements',
+      message: 'User archived from this organization',
     });
   } catch (error) {
     if (isAuthenticationError(error)) {
