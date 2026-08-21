@@ -97,6 +97,20 @@ interface AssignableRoom {
   description: string | null;
 }
 
+interface MemberRoomAccess {
+  id: string;
+  name: string;
+  description: string | null;
+  hasDirectAccess: boolean;
+  indirectAllowSources?: Array<'ROOM_ADMIN' | 'GROUP'>;
+  indirectDenySources?: Array<'DIRECT' | 'GROUP'>;
+  directScopedGrantCount?: number;
+  indirectScopedGrantCount?: number;
+  indirectScopedSources?: Array<'GROUP'>;
+  effectiveAccess?: 'NONE' | 'VIEW' | 'DOWNLOAD' | 'ADMIN' | 'SCOPED';
+  directRoomGrantLevel?: 'VIEW' | 'DOWNLOAD' | 'ADMIN' | null;
+}
+
 export default function UsersPage() {
   useRequireAdmin();
   const { toast } = useToast();
@@ -144,6 +158,11 @@ export default function UsersPage() {
   }>({ firstName: '', lastName: '', email: '', role: 'VIEWER', isActive: true });
   const [isSavingEdit, setIsSavingEdit] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
+  const [memberRoomAccess, setMemberRoomAccess] = React.useState<MemberRoomAccess[]>([]);
+  const [originalDirectRoomIds, setOriginalDirectRoomIds] = React.useState<string[]>([]);
+  const [selectedDirectRoomIds, setSelectedDirectRoomIds] = React.useState<string[]>([]);
+  const [isRoomAccessLoading, setIsRoomAccessLoading] = React.useState(false);
+  const [roomAccessRestriction, setRoomAccessRestriction] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     fetchUsers();
@@ -203,7 +222,13 @@ export default function UsersPage() {
     if (!inviteData.email.trim()) {
       return;
     }
-    if (inviteData.role === 'VIEWER' && inviteData.roomIds.length === 0) {
+    const effectiveRoomIds =
+      inviteData.role === 'VIEWER' && assignableRooms.length === 1 ? [] : inviteData.roomIds;
+    if (
+      inviteData.role === 'VIEWER' &&
+      assignableRooms.length !== 1 &&
+      effectiveRoomIds.length === 0
+    ) {
       setInviteError('Select at least one active data room for this viewer.');
       return;
     }
@@ -214,7 +239,7 @@ export default function UsersPage() {
       const response = await fetch('/api/users/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(inviteData),
+        body: JSON.stringify({ ...inviteData, roomIds: effectiveRoomIds }),
         credentials: 'include',
       });
 
@@ -280,6 +305,29 @@ export default function UsersPage() {
       isActive: user.isActive,
     });
     setEditError(null);
+    setMemberRoomAccess([]);
+    setOriginalDirectRoomIds([]);
+    setSelectedDirectRoomIds([]);
+    setRoomAccessRestriction(null);
+    setIsRoomAccessLoading(true);
+    void fetch(`/api/users/${user.id}/room-access`, { credentials: 'include' })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load room access');
+        }
+        const rooms = (data.rooms || []) as MemberRoomAccess[];
+        const directRoomIds = rooms.filter((room) => room.hasDirectAccess).map((room) => room.id);
+        setMemberRoomAccess(rooms);
+        setOriginalDirectRoomIds(directRoomIds);
+        setSelectedDirectRoomIds(directRoomIds);
+        setRoomAccessRestriction(data.restriction || null);
+      })
+      .catch((error) => {
+        console.error('Failed to load room access:', error);
+        setEditError("Could not load this member's room access. Please try again.");
+      })
+      .finally(() => setIsRoomAccessLoading(false));
   };
 
   const handleSaveEdit = async () => {
@@ -316,32 +364,58 @@ export default function UsersPage() {
     if (editData.isActive !== editTarget.isActive) {
       payload.isActive = editData.isActive;
     }
-    if (Object.keys(payload).length === 0) {
+    const roomAccessChanged =
+      editTarget.role === 'VIEWER' &&
+      editData.role === 'VIEWER' &&
+      [...originalDirectRoomIds].sort().join('|') !== [...selectedDirectRoomIds].sort().join('|');
+    const hasMemberChange = Object.keys(payload).length > 0;
+    if (hasMemberChange && roomAccessChanged) {
+      setEditError(
+        'Save member details first, then reopen Edit User to change room access. This keeps the two access changes separate and recoverable.'
+      );
+      return;
+    }
+    if (!hasMemberChange && !roomAccessChanged) {
       setEditTarget(null);
       return;
     }
     setIsSavingEdit(true);
     setEditError(null);
     try {
-      const response = await fetch(`/api/users/${editTarget.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        credentials: 'include',
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setEditTarget(null);
+      if (hasMemberChange) {
+        const response = await fetch(`/api/users/${editTarget.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'include',
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          setEditError(data.error || 'Failed to update user');
+          return;
+        }
         if (data.selfSessionInvalidated) {
           // Editing your own email/role/status signs you out; re-authenticate
           // rather than showing a stale shell that will fail on the next action.
           window.location.href = '/auth/login';
           return;
         }
-        fetchUsers();
-      } else {
-        setEditError(data.error || 'Failed to update user');
       }
+      if (roomAccessChanged) {
+        const response = await fetch(`/api/users/${editTarget.id}/room-access`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomIds: selectedDirectRoomIds }),
+          credentials: 'include',
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          setEditError(data.error || 'Failed to update room access');
+          return;
+        }
+      }
+      setEditTarget(null);
+      fetchUsers();
     } catch (error) {
       console.error('Failed to update user:', error);
       setEditError('Network error. Please try again.');
@@ -872,7 +946,7 @@ export default function UsersPage() {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
@@ -965,6 +1039,124 @@ export default function UsersPage() {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <Label>Direct room access</Label>
+              <p className="text-xs text-neutral-500">
+                Viewer access is limited to the rooms selected here. Removing a room also removes
+                this member&apos;s direct folder and document grants in that room. Access inherited
+                through a group or room-admin assignment is identified separately and is not changed
+                here.
+              </p>
+              {editTarget && editTarget.role !== editData.role ? (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Save the role change first, then reopen Edit User to manage this member&apos;s
+                  direct room access.
+                </p>
+              ) : editData.role === 'ADMIN' ? (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Organization administrators already have access to every room. Change the role to
+                  Viewer and save before assigning room-specific access.
+                </p>
+              ) : isRoomAccessLoading ? (
+                <p className="text-sm text-neutral-500">Loading room access…</p>
+              ) : roomAccessRestriction ? (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  {roomAccessRestriction}
+                </p>
+              ) : memberRoomAccess.length === 0 ? (
+                <p className="text-sm text-neutral-500">There are no active data rooms.</p>
+              ) : (
+                <div className="max-h-48 space-y-2 overflow-y-auto pt-1">
+                  {memberRoomAccess.map((room) => {
+                    const checked = selectedDirectRoomIds.includes(room.id);
+                    return (
+                      <div key={room.id} className="flex items-start gap-3">
+                        <Checkbox
+                          id={`edit-room-${room.id}`}
+                          checked={checked}
+                          onCheckedChange={(nextChecked) => {
+                            setSelectedDirectRoomIds((current) =>
+                              nextChecked
+                                ? [...current, room.id]
+                                : current.filter((id) => id !== room.id)
+                            );
+                          }}
+                        />
+                        <label
+                          htmlFor={`edit-room-${room.id}`}
+                          className="cursor-pointer text-sm leading-5 text-neutral-700 dark:text-neutral-300"
+                        >
+                          <span className="font-medium">{room.name}</span>
+                          <Badge
+                            variant={room.effectiveAccess === 'NONE' ? 'outline' : 'secondary'}
+                            className="ml-2"
+                          >
+                            {room.effectiveAccess === 'ADMIN'
+                              ? 'Room admin'
+                              : room.effectiveAccess === 'DOWNLOAD'
+                                ? 'Download'
+                                : room.effectiveAccess === 'VIEW'
+                                  ? 'View'
+                                  : room.effectiveAccess === 'SCOPED'
+                                    ? 'Scoped access'
+                                    : 'No access'}
+                          </Badge>
+                          {room.directRoomGrantLevel && (
+                            <span className="ml-2 text-xs text-neutral-500">
+                              Direct: {room.directRoomGrantLevel.toLowerCase()}
+                            </span>
+                          )}
+                          {room.description && (
+                            <span className="block text-xs text-neutral-500">
+                              {room.description}
+                            </span>
+                          )}
+                          {!!room.indirectAllowSources?.length && (
+                            <span className="block text-xs text-amber-700 dark:text-amber-300">
+                              Also granted through{' '}
+                              {room.indirectAllowSources
+                                .map((source) =>
+                                  source === 'ROOM_ADMIN'
+                                    ? 'a room-admin assignment'
+                                    : 'a group membership'
+                                )
+                                .join(' and ')}
+                              .
+                            </span>
+                          )}
+                          {!!room.indirectDenySources?.length && (
+                            <span className="block text-xs text-danger-700 dark:text-danger-300">
+                              Access is explicitly denied through{' '}
+                              {room.indirectDenySources
+                                .map((source) =>
+                                  source === 'DIRECT' ? 'a direct grant' : 'a group grant'
+                                )
+                                .join(' and ')}
+                              .
+                            </span>
+                          )}
+                          {!!room.directScopedGrantCount && (
+                            <span className="block text-xs text-amber-700 dark:text-amber-300">
+                              {checked
+                                ? `${room.directScopedGrantCount} direct folder or document grant${room.directScopedGrantCount === 1 ? '' : 's'} will also be revoked when direct room access is removed.`
+                                : `${room.directScopedGrantCount} direct folder or document grant${room.directScopedGrantCount === 1 ? '' : 's'} are managed separately.`}
+                            </span>
+                          )}
+                          {!!room.indirectScopedGrantCount && (
+                            <span className="block text-xs text-amber-700 dark:text-amber-300">
+                              {room.indirectScopedGrantCount} folder or document grant
+                              {room.indirectScopedGrantCount === 1 ? '' : 's'} are accessible
+                              through a group membership. This room-level editor does not change
+                              that access.
+                            </span>
+                          )}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -1124,6 +1316,11 @@ export default function UsersPage() {
                     No active data rooms are available. Create or activate a room before inviting a
                     viewer.
                   </div>
+                ) : assignableRooms.length === 1 ? (
+                  <div className="rounded-md border border-primary-200 bg-primary-50 p-3 text-sm text-primary-800 dark:border-primary-900 dark:bg-primary-950/30 dark:text-primary-200">
+                    <span className="font-medium">{assignableRooms[0]?.name}</span> is the
+                    organization&apos;s only active data room and will be assigned automatically.
+                  </div>
                 ) : (
                   <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-neutral-200 p-3">
                     {assignableRooms.map((room) => {
@@ -1171,7 +1368,9 @@ export default function UsersPage() {
               loading={isInviting}
               disabled={
                 !inviteData.email.trim() ||
-                (inviteData.role === 'VIEWER' && inviteData.roomIds.length === 0)
+                (inviteData.role === 'VIEWER' &&
+                  assignableRooms.length !== 1 &&
+                  inviteData.roomIds.length === 0)
               }
             >
               Send Invitation

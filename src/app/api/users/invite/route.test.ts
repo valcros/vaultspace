@@ -258,6 +258,11 @@ describe('POST /api/users/invite', () => {
   });
 
   it('rejects a viewer invitation without room assignments', async () => {
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      const tx = { room: { findMany: vi.fn().mockResolvedValue([]) } };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
     const response = await POST(
       new NextRequest('http://localhost/api/users/invite', {
         method: 'POST',
@@ -267,7 +272,44 @@ describe('POST /api/users/invite', () => {
 
     expect(response.status).toBe(400);
     expect((await response.json()).error).toMatch(/at least one active room/i);
-    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(mockWithOrgContext).toHaveBeenCalledOnce();
+  });
+
+  it('automatically assigns the only active room to a viewer invitation', async () => {
+    const createAssignments = vi.fn().mockResolvedValue({ count: 1 });
+    const invitationCreate = vi.fn().mockResolvedValue({
+      id: 'invite-single-room',
+      email: 'viewer@example.com',
+      role: 'VIEWER',
+      status: 'PENDING',
+      expiresAt: new Date('2026-08-28T00:00:00Z'),
+      invitationUrl: 'https://example.com/auth/register?token=single-room',
+      invitedByUser: { firstName: 'Admin', lastName: 'User', email: 'admin@example.com' },
+    });
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      const tx = {
+        room: { findMany: vi.fn().mockResolvedValue([{ id: 'only-room' }]) },
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
+        invitation: { findMany: vi.fn().mockResolvedValue([]), create: invitationCreate },
+        invitationRoomAssignment: { createMany: createAssignments },
+        event: { create: vi.fn().mockResolvedValue({}) },
+        organization: { findUnique: vi.fn().mockResolvedValue({ name: 'Acme Corp' }) },
+      };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/users/invite', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'viewer@example.com' }),
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(createAssignments).toHaveBeenCalledWith({
+      data: [{ invitationId: 'invite-single-room', roomId: 'only-room' }],
+    });
+    await expect(response.json()).resolves.toMatchObject({ invitation: { roomCount: 1 } });
   });
 
   it('rejects a room that is not active in the inviting organization', async () => {
