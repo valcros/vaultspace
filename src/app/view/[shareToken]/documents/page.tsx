@@ -48,6 +48,28 @@ interface Folder {
   documentCount: number;
 }
 
+async function fetchViewerDocuments(url: string): Promise<Response> {
+  let lastError: unknown;
+
+  // A route transition can transiently abort the first browser fetch even
+  // though the viewer session and access-scoped endpoint are valid. Retry once
+  // before returning a viewer to the share-link landing page. The retry does
+  // not alter authorization: the API still resolves every folder id against
+  // the viewer's current link scope.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await fetch(url, { cache: 'no-store' });
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) {
+        await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 100));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 export default function ViewerDocumentsPage() {
   const params = useParams();
   const router = useRouter();
@@ -79,7 +101,7 @@ export default function ViewerDocumentsPage() {
     setIsLoading(true);
     try {
       const query = currentFolderId ? `?folderId=${encodeURIComponent(currentFolderId)}` : '';
-      const response = await fetch(`/api/view/${shareToken}/documents${query}`);
+      const response = await fetchViewerDocuments(`/api/view/${shareToken}/documents${query}`);
       const data = await response.json();
 
       if (!response.ok) {
