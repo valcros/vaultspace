@@ -144,6 +144,20 @@ describe('server-side two-factor challenge MFA issuance', () => {
   });
 
   it('exposes only the challenge-bound issuer and the two minimal challenge functions', async () => {
+    const [extension] = await rawPrisma.$queryRawUnsafe<
+      Array<{ extension_schema: string | null; digest_function: string | null }>
+    >(
+      `SELECT namespace.nspname AS extension_schema,
+        pg_catalog.to_regprocedure('public.digest(text,text)')::text AS digest_function
+      FROM pg_catalog.pg_extension AS extension
+      INNER JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = extension.extnamespace
+      WHERE extension.extname = 'pgcrypto'`
+    );
+    expect(extension).toEqual({
+      extension_schema: 'public',
+      digest_function: 'digest(text,text)',
+    });
+
     const [acl] = await rawPrisma.$queryRawUnsafe<
       Array<{ issue: boolean; resolve: boolean; v1: boolean; v2: boolean }>
     >(
@@ -203,6 +217,15 @@ describe('server-side two-factor challenge MFA issuance', () => {
   it('issues one MFA session, consumes the challenge, and denies replay', async () => {
     const challengeToken = token();
     await expect(issueChallenge(challengeToken)).resolves.toHaveLength(1);
+    // The persisted verifier is deliberately not a bearer credential. A
+    // database read of tokenHash cannot resolve or consume the raw challenge.
+    await expect(
+      runtimePrisma.$queryRawUnsafe(
+        `SELECT * FROM ${RESOLVE_CALL}($1::text)`,
+        hashToken(challengeToken)
+      )
+    ).resolves.toEqual([]);
+    await expect(issueMfaSession(hashToken(challengeToken))).resolves.toEqual([]);
     await expect(
       runtimePrisma.$queryRawUnsafe(`SELECT * FROM ${RESOLVE_CALL}($1::text)`, challengeToken)
     ).resolves.toEqual([{ challenge_user_id: userId, challenge_organization_id: organizationId }]);
