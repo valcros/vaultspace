@@ -533,10 +533,10 @@ jobs:
         run: npm run db:setup:password-reset-e2e
 
       - name: Install Playwright browsers
-        run: npx playwright install chromium firefox --with-deps
+        run: npx playwright install chromium firefox webkit --with-deps
 
       - name: Run E2E tests
-        run: npx playwright test tests/e2e/a11y.test.ts tests/e2e/security.test.ts tests/e2e/room-interactions.test.ts tests/e2e/users-actions.test.ts
+        run: npx playwright test tests/e2e/a11y.test.ts tests/e2e/security.test.ts tests/e2e/room-interactions.test.ts tests/e2e/users-actions.test.ts tests/e2e/viewer-navigation.test.ts
         timeout-minutes: 12
 
       - name: Build standalone browser test target

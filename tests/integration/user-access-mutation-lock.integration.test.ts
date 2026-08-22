@@ -41,6 +41,30 @@ function deferred() {
   return { promise, resolve };
 }
 
+async function waitForAdvisoryLockWait(client: PrismaClient, backendPid: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+
+  while (Date.now() < deadline) {
+    const [state] = await client.$queryRaw<Array<{ isWaiting: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_locks
+        WHERE pid = ${backendPid}
+          AND locktype = 'advisory'
+          AND NOT granted
+      ) AS "isWaiting"
+    `;
+    if (state?.isWaiting) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(
+    `Concurrent user-access transaction ${backendPid} did not wait for the advisory lock`
+  );
+}
+
 const databaseUrl = requireAdminDatabaseUrl();
 assertDisposableConcurrencyDatabase(databaseUrl);
 const archiveClient = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
@@ -108,11 +132,13 @@ describe('user access mutation lock against PostgreSQL', () => {
     const fixture = await seedViewer();
     const archiveLockHeld = deferred();
     const grantAttemptStarted = deferred();
+    const allowArchiveCommit = deferred();
+    let grantBackendPid = 0;
 
     const archive = archiveClient.$transaction(async (tx) => {
       await lockUserAccessMutation(tx, fixture.organization.id, fixture.viewer.id);
       archiveLockHeld.resolve();
-      await grantAttemptStarted.promise;
+      await allowArchiveCommit.promise;
 
       await tx.userOrganization.update({
         where: { id: fixture.membership.id },
@@ -131,6 +157,13 @@ describe('user access mutation lock against PostgreSQL', () => {
 
     await archiveLockHeld.promise;
     const grant = mutationClient.$transaction(async (tx) => {
+      const [backend] = await tx.$queryRaw<Array<{ pid: number }>>`
+        SELECT pg_backend_pid() AS pid
+      `;
+      grantBackendPid = backend?.pid ?? 0;
+      if (!grantBackendPid) {
+        throw new Error('Concurrent grant transaction did not expose a PostgreSQL backend PID');
+      }
       grantAttemptStarted.resolve();
       await lockUserAccessMutation(tx, fixture.organization.id, fixture.viewer.id);
       const activeMembership = await tx.userOrganization.findFirst({
@@ -158,7 +191,19 @@ describe('user access mutation lock against PostgreSQL', () => {
       return 'granted';
     });
 
+    await grantAttemptStarted.promise;
+    let gateError: unknown;
+    try {
+      await waitForAdvisoryLockWait(archiveClient, grantBackendPid);
+    } catch (error) {
+      gateError = error;
+    } finally {
+      allowArchiveCommit.resolve();
+    }
     const [, grantResult] = await Promise.all([archive, grant]);
+    if (gateError) {
+      throw gateError;
+    }
     expect(grantResult).toBe('membership-inactive');
     await expect(
       archiveClient.userOrganization.findUnique({ where: { id: fixture.membership.id } })
@@ -188,11 +233,13 @@ describe('user access mutation lock against PostgreSQL', () => {
     });
     const reconciliationLockHeld = deferred();
     const updateAttemptStarted = deferred();
+    const allowReconciliationCommit = deferred();
+    let updateBackendPid = 0;
 
     const reconcile = archiveClient.$transaction(async (tx) => {
       await lockUserAccessMutation(tx, fixture.organization.id, fixture.viewer.id);
       reconciliationLockHeld.resolve();
-      await updateAttemptStarted.promise;
+      await allowReconciliationCommit.promise;
       await tx.permission.update({
         where: { id: existingPermission.id },
         data: { isActive: false },
@@ -201,6 +248,13 @@ describe('user access mutation lock against PostgreSQL', () => {
 
     await reconciliationLockHeld.promise;
     const update = mutationClient.$transaction(async (tx) => {
+      const [backend] = await tx.$queryRaw<Array<{ pid: number }>>`
+        SELECT pg_backend_pid() AS pid
+      `;
+      updateBackendPid = backend?.pid ?? 0;
+      if (!updateBackendPid) {
+        throw new Error('Concurrent update transaction did not expose a PostgreSQL backend PID');
+      }
       updateAttemptStarted.resolve();
       await lockUserAccessMutation(tx, fixture.organization.id, fixture.viewer.id);
       const currentPermission = await tx.permission.findFirst({
@@ -217,7 +271,19 @@ describe('user access mutation lock against PostgreSQL', () => {
       return 'updated';
     });
 
+    await updateAttemptStarted.promise;
+    let gateError: unknown;
+    try {
+      await waitForAdvisoryLockWait(archiveClient, updateBackendPid);
+    } catch (error) {
+      gateError = error;
+    } finally {
+      allowReconciliationCommit.resolve();
+    }
     const [, updateResult] = await Promise.all([reconcile, update]);
+    if (gateError) {
+      throw gateError;
+    }
     expect(updateResult).toBe('permission-retired');
     await expect(
       archiveClient.permission.findUnique({ where: { id: existingPermission.id } })

@@ -39,12 +39,19 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['auth-setup'],
     },
-    // Add more browsers for CI
+    // Cross-browser release coverage is required for public viewer and
+    // document-access changes. Keep all projects behind the authenticated
+    // fixture so the same browser matrix exercises protected surfaces.
     ...(process.env['CI']
       ? [
           {
             name: 'firefox',
             use: { ...devices['Desktop Firefox'] },
+            dependencies: ['auth-setup'],
+          },
+          {
+            name: 'webkit',
+            use: { ...devices['Desktop Safari'] },
             dependencies: ['auth-setup'],
           },
         ]
