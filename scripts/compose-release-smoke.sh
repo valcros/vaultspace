@@ -84,6 +84,14 @@ report_app_startup_failure() {
     | redact_runtime_output >&2 || true
 }
 
+report_worker_startup_failure() {
+  echo "ERROR: Compose general worker is not running; safe startup diagnostic follows." >&2
+  compose ps >&2 || true
+  compose logs --no-log-prefix --tail 80 worker-general 2>&1 \
+    | grep -Ei 'startup blocked|fatal|error|prisma|failed to start|cannot|module_not_found|eaddr|uncaught|worker' \
+    | redact_runtime_output >&2 || true
+}
+
 cleanup() {
   local exit_code="$?"
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -114,6 +122,7 @@ fi
 worker_status=$(docker inspect --format '{{.State.Status}}' "$worker_container")
 if [ "$worker_status" != 'running' ]; then
   echo "ERROR: general worker is not running (state=$worker_status)" >&2
+  report_worker_startup_failure
   exit 1
 fi
 

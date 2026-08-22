@@ -190,6 +190,8 @@ services:
       WORKER_TYPE: general
       NODE_ENV: ${NODE_ENV:-production}
       DEPLOYMENT_MODE: standalone
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (e.g. openssl rand -hex 32)}
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 5
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
@@ -229,6 +231,8 @@ services:
       WORKER_TYPE: preview
       NODE_ENV: ${NODE_ENV:-production}
       DEPLOYMENT_MODE: standalone
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (e.g. openssl rand -hex 32)}
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 3
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
@@ -263,6 +267,8 @@ services:
       WORKER_TYPE: scan
       NODE_ENV: ${NODE_ENV:-production}
       DEPLOYMENT_MODE: standalone
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (e.g. openssl rand -hex 32)}
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 3
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
