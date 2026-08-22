@@ -78,6 +78,7 @@ enum EventType {
   USER_LOGIN
   USER_LOGOUT
   USER_UPDATED
+  USER_NDA_ON_FILE_CHANGED
   USER_DELETED
   USER_2FA_ENABLED
   USER_2FA_DISABLED
@@ -251,6 +252,17 @@ enum NotificationType {
   LINK_ACCESSED
   ADMIN_ACTION
   DIGEST
+}
+
+// Organization-scoped relationship classification. This is descriptive
+// onboarding metadata only; it never implies a permission level.
+enum OrganizationUserType {
+  FOUNDER
+  INVESTOR
+  PARTNER
+  INVESTOR_REPRESENTATIVE
+  EMPLOYEE
+  CONSULTANT
 }
 
 // Notification frequency
@@ -448,6 +460,17 @@ model UserOrganization {
   archivedAt       DateTime?
   archivedByUserId String?
   archiveReason    String? @db.Text
+
+  // Organization-scoped profile and NDA-on-file compliance record. These are
+  // deliberately membership fields because an identity can have independent
+  // relationships and NDA evidence in different organizations.
+  company                   String?              @db.VarChar(255)
+  phone                     String?              @db.VarChar(32)
+  organizationUserType      OrganizationUserType?
+  ndaOnFile                 Boolean              @default(false)
+  ndaOnFileReference        String?              @db.VarChar(500)
+  ndaOnFileRecordedAt       DateTime?
+  ndaOnFileRecordedByUserId String?
 
   // Relations
   organization            Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1382,6 +1405,16 @@ model Invitation {
   // Link
   invitationToken String @unique @db.VarChar(255)
   invitationUrl   String @db.VarChar(500)
+
+  // Invite-time organization profile metadata. It is copied into the
+  // membership atomically at acceptance; it does not create a global User.
+  inviteeFirstName    String?               @db.VarChar(100)
+  inviteeLastName     String?               @db.VarChar(100)
+  inviteeCompany      String?               @db.VarChar(255)
+  inviteePhone        String?               @db.VarChar(32)
+  inviteeUserType     OrganizationUserType?
+  ndaOnFile           Boolean               @default(false)
+  ndaOnFileReference  String?               @db.VarChar(500)
 
   // Relations
   organization    Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)

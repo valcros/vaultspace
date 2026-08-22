@@ -89,6 +89,14 @@ export interface LinkAdmissionInput {
   ndaAccepted?: boolean;
   sourceIp: string;
   userAgent: string | null;
+  // This value is derived by the route from a valid VaultSpace session and a
+  // same-organization active membership. It is never client supplied.
+  authenticatedMember?: {
+    userId: string;
+    organizationId: string;
+    email: string;
+    ndaOnFile: boolean;
+  };
 }
 
 export interface LinkAdmissionSuccess {
@@ -96,6 +104,7 @@ export interface LinkAdmissionSuccess {
   session: { id: string };
   sessionToken: string;
   normalizedEmail: string | null;
+  ndaOnFileApplied: boolean;
 }
 
 export type LinkAdmissionResult =
@@ -249,11 +258,19 @@ export async function evaluateLinkAdmission(
     }
   }
 
+  const trustedMemberEmail =
+    input.authenticatedMember?.organizationId === link.organizationId
+      ? input.authenticatedMember.email
+      : null;
+  // An authenticated same-organization member has a verified VaultSpace
+  // identity. Do not let a public form field substitute a different asserted
+  // address for a link's email gate.
+  const admissionEmail = trustedMemberEmail ?? input.email;
   if (link.requiresEmailVerification || link.allowedEmails.length > 0) {
-    if (!input.email) {
+    if (!admissionEmail) {
       return deny('ASSERTED_EMAIL_REQUIRED', 401, 'A valid email address is required');
     }
-    const normalizedEmail = input.email.toLowerCase().trim();
+    const normalizedEmail = admissionEmail.toLowerCase().trim();
     if (!isValidEmail(normalizedEmail)) {
       return deny('ASSERTED_EMAIL_INVALID', 400, 'A valid email address is required');
     }
@@ -269,7 +286,10 @@ export async function evaluateLinkAdmission(
     }
   }
 
-  if (link.room.requiresNda && input.ndaAccepted !== true) {
+  const trustedNdaOnFile =
+    input.authenticatedMember?.organizationId === link.organizationId &&
+    input.authenticatedMember.ndaOnFile === true;
+  if (link.room.requiresNda && input.ndaAccepted !== true && !trustedNdaOnFile) {
     return deny('NDA_ACCEPTANCE_REQUIRED', 400, 'NDA acceptance is required');
   }
 
@@ -325,7 +345,10 @@ export async function admitLinkViewer(
     return initialDecision;
   }
 
-  const normalizedEmail = input.email?.toLowerCase().trim() || null;
+  const normalizedEmail =
+    input.authenticatedMember?.organizationId === link.organizationId
+      ? input.authenticatedMember.email.toLowerCase().trim()
+      : input.email?.toLowerCase().trim() || null;
   const sessionToken = randomBytes(32).toString('base64url');
 
   return withOrgContext(link.organizationId, async (tx) => {
@@ -374,6 +397,28 @@ export async function admitLinkViewer(
       return deny('LINK_SCOPE_INVALID', 404, 'This link is invalid');
     }
 
+    // Re-read the trusted membership inside the locked admission transaction.
+    // A browser body email is only asserted identity and never reaches this
+    // branch as an NDA bypass.
+    const authenticatedMember = input.authenticatedMember;
+    const ndaOnFileApplied = Boolean(
+      authenticatedMember &&
+        authenticatedMember.organizationId === current.organizationId &&
+        (await tx.userOrganization.findFirst({
+          where: {
+            organizationId: current.organizationId,
+            userId: authenticatedMember.userId,
+            isActive: true,
+            archivedAt: null,
+            user: { isActive: true, email: authenticatedMember.email },
+          },
+          select: { id: true, ndaOnFile: true },
+        }))?.ndaOnFile
+    );
+    if (current.room.requiresNda && input.ndaAccepted !== true && !ndaOnFileApplied) {
+      return deny('NDA_ACCEPTANCE_REQUIRED', 400, 'NDA acceptance is required');
+    }
+
     await tx.link.update({
       where: { id: current.id },
       data: {
@@ -387,6 +432,7 @@ export async function admitLinkViewer(
         organizationId: current.organizationId,
         roomId: current.roomId,
         linkId: current.id,
+        userId: ndaOnFileApplied ? authenticatedMember?.userId : null,
         sessionToken,
         visitorEmail: normalizedEmail,
         ipAddress: input.sourceIp === 'unknown' ? null : input.sourceIp,
@@ -407,7 +453,7 @@ export async function admitLinkViewer(
       },
     });
 
-    return { allowed: true, session, sessionToken, normalizedEmail };
+    return { allowed: true, session, sessionToken, normalizedEmail, ndaOnFileApplied };
   });
 }
 

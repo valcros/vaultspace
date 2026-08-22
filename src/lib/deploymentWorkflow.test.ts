@@ -108,7 +108,61 @@ function workerImageRepository(imageReference: string) {
   );
 }
 
-function validateContainerEnv(workerImage: string) {
+type ContainerEnvironmentEntry = {
+  name: string;
+  secretRef?: string;
+  value?: string;
+};
+
+type WorkloadSecretMetadata = {
+  name: string;
+  keyVaultUrl?: string;
+  identity?: string;
+};
+
+type WorkloadMetadata = {
+  properties: {
+    template: { containers: [{ name: string; env: ContainerEnvironmentEntry[] }] };
+    configuration: { secrets: WorkloadSecretMetadata[] };
+  };
+};
+
+type SyntheticWorkloads = {
+  'synthetic-web': WorkloadMetadata;
+  'synthetic-worker': WorkloadMetadata;
+  'synthetic-waker': WorkloadMetadata;
+  'synthetic-lifecycle': WorkloadMetadata;
+  'synthetic-reconciler': WorkloadMetadata;
+};
+
+function workloadMetadata(
+  containerName: string,
+  env: ContainerEnvironmentEntry[]
+): WorkloadMetadata {
+  return {
+    properties: {
+      template: { containers: [{ name: containerName, env }] },
+      configuration: {
+        secrets: env.flatMap((entry) =>
+          entry.secretRef
+            ? [
+                {
+                  name: entry.secretRef,
+                  keyVaultUrl: `https://synthetic-vault.vault.azure.net/secrets/${entry.secretRef}`,
+                  identity: 'system',
+                },
+              ]
+            : []
+        ),
+      },
+    },
+  };
+}
+
+function validateContainerEnv(
+  workerImage: string,
+  mutateWorkloads?: (workloads: SyntheticWorkloads) => void
+) {
   const sharedNames = [
     'NODE_ENV',
     'APP_URL',
@@ -130,13 +184,35 @@ function validateContainerEnv(workerImage: string) {
     'REDIS_URL',
     'AZURE_STORAGE_ACCOUNT_KEY',
     'ACS_CONNECTION_STRING',
+    'PASSWORD_RESET_RECOVERY_KEYS',
   ]);
-  const envEntry = (name: string) =>
+  const envEntry = (name: string): ContainerEnvironmentEntry =>
     secretNames.has(name)
-      ? { name, secretRef: `synthetic-${name.toLowerCase()}` }
+      ? { name, secretRef: `synthetic-${name.toLowerCase().replaceAll('_', '-')}` }
       : { name, value: `synthetic-${name.toLowerCase()}` };
   const webEnv = [...sharedNames, 'DATABASE_URL_ADMIN'].map(envEntry);
   const workerEnv = [...sharedNames, 'WORKER_TYPE'].map(envEntry);
+  const wakerEnv = [envEntry('REDIS_URL')];
+  const lifecycleEnv = [
+    envEntry('DATABASE_URL'),
+    envEntry('DATABASE_URL_ADMIN'),
+    envEntry('ACS_CONNECTION_STRING'),
+  ];
+  const reconcilerEnv = [
+    envEntry('DATABASE_URL'),
+    envEntry('REDIS_URL'),
+    envEntry('SESSION_SECRET'),
+    envEntry('PASSWORD_RESET_RECOVERY_KEYS'),
+    envEntry('PASSWORD_RESET_RECONCILER_ENABLED'),
+  ];
+  const workloads: SyntheticWorkloads = {
+    'synthetic-web': workloadMetadata('synthetic-web', webEnv),
+    'synthetic-worker': workloadMetadata('synthetic-worker', workerEnv),
+    'synthetic-waker': workloadMetadata('synthetic-waker', wakerEnv),
+    'synthetic-lifecycle': workloadMetadata('synthetic-lifecycle', lifecycleEnv),
+    'synthetic-reconciler': workloadMetadata('synthetic-reconciler', reconcilerEnv),
+  };
+  mutateWorkloads?.(workloads);
   const controlledAzure = `
 az() {
   local app=""
@@ -163,18 +239,16 @@ az() {
     printf '%s\n' 'false'
   elif [[ "$query" == *"[0].image"* ]]; then
     printf '%s\n' "$MOCK_WORKER_IMAGE"
-  elif [ "$query" = "properties.template.containers[0].env" ]; then
-    if [ "$app" = "synthetic-web" ]; then
-      printf '%s\n' "$MOCK_WEB_ENV"
-    else
-      printf '%s\n' "$MOCK_WORKER_ENV"
-    fi
+  elif [[ "$query" == *".env"* ]]; then
+    echo "$MOCK_WORKLOADS" | jq -c --arg app "$app" '.[$app].properties.template.containers[0].env'
+  elif [ -z "$query" ]; then
+    echo "$MOCK_WORKLOADS" | jq -c --arg app "$app" '.[$app]'
   else
     printf '%s\n' 'null'
   fi
 }
 export -f az
-"$1" synthetic-rg synthetic-web synthetic-worker synthetic-worker
+"$1" synthetic-rg synthetic-web synthetic-web synthetic-worker synthetic-worker synthetic-waker synthetic-waker synthetic-lifecycle synthetic-reconciler
 `;
 
   return spawnSync(
@@ -185,8 +259,7 @@ export -f az
       env: {
         NODE_ENV: 'test',
         PATH: process.env['PATH'] ?? '',
-        MOCK_WEB_ENV: JSON.stringify(webEnv),
-        MOCK_WORKER_ENV: JSON.stringify(workerEnv),
+        MOCK_WORKLOADS: JSON.stringify(workloads),
         MOCK_WORKER_IMAGE: workerImage,
       },
     }
@@ -567,6 +640,124 @@ describe('container environment worker image repository validation', () => {
     expect(result.stdout).toContain("expected the 'vaultspace-worker' image");
     expect(result.stdout).toContain('Validation failed: 1 error(s) found');
   });
+
+  it('rejects a sensitive Container App secretRef that is not backed by Key Vault', () => {
+    const result = validateContainerEnv(
+      `<azure-container-registry>/vaultspace-worker@sha256:${'5'.repeat(64)}`,
+      (workloads) => {
+        const workerSecrets = workloads['synthetic-worker'].properties.configuration.secrets;
+        const acsSecret = workerSecrets.find(
+          (secret) => secret.name === 'synthetic-acs-connection-string'
+        );
+        if (!acsSecret) {
+          throw new Error('Synthetic ACS secret fixture is missing');
+        }
+        delete acsSecret.keyVaultUrl;
+        delete acsSecret.identity;
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'ERROR: synthetic-worker ACS_CONNECTION_STRING must resolve through an Azure Key Vault secret'
+    );
+    expect(result.stdout).not.toContain('not-displayed');
+  });
+
+  it('rejects a Key Vault reference without a managed identity', () => {
+    const result = validateContainerEnv(
+      `<azure-container-registry>/vaultspace-worker@sha256:${'a'.repeat(64)}`,
+      (workloads) => {
+        const wakerSecrets = workloads['synthetic-waker'].properties.configuration.secrets;
+        const redisSecret = wakerSecrets.find((secret) => secret.name === 'synthetic-redis-secret');
+        if (!redisSecret) {
+          throw new Error('Synthetic Redis secret fixture is missing');
+        }
+        delete redisSecret.identity;
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'ERROR: synthetic-waker REDIS_URL Key Vault reference must use a managed identity'
+    );
+  });
+
+  it('rejects a literal value for a sensitive Container App setting without printing it', () => {
+    const result = validateContainerEnv(
+      `<azure-container-registry>/vaultspace-worker@sha256:${'6'.repeat(64)}`,
+      (workloads) => {
+        const session = workloads['synthetic-web'].properties.template.containers[0].env.find(
+          (entry) => entry.name === 'SESSION_SECRET'
+        );
+        if (!session) {
+          throw new Error('Synthetic session secret fixture is missing');
+        }
+        delete session.secretRef;
+        session.value = 'not-displayed';
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('ERROR: synthetic-web SESSION_SECRET must use a secretRef');
+    expect(result.stdout).not.toContain('not-displayed');
+  });
+
+  it('rejects a sensitive setting that mixes a secretRef with a literal value', () => {
+    const result = validateContainerEnv(
+      `<azure-container-registry>/vaultspace-worker@sha256:${'9'.repeat(64)}`,
+      (workloads) => {
+        const redis = workloads['synthetic-worker'].properties.template.containers[0].env.find(
+          (entry) => entry.name === 'REDIS_URL'
+        );
+        if (!redis) {
+          throw new Error('Synthetic Redis secret fixture is missing');
+        }
+        redis.value = 'not-displayed';
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'ERROR: synthetic-worker REDIS_URL must not include a literal value'
+    );
+    expect(result.stdout).not.toContain('not-displayed');
+  });
+
+  it('validates required Key Vault bindings on scheduled jobs', () => {
+    const result = validateContainerEnv(
+      `<azure-container-registry>/vaultspace-worker@sha256:${'7'.repeat(64)}`,
+      (workloads) => {
+        const lifecycle = workloads['synthetic-lifecycle'];
+        lifecycle.properties.template.containers[0].env =
+          lifecycle.properties.template.containers[0].env.filter(
+            (entry) => entry.name !== 'ACS_CONNECTION_STRING'
+          );
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'ERROR: synthetic-lifecycle missing required env var: ACS_CONNECTION_STRING'
+    );
+  });
+
+  it('rejects the worker legacy Redis password credential path', () => {
+    const result = validateContainerEnv(
+      `<azure-container-registry>/vaultspace-worker@sha256:${'8'.repeat(64)}`,
+      (workloads) => {
+        workloads['synthetic-worker'].properties.template.containers[0].env.push({
+          name: 'REDIS_PASSWORD',
+          secretRef: 'synthetic-legacy-redis-password',
+        });
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'ERROR: synthetic-worker has forbidden runtime env var: REDIS_PASSWORD'
+    );
+  });
 });
 
 describe('staging deployment workflow boundary', () => {
@@ -696,6 +887,16 @@ describe('staging deployment workflow boundary', () => {
     ).toBeLessThan(deployWorkflow.indexOf('- name: Update Container App - Web'));
     expect(deployWorkflow).not.toContain('.checks.database.status');
     expect(deployWorkflow).not.toContain('.checks.cache.status');
+  });
+
+  it('runs the unified Key Vault reference audit across every deployed workload', () => {
+    expect(deployWorkflow).toContain(
+      '- name: Validate Container Apps and Key Vault secret references'
+    );
+    expect(deployWorkflow).toContain('"$WAKER_JOB_APP"');
+    expect(deployWorkflow).toContain('"$LIFECYCLE_JOB_APP"');
+    expect(deployWorkflow).toContain('"$RESET_RECONCILER_JOB_APP"');
+    expect(deployWorkflow).toContain('scripts/validate-container-env.sh');
   });
 
   it('uses one scale-aware worker readiness contract at every deployment boundary', () => {

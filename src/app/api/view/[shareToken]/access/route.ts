@@ -12,6 +12,7 @@ import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAu
 import { getRequestContext } from '@/lib/middleware';
 import { admitLinkViewer, getLinkPolicyRecord } from '@/lib/permissions/LinkPolicy';
 import { getClientIp } from '@/lib/utils/ip';
+import { getAuthenticatedLinkMember } from '@/lib/permissions/authenticatedLinkMember';
 import {
   getViewerSession,
   requireViewerSession,
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!link) {
       return NextResponse.json({ error: 'This link is invalid or has expired' }, { status: 404 });
     }
+    const authenticatedMember = await getAuthenticatedLinkMember(link.organizationId);
 
     const auditDenied = async (reason: string) => {
       await captureAccessAudit({
@@ -76,6 +78,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ndaAccepted,
       sourceIp: getClientIp(request.headers) ?? 'unknown',
       userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+      authenticatedMember: authenticatedMember ?? undefined,
     });
     if (!admission.allowed) {
       await auditDenied(admission.code);
@@ -123,7 +126,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, ndaOnFileApplied: admission.ndaOnFileApplied });
   } catch (error) {
     console.error('[ViewerAccessAPI] Error:', error);
     return NextResponse.json({ error: 'Failed to verify access' }, { status: 500 });

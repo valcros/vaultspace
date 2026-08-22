@@ -1008,10 +1008,19 @@ jobs:
           fi
           echo "✓ Lifecycle job image, command, and trigger verified"
 
-      - name: Validate Container App env shape
+      - name: Validate Container Apps and Key Vault secret references
         run: |
           chmod +x scripts/validate-container-env.sh
-          scripts/validate-container-env.sh "$RESOURCE_GROUP" "$WEB_CONTAINER_APP" "$WORKER_CONTAINER_APP" "$WORKER_CONTAINER_NAME"
+          scripts/validate-container-env.sh \
+            "$RESOURCE_GROUP" \
+            "$WEB_CONTAINER_APP" \
+            "$WEB_CONTAINER_NAME" \
+            "$WORKER_CONTAINER_APP" \
+            "$WORKER_CONTAINER_NAME" \
+            "$WAKER_JOB_APP" \
+            "$WAKER_CONTAINER_NAME" \
+            "$LIFECYCLE_JOB_APP" \
+            "$RESET_RECONCILER_JOB_APP"
 
       - name: Health check with deployment mode validation
         run: |

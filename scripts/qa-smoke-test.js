@@ -9,11 +9,13 @@
  * - QA_BASE_URL: Base URL of the deployment (default: https://www.vaultspace.org)
  * - QA_USER_EMAIL: Test user email
  * - QA_USER_PASSWORD: Test user password
+ * - QA_EXPECTED_ORGANIZATION_SLUG: Dedicated synthetic QA organization slug
  */
 
 const BASE_URL = process.env['QA_BASE_URL'] || 'https://www.vaultspace.org';
 const USER_EMAIL = process.env['QA_USER_EMAIL'];
 const USER_PASSWORD = process.env['QA_USER_PASSWORD'];
+const { assertQaTenant, getExpectedQaOrganizationSlug, maskEmail } = require('./qa-tenant-guard');
 
 const results = [];
 let sessionCookie = null;
@@ -27,10 +29,12 @@ async function runTest(name, fn) {
     await fn();
     results.push({ name, passed: true, duration: Date.now() - start });
     console.log(`✅ ${name}`);
+    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({ name, passed: false, error: message, duration: Date.now() - start });
     console.log(`❌ ${name}: ${message}`);
+    return false;
   }
 }
 
@@ -83,9 +87,11 @@ async function testLogin() {
   }
 
   const data = await response.json();
-  if (!data.user) {
-    throw new Error('Login response missing user data');
+  if (!data.user || !data.organization) {
+    throw new Error('Login response missing user or organization data');
   }
+
+  assertQaTenant(data.organization);
 
   // Extract session cookie from Set-Cookie header
   if (setCookieHeader) {
@@ -99,7 +105,7 @@ async function testLogin() {
     throw new Error('No session cookie received from login');
   }
 
-  console.log(`   Logged in as: ${data.user.email}`);
+  console.log(`   Logged in as: ${maskEmail(data.user.email)} in approved QA tenant`);
 }
 
 // Test 3: List Rooms
@@ -316,12 +322,13 @@ async function testDeleteFolder() {
 async function cleanupTestRoom() {
   if (!roomId) return;
 
-  try {
-    await fetchWithAuth(`/api/rooms/${roomId}`, { method: 'DELETE' });
-    console.log(`   Deleted room: ${roomId}`);
-  } catch {
-    console.log('   Room cleanup skipped (may not exist)');
+  const response = await fetchWithAuth(`/api/rooms/${roomId}`, { method: 'DELETE' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(`Room cleanup failed: ${error.error || response.status}`);
   }
+
+  console.log('   Deleted temporary QA room');
 }
 
 async function main() {
@@ -329,11 +336,16 @@ async function main() {
   console.log('║     VaultSpace MVP Smoke Test Suite      ║');
   console.log('╚══════════════════════════════════════════╝');
   console.log(`\nTarget: ${BASE_URL}`);
-  console.log(`User: ${USER_EMAIL || '(not set)'}\n`);
+  getExpectedQaOrganizationSlug();
+  console.log(`User: ${maskEmail(USER_EMAIL)}\n`);
 
   // Run tests
   await runTest('Health Check', testHealthCheck);
-  await runTest('Login', testLogin);
+  const authenticatedQaTenant = await runTest('Login and QA tenant preflight', testLogin);
+  if (!authenticatedQaTenant) {
+    process.exitCode = 1;
+    return;
+  }
   await runTest('List Rooms', testListRooms);
   await runTest('Create Room', testCreateRoom);
   await runTest('Get Room Details', testGetRoom);
@@ -348,7 +360,7 @@ async function main() {
 
   // Cleanup
   console.log('\n--- Cleanup ---');
-  await cleanupTestRoom();
+  await runTest('Delete temporary QA room', cleanupTestRoom);
 
   // Summary
   const passed = results.filter((r) => r.passed).length;

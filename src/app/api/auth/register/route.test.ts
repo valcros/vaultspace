@@ -144,10 +144,11 @@ describe('POST /api/auth/register', () => {
               lastName: 'Smith',
             }),
           },
-          userOrganization: { create: vi.fn().mockResolvedValue({}) },
+          userOrganization: { create: vi.fn().mockResolvedValue({ id: 'membership-1' }) },
           room: { findMany: vi.fn().mockResolvedValue([{ id: 'room-1' }]) },
           permission: { createMany: mockPermissionCreateMany },
           event: { create: mockEventCreate },
+          notification: { create: vi.fn().mockResolvedValue({}) },
         };
         return fn(tx);
       }
@@ -246,7 +247,11 @@ describe('POST /api/auth/register', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             eventType: 'USER_ACCEPTED_INVITATION',
-            metadata: { role: 'VIEWER', roomCount: 1, roomIds: ['room-1'] },
+            metadata: expect.objectContaining({
+              role: 'VIEWER',
+              roomCount: 1,
+              roomIds: ['room-1'],
+            }),
           }),
         })
       );
@@ -286,10 +291,11 @@ describe('POST /api/auth/register', () => {
                 lastName: 'Smith',
               }),
             },
-            userOrganization: { create: vi.fn().mockResolvedValue({}) },
+            userOrganization: { create: vi.fn().mockResolvedValue({ id: 'membership-1' }) },
             room: { findMany: vi.fn().mockResolvedValue([]) },
             permission: { createMany: mockPermissionCreateMany },
             event: { create: mockEventCreate },
+            notification: { create: vi.fn().mockResolvedValue({}) },
           };
           return fn(tx);
         }

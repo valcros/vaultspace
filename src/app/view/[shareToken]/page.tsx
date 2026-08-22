@@ -22,6 +22,7 @@ interface ShareLinkInfo {
   requiresPassword: boolean;
   requiresEmail: boolean;
   ndaRequired: boolean;
+  ndaOnFile?: boolean;
   ndaText: string | null;
   expiresAt: string | null;
   isActive: boolean;
@@ -254,7 +255,14 @@ export default function ViewerAccessPage() {
             )}
 
             {/* NDA Acceptance */}
-            {linkInfo?.ndaRequired && (
+            {linkInfo?.ndaRequired && linkInfo.ndaOnFile ? (
+              <Alert className="border-success-200 bg-success-50 text-success-900 dark:border-success-900/60 dark:bg-success-950/20 dark:text-success-100">
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  An executed NDA is on file for your organization membership. You may proceed.
+                </AlertDescription>
+              </Alert>
+            ) : linkInfo?.ndaRequired ? (
               <div className="space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/70">
                 <p className="text-sm font-medium text-slate-950 dark:text-white">
                   Non-Disclosure Agreement
@@ -276,7 +284,7 @@ export default function ViewerAccessPage() {
                   </Label>
                 </div>
               </div>
-            )}
+            ) : null}
 
             <Button
               type="submit"
@@ -286,7 +294,7 @@ export default function ViewerAccessPage() {
               disabled={
                 (linkInfo?.requiresEmail && !email) ||
                 (linkInfo?.requiresPassword && !password) ||
-                (linkInfo?.ndaRequired && !ndaAccepted)
+                (linkInfo?.ndaRequired && !linkInfo.ndaOnFile && !ndaAccepted)
               }
             >
               Access Data Room

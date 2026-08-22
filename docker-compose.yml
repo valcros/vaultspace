@@ -4,7 +4,7 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: vaultspace-postgres
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-postgres
     environment:
       POSTGRES_USER: vaultspace
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-change-me}
@@ -23,7 +23,7 @@ services:
   # Redis Cache and Job Queue
   redis:
     image: redis:7-alpine
-    container_name: vaultspace-redis
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-redis
     ports:
       - '${REDIS_PORT:-6379}:6379'
     volumes:
@@ -44,9 +44,9 @@ services:
     # DNS-pinning proxy) and deny navigations to non-public IPs. Pin a specific
     # 8.x digest for reproducibility in your own deployment.
     image: gotenberg/gotenberg:8
-    container_name: vaultspace-gotenberg
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-gotenberg
     ports:
-      - '3001:3000'
+      - '${GOTENBERG_PORT:-3001}:3000'
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
       interval: 30s
@@ -62,9 +62,9 @@ services:
   # ClamAV (Virus Scanning)
   clamav:
     image: clamav/clamav:latest
-    container_name: vaultspace-clamav
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-clamav
     ports:
-      - '3310:3310'
+      - '${CLAMAV_PORT:-3310}:3310'
     volumes:
       - clamav_data:/var/lib/clamav
     environment:
@@ -81,7 +81,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vaultspace-app
+      # Compose is the self-hosted deployment contract. Keep this explicit so
+      # the documented `docker compose up --build` path never builds the
+      # Dockerfile's intentionally fail-closed Azure default.
+      args:
+        DEPLOYMENT_MODE: standalone
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-app
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +96,7 @@ services:
       - '${APP_PORT:-3000}:3000'
     environment:
       NODE_ENV: ${NODE_ENV:-production}
+      DEPLOYMENT_MODE: standalone
       APP_URL: ${APP_URL:-http://localhost:3000}
       # No insecure default: a known session-signing secret allows trivial
       # session forgery. Compose fails fast if unset. scripts/setup.sh generates
@@ -102,6 +108,10 @@ services:
 
       # Database
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
+      # A single-role self-hosted Postgres deployment uses the same connection
+      # for reviewed migrations. Azure keeps this privileged connection out of
+      # runtime workers and validates it through a separate deployment path.
+      DATABASE_URL_ADMIN: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 10
 
       # Redis
@@ -151,7 +161,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-general
+      args:
+        DEPLOYMENT_MODE: standalone
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-worker-general
     depends_on:
       postgres:
         condition: service_healthy
@@ -160,6 +172,7 @@ services:
     environment:
       WORKER_TYPE: general
       NODE_ENV: ${NODE_ENV:-production}
+      DEPLOYMENT_MODE: standalone
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 5
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
@@ -185,7 +198,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-preview
+      args:
+        DEPLOYMENT_MODE: standalone
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-worker-preview
     depends_on:
       postgres:
         condition: service_healthy
@@ -196,6 +211,7 @@ services:
     environment:
       WORKER_TYPE: preview
       NODE_ENV: ${NODE_ENV:-production}
+      DEPLOYMENT_MODE: standalone
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 3
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
@@ -216,7 +232,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-scan
+      args:
+        DEPLOYMENT_MODE: standalone
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-worker-scan
     depends_on:
       postgres:
         condition: service_healthy
@@ -227,6 +245,7 @@ services:
     environment:
       WORKER_TYPE: scan
       NODE_ENV: ${NODE_ENV:-production}
+      DEPLOYMENT_MODE: standalone
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 3
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
@@ -253,4 +272,4 @@ volumes:
 
 networks:
   default:
-    name: vaultspace-network
+    name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-network
