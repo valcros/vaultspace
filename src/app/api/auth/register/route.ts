@@ -14,6 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 
@@ -130,6 +131,8 @@ export async function POST(request: NextRequest) {
               data: {
                 email: normalizedEmail,
                 passwordHash,
+                // Invitation details prefill the registration form, while the
+                // registering person remains able to correct their own name.
                 firstName,
                 lastName,
                 title: title || null,
@@ -140,8 +143,21 @@ export async function POST(request: NextRequest) {
               },
             });
 
-            await tx.userOrganization.create({
-              data: { userId: user.id, organizationId, role, isActive: true },
+            const acceptedAt = new Date();
+            const membership = await tx.userOrganization.create({
+              data: {
+                userId: user.id,
+                organizationId,
+                role,
+                isActive: true,
+                company: invitation.inviteeCompany,
+                phone: invitation.inviteePhone,
+                organizationUserType: invitation.inviteeUserType,
+                ndaOnFile: invitation.ndaOnFile,
+                ndaOnFileReference: invitation.ndaOnFileReference,
+                ndaOnFileRecordedAt: invitation.ndaOnFile ? invitation.createdAt : null,
+                ndaOnFileRecordedByUserId: invitation.ndaOnFile ? invitation.invitedByUserId : null,
+              },
             });
 
             // The bootstrap policies allow the new identity and membership to
@@ -193,7 +209,7 @@ export async function POST(request: NextRequest) {
             // Prisma throws P2025 (handled below as a deterministic 400).
             await tx.invitation.update({
               where: { id: invitation.id, status: 'PENDING' },
-              data: { status: 'ACCEPTED', acceptedAt: new Date() },
+              data: { status: 'ACCEPTED', acceptedAt },
             });
 
             if (currentAssignedRoomIds.length > 0) {
@@ -222,9 +238,44 @@ export async function POST(request: NextRequest) {
                   role,
                   roomCount: currentAssignedRoomIds.length,
                   roomIds: currentAssignedRoomIds,
+                  ndaOnFile: invitation.ndaOnFile,
+                  ndaReferencePresent: Boolean(invitation.ndaOnFileReference),
                 },
               },
             });
+
+            await tx.notification.create({
+              data: {
+                organizationId,
+                userOrganizationId: membership.id,
+                type: 'ADMIN_ACTION',
+                title: 'Welcome to the data room',
+                message: 'Your organization membership and assigned room access are ready.',
+              },
+            });
+
+            if (invitation.ndaOnFile) {
+              await tx.event.create({
+                data: {
+                  organizationId,
+                  eventType: 'USER_NDA_ON_FILE_CHANGED',
+                  actorType: 'ADMIN',
+                  actorId: invitation.invitedByUserId,
+                  description: 'NDA-on-file status recorded from invitation',
+                  metadata: {
+                    targetUserId: user.id,
+                    action: 'SET_FROM_INVITATION',
+                    referencePresent: Boolean(invitation.ndaOnFileReference),
+                    referenceSha256: invitation.ndaOnFileReference
+                      ? crypto
+                          .createHash('sha256')
+                          .update(invitation.ndaOnFileReference)
+                          .digest('hex')
+                      : null,
+                  },
+                },
+              });
+            }
 
             return { user, organization: invitation.organization };
           },

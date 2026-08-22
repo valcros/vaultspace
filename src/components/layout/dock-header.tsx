@@ -12,7 +12,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Bell, Search, Command } from 'lucide-react';
+import { Search, Command } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { clsx } from 'clsx';
 import { useCapabilities } from './role-provider';
+import { NotificationMenu } from './notification-menu';
 
 interface DockHeaderProps {
   user: {
@@ -106,11 +107,7 @@ export function DockHeader({ user, organization, onSearchClick }: DockHeaderProp
         <ThemeToggle className={clsx('h-9 w-9', chromeButton)} />
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className={clsx('relative', chromeButton)}>
-          <Bell className="h-5 w-5" />
-          <span className="sr-only">Notifications</span>
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger-500" />
-        </Button>
+        <NotificationMenu className={chromeButton} />
 
         {/* User menu */}
         <DropdownMenu>

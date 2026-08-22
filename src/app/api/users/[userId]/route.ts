@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 
 import {
@@ -78,6 +79,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         isActive: userOrg.isActive && userOrg.user.isActive,
         createdAt: userOrg.user.createdAt,
         lastLoginAt: userOrg.user.lastLoginAt,
+        company: userOrg.company,
+        phone: userOrg.phone,
+        organizationUserType: userOrg.organizationUserType,
+        ndaOnFile: userOrg.ndaOnFile,
+        ndaOnFileReference: userOrg.ndaOnFileReference,
+        ndaOnFileRecordedAt: userOrg.ndaOnFileRecordedAt,
       },
     });
   } catch (error) {
@@ -310,7 +317,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const body = await request.json();
-    const { firstName, lastName, title, email, role, isActive, resetTwoFactor } = body;
+    const {
+      firstName,
+      lastName,
+      title,
+      email,
+      role,
+      isActive,
+      resetTwoFactor,
+      company,
+      phone,
+      organizationUserType,
+      ndaOnFile,
+      ndaOnFileReference,
+    } = body;
 
     // Validate provided fields.
     if (role !== undefined && role !== 'ADMIN' && role !== 'VIEWER') {
@@ -338,6 +358,60 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
     if (typeof title === 'string' && title.trim().length > 255) {
       return NextResponse.json({ error: 'Title is too long' }, { status: 400 });
+    }
+    const normalizeMembershipText = (value: unknown, max: number, field: string) => {
+      if (value === undefined || value === null) {
+        return null;
+      }
+      if (typeof value !== 'string' || value.trim().length > max) {
+        throw new Error(`${field} is invalid`);
+      }
+      return value.trim() || null;
+    };
+    let normalizedCompany: string | null | undefined;
+    let normalizedPhone: string | null | undefined;
+    let normalizedNdaReference: string | null | undefined;
+    try {
+      normalizedCompany =
+        company === undefined ? undefined : normalizeMembershipText(company, 255, 'Company');
+      normalizedPhone =
+        phone === undefined ? undefined : normalizeMembershipText(phone, 32, 'Phone');
+      normalizedNdaReference =
+        ndaOnFileReference === undefined
+          ? undefined
+          : normalizeMembershipText(ndaOnFileReference, 500, 'NDA reference');
+    } catch (validationError) {
+      return NextResponse.json(
+        { error: validationError instanceof Error ? validationError.message : 'Invalid profile' },
+        { status: 400 }
+      );
+    }
+    if (normalizedPhone && !/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
+      return NextResponse.json({ error: 'Phone must use E.164 format' }, { status: 400 });
+    }
+    const validUserTypes = [
+      'FOUNDER',
+      'INVESTOR',
+      'PARTNER',
+      'INVESTOR_REPRESENTATIVE',
+      'EMPLOYEE',
+      'CONSULTANT',
+    ];
+    if (
+      organizationUserType !== undefined &&
+      organizationUserType !== null &&
+      !validUserTypes.includes(organizationUserType)
+    ) {
+      return NextResponse.json({ error: 'Invalid organization user type' }, { status: 400 });
+    }
+    if (ndaOnFile !== undefined && typeof ndaOnFile !== 'boolean') {
+      return NextResponse.json({ error: 'ndaOnFile must be a boolean' }, { status: 400 });
+    }
+    if (ndaOnFile === false && normalizedNdaReference) {
+      return NextResponse.json(
+        { error: 'An NDA reference requires NDA on file to be enabled' },
+        { status: 400 }
+      );
     }
     let normalizedEmail: string | undefined;
     if (email !== undefined) {
@@ -381,6 +455,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const emailChanged = normalizedEmail !== undefined && normalizedEmail !== userOrg.user.email;
       const roleChanged = role !== undefined && role !== userOrg.role;
       const activeChanged = isActive !== undefined && isActive !== userOrg.isActive;
+      const ndaOnFileChanged = ndaOnFile !== undefined && ndaOnFile !== userOrg.ndaOnFile;
+      const ndaReferenceChanged =
+        normalizedNdaReference !== undefined &&
+        normalizedNdaReference !== userOrg.ndaOnFileReference;
       const activeMembershipCount =
         isActive === false
           ? await bootstrapDb.userOrganization.count({
@@ -571,8 +649,38 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       if (isActive !== undefined) {
         memData.isActive = isActive;
       }
+      if (normalizedCompany !== undefined) {
+        memData.company = normalizedCompany;
+      }
+      if (normalizedPhone !== undefined) {
+        memData.phone = normalizedPhone;
+      }
+      if (organizationUserType !== undefined) {
+        memData.organizationUserType = organizationUserType;
+      }
+      if (ndaOnFile !== undefined) {
+        memData.ndaOnFile = ndaOnFile;
+        memData.ndaOnFileReference = ndaOnFile
+          ? (normalizedNdaReference ?? userOrg.ndaOnFileReference)
+          : null;
+        memData.ndaOnFileRecordedAt = ndaOnFile ? new Date() : null;
+        memData.ndaOnFileRecordedByUserId = ndaOnFile ? session.userId : null;
+      } else if (normalizedNdaReference !== undefined) {
+        memData.ndaOnFileReference = normalizedNdaReference;
+      }
       if (Object.keys(memData).length > 0) {
         await tx.userOrganization.update({ where: { id: userOrg.id }, data: memData });
+      }
+
+      // An active share-link session admitted through the authenticated
+      // NDA-on-file path must end immediately when the compliance status is
+      // cleared. Public asserted-email sessions have no userId and are not
+      // affected by this membership-specific revocation.
+      if (ndaOnFileChanged && ndaOnFile === false) {
+        await tx.viewSession.updateMany({
+          where: { organizationId: session.organizationId, userId, isActive: true },
+          data: { isActive: false },
+        });
       }
 
       // Record only fields whose values actually changed (accurate audit trail).
@@ -589,6 +697,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         ...(roleChanged ? ['role'] : []),
         ...(activeChanged ? ['isActive'] : []),
         ...(resetTwoFactor === true ? ['twoFactorReset'] : []),
+        ...(normalizedCompany !== undefined && normalizedCompany !== userOrg.company
+          ? ['company']
+          : []),
+        ...(normalizedPhone !== undefined && normalizedPhone !== userOrg.phone ? ['phone'] : []),
+        ...(organizationUserType !== undefined &&
+        organizationUserType !== userOrg.organizationUserType
+          ? ['organizationUserType']
+          : []),
+        ...(ndaOnFileChanged ? ['ndaOnFile'] : []),
+        ...(ndaReferenceChanged ? ['ndaOnFileReference'] : []),
       ];
       await tx.event.create({
         data: {
@@ -601,6 +719,32 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           metadata: { targetUserId: userId, fields: changedFields },
         },
       });
+
+      if (ndaOnFileChanged || ndaReferenceChanged) {
+        const nextReference =
+          ndaOnFile === false ? null : (normalizedNdaReference ?? userOrg.ndaOnFileReference);
+        await tx.event.create({
+          data: {
+            organizationId: session.organizationId,
+            eventType: 'USER_NDA_ON_FILE_CHANGED',
+            actorType: 'ADMIN',
+            actorId: session.userId,
+            actorEmail: session.user.email,
+            description: 'Updated organization NDA-on-file status',
+            metadata: {
+              targetUserId: userId,
+              targetMembershipId: userOrg.id,
+              action: ndaOnFileChanged ? (ndaOnFile ? 'SET' : 'CLEARED') : 'REFERENCE_UPDATED',
+              previousNdaOnFile: userOrg.ndaOnFile,
+              nextNdaOnFile: ndaOnFile ?? userOrg.ndaOnFile,
+              referencePresent: Boolean(nextReference),
+              referenceSha256: nextReference
+                ? crypto.createHash('sha256').update(nextReference).digest('hex')
+                : null,
+            },
+          },
+        });
+      }
 
       return {
         success: true,

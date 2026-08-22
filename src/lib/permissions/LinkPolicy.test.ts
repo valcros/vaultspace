@@ -157,6 +157,35 @@ describe('W1-1 central link admission policy', () => {
     ).resolves.toEqual({ allowed: true });
   });
 
+  it('uses a same-organization authenticated member email for restricted links', async () => {
+    const restricted = link({
+      requiresEmailVerification: true,
+      allowedEmails: ['member@example.test'],
+    });
+
+    await expect(
+      evaluateLinkAdmission(
+        restricted,
+        {
+          // A browser-supplied allowlisted email cannot stand in for the
+          // authenticated member's verified identity.
+          email: 'member@example.test',
+          sourceIp: '127.0.0.1',
+          userAgent: null,
+          authenticatedMember: {
+            userId: 'member-1',
+            organizationId: 'org-1',
+            email: 'different-member@example.test',
+            ndaOnFile: true,
+          },
+        },
+        NOW
+      )
+    ).resolves.toEqual(
+      expect.objectContaining({ allowed: false, code: 'ASSERTED_EMAIL_NOT_ALLOWED' })
+    );
+  });
+
   it('enforces password, NDA, and source-IP gates without exposing the password', async () => {
     const passwordHash = await bcrypt.hash('correct-password', 4);
     const gated = link({
@@ -205,6 +234,50 @@ describe('W1-1 central link admission policy', () => {
           ndaAccepted: true,
           sourceIp: '192.0.2.10',
           userAgent: null,
+        },
+        NOW
+      )
+    ).resolves.toEqual({ allowed: true });
+  });
+
+  it('allows an NDA-on-file bypass only for a trusted same-organization member', async () => {
+    const ndaLink = link({ room: { ...link().room, requiresNda: true } });
+    const assertedEmailOnly = {
+      email: 'member@example.test',
+      sourceIp: '127.0.0.1',
+      userAgent: null,
+    };
+    await expect(evaluateLinkAdmission(ndaLink, assertedEmailOnly, NOW)).resolves.toEqual(
+      expect.objectContaining({ allowed: false, code: 'NDA_ACCEPTANCE_REQUIRED' })
+    );
+    await expect(
+      evaluateLinkAdmission(
+        ndaLink,
+        {
+          ...assertedEmailOnly,
+          authenticatedMember: {
+            userId: 'member-1',
+            organizationId: 'org-other',
+            email: 'member@example.test',
+            ndaOnFile: true,
+          },
+        },
+        NOW
+      )
+    ).resolves.toEqual(
+      expect.objectContaining({ allowed: false, code: 'NDA_ACCEPTANCE_REQUIRED' })
+    );
+    await expect(
+      evaluateLinkAdmission(
+        ndaLink,
+        {
+          ...assertedEmailOnly,
+          authenticatedMember: {
+            userId: 'member-1',
+            organizationId: 'org-1',
+            email: 'member@example.test',
+            ndaOnFile: true,
+          },
         },
         NOW
       )

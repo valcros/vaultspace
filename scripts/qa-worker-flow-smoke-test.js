@@ -9,6 +9,7 @@
  * Required env:
  * - QA_USER_EMAIL
  * - QA_USER_PASSWORD
+ * - QA_EXPECTED_ORGANIZATION_SLUG: dedicated synthetic QA organization slug
  *
  * Optional env:
  * - QA_BASE_URL, defaults to https://www.vaultspace.org
@@ -24,6 +25,7 @@ const POLL_TIMEOUT_MS = Number(process.env['QA_POLL_TIMEOUT_MS'] || 120000);
 const POLL_INTERVAL_MS = 3000;
 const ALLOW_EMAIL_TESTS = process.env['QA_ALLOW_EMAIL_TESTS'] === 'true';
 const ALLOW_EXPORT_EMAIL = process.env['QA_ALLOW_EXPORT_EMAIL'] === 'true';
+const { assertQaTenant, getExpectedQaOrganizationSlug, maskEmail } = require('./qa-tenant-guard');
 
 const results = [];
 const artifacts = {};
@@ -31,14 +33,6 @@ let sessionCookie = null;
 let roomId = null;
 let documentId = null;
 let exportJobId = null;
-
-function maskEmail(value) {
-  if (!value || !value.includes('@')) {
-    return '(not set)';
-  }
-  const [local, domain] = value.split('@');
-  return `${local.slice(0, 2)}***@${domain}`;
-}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,10 +47,12 @@ async function runTest(name, fn) {
     if (details) {
       console.log(`     ${details}`);
     }
+    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({ name, status: 'FAIL', durationMs: Date.now() - start, error: message });
     console.log(`FAIL ${name}: ${message}`);
+    return false;
   }
 }
 
@@ -117,6 +113,7 @@ async function login() {
   });
   const data = await readJson(response);
   assertOk(response, data, 'Login');
+  assertQaTenant(data.organization);
 
   const setCookieHeader = response.headers.get('set-cookie') || '';
   const match = setCookieHeader.match(/vaultspace-session=([^;]+)/);
@@ -327,6 +324,7 @@ async function cleanupRoom() {
 }
 
 async function main() {
+  getExpectedQaOrganizationSlug();
   console.log('VaultSpace worker-flow smoke test');
   console.log(`Target: ${BASE_URL}`);
   console.log(`User: ${maskEmail(USER_EMAIL)}`);
@@ -344,12 +342,16 @@ async function main() {
     }
     return `mode=${data.mode}, degraded=${(data.degraded || []).join(',') || 'none'}`;
   });
+  const authenticatedQaTenant = await runTest('login and QA tenant preflight', login);
+  if (!authenticatedQaTenant) {
+    process.exitCode = 1;
+    return;
+  }
   if (ALLOW_EMAIL_TESTS) {
     await runTest('password reset', smokePasswordReset);
   } else {
     await skipTest('password reset', 'set QA_ALLOW_EMAIL_TESTS=true to send reset email');
   }
-  await runTest('login', login);
   await runTest('create temporary room', createRoom);
   await runTest('upload document', uploadDocument);
   await runTest('worker processing', pollDocumentProcessing);

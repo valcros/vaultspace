@@ -67,6 +67,25 @@ interface User {
   archivedByUserId?: string | null;
   archiveReason?: string | null;
   lifecycleStatus?: 'ACTIVE' | 'ARCHIVED_MEMBERSHIP' | 'DEACTIVATED_ACCOUNT';
+  company?: string | null;
+  organizationUserType?: OrganizationUserType | null;
+  ndaOnFile?: boolean;
+}
+
+type OrganizationUserType =
+  | 'FOUNDER'
+  | 'INVESTOR'
+  | 'PARTNER'
+  | 'INVESTOR_REPRESENTATIVE'
+  | 'EMPLOYEE'
+  | 'CONSULTANT';
+
+interface MembershipProfile {
+  company: string;
+  phone: string;
+  organizationUserType: OrganizationUserType | null;
+  ndaOnFile: boolean;
+  ndaOnFileReference: string;
 }
 
 interface PendingInvite {
@@ -135,10 +154,24 @@ export default function UsersPage() {
     email: string;
     role: 'ADMIN' | 'VIEWER';
     roomIds: string[];
+    firstName: string;
+    lastName: string;
+    company: string;
+    phone: string;
+    userType: OrganizationUserType | null;
+    ndaOnFile: boolean;
+    ndaOnFileReference: string;
   }>({
     email: '',
     role: 'VIEWER',
     roomIds: [],
+    firstName: '',
+    lastName: '',
+    company: '',
+    phone: '',
+    userType: null,
+    ndaOnFile: false,
+    ndaOnFileReference: '',
   });
   const [inviteError, setInviteError] = React.useState<string | null>(null);
   // Compose-email dialog: sends via the VaultSpace platform (org sender), not
@@ -157,6 +190,16 @@ export default function UsersPage() {
     role: 'ADMIN' | 'VIEWER';
     isActive: boolean;
   }>({ firstName: '', lastName: '', email: '', role: 'VIEWER', isActive: true });
+  const [membershipProfile, setMembershipProfile] = React.useState<MembershipProfile>({
+    company: '',
+    phone: '',
+    organizationUserType: null,
+    ndaOnFile: false,
+    ndaOnFileReference: '',
+  });
+  const [originalMembershipProfile, setOriginalMembershipProfile] =
+    React.useState<MembershipProfile | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = React.useState(false);
   const [isSavingEdit, setIsSavingEdit] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
   const [memberRoomAccess, setMemberRoomAccess] = React.useState<MemberRoomAccess[]>([]);
@@ -220,7 +263,8 @@ export default function UsersPage() {
   };
 
   const handleInvite = async () => {
-    if (!inviteData.email.trim()) {
+    if (!inviteData.email.trim() || !inviteData.firstName.trim() || !inviteData.lastName.trim()) {
+      setInviteError('First name, last name, and email are required.');
       return;
     }
     const effectiveRoomIds =
@@ -248,7 +292,18 @@ export default function UsersPage() {
 
       if (response.ok) {
         setShowInviteDialog(false);
-        setInviteData({ email: '', role: 'VIEWER', roomIds: [] });
+        setInviteData({
+          email: '',
+          role: 'VIEWER',
+          roomIds: [],
+          firstName: '',
+          lastName: '',
+          company: '',
+          phone: '',
+          userType: null,
+          ndaOnFile: false,
+          ndaOnFileReference: '',
+        });
         setInviteError(null);
         fetchUsers();
       } else {
@@ -308,12 +363,42 @@ export default function UsersPage() {
       role: user.role,
       isActive: user.isActive,
     });
+    setMembershipProfile({
+      company: user.company ?? '',
+      phone: '',
+      organizationUserType: user.organizationUserType ?? null,
+      ndaOnFile: user.ndaOnFile === true,
+      ndaOnFileReference: '',
+    });
+    setOriginalMembershipProfile(null);
+    setIsProfileLoading(true);
     setEditError(null);
     setMemberRoomAccess([]);
     setOriginalDirectRoomIds([]);
     setSelectedDirectRoomIds([]);
     setRoomAccessRestriction(null);
     setIsRoomAccessLoading(true);
+    void fetch(`/api/users/${user.id}`, { credentials: 'include' })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load profile');
+        }
+        const profile: MembershipProfile = {
+          company: data.user.company ?? '',
+          phone: data.user.phone ?? '',
+          organizationUserType: data.user.organizationUserType ?? null,
+          ndaOnFile: data.user.ndaOnFile === true,
+          ndaOnFileReference: data.user.ndaOnFileReference ?? '',
+        };
+        setMembershipProfile(profile);
+        setOriginalMembershipProfile(profile);
+      })
+      .catch((error) => {
+        console.error('Failed to load member profile:', error);
+        setEditError('Could not load this member profile. Please try again.');
+      })
+      .finally(() => setIsProfileLoading(false));
     void fetch(`/api/users/${user.id}/room-access`, { credentials: 'include' })
       .then(async (response) => {
         const data = await response.json();
@@ -334,7 +419,7 @@ export default function UsersPage() {
       .finally(() => setIsRoomAccessLoading(false));
   };
 
-  const handleSaveEdit = async () => {
+  const performSaveEdit = async () => {
     if (!editTarget) {
       return;
     }
@@ -352,6 +437,11 @@ export default function UsersPage() {
       email?: string;
       role?: 'ADMIN' | 'VIEWER';
       isActive?: boolean;
+      company?: string;
+      phone?: string;
+      organizationUserType?: OrganizationUserType | null;
+      ndaOnFile?: boolean;
+      ndaOnFileReference?: string;
     } = {};
     if (editData.firstName !== editTarget.firstName) {
       payload.firstName = editData.firstName;
@@ -368,6 +458,25 @@ export default function UsersPage() {
     if (editData.isActive !== editTarget.isActive) {
       payload.isActive = editData.isActive;
     }
+    if (originalMembershipProfile) {
+      if (membershipProfile.company !== originalMembershipProfile.company) {
+        payload.company = membershipProfile.company;
+      }
+      if (membershipProfile.phone !== originalMembershipProfile.phone) {
+        payload.phone = membershipProfile.phone;
+      }
+      if (
+        membershipProfile.organizationUserType !== originalMembershipProfile.organizationUserType
+      ) {
+        payload.organizationUserType = membershipProfile.organizationUserType;
+      }
+      if (membershipProfile.ndaOnFile !== originalMembershipProfile.ndaOnFile) {
+        payload.ndaOnFile = membershipProfile.ndaOnFile;
+      }
+      if (membershipProfile.ndaOnFileReference !== originalMembershipProfile.ndaOnFileReference) {
+        payload.ndaOnFileReference = membershipProfile.ndaOnFileReference;
+      }
+    }
     const roomAccessChanged =
       editTarget.role === 'VIEWER' &&
       editData.role === 'VIEWER' &&
@@ -382,6 +491,10 @@ export default function UsersPage() {
     if (!hasMemberChange && !roomAccessChanged) {
       setOpenActionMenuUserId(null);
       setEditTarget(null);
+      return;
+    }
+    if (!originalMembershipProfile || isProfileLoading) {
+      setEditError('Wait for the member profile to finish loading before saving.');
       return;
     }
     setIsSavingEdit(true);
@@ -428,6 +541,25 @@ export default function UsersPage() {
     } finally {
       setIsSavingEdit(false);
     }
+  };
+
+  const handleSaveEdit = () => {
+    const ndaStatusChanged =
+      originalMembershipProfile !== null &&
+      membershipProfile.ndaOnFile !== originalMembershipProfile.ndaOnFile;
+    if (!ndaStatusChanged) {
+      void performSaveEdit();
+      return;
+    }
+
+    const recordingNda = membershipProfile.ndaOnFile;
+    setConfirmAction({
+      title: recordingNda ? 'Record NDA on File' : 'Clear NDA on File',
+      description: recordingNda
+        ? 'Confirm that an executed NDA is on file for this organization member. Their signed-in membership may then satisfy a protected share-link NDA gate.'
+        : 'Clear this organization member’s NDA-on-file status. Active share-link sessions created through that status will be revoked.',
+      onConfirm: performSaveEdit,
+    });
   };
 
   const filteredUsers = users.filter(
@@ -976,7 +1108,7 @@ export default function UsersPage() {
           }
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-h-[calc(100vh-2rem)] max-w-xl grid-rows-[auto_minmax(0,1fr)_auto]">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
@@ -984,7 +1116,7 @@ export default function UsersPage() {
               signs the user out of any active sessions.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="min-h-0 space-y-4 overflow-y-auto py-4 pr-1">
             {editError && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">
                 {editError}
@@ -1069,6 +1201,116 @@ export default function UsersPage() {
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <div>
+                <Label>Profile and compliance</Label>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Organization-specific information. It does not change room permissions or any
+                  membership in another organization.
+                </p>
+              </div>
+              {isProfileLoading ? (
+                <p className="text-sm text-neutral-500">Loading profile…</p>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-company">Company</Label>
+                    <Input
+                      id="edit-company"
+                      value={membershipProfile.company}
+                      onChange={(event) =>
+                        setMembershipProfile((current) => ({
+                          ...current,
+                          company: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-phone">Phone</Label>
+                    <Input
+                      id="edit-phone"
+                      type="tel"
+                      placeholder="+15551234567"
+                      value={membershipProfile.phone}
+                      onChange={(event) =>
+                        setMembershipProfile((current) => ({
+                          ...current,
+                          phone: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-user-type">Relationship type</Label>
+                    <Select
+                      value={membershipProfile.organizationUserType ?? 'UNSPECIFIED'}
+                      onValueChange={(value) =>
+                        setMembershipProfile((current) => ({
+                          ...current,
+                          organizationUserType:
+                            value === 'UNSPECIFIED' ? null : (value as OrganizationUserType),
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="edit-user-type">
+                        <SelectValue placeholder="Select a type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UNSPECIFIED">Not specified</SelectItem>
+                        <SelectItem value="FOUNDER">Founder</SelectItem>
+                        <SelectItem value="INVESTOR">Investor</SelectItem>
+                        <SelectItem value="PARTNER">Partner</SelectItem>
+                        <SelectItem value="INVESTOR_REPRESENTATIVE">
+                          Investor representative
+                        </SelectItem>
+                        <SelectItem value="EMPLOYEE">Employee</SelectItem>
+                        <SelectItem value="CONSULTANT">Consultant</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        id="edit-nda-on-file"
+                        checked={membershipProfile.ndaOnFile}
+                        onCheckedChange={(checked) =>
+                          setMembershipProfile((current) => ({
+                            ...current,
+                            ndaOnFile: checked === true,
+                            ndaOnFileReference: checked === true ? current.ndaOnFileReference : '',
+                          }))
+                        }
+                      />
+                      <label htmlFor="edit-nda-on-file" className="cursor-pointer text-sm">
+                        <span className="font-medium">Executed NDA on file</span>
+                        <span className="mt-1 block text-xs text-neutral-600 dark:text-neutral-300">
+                          This permits a signed-in member of this organization to pass a share-link
+                          NDA gate without re-accepting it. An email entered into a public link is
+                          never enough to use this status.
+                        </span>
+                      </label>
+                    </div>
+                    {membershipProfile.ndaOnFile && (
+                      <div className="pt-2">
+                        <Label htmlFor="edit-nda-reference">NDA reference</Label>
+                        <Input
+                          id="edit-nda-reference"
+                          className="mt-2"
+                          value={membershipProfile.ndaOnFileReference}
+                          onChange={(event) =>
+                            setMembershipProfile((current) => ({
+                              ...current,
+                              ndaOnFileReference: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
               <Label>Direct room access</Label>
@@ -1193,7 +1435,11 @@ export default function UsersPage() {
             <Button variant="outline" onClick={() => setEditTarget(null)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveEdit} loading={isSavingEdit}>
+            <Button
+              onClick={handleSaveEdit}
+              loading={isSavingEdit}
+              disabled={isProfileLoading || isRoomAccessLoading}
+            >
               Save changes
             </Button>
           </DialogFooter>
@@ -1290,6 +1536,29 @@ export default function UsersPage() {
                 {inviteError}
               </div>
             )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="invite-first-name">First name</Label>
+                <Input
+                  id="invite-first-name"
+                  value={inviteData.firstName}
+                  onChange={(event) =>
+                    setInviteData({ ...inviteData, firstName: event.target.value })
+                  }
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-last-name">Last name</Label>
+                <Input
+                  id="invite-last-name"
+                  value={inviteData.lastName}
+                  onChange={(event) =>
+                    setInviteData({ ...inviteData, lastName: event.target.value })
+                  }
+                />
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <Input
@@ -1301,8 +1570,84 @@ export default function UsersPage() {
                   setInviteData({ ...inviteData, email: e.target.value });
                   setInviteError(null);
                 }}
-                autoFocus
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invite-company">Company</Label>
+              <Input
+                id="invite-company"
+                value={inviteData.company}
+                onChange={(event) => setInviteData({ ...inviteData, company: event.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invite-phone">Phone</Label>
+              <Input
+                id="invite-phone"
+                type="tel"
+                placeholder="+15551234567"
+                value={inviteData.phone}
+                onChange={(event) => setInviteData({ ...inviteData, phone: event.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invite-user-type">Relationship type</Label>
+              <Select
+                value={inviteData.userType ?? 'UNSPECIFIED'}
+                onValueChange={(value) =>
+                  setInviteData({
+                    ...inviteData,
+                    userType: value === 'UNSPECIFIED' ? null : (value as OrganizationUserType),
+                  })
+                }
+              >
+                <SelectTrigger id="invite-user-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UNSPECIFIED">Not specified</SelectItem>
+                  <SelectItem value="FOUNDER">Founder</SelectItem>
+                  <SelectItem value="INVESTOR">Investor</SelectItem>
+                  <SelectItem value="PARTNER">Partner</SelectItem>
+                  <SelectItem value="INVESTOR_REPRESENTATIVE">Investor representative</SelectItem>
+                  <SelectItem value="EMPLOYEE">Employee</SelectItem>
+                  <SelectItem value="CONSULTANT">Consultant</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="invite-nda-on-file"
+                  checked={inviteData.ndaOnFile}
+                  onCheckedChange={(checked) =>
+                    setInviteData({
+                      ...inviteData,
+                      ndaOnFile: checked === true,
+                      ndaOnFileReference: checked === true ? inviteData.ndaOnFileReference : '',
+                    })
+                  }
+                />
+                <label htmlFor="invite-nda-on-file" className="cursor-pointer text-sm">
+                  <span className="font-medium">Executed NDA on file</span>
+                  <span className="mt-1 block text-xs text-neutral-600 dark:text-neutral-300">
+                    Store this organization-specific compliance status with the invitation.
+                  </span>
+                </label>
+              </div>
+              {inviteData.ndaOnFile && (
+                <div className="pt-2">
+                  <Label htmlFor="invite-nda-reference">NDA reference</Label>
+                  <Input
+                    id="invite-nda-reference"
+                    className="mt-2"
+                    value={inviteData.ndaOnFileReference}
+                    onChange={(event) =>
+                      setInviteData({ ...inviteData, ndaOnFileReference: event.target.value })
+                    }
+                  />
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>

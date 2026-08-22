@@ -1,14 +1,38 @@
 name: Standalone Mode Validation
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/deployment-*.ts'
+      - 'src/lib/azure-guard.ts'
+      - 'src/providers/**'
+      - 'prisma/**'
+      - 'Dockerfile'
+      - 'Dockerfile.worker'
+      - 'docker-entrypoint.sh'
+      - 'docker-compose.yml'
+      - 'scripts/compose-release-smoke.sh'
+      - 'scripts/migration-startup-gucs.mjs'
+      - 'scripts/run-prisma-migrate-deploy.mjs'
+      - 'scripts/smoke-test-deployment-modes.sh'
+      - '.github/workflows/standalone-validation.yml'
   pull_request:
     branches: [main]
     paths:
       - 'src/lib/deployment-*.ts'
       - 'src/lib/azure-guard.ts'
       - 'src/providers/**'
+      - 'prisma/**'
+      - 'Dockerfile'
+      - 'Dockerfile.worker'
+      - 'docker-entrypoint.sh'
       - 'docker-compose.yml'
+      - 'scripts/compose-release-smoke.sh'
+      - 'scripts/migration-startup-gucs.mjs'
+      - 'scripts/run-prisma-migrate-deploy.mjs'
       - 'scripts/smoke-test-deployment-modes.sh'
+      - '.github/workflows/standalone-validation.yml'
   workflow_dispatch:
     inputs:
       run_full_smoke:
@@ -21,6 +45,26 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  compose-app-smoke:
+    name: Compose App Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Docker Compose v2
+        run: docker compose version
+
+      - name: Run disposable self-hosted Compose smoke
+        run: |
+          chmod +x scripts/compose-release-smoke.sh
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ] && \
+             [ "${{ inputs.run_full_smoke }}" = 'true' ]; then
+            scripts/compose-release-smoke.sh --full-stack
+          else
+            scripts/compose-release-smoke.sh
+          fi
+
   standalone-unit-tests:
     name: Standalone Unit Tests
     runs-on: ubuntu-latest

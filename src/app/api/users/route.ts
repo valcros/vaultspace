@@ -124,6 +124,9 @@ export async function GET(request: NextRequest) {
         archivedAt: uo.archivedAt?.toISOString() ?? null,
         archivedByUserId: uo.archivedByUserId,
         archiveReason: uo.archiveReason,
+        company: uo.company,
+        organizationUserType: uo.organizationUserType,
+        ndaOnFile: uo.ndaOnFile,
         lifecycleStatus:
           view === 'archived'
             ? uo.archivedAt

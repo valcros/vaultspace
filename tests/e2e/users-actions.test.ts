@@ -22,6 +22,9 @@ test.describe('Users table actions', () => {
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Profile and compliance')).toBeVisible();
+    await expect(dialog.getByLabel('Company')).toBeVisible();
+    await expect(dialog.getByLabel('Executed NDA on file')).toBeVisible();
     await dialog.getByLabel('First name').fill(UPDATED_FIRST_NAME);
     await dialog.getByRole('button', { name: 'Save changes' }).click();
     await expect(dialog).not.toBeVisible();

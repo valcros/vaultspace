@@ -61,6 +61,21 @@ beforeEach(() => {
       if (url === '/api/users/user-1/room-access') {
         return { ok: true, json: async () => ({ rooms: [] }) } as Response;
       }
+      if (url === '/api/users/user-1' && init?.method !== 'PATCH') {
+        return {
+          ok: true,
+          json: async () => ({
+            user: {
+              ...user,
+              company: null,
+              phone: null,
+              organizationUserType: null,
+              ndaOnFile: false,
+              ndaOnFileReference: null,
+            },
+          }),
+        } as Response;
+      }
       if (url === '/api/users/user-1' && init?.method === 'PATCH') {
         const body = JSON.parse(String(init.body));
         user = { ...user, ...body };
@@ -89,6 +104,9 @@ describe('Users page row actions', () => {
     const dialog = await screen.findByRole('dialog');
     const firstName = within(dialog).getByLabelText('First name');
     fireEvent.change(firstName, { target: { value: 'Augusta' } });
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Save changes' })).not.toBeDisabled()
+    );
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

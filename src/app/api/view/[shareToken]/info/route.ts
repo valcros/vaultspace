@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { evaluateLinkState, getLinkPolicyRecord } from '@/lib/permissions/LinkPolicy';
+import { getAuthenticatedLinkMember } from '@/lib/permissions/authenticatedLinkMember';
 import {
   getViewerSession,
   requireViewerSession,
@@ -30,6 +31,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const existingSession = await getViewerSession(shareToken, viewerSessionBaseSelect);
     const existingSessionResult = requireViewerSession(shareToken, existingSession);
     const alreadyAdmitted = 'session' in existingSessionResult;
+    const authenticatedMember = await getAuthenticatedLinkMember(link.organizationId);
 
     const decision = evaluateLinkState(link, { admission: !alreadyAdmitted });
     if (!decision.allowed) {
@@ -47,6 +49,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         requiresPassword: link.requiresPassword ?? false,
         requiresEmail: link.requiresEmailVerification || link.allowedEmails.length > 0,
         ndaRequired: link.room.requiresNda ?? false,
+        ndaOnFile: Boolean(authenticatedMember?.ndaOnFile),
         ndaText: link.room.ndaContent ?? null,
         expiresAt: link.expiresAt?.toISOString() || null,
         isActive: link.isActive,

@@ -4,7 +4,7 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: vaultspace-postgres
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-postgres
     environment:
       POSTGRES_USER: vaultspace
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-change-me}
@@ -23,7 +23,7 @@ services:
   # Redis Cache and Job Queue
   redis:
     image: redis:7-alpine
-    container_name: vaultspace-redis
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-redis
     ports:
       - '${REDIS_PORT:-6379}:6379'
     volumes:
@@ -44,9 +44,9 @@ services:
     # DNS-pinning proxy) and deny navigations to non-public IPs. Pin a specific
     # 8.x digest for reproducibility in your own deployment.
     image: gotenberg/gotenberg:8
-    container_name: vaultspace-gotenberg
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-gotenberg
     ports:
-      - '3001:3000'
+      - '${GOTENBERG_PORT:-3001}:3000'
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
       interval: 30s
@@ -62,9 +62,9 @@ services:
   # ClamAV (Virus Scanning)
   clamav:
     image: clamav/clamav:latest
-    container_name: vaultspace-clamav
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-clamav
     ports:
-      - '3310:3310'
+      - '${CLAMAV_PORT:-3310}:3310'
     volumes:
       - clamav_data:/var/lib/clamav
     environment:
@@ -81,7 +81,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vaultspace-app
+      # Compose is the self-hosted deployment contract. Keep this explicit so
+      # the documented `docker compose up --build` path never builds the
+      # Dockerfile's intentionally fail-closed Azure default.
+      args:
+        DEPLOYMENT_MODE: standalone
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-app
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +96,15 @@ services:
       - '${APP_PORT:-3000}:3000'
     environment:
       NODE_ENV: ${NODE_ENV:-production}
+      DEPLOYMENT_MODE: standalone
+      # Docker assigns a container-id HOSTNAME by default. Next.js treats that
+      # value as its listen target, so bind explicitly to every interface for
+      # both the published port and the in-container localhost health probe.
+      HOSTNAME: 0.0.0.0
+      # Standalone Compose uses one local database role. The Azure-only RLS
+      # repair script requires the separately provisioned vaultspace_app role,
+      # so it must not run against this self-hosted topology.
+      ENABLE_RLS: 'false'
       APP_URL: ${APP_URL:-http://localhost:3000}
       # No insecure default: a known session-signing secret allows trivial
       # session forgery. Compose fails fast if unset. scripts/setup.sh generates
@@ -102,6 +116,10 @@ services:
 
       # Database
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
+      # A single-role self-hosted Postgres deployment uses the same connection
+      # for reviewed migrations. Azure keeps this privileged connection out of
+      # runtime workers and validates it through a separate deployment path.
+      DATABASE_URL_ADMIN: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 10
 
       # Redis
@@ -113,7 +131,10 @@ services:
       SIGNED_URL_EXPIRY_SECONDS: ${SIGNED_URL_EXPIRY_SECONDS:-300}
 
       # Email
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      # Console mail is the documented safe default until an operator supplies
+      # a complete SMTP configuration. It keeps startup and health checks valid
+      # without attempting delivery.
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -141,9 +162,15 @@ services:
       - ./uploads:/app/uploads
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/health']
-      interval: 30s
+      # The application applies reviewed Prisma migrations before it binds the
+      # HTTP port. Compose health settings override the image health policy, so
+      # retain an explicit startup grace period instead of marking that normal
+      # migration window as an unhealthy application. A fresh database can
+      # apply the reviewed migration history for more than two minutes.
+      start_period: 180s
+      interval: 10s
       timeout: 10s
-      retries: 3
+      retries: 6
     restart: unless-stopped
 
   # General Worker
@@ -151,7 +178,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-general
+      args:
+        DEPLOYMENT_MODE: standalone
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-worker-general
     depends_on:
       postgres:
         condition: service_healthy
@@ -160,6 +189,9 @@ services:
     environment:
       WORKER_TYPE: general
       NODE_ENV: ${NODE_ENV:-production}
+      DEPLOYMENT_MODE: standalone
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (e.g. openssl rand -hex 32)}
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 5
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
@@ -171,7 +203,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_TLS: ${SMTP_TLS:-true}
       SMTP_FROM: ${SMTP_FROM:-noreply@vaultspace.local}
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
       SEARCH_PROVIDER: ${SEARCH_PROVIDER:-postgres}
       ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -185,7 +217,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-preview
+      args:
+        DEPLOYMENT_MODE: standalone
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-worker-preview
     depends_on:
       postgres:
         condition: service_healthy
@@ -196,6 +230,9 @@ services:
     environment:
       WORKER_TYPE: preview
       NODE_ENV: ${NODE_ENV:-production}
+      DEPLOYMENT_MODE: standalone
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (e.g. openssl rand -hex 32)}
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 3
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
@@ -216,7 +253,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: vaultspace-worker-scan
+      args:
+        DEPLOYMENT_MODE: standalone
+    container_name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-worker-scan
     depends_on:
       postgres:
         condition: service_healthy
@@ -227,6 +266,9 @@ services:
     environment:
       WORKER_TYPE: scan
       NODE_ENV: ${NODE_ENV:-production}
+      DEPLOYMENT_MODE: standalone
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a strong random value (e.g. openssl rand -hex 32)}
       DATABASE_URL: postgresql://vaultspace:${DATABASE_PASSWORD:-change-me}@postgres:5432/vaultspace
       DATABASE_POOL_SIZE: 3
       REDIS_URL: redis://:${REDIS_PASSWORD:-change-me}@redis:6379
@@ -253,4 +295,4 @@ volumes:
 
 networks:
   default:
-    name: vaultspace-network
+    name: ${COMPOSE_CONTAINER_PREFIX:-vaultspace}-network

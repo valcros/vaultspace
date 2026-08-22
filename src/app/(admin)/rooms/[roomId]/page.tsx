@@ -533,7 +533,7 @@ export default function RoomDetailPage() {
         });
       }
     },
-    [roomId, fetchDocuments, toast]
+    [roomId, fetchDocuments]
   );
 
   // Confirm delete

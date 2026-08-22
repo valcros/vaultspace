@@ -3,12 +3,13 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Menu, Bell, Search } from 'lucide-react';
+import { Menu, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useCapabilities } from './role-provider';
+import { NotificationMenu } from './notification-menu';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,12 +72,7 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
         <ThemeToggle />
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          <span className="sr-only">Notifications</span>
-          {/* Notification badge */}
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger-500" />
-        </Button>
+        <NotificationMenu />
 
         {/* User menu */}
         <DropdownMenu>
