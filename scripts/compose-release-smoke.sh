@@ -80,7 +80,7 @@ report_app_startup_failure() {
       2>&1 | redact_runtime_output >&2 || true
   fi
   compose logs --no-log-prefix --tail 80 app 2>&1 \
-    | grep -E '\[entrypoint\]|migration_startup_gucs|FATAL|ERROR|Error|Prisma' \
+    | grep -Ei '\[entrypoint\]|migration_startup_gucs|fatal|error|prisma|failed to start|cannot|module_not_found|eaddr|uncaught' \
     | redact_runtime_output >&2 || true
 }
 

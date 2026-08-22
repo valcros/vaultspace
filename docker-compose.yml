@@ -97,6 +97,10 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       DEPLOYMENT_MODE: standalone
+      # Docker assigns a container-id HOSTNAME by default. Next.js treats that
+      # value as its listen target, so bind explicitly to every interface for
+      # both the published port and the in-container localhost health probe.
+      HOSTNAME: 0.0.0.0
       # Standalone Compose uses one local database role. The Azure-only RLS
       # repair script requires the separately provisioned vaultspace_app role,
       # so it must not run against this self-hosted topology.
@@ -127,7 +131,10 @@ services:
       SIGNED_URL_EXPIRY_SECONDS: ${SIGNED_URL_EXPIRY_SECONDS:-300}
 
       # Email
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      # Console mail is the documented safe default until an operator supplies
+      # a complete SMTP configuration. It keeps startup and health checks valid
+      # without attempting delivery.
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -158,8 +165,9 @@ services:
       # The application applies reviewed Prisma migrations before it binds the
       # HTTP port. Compose health settings override the image health policy, so
       # retain an explicit startup grace period instead of marking that normal
-      # migration window as an unhealthy application.
-      start_period: 90s
+      # migration window as an unhealthy application. A fresh database can
+      # apply the reviewed migration history for more than two minutes.
+      start_period: 180s
       interval: 10s
       timeout: 10s
       retries: 6
@@ -193,7 +201,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_TLS: ${SMTP_TLS:-true}
       SMTP_FROM: ${SMTP_FROM:-noreply@vaultspace.local}
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
       SEARCH_PROVIDER: ${SEARCH_PROVIDER:-postgres}
       ENCRYPTION_PROVIDER: ${ENCRYPTION_PROVIDER:-noop}
       LOG_LEVEL: ${LOG_LEVEL:-info}
