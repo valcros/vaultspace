@@ -31,7 +31,9 @@ export async function GET() {
         },
         select: { id: true },
       });
-      if (!membership) {return { error: 'Active organization membership required', status: 403 } as const;}
+      if (!membership) {
+        return { error: 'Active organization membership required', status: 403 } as const;
+      }
 
       const [items, unreadCount] = await Promise.all([
         tx.notification.findMany({
@@ -39,7 +41,14 @@ export async function GET() {
             organizationId: session.organizationId,
             userOrganizationId: membership.id,
           },
-          select: { id: true, type: true, title: true, message: true, isRead: true, createdAt: true },
+          select: {
+            id: true,
+            type: true,
+            title: true,
+            message: true,
+            isRead: true,
+            createdAt: true,
+          },
           orderBy: { createdAt: 'desc' },
           take: MAX_ITEMS,
         }),
@@ -56,7 +65,9 @@ export async function GET() {
         unreadCount,
       };
     });
-    if ('error' in result) {return NextResponse.json({ error: result.error }, { status: result.status });}
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
     return NextResponse.json(result);
   } catch (error) {
     if (isAuthenticationError(error)) {
@@ -88,7 +99,9 @@ export async function PATCH(request: NextRequest) {
         },
         select: { id: true },
       });
-      if (!membership) {return { error: 'Active organization membership required', status: 403 } as const;}
+      if (!membership) {
+        return { error: 'Active organization membership required', status: 403 } as const;
+      }
 
       const update = await tx.notification.updateMany({
         where: {
@@ -108,7 +121,9 @@ export async function PATCH(request: NextRequest) {
       });
       return { updated: update.count, unreadCount };
     });
-    if ('error' in result) {return NextResponse.json({ error: result.error }, { status: result.status });}
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
     return NextResponse.json(result);
   } catch (error) {
     if (isAuthenticationError(error)) {

@@ -381,7 +381,9 @@ export default function UsersPage() {
     void fetch(`/api/users/${user.id}`, { credentials: 'include' })
       .then(async (response) => {
         const data = await response.json();
-        if (!response.ok) {throw new Error(data.error || 'Failed to load profile');}
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load profile');
+        }
         const profile: MembershipProfile = {
           company: data.user.company ?? '',
           phone: data.user.phone ?? '',
@@ -463,7 +465,9 @@ export default function UsersPage() {
       if (membershipProfile.phone !== originalMembershipProfile.phone) {
         payload.phone = membershipProfile.phone;
       }
-      if (membershipProfile.organizationUserType !== originalMembershipProfile.organizationUserType) {
+      if (
+        membershipProfile.organizationUserType !== originalMembershipProfile.organizationUserType
+      ) {
         payload.organizationUserType = membershipProfile.organizationUserType;
       }
       if (membershipProfile.ndaOnFile !== originalMembershipProfile.ndaOnFile) {
@@ -1258,7 +1262,9 @@ export default function UsersPage() {
                         <SelectItem value="FOUNDER">Founder</SelectItem>
                         <SelectItem value="INVESTOR">Investor</SelectItem>
                         <SelectItem value="PARTNER">Partner</SelectItem>
-                        <SelectItem value="INVESTOR_REPRESENTATIVE">Investor representative</SelectItem>
+                        <SelectItem value="INVESTOR_REPRESENTATIVE">
+                          Investor representative
+                        </SelectItem>
                         <SelectItem value="EMPLOYEE">Employee</SelectItem>
                         <SelectItem value="CONSULTANT">Consultant</SelectItem>
                       </SelectContent>
@@ -1273,8 +1279,7 @@ export default function UsersPage() {
                           setMembershipProfile((current) => ({
                             ...current,
                             ndaOnFile: checked === true,
-                            ndaOnFileReference:
-                              checked === true ? current.ndaOnFileReference : '',
+                            ndaOnFileReference: checked === true ? current.ndaOnFileReference : '',
                           }))
                         }
                       />
@@ -1537,7 +1542,9 @@ export default function UsersPage() {
                 <Input
                   id="invite-first-name"
                   value={inviteData.firstName}
-                  onChange={(event) => setInviteData({ ...inviteData, firstName: event.target.value })}
+                  onChange={(event) =>
+                    setInviteData({ ...inviteData, firstName: event.target.value })
+                  }
                   autoFocus
                 />
               </div>
@@ -1546,7 +1553,9 @@ export default function UsersPage() {
                 <Input
                   id="invite-last-name"
                   value={inviteData.lastName}
-                  onChange={(event) => setInviteData({ ...inviteData, lastName: event.target.value })}
+                  onChange={(event) =>
+                    setInviteData({ ...inviteData, lastName: event.target.value })
+                  }
                 />
               </div>
             </div>
@@ -1592,7 +1601,9 @@ export default function UsersPage() {
                   })
                 }
               >
-                <SelectTrigger id="invite-user-type"><SelectValue /></SelectTrigger>
+                <SelectTrigger id="invite-user-type">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="UNSPECIFIED">Not specified</SelectItem>
                   <SelectItem value="FOUNDER">Founder</SelectItem>

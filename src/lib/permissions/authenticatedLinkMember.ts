@@ -38,9 +38,16 @@ export async function getAuthenticatedLinkMember(
         archivedAt: null,
         user: { isActive: true },
       },
-      select: { userId: true, organizationId: true, ndaOnFile: true, user: { select: { email: true } } },
+      select: {
+        userId: true,
+        organizationId: true,
+        ndaOnFile: true,
+        user: { select: { email: true } },
+      },
     });
-    if (!membership) {return null;}
+    if (!membership) {
+      return null;
+    }
     return {
       userId: membership.userId,
       organizationId: membership.organizationId,

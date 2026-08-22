@@ -181,7 +181,9 @@ describe('W1-1 central link admission policy', () => {
         },
         NOW
       )
-    ).resolves.toEqual(expect.objectContaining({ allowed: false, code: 'ASSERTED_EMAIL_NOT_ALLOWED' }));
+    ).resolves.toEqual(
+      expect.objectContaining({ allowed: false, code: 'ASSERTED_EMAIL_NOT_ALLOWED' })
+    );
   });
 
   it('enforces password, NDA, and source-IP gates without exposing the password', async () => {
@@ -262,7 +264,9 @@ describe('W1-1 central link admission policy', () => {
         },
         NOW
       )
-    ).resolves.toEqual(expect.objectContaining({ allowed: false, code: 'NDA_ACCEPTANCE_REQUIRED' }));
+    ).resolves.toEqual(
+      expect.objectContaining({ allowed: false, code: 'NDA_ACCEPTANCE_REQUIRED' })
+    );
     await expect(
       evaluateLinkAdmission(
         ndaLink,

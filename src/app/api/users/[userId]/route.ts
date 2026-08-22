@@ -360,7 +360,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Title is too long' }, { status: 400 });
     }
     const normalizeMembershipText = (value: unknown, max: number, field: string) => {
-      if (value === undefined || value === null) {return null;}
+      if (value === undefined || value === null) {
+        return null;
+      }
       if (typeof value !== 'string' || value.trim().length > max) {
         throw new Error(`${field} is invalid`);
       }
@@ -370,8 +372,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     let normalizedPhone: string | null | undefined;
     let normalizedNdaReference: string | null | undefined;
     try {
-      normalizedCompany = company === undefined ? undefined : normalizeMembershipText(company, 255, 'Company');
-      normalizedPhone = phone === undefined ? undefined : normalizeMembershipText(phone, 32, 'Phone');
+      normalizedCompany =
+        company === undefined ? undefined : normalizeMembershipText(company, 255, 'Company');
+      normalizedPhone =
+        phone === undefined ? undefined : normalizeMembershipText(phone, 32, 'Phone');
       normalizedNdaReference =
         ndaOnFileReference === undefined
           ? undefined
@@ -453,7 +457,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const activeChanged = isActive !== undefined && isActive !== userOrg.isActive;
       const ndaOnFileChanged = ndaOnFile !== undefined && ndaOnFile !== userOrg.ndaOnFile;
       const ndaReferenceChanged =
-        normalizedNdaReference !== undefined && normalizedNdaReference !== userOrg.ndaOnFileReference;
+        normalizedNdaReference !== undefined &&
+        normalizedNdaReference !== userOrg.ndaOnFileReference;
       const activeMembershipCount =
         isActive === false
           ? await bootstrapDb.userOrganization.count({
@@ -655,7 +660,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
       if (ndaOnFile !== undefined) {
         memData.ndaOnFile = ndaOnFile;
-        memData.ndaOnFileReference = ndaOnFile ? normalizedNdaReference ?? userOrg.ndaOnFileReference : null;
+        memData.ndaOnFileReference = ndaOnFile
+          ? (normalizedNdaReference ?? userOrg.ndaOnFileReference)
+          : null;
         memData.ndaOnFileRecordedAt = ndaOnFile ? new Date() : null;
         memData.ndaOnFileRecordedByUserId = ndaOnFile ? session.userId : null;
       } else if (normalizedNdaReference !== undefined) {
@@ -690,9 +697,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         ...(roleChanged ? ['role'] : []),
         ...(activeChanged ? ['isActive'] : []),
         ...(resetTwoFactor === true ? ['twoFactorReset'] : []),
-        ...(normalizedCompany !== undefined && normalizedCompany !== userOrg.company ? ['company'] : []),
+        ...(normalizedCompany !== undefined && normalizedCompany !== userOrg.company
+          ? ['company']
+          : []),
         ...(normalizedPhone !== undefined && normalizedPhone !== userOrg.phone ? ['phone'] : []),
-        ...(organizationUserType !== undefined && organizationUserType !== userOrg.organizationUserType
+        ...(organizationUserType !== undefined &&
+        organizationUserType !== userOrg.organizationUserType
           ? ['organizationUserType']
           : []),
         ...(ndaOnFileChanged ? ['ndaOnFile'] : []),
@@ -712,7 +722,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
       if (ndaOnFileChanged || ndaReferenceChanged) {
         const nextReference =
-          ndaOnFile === false ? null : normalizedNdaReference ?? userOrg.ndaOnFileReference;
+          ndaOnFile === false ? null : (normalizedNdaReference ?? userOrg.ndaOnFileReference);
         await tx.event.create({
           data: {
             organizationId: session.organizationId,
@@ -724,11 +734,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             metadata: {
               targetUserId: userId,
               targetMembershipId: userOrg.id,
-              action: ndaOnFileChanged
-                ? ndaOnFile
-                  ? 'SET'
-                  : 'CLEARED'
-                : 'REFERENCE_UPDATED',
+              action: ndaOnFileChanged ? (ndaOnFile ? 'SET' : 'CLEARED') : 'REFERENCE_UPDATED',
               previousNdaOnFile: userOrg.ndaOnFile,
               nextNdaOnFile: ndaOnFile ?? userOrg.ndaOnFile,
               referencePresent: Boolean(nextReference),

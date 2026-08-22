@@ -403,8 +403,9 @@ export async function admitLinkViewer(
     const authenticatedMember = input.authenticatedMember;
     const ndaOnFileApplied = Boolean(
       authenticatedMember &&
-        authenticatedMember.organizationId === current.organizationId &&
-        (await tx.userOrganization.findFirst({
+      authenticatedMember.organizationId === current.organizationId &&
+      (
+        await tx.userOrganization.findFirst({
           where: {
             organizationId: current.organizationId,
             userId: authenticatedMember.userId,
@@ -413,7 +414,8 @@ export async function admitLinkViewer(
             user: { isActive: true, email: authenticatedMember.email },
           },
           select: { id: true, ndaOnFile: true },
-        }))?.ndaOnFile
+        })
+      )?.ndaOnFile
     );
     if (current.room.requiresNda && input.ndaAccepted !== true && !ndaOnFileApplied) {
       return deny('NDA_ACCEPTANCE_REQUIRED', 400, 'NDA acceptance is required');
