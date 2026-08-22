@@ -155,6 +155,56 @@ enum EventType {
   ORG_ENABLED
 }
 
+// Platform-control-plane capability model. These grants are deliberately
+// separate from tenant roles so a tenant administrator never gains platform
+// authority merely by changing organization membership.
+enum PlatformCapability {
+  SYSOP_CONSOLE_ACCESS
+  SYSOP_OVERVIEW_READ
+  SYSOP_USER_DIRECTORY_READ
+  SYSOP_USER_MUTATE
+  SYSOP_USER_SESSION_REVOKE
+  SYSOP_ROOM_ACCESS_MANAGE
+  SYSOP_ORGANIZATION_MANAGE
+  SYSOP_OPERATOR_MANAGE
+  SYSOP_AUDIT_READ
+  SYSOP_SECURITY_MANAGE
+}
+
+// Global, non-tenant audit taxonomy. Tenant Events belong to an Organization
+// and can never be the authoritative record of a platform-wide operation.
+enum PlatformAuditAction {
+  SYSOP_SESSION_STARTED
+  SYSOP_DIRECTORY_ACCESSED
+  SYSOP_USER_VIEWED
+  SYSOP_AUDIT_LOG_VIEWED
+  SYSOP_AUDIT_LOG_EXPORTED
+  SYSOP_USER_CREATED
+  SYSOP_USER_PROFILE_UPDATED
+  SYSOP_USER_DEACTIVATED
+  SYSOP_USER_REACTIVATED
+  SYSOP_USER_SESSION_REVOKED
+  SYSOP_MEMBERSHIP_GRANTED
+  SYSOP_MEMBERSHIP_UPDATED
+  SYSOP_MEMBERSHIP_ARCHIVED
+  SYSOP_ROOM_ACCESS_GRANTED
+  SYSOP_ROOM_ACCESS_UPDATED
+  SYSOP_ROOM_ACCESS_REVOKED
+  PLATFORM_OPERATOR_GRANTED
+  PLATFORM_OPERATOR_REVOKED
+  PLATFORM_OPERATOR_REVOKE_BLOCKED
+  SYSOP_CAPABILITY_GRANTED
+  SYSOP_CAPABILITY_REVOKED
+  SYSOP_ACTION_DENIED
+  SYSOP_ACTION_FAILED
+}
+
+enum PlatformAuditOutcome {
+  SUCCEEDED
+  DENIED
+  FAILED
+}
+
 // Q&A status - tracks question lifecycle
 enum QuestionStatus {
   OPEN
@@ -398,27 +448,31 @@ model User {
   isPlatformOperator Boolean @default(false)
 
   // Relations
-  organizations           UserOrganization[]
-  permissions             Permission[]
-  roleAssignments         RoleAssignment[]
-  groupMemberships        GroupMembership[]
-  viewSessions            ViewSession[]
-  invitationsSent         Invitation[]
-  sessions                Session[]
-  linksCreated            Link[]
-  documentVersions        DocumentVersion[]
-  eventsTriggered         Event[]
-  permissionsGranted      Permission[]          @relation("GrantedBy")
-  questionsAsked          Question[]
-  answersGiven            Answer[]
-  checklistItemsCompleted ChecklistItem[]
-  calendarEvents          CalendarEvent[]
-  bookmarks               Bookmark[]
-  accessRequestsReviewed  AccessRequest[]
-  messagesSent            Message[]             @relation("MessagesSent")
-  messagesReceived        Message[]             @relation("MessagesReceived")
-  signatureRequests       SignatureRequest[]
-  dashboardLayouts        UserDashboardLayout[]
+  organizations               UserOrganization[]
+  permissions                 Permission[]
+  roleAssignments             RoleAssignment[]
+  groupMemberships            GroupMembership[]
+  viewSessions                ViewSession[]
+  invitationsSent             Invitation[]
+  sessions                    Session[]
+  platformSessions            PlatformSession[]
+  platformCapabilityGrants    PlatformCapabilityGrant[] @relation("PlatformCapabilitySubject")
+  platformCapabilitiesGranted PlatformCapabilityGrant[] @relation("PlatformCapabilityGrantedBy")
+  platformCapabilitiesRevoked PlatformCapabilityGrant[] @relation("PlatformCapabilityRevokedBy")
+  linksCreated                Link[]
+  documentVersions            DocumentVersion[]
+  eventsTriggered             Event[]
+  permissionsGranted          Permission[]              @relation("GrantedBy")
+  questionsAsked              Question[]
+  answersGiven                Answer[]
+  checklistItemsCompleted     ChecklistItem[]
+  calendarEvents              CalendarEvent[]
+  bookmarks                   Bookmark[]
+  accessRequestsReviewed      AccessRequest[]
+  messagesSent                Message[]                 @relation("MessagesSent")
+  messagesReceived            Message[]                 @relation("MessagesReceived")
+  signatureRequests           SignatureRequest[]
+  dashboardLayouts            UserDashboardLayout[]
 
   @@index([email])
   @@index([isActive])
@@ -447,7 +501,7 @@ model UserOrganization {
   // disable a person's access to another organization.
   archivedAt       DateTime?
   archivedByUserId String?
-  archiveReason    String? @db.Text
+  archiveReason    String?   @db.Text
 
   // Relations
   organization            Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -497,6 +551,65 @@ model Session {
   @@index([expiresAt])
   @@index([isActive])
   @@map("sessions")
+}
+
+// A platform session is intentionally distinct from Session. It never carries
+// an organizationId and is accepted only by the SysOp control plane, so an
+// organization-less operator cannot acquire tenant or document access by
+// virtue of platform access.
+model PlatformSession {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId          String
+  // A platform bearer is never stored. The cookie token is HMAC-derived at
+  // lookup time and only its fixed-length, versioned hash is persisted.
+  tokenHash       String @unique @db.Char(64)
+  tokenKeyVersion Int    @default(1)
+
+  expiresAt     DateTime
+  lastActiveAt  DateTime @default(now())
+  mfaVerifiedAt DateTime
+  ipAddress     String?  @db.VarChar(50)
+  ipSubnet      String?  @db.VarChar(50)
+  userAgentHash String?  @db.VarChar(64)
+  isActive      Boolean  @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("platform_sessions")
+}
+
+// Capability grants use an explicit revocation record instead of extending
+// User with more global booleans. The operator flag remains the legacy
+// continuity source until this new control plane has been deployed and proven.
+// All User links are RESTRICT by design: recorded platform authority is
+// governance history and blocks physical user deletion rather than erasing it.
+model PlatformCapabilityGrant {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId          String
+  capability      PlatformCapability
+  grantedByUserId String
+  grantReasonCode String             @db.VarChar(64)
+  incidentRef     String?            @db.VarChar(128)
+
+  revokedAt        DateTime?
+  revokedByUserId  String?
+  revokeReasonCode String?   @db.VarChar(64)
+
+  user      User  @relation("PlatformCapabilitySubject", fields: [userId], references: [id], onDelete: Restrict)
+  grantedBy User  @relation("PlatformCapabilityGrantedBy", fields: [grantedByUserId], references: [id], onDelete: Restrict)
+  revokedBy User? @relation("PlatformCapabilityRevokedBy", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([userId, capability, revokedAt])
+  @@index([capability, revokedAt])
+  @@map("platform_capability_grants")
 }
 
 // Room (Data Room Container)
@@ -1269,6 +1382,55 @@ model Event {
   @@index([organizationId, createdAt])
   @@index([organizationId, eventType, createdAt])
   @@map("events")
+}
+
+// Append-only global platform ledger. It intentionally has no foreign keys:
+// deactivating a user, archiving a membership, or deleting a tenant must never
+// alter or cascade-delete platform governance evidence. Its fields are a
+// deliberately small, typed allowlist so persistent audit rows cannot become
+// an unbounded container for PII, document content, credentials, or secrets.
+model PlatformAuditEvent {
+  id         String   @id @default(cuid())
+  // Database-assigned ordering supports deterministic keyset pagination and
+  // later tamper-evidence anchoring without relying on wall-clock uniqueness.
+  sequence   BigInt   @unique @default(autoincrement())
+  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+
+  action  PlatformAuditAction
+  outcome PlatformAuditOutcome @default(SUCCEEDED)
+
+  actorUserId  String? @db.VarChar(255)
+  targetUserId String? @db.VarChar(255)
+  targetOrgId  String? @db.VarChar(255)
+  targetRoomId String? @db.VarChar(255)
+
+  requestId         String  @db.VarChar(100)
+  correlationId     String? @db.VarChar(100)
+  idempotencyKey    String? @unique @db.VarChar(255)
+  platformSessionId String? @db.VarChar(255)
+
+  reasonCode        String?  @db.VarChar(64)
+  incidentRef       String?  @db.VarChar(128)
+  changedFields     String[] @default([])
+  previousState     String?  @db.VarChar(64)
+  nextState         String?  @db.VarChar(64)
+  affectedItemCount Int?
+
+  ipAddressHash         String? @db.VarChar(64)
+  networkHashKeyVersion Int?
+  userAgentHash         String? @db.VarChar(64)
+  authStrength          String? @db.VarChar(32)
+  breakGlass            Boolean @default(false)
+  schemaVersion         Int     @default(1)
+
+  @@index([occurredAt, id])
+  @@index([action, occurredAt])
+  @@index([actorUserId, occurredAt])
+  @@index([targetUserId, occurredAt])
+  @@index([targetOrgId, occurredAt])
+  @@index([requestId])
+  @@index([correlationId])
+  @@map("platform_audit_events")
 }
 
 // RoomTemplate (Room Templates - F109)

@@ -12,6 +12,7 @@ import {
   revokeAndVerifyPasswordResetProviderCorrelationAccess,
   revokeAndVerifyProviderInboxAccess,
 } from '../src/lib/integrations/providerInboxDatabasePrivileges';
+import { revokeAndVerifyPlatformControlPlaneAccess } from '../src/lib/platform/databasePrivileges';
 
 const APP_ROLE = 'vaultspace_app';
 const LOGIN_CANDIDATE_FUNCTION = 'public.bootstrap_login_candidate_v1(text)';
@@ -151,6 +152,7 @@ async function main() {
     await admin.$executeRawUnsafe(`REVOKE UPDATE, DELETE ON events FROM ${APP_ROLE};`);
     await revokeAndVerifyProviderInboxAccess(admin, APP_ROLE);
     await revokeAndVerifyPasswordResetProviderCorrelationAccess(admin, APP_ROLE);
+    await revokeAndVerifyPlatformControlPlaneAccess(admin, APP_ROLE);
     await admin.$executeRawUnsafe(
       `GRANT EXECUTE ON FUNCTION ${LOGIN_CANDIDATE_FUNCTION} TO ${APP_ROLE};`
     );

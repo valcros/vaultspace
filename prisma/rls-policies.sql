@@ -48,6 +48,17 @@ ALTER TABLE extracted_texts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitation_room_assignments ENABLE ROW LEVEL SECURITY;
 
+-- Platform-control tables are global governance state, not tenant data. They
+-- receive FORCE RLS with no tenant policy, which is intentionally default-deny.
+-- Dedicated SECURITY DEFINER functions, introduced only with reviewed SysOp
+-- commands, are the sole future access path. Never add a tenant policy here.
+ALTER TABLE platform_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_sessions FORCE ROW LEVEL SECURITY;
+ALTER TABLE platform_capability_grants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_capability_grants FORCE ROW LEVEL SECURITY;
+ALTER TABLE platform_audit_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_audit_events FORCE ROW LEVEL SECURITY;
+
 -- ============================================================================
 -- STEP 2: Create policies using SET LOCAL context variable
 -- ============================================================================
@@ -366,6 +377,18 @@ REVOKE UPDATE, DELETE ON invitation_room_assignments FROM vaultspace_app;
 REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
 REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_app;
 
+-- Broad RLS repair grants must never expose the platform control plane. These
+-- tables have no ordinary runtime access path and remain default-deny until a
+-- reviewed, narrowly-scoped database function is added for a specific command.
+REVOKE ALL PRIVILEGES ON platform_sessions FROM vaultspace_app;
+REVOKE ALL PRIVILEGES ON platform_capability_grants FROM vaultspace_app;
+REVOKE ALL PRIVILEGES ON platform_audit_events FROM vaultspace_app;
+REVOKE ALL PRIVILEGES ON SEQUENCE platform_audit_events_sequence_seq FROM vaultspace_app;
+REVOKE ALL PRIVILEGES ON platform_sessions FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON platform_capability_grants FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON platform_audit_events FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON SEQUENCE platform_audit_events_sequence_seq FROM PUBLIC;
+
 -- ============================================================================
 -- STEP 4: Application role privileges
 -- ============================================================================
@@ -385,6 +408,12 @@ REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_ap
 --   REVOKE UPDATE, DELETE ON invitation_room_assignments FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_app;
+--   REVOKE ALL PRIVILEGES ON platform_sessions FROM vaultspace_app;
+--   REVOKE ALL PRIVILEGES ON platform_capability_grants FROM vaultspace_app;
+--   REVOKE ALL PRIVILEGES ON platform_audit_events FROM vaultspace_app;
+--   REVOKE ALL PRIVILEGES ON SEQUENCE platform_audit_events_sequence_seq FROM vaultspace_app;
+--   REVOKE ALL PRIVILEGES ON platform_sessions, platform_capability_grants, platform_audit_events FROM PUBLIC;
+--   REVOKE ALL PRIVILEGES ON SEQUENCE platform_audit_events_sequence_seq FROM PUBLIC;
 --   GRANT EXECUTE ON FUNCTION password_reset_provider_correlation_preflight_counts() TO vaultspace_app;
 
 -- ============================================================================
