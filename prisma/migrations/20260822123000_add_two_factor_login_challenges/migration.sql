@@ -5,6 +5,31 @@ BEGIN;
 SET LOCAL lock_timeout = '10s';
 SET LOCAL statement_timeout = '120s';
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+-- A pre-existing pgcrypto extension cannot be relocated by IF NOT EXISTS.
+-- Fail before creating any MFA function if this deployment target does not
+-- expose the schema-qualified digest function the security boundary requires.
+DO $extension_contract$
+DECLARE
+  extension_schema text;
+BEGIN
+  SELECT namespace.nspname
+    INTO extension_schema
+  FROM pg_catalog.pg_extension AS extension
+  INNER JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = extension.extnamespace
+  WHERE extension.extname = 'pgcrypto';
+
+  IF extension_schema IS DISTINCT FROM 'public'
+    OR pg_catalog.to_regprocedure('public.digest(text,text)') IS NULL
+  THEN
+    RAISE EXCEPTION USING
+      ERRCODE = 'P0001',
+      MESSAGE = 'MFA_PGCRYPTO_DIGEST_PRECONDITION_INVALID';
+  END IF;
+END
+$extension_contract$;
+
 CREATE TYPE "TwoFactorLoginChallengePurpose" AS ENUM ('TENANT_LOGIN', 'SYSOP_LOGIN');
 
 CREATE TABLE "two_factor_login_challenges" (

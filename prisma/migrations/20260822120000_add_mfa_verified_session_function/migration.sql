@@ -215,6 +215,7 @@ BEGIN
   FROM information_schema.column_privileges AS privilege
   WHERE privilege.table_schema = 'public'
     AND privilege.grantee = 'vaultspace_bootstrap_owner'
+    AND privilege.table_name = 'sessions'
     AND privilege.privilege_type IN ('INSERT', 'UPDATE');
   IF owner_write_column_privileges IS DISTINCT FROM ARRAY[
     'sessions.authenticationAssurance:INSERT',

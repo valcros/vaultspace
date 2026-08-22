@@ -78,7 +78,9 @@ describe('platform control-plane foundation', () => {
 
   it('denies direct ordinary-runtime SQL against every protected table', async () => {
     for (const table of protectedTables) {
-      await expect(runtime.$queryRawUnsafe(`SELECT * FROM public.${table} LIMIT 1`)).rejects.toThrow();
+      await expect(
+        runtime.$queryRawUnsafe(`SELECT * FROM public.${table} LIMIT 1`)
+      ).rejects.toThrow();
     }
   });
 
@@ -125,7 +127,10 @@ describe('platform control-plane foundation', () => {
     ).rejects.toThrow();
     await expect(
       admin.$transaction((tx) =>
-        tx.platformCapabilityGrant.update({ where: { id: grant.id }, data: { id: `${grant.id}-new` } })
+        tx.platformCapabilityGrant.update({
+          where: { id: grant.id },
+          data: { id: `${grant.id}-new` },
+        })
       )
     ).rejects.toThrow();
     const revoked = await admin.$transaction((tx) =>
@@ -173,5 +178,4 @@ describe('platform control-plane foundation', () => {
       admin.$transaction((tx) => tx.$executeRawUnsafe('TRUNCATE TABLE platform_audit_events'))
     ).rejects.toThrow();
   });
-
 });

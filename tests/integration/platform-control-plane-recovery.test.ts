@@ -27,82 +27,86 @@ const isolated = new PrismaClient({ datasources: { db: { url: isolatedDatabaseUr
 let databaseCreated = false;
 
 describe('platform control-plane recovery boundary', () => {
-  it(
-    'rolls the clear phase back only because a retained platform grant blocks user deletion',
-    async () => {
-      await provisioner.$executeRawUnsafe(`CREATE DATABASE ${databaseName}`);
-      databaseCreated = true;
-      execFileSync('npx', ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'], {
-        env: { ...process.env, DATABASE_URL: isolatedDatabaseUrl },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 90_000,
-      });
+  it('rolls the clear phase back only because a retained platform grant blocks user deletion', async () => {
+    await provisioner.$executeRawUnsafe(`CREATE DATABASE ${databaseName}`);
+    databaseCreated = true;
+    execFileSync('npx', ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'], {
+      env: { ...process.env, DATABASE_URL: isolatedDatabaseUrl },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 90_000,
+    });
 
-      const userId = `restore-subject-${randomUUID()}`;
-      const actorId = `restore-actor-${randomUUID()}`;
-      const organizationId = `restore-org-${randomUUID()}`;
-      await isolated.organization.create({
-        data: { id: organizationId, name: 'Restore Gate', slug: `restore-${randomUUID()}` },
-      });
-      await isolated.user.createMany({
-        data: [
-          {
-            id: userId,
-            email: `${userId}@test.invalid`,
-            passwordHash: 'not-a-secret',
-            firstName: 'Restore',
-            lastName: 'Subject',
-          },
-          {
-            id: actorId,
-            email: `${actorId}@test.invalid`,
-            passwordHash: 'not-a-secret',
-            firstName: 'Restore',
-            lastName: 'Actor',
-          },
-        ],
-      });
-      await isolated.userOrganization.create({ data: { userId, organizationId, role: 'VIEWER' } });
-      const tenantEvent = await isolated.event.create({
-        data: {
-          organizationId,
-          eventType: 'USER_CREATED',
-          actorType: 'SYSTEM',
-          actorId,
-          requestId: `restore-proof-${randomUUID()}`,
+    const userId = `restore-subject-${randomUUID()}`;
+    const actorId = `restore-actor-${randomUUID()}`;
+    const organizationId = `restore-org-${randomUUID()}`;
+    await isolated.organization.create({
+      data: { id: organizationId, name: 'Restore Gate', slug: `restore-${randomUUID()}` },
+    });
+    await isolated.user.createMany({
+      data: [
+        {
+          id: userId,
+          email: `${userId}@test.invalid`,
+          passwordHash: 'not-a-secret',
+          firstName: 'Restore',
+          lastName: 'Subject',
         },
-      });
-      const grant = await isolated.platformCapabilityGrant.create({
-        data: {
-          userId,
-          capability: 'SYSOP_AUDIT_READ',
-          grantedByUserId: actorId,
-          grantReasonCode: 'TEST_RESTORE',
+        {
+          id: actorId,
+          email: `${actorId}@test.invalid`,
+          passwordHash: 'not-a-secret',
+          firstName: 'Restore',
+          lastName: 'Actor',
         },
-      });
+      ],
+    });
+    await isolated.userOrganization.create({ data: { userId, organizationId, role: 'VIEWER' } });
+    const tenantEvent = await isolated.event.create({
+      data: {
+        organizationId,
+        eventType: 'USER_CREATED',
+        actorType: 'SYSTEM',
+        actorId,
+        requestId: `restore-proof-${randomUUID()}`,
+      },
+    });
+    const grant = await isolated.platformCapabilityGrant.create({
+      data: {
+        userId,
+        capability: 'SYSOP_AUDIT_READ',
+        grantedByUserId: actorId,
+        grantReasonCode: 'TEST_RESTORE',
+      },
+    });
 
-      let restoreError: unknown;
-      try {
-        await clearExistingDataForRestore(isolated, { mode: 'truncate' });
-      } catch (error) {
-        restoreError = error;
-      }
-      expect(restoreError).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-      expect((restoreError as Prisma.PrismaClientKnownRequestError).code).toBe('P2003');
-      expect(
-        String((restoreError as Prisma.PrismaClientKnownRequestError).meta?.['field_name'])
-      ).toContain('platform_capability_grants_userId_fkey');
+    let restoreError: unknown;
+    try {
+      await clearExistingDataForRestore(isolated, { mode: 'truncate' });
+    } catch (error) {
+      restoreError = error;
+    }
+    expect(restoreError).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect((restoreError as Prisma.PrismaClientKnownRequestError).code).toBe('P2003');
+    expect(
+      String((restoreError as Prisma.PrismaClientKnownRequestError).meta?.['field_name'])
+    ).toContain('platform_capability_grants_userId_fkey');
 
-      await expect(isolated.event.findUnique({ where: { id: tenantEvent.id } })).resolves.not.toBeNull();
-      await expect(isolated.organization.findUnique({ where: { id: organizationId } })).resolves.not.toBeNull();
-      await expect(isolated.user.findUnique({ where: { id: userId } })).resolves.not.toBeNull();
-      await expect(
-        isolated.userOrganization.findUnique({ where: { organizationId_userId: { organizationId, userId } } })
-      ).resolves.not.toBeNull();
-      await expect(isolated.platformCapabilityGrant.findUnique({ where: { id: grant.id } })).resolves.not.toBeNull();
-    },
-    120_000
-  );
+    await expect(
+      isolated.event.findUnique({ where: { id: tenantEvent.id } })
+    ).resolves.not.toBeNull();
+    await expect(
+      isolated.organization.findUnique({ where: { id: organizationId } })
+    ).resolves.not.toBeNull();
+    await expect(isolated.user.findUnique({ where: { id: userId } })).resolves.not.toBeNull();
+    await expect(
+      isolated.userOrganization.findUnique({
+        where: { organizationId_userId: { organizationId, userId } },
+      })
+    ).resolves.not.toBeNull();
+    await expect(
+      isolated.platformCapabilityGrant.findUnique({ where: { id: grant.id } })
+    ).resolves.not.toBeNull();
+  }, 120_000);
 });
 
 afterAll(async () => {
