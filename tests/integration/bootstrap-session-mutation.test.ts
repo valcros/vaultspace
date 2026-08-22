@@ -428,6 +428,7 @@ describe('W1-2 session mutation route conversion', () => {
       OWNER_ROLE
     );
     expect(columnPrivileges).toEqual([
+      { column_name: 'authenticationAssurance', privilege_type: 'INSERT' },
       { column_name: 'createdAt', privilege_type: 'INSERT' },
       { column_name: 'expiresAt', privilege_type: 'INSERT' },
       { column_name: 'expiresAt', privilege_type: 'UPDATE' },
@@ -437,6 +438,7 @@ describe('W1-2 session mutation route conversion', () => {
       { column_name: 'isActive', privilege_type: 'UPDATE' },
       { column_name: 'lastActiveAt', privilege_type: 'INSERT' },
       { column_name: 'lastActiveAt', privilege_type: 'UPDATE' },
+      { column_name: 'mfaVerifiedAt', privilege_type: 'INSERT' },
       { column_name: 'organizationId', privilege_type: 'INSERT' },
       { column_name: 'token', privilege_type: 'INSERT' },
       { column_name: 'updatedAt', privilege_type: 'INSERT' },

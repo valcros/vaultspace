@@ -11,6 +11,7 @@ export {
 export {
   clearSessionCache,
   createSession,
+  createMfaVerifiedSession,
   deactivateAllUserSessionsInTx,
   deactivateUserOrgSessionsInTx,
   validateSession,

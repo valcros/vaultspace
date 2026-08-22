@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthenticationError } from '../errors';
 
 const mockSessionFindMany = vi.fn();
+const mockSessionUpdate = vi.fn();
 const mockSessionUpdateMany = vi.fn();
 const mockCacheDelete = vi.fn();
 const mockCacheGet = vi.fn();
 const mockCacheSet = vi.fn();
 const mockResolveSession = vi.fn();
 const mockMutationCreate = vi.fn();
+const mockMutationCreateMfa = vi.fn();
 const mockMutationRefresh = vi.fn();
 const mockMutationInvalidate = vi.fn();
 
@@ -15,6 +17,7 @@ vi.mock('@/lib/db', () => {
   const sessionClient = {
     session: {
       findMany: (...args: unknown[]) => mockSessionFindMany(...args),
+      update: (...args: unknown[]) => mockSessionUpdate(...args),
       updateMany: (...args: unknown[]) => mockSessionUpdateMany(...args),
     },
   };
@@ -26,6 +29,7 @@ vi.mock('@/lib/db', () => {
 vi.mock('./sessionMutationRepository', () => {
   const methods = {
     createSession: (...args: unknown[]) => mockMutationCreate(...args),
+    createMfaVerifiedSession: (...args: unknown[]) => mockMutationCreateMfa(...args),
     refreshSession: (...args: unknown[]) => mockMutationRefresh(...args),
     invalidateSession: (...args: unknown[]) => mockMutationInvalidate(...args),
   };
@@ -33,6 +37,9 @@ vi.mock('./sessionMutationRepository', () => {
     SessionMutationRepository: class {
       createSession(...args: unknown[]) {
         return methods.createSession(...args);
+      }
+      createMfaVerifiedSession(...args: unknown[]) {
+        return methods.createMfaVerifiedSession(...args);
       }
       refreshSession(...args: unknown[]) {
         return methods.refreshSession(...args);
@@ -70,6 +77,7 @@ vi.mock('@/providers', () => ({
 import {
   clearSessionCache,
   createSession,
+  createMfaVerifiedSession,
   invalidateAllUserSessions,
   invalidateSession,
   validateSession,
@@ -81,8 +89,10 @@ describe('auth session invalidation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockMutationCreate.mockResolvedValue(null);
+    mockMutationCreateMfa.mockResolvedValue(null);
     mockMutationRefresh.mockResolvedValue(null);
     mockMutationInvalidate.mockResolvedValue(null);
+    mockSessionUpdate.mockResolvedValue({});
   });
 
   it('invalidates a single session through the constrained function and clears its cache', async () => {
@@ -129,6 +139,8 @@ describe('auth session invalidation', () => {
         createdAt,
         expiresAt,
         isActive: true,
+        mfaVerifiedAt: null,
+        authenticationAssurance: 'PASSWORD',
       },
     });
     expect(mockSessionUpdateMany).not.toHaveBeenCalled();
@@ -138,6 +150,69 @@ describe('auth session invalidation', () => {
     await expect(createSession('user-1', 'org-1')).rejects.toThrow(
       'BOOTSTRAP_SESSION_CREATE_DENIED'
     );
+  });
+
+  it('creates an MFA-assured session only through the dedicated constrained function', async () => {
+    const createdAt = new Date('2026-08-12T23:10:00.000Z');
+    const expiresAt = new Date('2026-08-13T23:10:00.000Z');
+    mockMutationCreateMfa.mockResolvedValue({
+      sessionId: 'session-mfa-1',
+      createdAt,
+      expiresAt,
+      mfaVerifiedAt: createdAt,
+      authenticationAssurance: 'MFA',
+    });
+
+    await expect(
+      createMfaVerifiedSession('user-1', 'org-1', {
+        expiresAt,
+        mfaChallengeToken: 'c'.repeat(43),
+      })
+    ).resolves.toMatchObject({
+      session: {
+        id: 'session-mfa-1',
+        mfaVerifiedAt: createdAt,
+        authenticationAssurance: 'MFA',
+      },
+    });
+    expect(mockMutationCreateMfa).toHaveBeenCalledTimes(1);
+    expect(mockMutationCreate).not.toHaveBeenCalled();
+  });
+
+  it('writes MFA session binding metadata through the supplied transaction', async () => {
+    const createdAt = new Date('2026-08-12T23:10:00.000Z');
+    const expiresAt = new Date('2026-08-13T23:10:00.000Z');
+    const transactionSessionUpdate = vi.fn().mockResolvedValue({});
+    mockMutationCreateMfa.mockResolvedValue({
+      sessionId: 'session-mfa-transaction-1',
+      createdAt,
+      expiresAt,
+      mfaVerifiedAt: createdAt,
+      authenticationAssurance: 'MFA',
+    });
+
+    await createMfaVerifiedSession(
+      'user-1',
+      'org-1',
+      {
+        expiresAt,
+        ipAddress: '203.0.113.20',
+        userAgent: 'mfa-transaction-agent',
+        mfaChallengeToken: 'c'.repeat(43),
+      },
+      { session: { update: transactionSessionUpdate } } as never
+    );
+
+    expect(transactionSessionUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'session-mfa-transaction-1' },
+        data: expect.objectContaining({
+          ipSubnet: '203.0.113.0/24',
+          userAgentHash: expect.any(String),
+        }),
+      })
+    );
+    expect(mockSessionUpdate).not.toHaveBeenCalled();
   });
 
   it('invalidates all user sessions and removes each cached token', async () => {
