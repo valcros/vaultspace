@@ -6,6 +6,7 @@ const mockGetLinkPolicyRecord = vi.fn();
 const mockEvaluateLinkState = vi.fn();
 const mockAdmitLinkViewer = vi.fn();
 const mockCaptureAccessAudit = vi.fn();
+const mockGetAuthenticatedLinkMember = vi.fn();
 
 vi.mock('@/lib/db', () => ({
   bootstrapDb: { link: { findFirst: (...args: unknown[]) => mockLinkFindFirst(...args) } },
@@ -31,6 +32,10 @@ vi.mock('@/lib/permissions/LinkPolicy', () => ({
   getLinkPolicyRecord: (...args: unknown[]) => mockGetLinkPolicyRecord(...args),
   evaluateLinkState: (...args: unknown[]) => mockEvaluateLinkState(...args),
   admitLinkViewer: (...args: unknown[]) => mockAdmitLinkViewer(...args),
+}));
+
+vi.mock('@/lib/permissions/authenticatedLinkMember', () => ({
+  getAuthenticatedLinkMember: (...args: unknown[]) => mockGetAuthenticatedLinkMember(...args),
 }));
 
 import { GET, POST } from './route';
@@ -64,6 +69,7 @@ describe('POST /api/links/[slug]', () => {
       },
     });
     mockEvaluateLinkState.mockReturnValue({ allowed: true });
+    mockGetAuthenticatedLinkMember.mockResolvedValue(null);
     mockAdmitLinkViewer.mockResolvedValue({
       allowed: true,
       session: { id: 'viewer-session-1' },

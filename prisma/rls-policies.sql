@@ -47,6 +47,8 @@ ALTER TABLE extracted_texts ENABLE ROW LEVEL SECURITY;
 -- table is added, restore: ALTER TABLE watermark_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitation_room_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_preferences ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- STEP 2: Create policies using SET LOCAL context variable
@@ -257,6 +259,20 @@ CREATE POLICY text_org_isolation ON extracted_texts
     "organizationId" = current_setting('app.current_org_id', true)
   );
 
+-- Notification inbox and per-member preferences are organization-scoped. The
+-- route handlers apply the additional recipient-membership predicate.
+DROP POLICY IF EXISTS notification_org_isolation ON notifications;
+CREATE POLICY notification_org_isolation ON notifications
+  FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
+
+DROP POLICY IF EXISTS notification_preference_org_isolation ON notification_preferences;
+CREATE POLICY notification_preference_org_isolation ON notification_preferences
+  FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
+
 -- Watermark Configs policy — V1-deferred. Restore when watermark_configs lands:
 --   DROP POLICY IF EXISTS watermark_org_isolation ON watermark_configs;
 --   CREATE POLICY watermark_org_isolation ON watermark_configs
@@ -344,6 +360,8 @@ ALTER TABLE search_indexes FORCE ROW LEVEL SECURITY;
 ALTER TABLE extracted_texts FORCE ROW LEVEL SECURITY;
 ALTER TABLE invitations FORCE ROW LEVEL SECURITY;
 ALTER TABLE invitation_room_assignments FORCE ROW LEVEL SECURITY;
+ALTER TABLE notifications FORCE ROW LEVEL SECURITY;
+ALTER TABLE notification_preferences FORCE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- STEP 3b: Revoke UPDATE/DELETE on immutable audit tables

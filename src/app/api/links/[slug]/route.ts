@@ -16,6 +16,7 @@ import {
   getLinkPolicyRecord,
 } from '@/lib/permissions/LinkPolicy';
 import { getClientIp } from '@/lib/utils/ip';
+import { getAuthenticatedLinkMember } from '@/lib/permissions/authenticatedLinkMember';
 import { getProviders } from '@/providers';
 
 interface RouteContext {
@@ -41,7 +42,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     if (!link) {
       return NextResponse.json({ error: 'Link not found or expired' }, { status: 404 });
     }
-
     const decision = evaluateLinkState(link, { admission: true });
     if (!decision.allowed) {
       return NextResponse.json({ error: decision.message }, { status: decision.status });
@@ -94,6 +94,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Link not found or expired' }, { status: 404 });
     }
 
+    const authenticatedMember = await getAuthenticatedLinkMember(link.organizationId);
+
     const auditDenied = async (reason: string) => {
       await captureAccessAudit({
         organizationId: link.organizationId,
@@ -121,6 +123,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ndaAccepted,
       sourceIp: getClientIp(request.headers) ?? 'unknown',
       userAgent: reqContext.userAgent === 'unknown' ? null : reqContext.userAgent,
+      authenticatedMember: authenticatedMember ?? undefined,
     });
     if (!admission.allowed) {
       await auditDenied(admission.code);
@@ -174,6 +177,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       scope: link.scope,
       scopedFolderId: link.scopedFolderId,
       scopedDocumentId: link.scopedDocumentId,
+      ndaOnFileApplied: admission.ndaOnFileApplied,
     });
   } catch (error) {
     console.error('[PublicLinkAPI] POST error:', error);

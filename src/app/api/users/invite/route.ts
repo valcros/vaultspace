@@ -33,7 +33,18 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { email, role = 'VIEWER', roomIds } = body;
+    const {
+      email,
+      role = 'VIEWER',
+      roomIds,
+      firstName,
+      lastName,
+      company,
+      phone,
+      userType,
+      ndaOnFile,
+      ndaOnFileReference,
+    } = body;
 
     // Validate email
     if (!email || typeof email !== 'string') {
@@ -50,6 +61,64 @@ export async function POST(request: NextRequest) {
     const validRoles = ['ADMIN', 'VIEWER'];
     if (!validRoles.includes(role)) {
       return NextResponse.json({ error: 'Invalid role. Must be ADMIN or VIEWER' }, { status: 400 });
+    }
+
+    const normalizeOptionalText = (value: unknown, max: number, field: string) => {
+      if (value === undefined || value === null) {return null;}
+      if (typeof value !== 'string' || value.trim().length > max) {
+        throw new Error(`Invalid ${field}`);
+      }
+      return value.trim() || null;
+    };
+
+    let inviteProfile: {
+      firstName: string | null;
+      lastName: string | null;
+      company: string | null;
+      phone: string | null;
+      userType: 'FOUNDER' | 'INVESTOR' | 'PARTNER' | 'INVESTOR_REPRESENTATIVE' | 'EMPLOYEE' | 'CONSULTANT' | null;
+      ndaOnFile: boolean;
+      ndaOnFileReference: string | null;
+    };
+    try {
+      const normalizedPhone = normalizeOptionalText(phone, 32, 'phone');
+      if (normalizedPhone && !/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
+        return NextResponse.json({ error: 'Phone must use E.164 format' }, { status: 400 });
+      }
+      const validUserTypes = [
+        'FOUNDER',
+        'INVESTOR',
+        'PARTNER',
+        'INVESTOR_REPRESENTATIVE',
+        'EMPLOYEE',
+        'CONSULTANT',
+      ] as const;
+      if (userType !== undefined && userType !== null && !validUserTypes.includes(userType)) {
+        return NextResponse.json({ error: 'Invalid organization user type' }, { status: 400 });
+      }
+      if (ndaOnFile !== undefined && typeof ndaOnFile !== 'boolean') {
+        return NextResponse.json({ error: 'ndaOnFile must be a boolean' }, { status: 400 });
+      }
+      inviteProfile = {
+        firstName: normalizeOptionalText(firstName, 100, 'first name'),
+        lastName: normalizeOptionalText(lastName, 100, 'last name'),
+        company: normalizeOptionalText(company, 255, 'company'),
+        phone: normalizedPhone,
+        userType: (userType ?? null) as (typeof validUserTypes)[number] | null,
+        ndaOnFile: ndaOnFile === true,
+        ndaOnFileReference: normalizeOptionalText(ndaOnFileReference, 500, 'NDA reference'),
+      };
+      if (!inviteProfile.ndaOnFile && inviteProfile.ndaOnFileReference) {
+        return NextResponse.json(
+          { error: 'An NDA reference requires NDA on file to be enabled' },
+          { status: 400 }
+        );
+      }
+    } catch (validationError) {
+      return NextResponse.json(
+        { error: validationError instanceof Error ? validationError.message : 'Invalid profile' },
+        { status: 400 }
+      );
     }
 
     if (
@@ -208,6 +277,13 @@ export async function POST(request: NextRequest) {
             invitationUrl,
             expiresAt,
             invitedByUserId: session.userId,
+            inviteeFirstName: inviteProfile.firstName,
+            inviteeLastName: inviteProfile.lastName,
+            inviteeCompany: inviteProfile.company,
+            inviteePhone: inviteProfile.phone,
+            inviteeUserType: inviteProfile.userType,
+            ndaOnFile: inviteProfile.ndaOnFile,
+            ndaOnFileReference: inviteProfile.ndaOnFileReference,
           },
           include: {
             invitedByUser: {
@@ -238,6 +314,18 @@ export async function POST(request: NextRequest) {
               role,
               roomCount: assignedRoomIds.length,
               roomIds: assignedRoomIds,
+              profileFields: [
+                ...(inviteProfile.firstName ? ['firstName'] : []),
+                ...(inviteProfile.lastName ? ['lastName'] : []),
+                ...(inviteProfile.company ? ['company'] : []),
+                ...(inviteProfile.phone ? ['phone'] : []),
+                ...(inviteProfile.userType ? ['organizationUserType'] : []),
+              ],
+              ndaOnFile: inviteProfile.ndaOnFile,
+              ndaReferencePresent: Boolean(inviteProfile.ndaOnFileReference),
+              ndaReferenceSha256: inviteProfile.ndaOnFileReference
+                ? crypto.createHash('sha256').update(inviteProfile.ndaOnFileReference).digest('hex')
+                : null,
               reissuedLegacyInvitationCount: legacyViewerInviteIds.length,
               reissuedLegacyInvitationIds: legacyViewerInviteIds,
             },
