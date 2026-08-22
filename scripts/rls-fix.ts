@@ -22,6 +22,10 @@ import {
   revokeAndVerifyPasswordResetProviderCorrelationAccess,
   revokeAndVerifyProviderInboxAccess,
 } from '../src/lib/integrations/providerInboxDatabasePrivileges';
+import {
+  PLATFORM_CONTROL_TABLES,
+  revokeAndVerifyPlatformControlPlaneAccess,
+} from '../src/lib/platform/databasePrivileges';
 
 const APP_ROLE = 'vaultspace_app';
 
@@ -43,6 +47,7 @@ const FORCE_RLS_TABLES = [
   'extracted_texts',
   'invitations',
   'invitation_room_assignments',
+  ...PLATFORM_CONTROL_TABLES,
   // watermark_configs intentionally omitted — V1-deferred, table not yet created
 ];
 
@@ -108,8 +113,27 @@ async function main() {
       console.log(`  SKIPPED: ${table} (${(err as Error).message})`);
     }
   }
+  const forcePosture = await prisma.$queryRawUnsafe<
+    Array<{ tablename: string; rowsecurity: boolean; forcerowsecurity: boolean }>
+  >(`
+    SELECT class_meta.relname AS tablename,
+           class_meta.relrowsecurity AS rowsecurity,
+           class_meta.relforcerowsecurity AS forcerowsecurity
+    FROM pg_class class_meta
+    WHERE class_meta.relnamespace = 'public'::regnamespace
+      AND class_meta.relname = ANY (ARRAY[${FORCE_RLS_TABLES.map((table) => `'${table}'`).join(',')}])
+    ORDER BY class_meta.relname;
+  `);
+  const forcePostureByTable = new Map(forcePosture.map((row) => [row.tablename, row]));
+  const forceFailures = FORCE_RLS_TABLES.filter((table) => {
+    const posture = forcePostureByTable.get(table);
+    return !posture?.rowsecurity || !posture.forcerowsecurity;
+  });
+  if (forceFailures.length > 0) {
+    throw new Error(`RLS_FORCE_POSTURE_INVALID:${forceFailures.join(',')}`);
+  }
 
-  console.log('\n=== Step 4b: Revoke UPDATE/DELETE on immutable audit tables ===');
+  console.log('\n=== Step 4b: Revoke protected-table access after broad grants ===');
   // The audit trail must be append-only at the database layer. Revoking
   // UPDATE and DELETE on the events table from the application role makes
   // Keep append-only security records immutable even after the broad repair
@@ -131,6 +155,9 @@ async function main() {
   console.log(`  REVOKED AND VERIFIED ALL: provider_event_inbox from ${APP_ROLE}`);
   await revokeAndVerifyPasswordResetProviderCorrelationAccess(prisma, APP_ROLE);
   console.log(`  PROTECTED AND VERIFIED: password_reset_provider_correlations for ${APP_ROLE}`);
+
+  await revokeAndVerifyPlatformControlPlaneAccess(prisma, APP_ROLE);
+  console.log(`  REVOKED AND VERIFIED ALL: platform control-plane tables from ${APP_ROLE}`);
 
   console.log('\n=== Step 5: Verify ===');
   const verify = await prisma.$queryRawUnsafe<

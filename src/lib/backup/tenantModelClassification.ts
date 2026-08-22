@@ -86,9 +86,26 @@ export const MODEL_CLASSIFICATION: Record<string, ModelClassification> = {
   // Deliberately excluded — transient auth/security state. Users re-authenticate;
   // restoring these would resurrect stale/again-usable secrets.
   Session: { kind: 'EXCLUDE', reason: 'ephemeral auth session; users re-login after restore' },
+  PlatformSession: {
+    kind: 'EXCLUDE',
+    reason: 'global privileged platform session; never included in a tenant backup or restore',
+  },
+  PlatformCapabilityGrant: {
+    kind: 'EXCLUDE',
+    reason: 'global SysOp authorization history; never included in a tenant backup or restore',
+  },
+  PlatformAuditEvent: {
+    kind: 'EXCLUDE',
+    reason: 'global governance ledger; excluded from tenant backup/export/restore paths',
+  },
   PasswordResetToken: { kind: 'EXCLUDE', reason: 'transient reset token; short-lived, security' },
   EmailVerificationToken: { kind: 'EXCLUDE', reason: 'transient verification token; security' },
   PasswordResetRecovery: { kind: 'EXCLUDE', reason: 'transient reset-recovery envelope; security' },
+  TwoFactorLoginChallenge: {
+    kind: 'EXCLUDE',
+    reason:
+      'short-lived digest-only MFA challenge; restoring it could revive an authentication capability',
+  },
   PasswordResetProviderCorrelation: {
     kind: 'EXCLUDE',
     reason: 'transient delivery-correlation registry; not tenant content',

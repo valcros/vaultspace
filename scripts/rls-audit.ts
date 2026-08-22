@@ -33,16 +33,28 @@ const EXPECTED_RLS_TABLES = [
   'invitation_room_assignments',
 ];
 
+// These tables are deliberately global and have no policy. FORCE RLS plus no
+// application-role privilege is a default-deny boundary, not a missing tenant
+// policy. Keep them out of EXPECTED_RLS_TABLES so the policy coverage count
+// remains an honest tenant-isolation measure.
+const DEFAULT_DENY_PLATFORM_TABLES = [
+  'platform_sessions',
+  'platform_capability_grants',
+  'platform_audit_events',
+];
+
 async function main() {
   const prisma = new PrismaClient();
 
   const rlsStatus = await prisma.$queryRawUnsafe<
-    Array<{ tablename: string; rowsecurity: boolean }>
+    Array<{ tablename: string; rowsecurity: boolean; forcerowsecurity: boolean }>
   >(`
-    SELECT tablename, rowsecurity
-    FROM pg_tables
-    WHERE schemaname = 'public'
-    ORDER BY tablename;
+    SELECT table_meta.tablename, table_meta.rowsecurity, class_meta.relforcerowsecurity AS forcerowsecurity
+    FROM pg_tables table_meta
+    JOIN pg_class class_meta ON class_meta.relname = table_meta.tablename
+    JOIN pg_namespace namespace ON namespace.oid = class_meta.relnamespace
+    WHERE table_meta.schemaname = 'public' AND namespace.nspname = 'public'
+    ORDER BY table_meta.tablename;
   `);
 
   const policies = await prisma.$queryRawUnsafe<
@@ -80,6 +92,122 @@ async function main() {
     } else {
       console.log(`  ${expected}: ${ps.join(', ')}`);
     }
+  }
+
+  console.log('\n--- PLATFORM DEFAULT-DENY BOUNDARY ---');
+  const platformBoundaryFailures: string[] = [];
+  for (const table of DEFAULT_DENY_PLATFORM_TABLES) {
+    const row = rlsStatus.find((candidate) => candidate.tablename === table);
+    const policyCount = (policiesByTable.get(table) ?? []).length;
+    if (!row) {
+      console.log(`  MISSING: ${table}`);
+      platformBoundaryFailures.push(`${table}:missing`);
+    } else {
+      const protectedTable = row.rowsecurity && row.forcerowsecurity && policyCount === 0;
+      console.log(
+        `  ${protectedTable ? 'PROTECTED' : 'INVALID  '}: ${table}` +
+          ` (RLS=${row.rowsecurity}, FORCE=${row.forcerowsecurity}, policies=${policyCount})`
+      );
+      if (!protectedTable) {
+        platformBoundaryFailures.push(`${table}:rls-force-or-policy`);
+      }
+    }
+  }
+
+  const [platformPrivilege] = await prisma.$queryRawUnsafe<
+    Array<{
+      table_privilege_remains: boolean;
+      column_privilege_remains: boolean;
+      sequence_privilege_remains: boolean;
+      app_role_bypasses_rls: boolean;
+      app_role_is_superuser: boolean;
+    }>
+  >(`
+    WITH protected_tables(table_name) AS (
+      VALUES ('platform_sessions'), ('platform_capability_grants'), ('platform_audit_events')
+    )
+    SELECT
+      EXISTS (
+        SELECT 1 FROM protected_tables
+        WHERE has_table_privilege('vaultspace_app', 'public.' || quote_ident(table_name), 'SELECT')
+           OR has_table_privilege('vaultspace_app', 'public.' || quote_ident(table_name), 'INSERT')
+           OR has_table_privilege('vaultspace_app', 'public.' || quote_ident(table_name), 'UPDATE')
+           OR has_table_privilege('vaultspace_app', 'public.' || quote_ident(table_name), 'DELETE')
+           OR has_table_privilege('vaultspace_app', 'public.' || quote_ident(table_name), 'TRUNCATE')
+           OR has_table_privilege('vaultspace_app', 'public.' || quote_ident(table_name), 'REFERENCES')
+           OR has_table_privilege('vaultspace_app', 'public.' || quote_ident(table_name), 'TRIGGER')
+      ) AS table_privilege_remains,
+      EXISTS (
+        SELECT 1 FROM protected_tables
+        WHERE has_any_column_privilege(
+          'vaultspace_app', 'public.' || quote_ident(table_name), 'SELECT,INSERT,UPDATE,REFERENCES'
+        )
+      ) AS column_privilege_remains,
+      has_sequence_privilege('vaultspace_app', 'public.platform_audit_events_sequence_seq', 'USAGE')
+        OR has_sequence_privilege('vaultspace_app', 'public.platform_audit_events_sequence_seq', 'SELECT')
+        OR has_sequence_privilege('vaultspace_app', 'public.platform_audit_events_sequence_seq', 'UPDATE')
+        AS sequence_privilege_remains,
+      COALESCE((SELECT rolbypassrls FROM pg_roles WHERE rolname = 'vaultspace_app'), true)
+        AS app_role_bypasses_rls,
+      COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = 'vaultspace_app'), true)
+        AS app_role_is_superuser
+  `);
+  console.log(
+    `  runtime privilege boundary: ${
+      platformPrivilege &&
+      !platformPrivilege.table_privilege_remains &&
+      !platformPrivilege.column_privilege_remains &&
+      !platformPrivilege.sequence_privilege_remains &&
+      !platformPrivilege.app_role_bypasses_rls &&
+      !platformPrivilege.app_role_is_superuser
+        ? 'PROTECTED'
+        : 'INVALID'
+    }`
+  );
+  if (
+    !platformPrivilege ||
+    platformPrivilege.table_privilege_remains ||
+    platformPrivilege.column_privilege_remains ||
+    platformPrivilege.sequence_privilege_remains ||
+    platformPrivilege.app_role_bypasses_rls ||
+    platformPrivilege.app_role_is_superuser
+  ) {
+    platformBoundaryFailures.push('vaultspace_app:privilege-or-role-posture');
+  }
+
+  const [twoFactorChallengePrivilege] = await prisma.$queryRawUnsafe<
+    Array<{ table_privilege_remains: boolean; column_privilege_remains: boolean }>
+  >(`
+    SELECT
+      has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'SELECT')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'INSERT')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'UPDATE')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'DELETE')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'TRUNCATE')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'REFERENCES')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'TRIGGER')
+        AS table_privilege_remains,
+      has_any_column_privilege(
+        'vaultspace_app',
+        'public.two_factor_login_challenges',
+        'SELECT,INSERT,UPDATE,REFERENCES'
+      ) AS column_privilege_remains
+  `);
+  console.log(
+    `  two-factor challenge direct-table boundary: ${
+      twoFactorChallengePrivilege &&
+      !twoFactorChallengePrivilege.table_privilege_remains &&
+      !twoFactorChallengePrivilege.column_privilege_remains
+        ? 'PROTECTED'
+        : 'INVALID'
+    }`
+  );
+  if (
+    !twoFactorChallengePrivilege ||
+    twoFactorChallengePrivilege.table_privilege_remains ||
+    twoFactorChallengePrivilege.column_privilege_remains
+  ) {
+    platformBoundaryFailures.push('vaultspace_app:two-factor-challenge-direct-privilege');
   }
 
   console.log('\n--- ENFORCEMENT TEST ---');
@@ -129,6 +257,10 @@ async function main() {
   }
   console.log(`  RLS enabled:      ${enabledCount}/${EXPECTED_RLS_TABLES.length}`);
   console.log(`  Policies attached: ${policiedCount}/${EXPECTED_RLS_TABLES.length}`);
+
+  if (platformBoundaryFailures.length > 0) {
+    throw new Error(`PLATFORM_DEFAULT_DENY_BOUNDARY_INVALID:${platformBoundaryFailures.join(',')}`);
+  }
 
   await prisma.$disconnect();
 }

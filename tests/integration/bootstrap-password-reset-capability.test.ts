@@ -22,6 +22,9 @@ const EXPECTED_RUNTIME_FUNCTIONS = new Set([
   'bootstrap_session_revoke_admin_user_global_single_org_v1',
   'bootstrap_password_reset_candidate_v1',
   'bootstrap_password_reset_redeem_v1',
+  'bootstrap_two_factor_challenge_issue_v1',
+  'bootstrap_two_factor_challenge_resolve_v1',
+  'bootstrap_session_create_mfa_v2',
 ]);
 
 interface CandidateRow {
@@ -206,7 +209,7 @@ describe('W1-2 password-reset redemption route conversion', () => {
     await Promise.all([rawPrisma.$disconnect(), runtimePrisma.$disconnect()]);
   });
 
-  it('keeps exact function, owner, ACL, source, and eleven-function runtime posture', async () => {
+  it('keeps exact function, owner, ACL, source, and fourteen-function runtime posture', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         proname: string;
@@ -393,6 +396,7 @@ describe('W1-2 password-reset redemption route conversion', () => {
       'password_reset_tokens.token:INSERT',
       'password_reset_tokens.usedAt:UPDATE',
       'password_reset_tokens.userId:INSERT',
+      'sessions.authenticationAssurance:INSERT',
       'sessions.createdAt:INSERT',
       'sessions.expiresAt:INSERT',
       'sessions.expiresAt:UPDATE',
@@ -402,6 +406,7 @@ describe('W1-2 password-reset redemption route conversion', () => {
       'sessions.isActive:UPDATE',
       'sessions.lastActiveAt:INSERT',
       'sessions.lastActiveAt:UPDATE',
+      'sessions.mfaVerifiedAt:INSERT',
       'sessions.organizationId:INSERT',
       'sessions.token:INSERT',
       'sessions.updatedAt:INSERT',

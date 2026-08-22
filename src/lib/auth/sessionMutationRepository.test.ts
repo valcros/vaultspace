@@ -49,6 +49,8 @@ describe('SessionMutationRepository', () => {
       sessionId: '00000000-0000-4000-8000-000000000001',
       createdAt: new Date('2026-08-12T00:00:00.000Z'),
       expiresAt,
+      mfaVerifiedAt: null,
+      authenticationAssurance: 'PASSWORD',
     });
 
     const query = queryParts(queryRaw);
@@ -76,6 +78,53 @@ describe('SessionMutationRepository', () => {
       })
     ).resolves.toBeNull();
     expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('uses the MFA-only function and rejects an inconsistent MFA response', async () => {
+    const { repository, queryRaw } = repositoryWithRows([
+      {
+        session_id: '00000000-0000-4000-8000-0000mfa00001',
+        session_created_at: '2026-08-12T00:00:00.000Z',
+        session_expires_at: '2026-08-13T00:00:00.000Z',
+        session_mfa_verified_at: '2026-08-12T00:00:00.000Z',
+        session_authentication_assurance: 'MFA',
+      },
+    ]);
+
+    await expect(
+      repository.createMfaVerifiedSession({
+        userId: 'user-1',
+        organizationId: 'org-1',
+        challengeToken: token,
+        token,
+        expiresAt,
+      })
+    ).resolves.toMatchObject({
+      authenticationAssurance: 'MFA',
+      mfaVerifiedAt: new Date('2026-08-12T00:00:00.000Z'),
+    });
+    expect(queryParts(queryRaw).strings?.join('')).toContain(
+      'FROM public.bootstrap_session_create_mfa_v2('
+    );
+
+    const inconsistent = repositoryWithRows([
+      {
+        session_id: '00000000-0000-4000-8000-0000mfa00002',
+        session_created_at: '2026-08-12T00:00:00.000Z',
+        session_expires_at: '2026-08-13T00:00:00.000Z',
+        session_mfa_verified_at: null,
+        session_authentication_assurance: 'MFA',
+      },
+    ]).repository;
+    await expect(
+      inconsistent.createMfaVerifiedSession({
+        userId: 'user-1',
+        organizationId: 'org-1',
+        challengeToken: token,
+        token,
+        expiresAt,
+      })
+    ).rejects.toThrow('BOOTSTRAP_SESSION_MUTATION_MFA_ASSURANCE_INCONSISTENT');
   });
 
   it('fails closed when create returns more than one row', async () => {
@@ -279,7 +328,7 @@ describe('SessionMutationRepository', () => {
     ];
     for (const file of creationFiles) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8');
-      expect(source, file).toContain('createSession(');
+      expect(source, file).toMatch(/create(?:MfaVerified)?Session\(/);
       expect(source, file).not.toMatch(/(?:db|bootstrapDb|tx)\.session\.create\(/);
     }
 

@@ -289,6 +289,41 @@ async function buildEventResetPlan(
   return plan;
 }
 
+/**
+ * The destructive clearing phase is intentionally isolated so a retained
+ * platform-governance foreign key causes a full rollback instead of a partly
+ * erased restore target. It is exported for the disposable DB release gate.
+ */
+export async function clearExistingDataForRestore(
+  prisma: PrismaClient,
+  eventResetPlan: Pick<EventResetPlan, 'mode'>
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    if (eventResetPlan.mode === 'truncate') {
+      await tx.$executeRawUnsafe('TRUNCATE TABLE "events"');
+    } else {
+      await tx.event.deleteMany();
+    }
+    await tx.permission.deleteMany();
+    await tx.link.deleteMany();
+    await tx.groupMembership.deleteMany();
+    await tx.group.deleteMany();
+    await tx.fileBlob.deleteMany();
+    await tx.documentVersion.deleteMany();
+    await tx.document.deleteMany();
+    await tx.folder.deleteMany();
+    await tx.room.deleteMany();
+    await tx.session.deleteMany();
+    await tx.userOrganization.deleteMany();
+    // PlatformCapabilityGrant intentionally has ON DELETE RESTRICT. If one
+    // exists, this fails and rolls back every preceding clear. Operators must
+    // use the dedicated platform-control recovery procedure, never delete
+    // governance history to make a tenant restore proceed.
+    await tx.user.deleteMany();
+    await tx.organization.deleteMany();
+  });
+}
+
 async function main() {
   let options: RestoreOptions;
   try {
@@ -357,27 +392,15 @@ async function main() {
   console.log('Restoring database tables...');
 
   if (!dryRun) {
-    // Clear existing data in reverse dependency order
+    // Clear existing data in reverse dependency order. This is one transaction
+    // so a retained platform capability grant can never cause a partially
+    // cleared restore target when its RESTRICT FK correctly blocks user erasure.
+    // Platform audit evidence is deliberately never cleared by this command.
     console.log('  - Clearing existing data...');
     if (eventResetPlan.mode === 'truncate') {
       console.log('  - Clearing immutable audit events with explicit destructive reset...');
-      await prisma.$executeRawUnsafe('TRUNCATE TABLE "events"');
-    } else {
-      await prisma.event.deleteMany();
     }
-    await prisma.permission.deleteMany();
-    await prisma.link.deleteMany();
-    await prisma.groupMembership.deleteMany();
-    await prisma.group.deleteMany();
-    await prisma.fileBlob.deleteMany();
-    await prisma.documentVersion.deleteMany();
-    await prisma.document.deleteMany();
-    await prisma.folder.deleteMany();
-    await prisma.room.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.userOrganization.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.organization.deleteMany();
+    await clearExistingDataForRestore(prisma, eventResetPlan);
   }
 
   // Restore organizations
