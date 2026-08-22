@@ -17,7 +17,9 @@ test.describe('Notification menu', () => {
     await bell.click();
 
     await expect(page.getByRole('menu')).toContainText('Notifications');
-    await expect(page.getByRole('link', { name: 'Notification preferences' })).toBeVisible();
+    // Radix preserves the anchor navigation but exposes the menu entry with
+    // its correct menuitem role for keyboard navigation.
+    await expect(page.getByRole('menuitem', { name: 'Notification preferences' })).toBeVisible();
 
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).not.toBeVisible();
