@@ -175,6 +175,41 @@ async function main() {
     platformBoundaryFailures.push('vaultspace_app:privilege-or-role-posture');
   }
 
+  const [twoFactorChallengePrivilege] = await prisma.$queryRawUnsafe<
+    Array<{ table_privilege_remains: boolean; column_privilege_remains: boolean }>
+  >(`
+    SELECT
+      has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'SELECT')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'INSERT')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'UPDATE')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'DELETE')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'TRUNCATE')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'REFERENCES')
+      OR has_table_privilege('vaultspace_app', 'public.two_factor_login_challenges', 'TRIGGER')
+        AS table_privilege_remains,
+      has_any_column_privilege(
+        'vaultspace_app',
+        'public.two_factor_login_challenges',
+        'SELECT,INSERT,UPDATE,REFERENCES'
+      ) AS column_privilege_remains
+  `);
+  console.log(
+    `  two-factor challenge direct-table boundary: ${
+      twoFactorChallengePrivilege &&
+      !twoFactorChallengePrivilege.table_privilege_remains &&
+      !twoFactorChallengePrivilege.column_privilege_remains
+        ? 'PROTECTED'
+        : 'INVALID'
+    }`
+  );
+  if (
+    !twoFactorChallengePrivilege ||
+    twoFactorChallengePrivilege.table_privilege_remains ||
+    twoFactorChallengePrivilege.column_privilege_remains
+  ) {
+    platformBoundaryFailures.push('vaultspace_app:two-factor-challenge-direct-privilege');
+  }
+
   console.log('\n--- ENFORCEMENT TEST ---');
   // Without setting app.current_org_id, the policy on rooms requires
   // organization_id = current_setting('app.current_org_id', true) which evaluates

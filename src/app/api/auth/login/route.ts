@@ -8,7 +8,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
 import { createSession } from '@/lib/auth';
-import { generateTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
+import {
+  generateTwoFactorChallengeToken,
+  hashTwoFactorChallengeToken,
+} from '@/lib/auth/twoFactorChallengeToken';
+import { issueTenantTwoFactorChallenge } from '@/lib/auth/twoFactorChallengeRepository';
 import { bootstrapRepository } from '@/lib/auth/bootstrapRepository';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
@@ -72,7 +76,20 @@ export async function POST(request: NextRequest) {
 
     // Check if 2FA is enabled - if so, return a temp token instead of creating a session
     if (candidate.twoFactorEnabled) {
-      const tempToken = generateTwoFactorTempToken(candidate.userId);
+      const tempToken = generateTwoFactorChallengeToken();
+      const tokenHash = hashTwoFactorChallengeToken(tempToken);
+      if (!tokenHash) {
+        throw new Error('TWO_FACTOR_CHALLENGE_TOKEN_INVALID');
+      }
+      const challenge = await issueTenantTwoFactorChallenge({
+        userId: candidate.userId,
+        organizationId: candidate.organizationId,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      });
+      if (!challenge) {
+        return NextResponse.json({ error: 'Failed to sign in' }, { status: 401 });
+      }
       return NextResponse.json({
         requiresTwoFactor: true,
         tempToken,

@@ -101,6 +101,11 @@ export const MODEL_CLASSIFICATION: Record<string, ModelClassification> = {
   PasswordResetToken: { kind: 'EXCLUDE', reason: 'transient reset token; short-lived, security' },
   EmailVerificationToken: { kind: 'EXCLUDE', reason: 'transient verification token; security' },
   PasswordResetRecovery: { kind: 'EXCLUDE', reason: 'transient reset-recovery envelope; security' },
+  TwoFactorLoginChallenge: {
+    kind: 'EXCLUDE',
+    reason:
+      'short-lived digest-only MFA challenge; restoring it could revive an authentication capability',
+  },
   PasswordResetProviderCorrelation: {
     kind: 'EXCLUDE',
     reason: 'transient delivery-correlation registry; not tenant content',
