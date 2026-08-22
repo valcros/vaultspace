@@ -376,6 +376,8 @@ REVOKE UPDATE, DELETE ON invitation_room_assignments FROM vaultspace_app;
 -- ordinary application role, even if a broad all-tables grant ran earlier.
 REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
 REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_app;
+REVOKE ALL PRIVILEGES ON two_factor_login_challenges FROM vaultspace_app;
+REVOKE ALL PRIVILEGES ON two_factor_login_challenges FROM PUBLIC;
 
 -- Broad RLS repair grants must never expose the platform control plane. These
 -- tables have no ordinary runtime access path and remain default-deny until a
@@ -408,11 +410,13 @@ REVOKE ALL PRIVILEGES ON SEQUENCE platform_audit_events_sequence_seq FROM PUBLIC
 --   REVOKE UPDATE, DELETE ON invitation_room_assignments FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON provider_event_inbox FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON password_reset_provider_correlations FROM vaultspace_app;
+--   REVOKE ALL PRIVILEGES ON two_factor_login_challenges FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON platform_sessions FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON platform_capability_grants FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON platform_audit_events FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON SEQUENCE platform_audit_events_sequence_seq FROM vaultspace_app;
 --   REVOKE ALL PRIVILEGES ON platform_sessions, platform_capability_grants, platform_audit_events FROM PUBLIC;
+--   REVOKE ALL PRIVILEGES ON two_factor_login_challenges FROM PUBLIC;
 --   REVOKE ALL PRIVILEGES ON SEQUENCE platform_audit_events_sequence_seq FROM PUBLIC;
 --   GRANT EXECUTE ON FUNCTION password_reset_provider_correlation_preflight_counts() TO vaultspace_app;
 

@@ -7,6 +7,11 @@ export const PLATFORM_CONTROL_TABLES = [
   'platform_audit_events',
 ] as const;
 
+/** Authentication control-plane state that has no direct runtime table path. */
+export const TWO_FACTOR_AUTH_TABLES = ['two_factor_login_challenges'] as const;
+
+const RESTRICTED_CONTROL_TABLES = [...PLATFORM_CONTROL_TABLES, ...TWO_FACTOR_AUTH_TABLES] as const;
+
 export class PlatformControlPrivilegeError extends Error {
   constructor(public readonly code: string) {
     super(code);
@@ -26,8 +31,10 @@ export async function revokeAndVerifyPlatformControlPlaneAccess(
     throw new PlatformControlPrivilegeError('PLATFORM_CONTROL_APPLICATION_ROLE_INVALID');
   }
 
-  for (const table of PLATFORM_CONTROL_TABLES) {
-    await client.$executeRawUnsafe(`REVOKE ALL PRIVILEGES ON public.${table} FROM ${applicationRole}`);
+  for (const table of RESTRICTED_CONTROL_TABLES) {
+    await client.$executeRawUnsafe(
+      `REVOKE ALL PRIVILEGES ON public.${table} FROM ${applicationRole}`
+    );
     await client.$executeRawUnsafe(`REVOKE ALL PRIVILEGES ON public.${table} FROM PUBLIC`);
   }
   await client.$executeRawUnsafe(
@@ -49,7 +56,11 @@ export async function revokeAndVerifyPlatformControlPlaneAccess(
     }>
   >(`
     WITH protected_tables(table_name) AS (
-      VALUES ('platform_sessions'), ('platform_capability_grants'), ('platform_audit_events')
+      VALUES
+        ('platform_sessions'),
+        ('platform_capability_grants'),
+        ('platform_audit_events'),
+        ('two_factor_login_challenges')
     )
     SELECT
       EXISTS (

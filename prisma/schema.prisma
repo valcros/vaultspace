@@ -205,6 +205,21 @@ enum PlatformAuditOutcome {
   FAILED
 }
 
+// Server-recorded authentication strength for a tenant-bound session. This is
+// distinct from User.twoFactorEnabled, which only means MFA is configured.
+enum SessionAuthenticationAssurance {
+  PASSWORD
+  MFA
+}
+
+// A short-lived server-side challenge binds tenant MFA completion to the
+// password-authenticated login attempt. Only a digest of the browser token is
+// persisted; the raw bearer value never reaches durable storage.
+enum TwoFactorLoginChallengePurpose {
+  TENANT_LOGIN
+  SYSOP_LOGIN
+}
+
 // Q&A status - tracks question lifecycle
 enum QuestionStatus {
   OPEN
@@ -534,6 +549,12 @@ model Session {
   // Activity tracking
   lastActiveAt DateTime @default(now())
 
+  // Authentication assurance is written only by the reviewed MFA-completion
+  // path. A future SysOp platform session must derive fresh assurance from
+  // here, never infer it from MFA enrollment alone.
+  mfaVerifiedAt           DateTime?
+  authenticationAssurance SessionAuthenticationAssurance @default(PASSWORD)
+
   // Metadata
   ipAddress     String? @db.VarChar(50)
   ipSubnet      String? @db.VarChar(50)
@@ -551,6 +572,21 @@ model Session {
   @@index([expiresAt])
   @@index([isActive])
   @@map("sessions")
+}
+
+model TwoFactorLoginChallenge {
+  id             String                         @id @default(cuid())
+  tokenHash      String                         @unique @db.VarChar(64)
+  userId         String                         @db.VarChar(255)
+  organizationId String                         @db.VarChar(255)
+  purpose        TwoFactorLoginChallengePurpose @default(TENANT_LOGIN)
+  createdAt      DateTime                       @default(now())
+  expiresAt      DateTime
+  consumedAt     DateTime?
+
+  @@index([userId, purpose, expiresAt])
+  @@index([organizationId, purpose, expiresAt])
+  @@map("two_factor_login_challenges")
 }
 
 // A platform session is intentionally distinct from Session. It never carries

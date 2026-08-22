@@ -55,6 +55,8 @@ export interface CreateSessionOptions {
   userAgent?: string | null;
   userAgentHash?: string | null;
   expiresAt?: Date;
+  /** Opaque server-side MFA challenge token, required only for MFA issuance. */
+  mfaChallengeToken?: string;
 }
 
 type SessionMutationClient = Pick<Prisma.TransactionClient, 'session'>;
@@ -92,12 +94,12 @@ export async function createSession(
   const userAgentHash = options.userAgentHash ?? hashUserAgent(options.userAgent);
 
   if (ipSubnet || userAgentHash) {
-    await db.session
-      ?.update?.({
-        where: { id: created.sessionId },
-        data: { ipSubnet, userAgentHash },
-      })
-      ?.catch(() => {});
+    // Preserve transaction atomicity. In the MFA path, the created session is
+    // still uncommitted and is visible only through the supplied transaction.
+    await (client ?? db).session.update({
+      where: { id: created.sessionId },
+      data: { ipSubnet, userAgentHash },
+    });
   }
 
   const session: Session = {
@@ -109,6 +111,8 @@ export async function createSession(
     token,
     expiresAt: created.expiresAt,
     lastActiveAt: created.createdAt,
+    mfaVerifiedAt: null,
+    authenticationAssurance: 'PASSWORD',
     ipAddress: options.ipAddress ?? null,
     ipSubnet: ipSubnet ?? null,
     userAgent: options.userAgent ?? null,
@@ -119,6 +123,67 @@ export async function createSession(
   // Deliberately NOT cached here: only validateSession writes the cache, and
   // only with a complete membership-checked snapshot. Caching a partial blob
   // at creation was the malformed-cache hazard the read path guards against.
+
+  return { session, token };
+}
+
+/**
+ * Create a tenant session whose MFA assurance is recorded in the database at
+ * the point a server-side TOTP or backup-code validation succeeds.
+ */
+export async function createMfaVerifiedSession(
+  userId: string,
+  organizationId: string,
+  options: CreateSessionOptions = {},
+  client?: SessionMutationQueryClient
+): Promise<{ session: Session; token: string }> {
+  const token = generateSessionToken();
+  const now = new Date();
+  const expiresAt =
+    options.expiresAt ??
+    new Date(now.getTime() + SESSION_CONFIG.IDLE_TIMEOUT_HOURS * 60 * 60 * 1000);
+  const repository = client ? new SessionMutationRepository(client) : sessionMutationRepository;
+  const created = await repository.createMfaVerifiedSession({
+    userId,
+    organizationId,
+    token,
+    expiresAt,
+    ipAddress: options.ipAddress,
+    userAgent: options.userAgent,
+    challengeToken: options.mfaChallengeToken ?? '',
+  });
+
+  if (!created || created.authenticationAssurance !== 'MFA' || !created.mfaVerifiedAt) {
+    throw new Error('BOOTSTRAP_SESSION_CREATE_MFA_DENIED');
+  }
+
+  const ipSubnet = options.ipSubnet ?? getIpSubnet(options.ipAddress);
+  const userAgentHash = options.userAgentHash ?? hashUserAgent(options.userAgent);
+  if (ipSubnet || userAgentHash) {
+    // The MFA issuer and metadata update must commit or roll back together.
+    await (client ?? db).session.update({
+      where: { id: created.sessionId },
+      data: { ipSubnet, userAgentHash },
+    });
+  }
+
+  const session: Session = {
+    id: created.sessionId,
+    createdAt: created.createdAt,
+    updatedAt: created.createdAt,
+    userId,
+    organizationId,
+    token,
+    expiresAt: created.expiresAt,
+    lastActiveAt: created.createdAt,
+    mfaVerifiedAt: created.mfaVerifiedAt,
+    authenticationAssurance: 'MFA',
+    ipAddress: options.ipAddress ?? null,
+    ipSubnet: ipSubnet ?? null,
+    userAgent: options.userAgent ?? null,
+    userAgentHash: userAgentHash ?? null,
+    isActive: true,
+  };
 
   return { session, token };
 }

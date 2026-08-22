@@ -13,6 +13,7 @@ const mockCreateSession = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockLoginByEmail = vi.fn().mockResolvedValue(undefined);
 const mockLoginByIp = vi.fn().mockResolvedValue(undefined);
+const mockIssueTenantTwoFactorChallenge = vi.fn();
 
 vi.mock('bcryptjs', () => ({
   default: {
@@ -38,6 +39,10 @@ vi.mock('@/lib/auth/bootstrapRepository', () => ({
   bootstrapRepository: {
     findLoginCandidate: (...args: unknown[]) => mockFindLoginCandidate(...args),
   },
+}));
+
+vi.mock('@/lib/auth/twoFactorChallengeRepository', () => ({
+  issueTenantTwoFactorChallenge: (...args: unknown[]) => mockIssueTenantTwoFactorChallenge(...args),
 }));
 
 vi.mock('@/lib/middleware', () => ({
@@ -85,6 +90,10 @@ describe('POST /api/auth/login', () => {
     mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockLoginByEmail.mockResolvedValue(undefined);
     mockLoginByIp.mockResolvedValue(undefined);
+    mockIssueTenantTwoFactorChallenge.mockResolvedValue({
+      challengeId: 'challenge-1',
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
   });
 
   it('uses only the narrow login repository for pre-tenant candidate lookup', () => {
@@ -96,24 +105,7 @@ describe('POST /api/auth/login', () => {
     expect(source).not.toContain('tx.session.create');
   });
 
-  it('returns 500 instead of using a weak fallback when SESSION_SECRET is missing', async () => {
-    delete process.env['SESSION_SECRET'];
-
-    const request = new NextRequest('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'user@example.com', password: 'password123' }),
-    });
-
-    const response = await POST(request);
-    const body = await response.json();
-
-    expect(response.status).toBe(500);
-    expect(body.error).toBe('Failed to sign in');
-  });
-
-  it('returns a signed temp token when SESSION_SECRET is configured', async () => {
-    process.env['SESSION_SECRET'] = 'test-session-secret';
-
+  it('returns an opaque server-backed challenge when two-factor authentication is enabled', async () => {
     const request = new NextRequest('http://localhost/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email: 'user@example.com', password: 'password123' }),
@@ -124,7 +116,16 @@ describe('POST /api/auth/login', () => {
 
     expect(response.status).toBe(200);
     expect(body.requiresTwoFactor).toBe(true);
-    expect(body.tempToken).toMatch(/^user-1:\d+:[a-f0-9]+$/);
+    expect(body.tempToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(body.tempToken).not.toContain('user-1');
+    expect(mockIssueTenantTwoFactorChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        organizationId: 'org-1',
+        tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        expiresAt: expect.any(Date),
+      })
+    );
   });
 
   it('captures a successful password login without making audit authoritative', async () => {

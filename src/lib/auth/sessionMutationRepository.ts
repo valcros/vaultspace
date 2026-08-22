@@ -4,6 +4,10 @@ import { db } from '@/lib/db';
 
 export const BOOTSTRAP_SESSION_CREATE_FUNCTION =
   'public.bootstrap_session_create_v1(text, text, text, timestamp with time zone, text, text)' as const;
+export const BOOTSTRAP_SESSION_CREATE_MFA_FUNCTION =
+  'public.bootstrap_session_create_mfa_v1(text, text, text, timestamp with time zone, text, text)' as const;
+export const BOOTSTRAP_SESSION_CREATE_MFA_V2_FUNCTION =
+  'public.bootstrap_session_create_mfa_v2(text, text, text, text, timestamp with time zone, text, text)' as const;
 export const BOOTSTRAP_SESSION_REFRESH_FUNCTION =
   'public.bootstrap_session_refresh_v1(text)' as const;
 export const BOOTSTRAP_SESSION_INVALIDATE_FUNCTION =
@@ -31,10 +35,16 @@ export interface CreateBootstrapSessionInput {
   userAgent?: string | null;
 }
 
+export interface CreateMfaBootstrapSessionInput extends CreateBootstrapSessionInput {
+  challengeToken: string;
+}
+
 export interface CreatedBootstrapSession {
   sessionId: string;
   createdAt: Date;
   expiresAt: Date;
+  mfaVerifiedAt: Date | null;
+  authenticationAssurance: 'PASSWORD' | 'MFA';
 }
 
 export interface RefreshedBootstrapSession {
@@ -46,6 +56,8 @@ interface CreatedBootstrapSessionRow {
   session_id: string;
   session_created_at: Date | string;
   session_expires_at: Date | string;
+  session_mfa_verified_at?: Date | string | null;
+  session_authentication_assurance?: string | null;
 }
 
 interface RefreshedBootstrapSessionRow {
@@ -66,7 +78,7 @@ export interface AuthorizedSessionRevocation {
   sessionIds: string[];
 }
 
-export type SessionMutationQueryClient = Pick<Prisma.TransactionClient, '$queryRaw'>;
+export type SessionMutationQueryClient = Pick<Prisma.TransactionClient, '$queryRaw' | 'session'>;
 
 function validIdentifier(value: string): boolean {
   return IDENTIFIER_PATTERN.test(value);
@@ -92,10 +104,24 @@ function mapSessionId(row: SessionIdRow): string {
 }
 
 function mapCreatedSession(row: CreatedBootstrapSessionRow): CreatedBootstrapSession {
+  const assurance = row.session_authentication_assurance ?? 'PASSWORD';
+  if (assurance !== 'PASSWORD' && assurance !== 'MFA') {
+    throw new Error('BOOTSTRAP_SESSION_MUTATION_AUTHENTICATION_ASSURANCE_INVALID');
+  }
+  const mfaVerifiedAt =
+    row.session_mfa_verified_at === null || row.session_mfa_verified_at === undefined
+      ? null
+      : requiredDate(row.session_mfa_verified_at, 'MFA_VERIFIED_AT');
+  if ((assurance === 'MFA') !== (mfaVerifiedAt !== null)) {
+    throw new Error('BOOTSTRAP_SESSION_MUTATION_MFA_ASSURANCE_INCONSISTENT');
+  }
+
   return {
     sessionId: mapSessionId(row),
     createdAt: requiredDate(row.session_created_at, 'CREATED_AT'),
     expiresAt: requiredDate(row.session_expires_at, 'EXPIRES_AT'),
+    mfaVerifiedAt,
+    authenticationAssurance: assurance,
   };
 }
 
@@ -147,15 +173,59 @@ export class SessionMutationRepository {
   constructor(private readonly client: SessionMutationQueryClient = db) {}
 
   async createSession(input: CreateBootstrapSessionInput): Promise<CreatedBootstrapSession | null> {
-    if (
-      !validIdentifier(input.userId) ||
-      !validIdentifier(input.organizationId) ||
-      !validToken(input.token) ||
-      !(input.expiresAt instanceof Date) ||
-      Number.isNaN(input.expiresAt.getTime()) ||
-      (input.ipAddress !== null && input.ipAddress !== undefined && input.ipAddress.length > 50) ||
-      (input.userAgent !== null && input.userAgent !== undefined && input.userAgent.length > 4096)
-    ) {
+    return this.createSessionWithFunction(input);
+  }
+
+  /**
+   * This distinct method may only be called after a server-side TOTP or
+   * backup-code verification succeeds. Its database function records the MFA
+   * assertion from statement_timestamp(), never from a caller-supplied time.
+   */
+  async createMfaVerifiedSession(
+    input: CreateMfaBootstrapSessionInput
+  ): Promise<CreatedBootstrapSession | null> {
+    if (!this.validCreateInput(input) || !validToken(input.challengeToken)) {
+      return null;
+    }
+    const rows = await this.client.$queryRaw<CreatedBootstrapSessionRow[]>(
+      Prisma.sql`
+        SELECT
+          session_id,
+          session_created_at,
+          session_expires_at,
+          session_mfa_verified_at,
+          session_authentication_assurance
+        FROM public.bootstrap_session_create_mfa_v2(
+          ${input.userId}::text,
+          ${input.organizationId}::text,
+          ${input.challengeToken}::text,
+          ${input.token}::text,
+          ${input.expiresAt}::timestamptz,
+          ${input.ipAddress ?? null}::text,
+          ${input.userAgent ?? null}::text
+        )
+      `
+    );
+    const row = mapAtMostOne(rows, 'BOOTSTRAP_SESSION_CREATE_MFA_DUPLICATE');
+    return row ? mapCreatedSession(row) : null;
+  }
+
+  private validCreateInput(input: CreateBootstrapSessionInput): boolean {
+    return (
+      validIdentifier(input.userId) &&
+      validIdentifier(input.organizationId) &&
+      validToken(input.token) &&
+      input.expiresAt instanceof Date &&
+      !Number.isNaN(input.expiresAt.getTime()) &&
+      (input.ipAddress === null || input.ipAddress === undefined || input.ipAddress.length <= 50) &&
+      (input.userAgent === null || input.userAgent === undefined || input.userAgent.length <= 4096)
+    );
+  }
+
+  private async createSessionWithFunction(
+    input: CreateBootstrapSessionInput
+  ): Promise<CreatedBootstrapSession | null> {
+    if (!this.validCreateInput(input)) {
       return null;
     }
 

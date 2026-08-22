@@ -9,12 +9,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
-import { db } from '@/lib/db';
-import { createSession } from '@/lib/auth';
+import { db, withOrgContext } from '@/lib/db';
+import { createMfaVerifiedSession } from '@/lib/auth';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
-import { verifyTwoFactorTempToken } from '@/lib/auth/twoFactorTempToken';
+import { resolveTenantTwoFactorChallenge } from '@/lib/auth/twoFactorChallengeRepository';
 import { getRequestContext, rateLimiters, setSessionCookie } from '@/lib/middleware';
 import { RateLimitError } from '@/lib/errors';
 import { SESSION_CONFIG } from '@/lib/constants';
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
 
     // Verify temp token
-    const tokenData = verifyTwoFactorTempToken(tempToken);
+    const tokenData = await resolveTenantTwoFactorChallenge(tempToken);
     if (!tokenData) {
       return NextResponse.json(
         { error: 'Invalid or expired temporary token. Please log in again.' },
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
       where: { id: tokenData.userId },
       include: {
         organizations: {
-          where: { isActive: true },
+          where: { isActive: true, organizationId: tokenData.organizationId },
           include: {
             organization: {
               select: {
@@ -76,8 +77,6 @@ export async function POST(request: NextRequest) {
               },
             },
           },
-          orderBy: { createdAt: 'asc' },
-          take: 1,
         },
       },
     });
@@ -98,18 +97,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid verification code' }, { status: 400 });
     }
 
-    // If a backup code was used, remove it (one-time use)
-    if (backupCodeIndex !== -1) {
-      const updatedCodes = [...user.twoFactorBackupCodes];
-      updatedCodes.splice(backupCodeIndex, 1);
-      await db.user.update({
-        where: { id: user.id },
-        data: { twoFactorBackupCodes: updatedCodes },
-      });
-    }
-
     // Get default organization
-    const userOrg = user.organizations[0];
+    const userOrg = user.organizations.find(
+      (membership) => membership.organization.id === tokenData.organizationId
+    );
     if (!userOrg || !userOrg.organization.isActive) {
       return NextResponse.json({ error: 'No active organization found' }, { status: 403 });
     }
@@ -118,17 +109,50 @@ export async function POST(request: NextRequest) {
     const sessionDuration = SESSION_CONFIG.DEFAULT_DURATION_DAYS * 24 * 60 * 60 * 1000;
     const expiresAt = new Date(Date.now() + sessionDuration);
 
-    const { session: authSession, token: sessionToken } = await createSession(
-      user.id,
+    // The session, one-time backup-code removal, and last-login stamp are one
+    // transaction. A denied/failed session issue must not burn a backup code.
+    const { session: authSession, token: sessionToken } = await withOrgContext(
       userOrg.organization.id,
-      { expiresAt, ipAddress, userAgent }
-    );
+      async (tx) => {
+        const createdSession = await createMfaVerifiedSession(
+          user.id,
+          userOrg.organization.id,
+          { expiresAt, ipAddress, userAgent, mfaChallengeToken: tempToken },
+          tx
+        );
 
-    // Update last login
-    await db.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
+        if (backupCodeIndex !== -1) {
+          // Lock and re-read the authoritative array inside this transaction.
+          // This serializes two distinct backup-code uses and prevents a stale
+          // array write from reintroducing another code that was just consumed.
+          const lockedRows = await tx.$queryRaw<Array<{ twoFactorBackupCodes: string[] }>>(
+            Prisma.sql`
+            SELECT "twoFactorBackupCodes"
+            FROM public.users
+            WHERE id = ${user.id}::text
+            FOR UPDATE
+          `
+          );
+          const lockedCodes = lockedRows[0]?.twoFactorBackupCodes;
+          const lockedBackupCodeIndex = lockedCodes ? verifyBackupCode(code, lockedCodes) : -1;
+          if (!lockedCodes || lockedBackupCodeIndex === -1) {
+            throw new Error('BACKUP_CODE_ALREADY_CONSUMED');
+          }
+          const updatedCodes = [...lockedCodes];
+          updatedCodes.splice(lockedBackupCodeIndex, 1);
+          await tx.user.update({
+            where: { id: user.id },
+            data: { twoFactorBackupCodes: updatedCodes },
+          });
+        }
+
+        await tx.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        });
+        return createdSession;
+      }
+    );
 
     // Set session cookie
     await setSessionCookie(sessionToken, expiresAt);
