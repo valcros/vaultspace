@@ -253,10 +253,9 @@ describe('W1-2 routed organization resolve surface', () => {
          AND pg_catalog.has_function_privilege($1, function.oid, 'EXECUTE')`,
       RUNTIME_ROLE
     );
-    // Unit 11 widens the reviewed Unit 9 matrix with two password-reset
-    // capabilities. The family integration suites prove the exact
-    // eleven-function set and owner-only caller-selected primitives.
-    expect(Number(runtimeMatrix?.count)).toBe(11);
+    // The MFA challenge boundary adds three reviewed runtime functions. Their
+    // dedicated integration suite proves their exact ACL and one-time semantics.
+    expect(Number(runtimeMatrix?.count)).toBe(14);
 
     await expect(
       runtimePrisma.$queryRawUnsafe(
