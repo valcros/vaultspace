@@ -28,7 +28,12 @@ import { join } from 'node:path';
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Prisma, PrismaClient, UserRole } from '@prisma/client';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
-import { withOrgContext, db, setBootstrapContext } from '@/lib/db';
+import {
+  withOrgContext,
+  db,
+  setBootstrapContext,
+  setTransactionOrganizationContext,
+} from '@/lib/db';
 import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
 import {
   revokeAndVerifyPasswordResetProviderCorrelationAccess,
@@ -141,6 +146,12 @@ async function issuePasswordResetWithReviewedLocks(input: {
   return db.$transaction(
     async (tx) => {
       await setBootstrapContext(tx);
+
+      // This reviewed issuance path already has an authoritative organization
+      // from its caller. Establish it before taking membership locks: the
+      // no-context bootstrap policy intentionally permits SELECT for login,
+      // but it must never be used to acquire membership UPDATE locks.
+      await setTransactionOrganizationContext(tx, input.organizationId);
 
       const userIds = [...new Set([input.targetUserId, input.actorUserId])].sort();
       await lockPasswordResetUser(tx, input.targetUserId);

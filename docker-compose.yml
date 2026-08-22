@@ -97,6 +97,10 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       DEPLOYMENT_MODE: standalone
+      # Standalone Compose uses one local database role. The Azure-only RLS
+      # repair script requires the separately provisioned vaultspace_app role,
+      # so it must not run against this self-hosted topology.
+      ENABLE_RLS: 'false'
       APP_URL: ${APP_URL:-http://localhost:3000}
       # No insecure default: a known session-signing secret allows trivial
       # session forgery. Compose fails fast if unset. scripts/setup.sh generates
