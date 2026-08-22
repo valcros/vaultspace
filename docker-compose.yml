@@ -151,9 +151,14 @@ services:
       - ./uploads:/app/uploads
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/health']
-      interval: 30s
+      # The application applies reviewed Prisma migrations before it binds the
+      # HTTP port. Compose health settings override the image health policy, so
+      # retain an explicit startup grace period instead of marking that normal
+      # migration window as an unhealthy application.
+      start_period: 90s
+      interval: 10s
       timeout: 10s
-      retries: 3
+      retries: 6
     restart: unless-stopped
 
   # General Worker
