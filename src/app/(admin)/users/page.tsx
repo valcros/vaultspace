@@ -1108,7 +1108,7 @@ export default function UsersPage() {
           }
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-h-[calc(100vh-2rem)] max-w-xl grid-rows-[auto_minmax(0,1fr)_auto]">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
@@ -1116,7 +1116,7 @@ export default function UsersPage() {
               signs the user out of any active sessions.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="min-h-0 space-y-4 overflow-y-auto py-4 pr-1">
             {editError && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">
                 {editError}
