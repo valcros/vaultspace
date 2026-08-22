@@ -17,6 +17,9 @@ const EXPECTED_RUNTIME_FUNCTIONS = new Set([
   'bootstrap_session_revoke_admin_user_global_single_org_v1',
   'bootstrap_password_reset_candidate_v1',
   'bootstrap_password_reset_redeem_v1',
+  'bootstrap_two_factor_challenge_issue_v1',
+  'bootstrap_two_factor_challenge_resolve_v1',
+  'bootstrap_session_create_mfa_v2',
 ]);
 
 interface IssueRow {
@@ -227,7 +230,7 @@ describe('W1-2 inert password-reset issuance foundation', () => {
     await Promise.all([rawPrisma.$disconnect(), runtimePrisma.$disconnect()]);
   });
 
-  it('keeps the exact eleven-function runtime matrix and all three new functions owner-only', async () => {
+  it('keeps the exact fourteen-function runtime matrix and all three reset functions owner-only', async () => {
     const functions = await rawPrisma.$queryRawUnsafe<
       Array<{
         proname: string;

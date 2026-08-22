@@ -30,11 +30,47 @@ describe('platform control-plane recovery boundary', () => {
   it('rolls the clear phase back only because a retained platform grant blocks user deletion', async () => {
     await provisioner.$executeRawUnsafe(`CREATE DATABASE ${databaseName}`);
     databaseCreated = true;
-    execFileSync('npx', ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'], {
-      env: { ...process.env, DATABASE_URL: isolatedDatabaseUrl },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 90_000,
-    });
+    const migrationEnvironment = { ...process.env, DATABASE_URL: isolatedDatabaseUrl };
+    const migrationCommand = ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'];
+    // This test runs after the parent RLS suite has provisioned vaultspace_app
+    // cluster-wide. The historical Unit 10 migration correctly refuses that
+    // role when its inherited reset-table prestate is missing in a new
+    // database. Recreate the exact historical prestate in this disposable
+    // database and resolve its deliberately failed migration record before
+    // continuing the recovery-boundary setup.
+    try {
+      execFileSync('npx', migrationCommand, {
+        env: migrationEnvironment,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 90_000,
+      });
+    } catch (error) {
+      const migrationError = error as { stderr?: Buffer | string };
+      expect(String(migrationError.stderr)).toContain(
+        'BOOTSTRAP_RUNTIME_RESET_PRIVILEGE_PRESTATE_INVALID'
+      );
+      await isolated.$executeRawUnsafe(
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON public.password_reset_tokens, public.password_reset_recoveries TO vaultspace_app'
+      );
+      execFileSync(
+        'npx',
+        [
+          'prisma',
+          'migrate',
+          'resolve',
+          '--rolled-back',
+          '20260813150000_w1_2_password_reset_redemption_foundation',
+          '--schema',
+          'prisma/schema.prisma',
+        ],
+        { env: migrationEnvironment, stdio: ['ignore', 'pipe', 'pipe'], timeout: 90_000 }
+      );
+      execFileSync('npx', migrationCommand, {
+        env: migrationEnvironment,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 90_000,
+      });
+    }
 
     const userId = `restore-subject-${randomUUID()}`;
     const actorId = `restore-actor-${randomUUID()}`;
