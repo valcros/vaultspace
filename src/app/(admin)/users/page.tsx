@@ -123,6 +123,7 @@ export default function UsersPage() {
   const [assignableRooms, setAssignableRooms] = React.useState<AssignableRoom[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [openActionMenuUserId, setOpenActionMenuUserId] = React.useState<string | null>(null);
   const [showInviteDialog, setShowInviteDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<{
     title: string;
@@ -296,6 +297,9 @@ export default function UsersPage() {
   };
 
   const openEditDialog = (user: User) => {
+    // A menu and a modal both manage focus. Close the menu before opening the
+    // modal so its focus-restoration layer cannot survive a post-save row refresh.
+    setOpenActionMenuUserId(null);
     setEditTarget(user);
     setEditData({
       firstName: user.firstName,
@@ -376,6 +380,7 @@ export default function UsersPage() {
       return;
     }
     if (!hasMemberChange && !roomAccessChanged) {
+      setOpenActionMenuUserId(null);
       setEditTarget(null);
       return;
     }
@@ -414,6 +419,7 @@ export default function UsersPage() {
           return;
         }
       }
+      setOpenActionMenuUserId(null);
       setEditTarget(null);
       fetchUsers();
     } catch (error) {
@@ -640,7 +646,9 @@ export default function UsersPage() {
                     <th className="px-5 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">
                       Joined
                     </th>
-                    <th className="w-10"></th>
+                    <th className="px-5 py-3 text-right text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -653,14 +661,19 @@ export default function UsersPage() {
                         <div className="flex items-center gap-3">
                           <UserAvatar name={`${user.firstName} ${user.lastName}`} size="sm" />
                           <div>
-                            <div className="flex items-center gap-2 font-medium text-slate-950 dark:text-white">
+                            <button
+                              type="button"
+                              onClick={() => openEditDialog(user)}
+                              className="flex items-center gap-2 rounded-sm font-medium text-slate-950 outline-none transition-colors hover:text-primary-700 focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:text-white dark:hover:text-primary-300 dark:focus-visible:ring-offset-slate-950"
+                              aria-label={`Open editor for ${user.firstName} ${user.lastName}`}
+                            >
                               {user.firstName} {user.lastName}
                               {!user.isActive && (
                                 <Badge variant="secondary" className="text-xs">
                                   Inactive
                                 </Badge>
                               )}
-                            </div>
+                            </button>
                             <div className="text-sm text-slate-500 dark:text-slate-400">
                               {user.email}
                             </div>
@@ -684,135 +697,152 @@ export default function UsersPage() {
                         {formatDate(user.createdAt)}
                       </td>
                       <td className="px-5 py-4">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                              aria-label="Actions"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEditDialog(user)}>
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Edit User
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setEmailTarget(user);
-                                setEmailSubject('');
-                                setEmailBody('');
-                                setEmailError(null);
-                              }}
-                            >
-                              <Mail className="mr-2 h-4 w-4" />
-                              Send Email
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                const newRole = user.role === 'ADMIN' ? 'VIEWER' : 'ADMIN';
-                                setConfirmAction({
-                                  title: 'Change Role',
-                                  description: `Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`,
-                                  onConfirm: async () => {
-                                    try {
-                                      const res = await fetch(`/api/users/${user.id}`, {
-                                        method: 'PATCH',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ role: newRole }),
-                                        credentials: 'include',
-                                      });
-                                      if (res.ok) {
-                                        const data = await res.json().catch(() => ({}));
-                                        if (data.selfSessionInvalidated) {
-                                          // Demoting yourself ends your session;
-                                          // re-authenticate instead of staying on a
-                                          // stale admin shell.
-                                          window.location.href = '/auth/login';
-                                          return;
-                                        }
-                                        fetchUsers();
-                                      }
-                                    } catch (err) {
-                                      console.error('Failed to change role:', err);
-                                    }
-                                  },
-                                });
-                              }}
-                            >
-                              <Shield className="mr-2 h-4 w-4" />
-                              Change to {user.role === 'ADMIN' ? 'Viewer' : 'Admin'}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setConfirmAction({
-                                  title: 'Reset Password',
-                                  description: `Send a password reset email to ${user.email}? They set a new password themselves; you never see it.`,
-                                  onConfirm: async () => {
-                                    try {
-                                      const res = await fetch(
-                                        `/api/users/${user.id}/reset-password`,
-                                        { method: 'POST', credentials: 'include' }
-                                      );
-                                      if (res.ok) {
-                                        toast({
-                                          title: 'Password reset sent',
-                                          description: `A reset email was sent to ${user.email}.`,
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => openEditDialog(user)}
+                            aria-label={`Edit ${user.firstName} ${user.lastName}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
+                          <DropdownMenu
+                            open={openActionMenuUserId === user.id}
+                            onOpenChange={(open) => setOpenActionMenuUserId(open ? user.id : null)}
+                          >
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-9 gap-1 px-2"
+                                aria-label={`More actions for ${user.firstName} ${user.lastName}`}
+                                title={`More actions for ${user.firstName} ${user.lastName}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                More
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setOpenActionMenuUserId(null);
+                                  setEmailTarget(user);
+                                  setEmailSubject('');
+                                  setEmailBody('');
+                                  setEmailError(null);
+                                }}
+                              >
+                                <Mail className="mr-2 h-4 w-4" />
+                                Send Email
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setOpenActionMenuUserId(null);
+                                  const newRole = user.role === 'ADMIN' ? 'VIEWER' : 'ADMIN';
+                                  setConfirmAction({
+                                    title: 'Change Role',
+                                    description: `Change ${user.firstName} ${user.lastName}'s role to ${newRole.toLowerCase()}?`,
+                                    onConfirm: async () => {
+                                      try {
+                                        const res = await fetch(`/api/users/${user.id}`, {
+                                          method: 'PATCH',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ role: newRole }),
+                                          credentials: 'include',
                                         });
-                                      } else {
-                                        const data = await res.json().catch(() => ({}));
+                                        if (res.ok) {
+                                          const data = await res.json().catch(() => ({}));
+                                          if (data.selfSessionInvalidated) {
+                                            // Demoting yourself ends your session;
+                                            // re-authenticate instead of staying on a
+                                            // stale admin shell.
+                                            window.location.href = '/auth/login';
+                                            return;
+                                          }
+                                          fetchUsers();
+                                        }
+                                      } catch (err) {
+                                        console.error('Failed to change role:', err);
+                                      }
+                                    },
+                                  });
+                                }}
+                              >
+                                <Shield className="mr-2 h-4 w-4" />
+                                Change to {user.role === 'ADMIN' ? 'Viewer' : 'Admin'}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setOpenActionMenuUserId(null);
+                                  setConfirmAction({
+                                    title: 'Reset Password',
+                                    description: `Send a password reset email to ${user.email}? They set a new password themselves; you never see it.`,
+                                    onConfirm: async () => {
+                                      try {
+                                        const res = await fetch(
+                                          `/api/users/${user.id}/reset-password`,
+                                          { method: 'POST', credentials: 'include' }
+                                        );
+                                        if (res.ok) {
+                                          toast({
+                                            title: 'Password reset sent',
+                                            description: `A reset email was sent to ${user.email}.`,
+                                          });
+                                        } else {
+                                          const data = await res.json().catch(() => ({}));
+                                          toast({
+                                            title: 'Could not send reset',
+                                            description: data.error || 'Please try again.',
+                                            variant: 'destructive',
+                                          });
+                                        }
+                                      } catch (err) {
+                                        console.error('Failed to send password reset:', err);
                                         toast({
                                           title: 'Could not send reset',
-                                          description: data.error || 'Please try again.',
+                                          description: 'Please try again.',
                                           variant: 'destructive',
                                         });
                                       }
-                                    } catch (err) {
-                                      console.error('Failed to send password reset:', err);
-                                      toast({
-                                        title: 'Could not send reset',
-                                        description: 'Please try again.',
-                                        variant: 'destructive',
-                                      });
-                                    }
-                                  },
-                                });
-                              }}
-                            >
-                              <KeyRound className="mr-2 h-4 w-4" />
-                              Reset Password
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-danger-600"
-                              onClick={() => {
-                                setConfirmAction({
-                                  title: 'Archive from organization',
-                                  description: `Remove ${user.firstName} ${user.lastName}'s access to this organization and its rooms? Their account and access in other organizations will not be changed.`,
-                                  onConfirm: async () => {
-                                    try {
-                                      const res = await fetch(`/api/users/${user.id}`, {
-                                        method: 'DELETE',
-                                        credentials: 'include',
-                                      });
-                                      if (res.ok) {
-                                        fetchUsers();
+                                    },
+                                  });
+                                }}
+                              >
+                                <KeyRound className="mr-2 h-4 w-4" />
+                                Reset Password
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-danger-600"
+                                onClick={() => {
+                                  setOpenActionMenuUserId(null);
+                                  setConfirmAction({
+                                    title: 'Archive from organization',
+                                    description: `Remove ${user.firstName} ${user.lastName}'s access to this organization and its rooms? Their account and access in other organizations will not be changed.`,
+                                    onConfirm: async () => {
+                                      try {
+                                        const res = await fetch(`/api/users/${user.id}`, {
+                                          method: 'DELETE',
+                                          credentials: 'include',
+                                        });
+                                        if (res.ok) {
+                                          fetchUsers();
+                                        }
+                                      } catch (err) {
+                                        console.error('Failed to remove user:', err);
                                       }
-                                    } catch (err) {
-                                      console.error('Failed to remove user:', err);
-                                    }
-                                  },
-                                });
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Archive from organization
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                    },
+                                  });
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Archive from organization
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </td>
                     </tr>
                   ))}
