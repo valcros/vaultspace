@@ -60,6 +60,30 @@ compose() {
   docker compose --project-name "$SMOKE_PROJECT" "$@"
 }
 
+redact_runtime_output() {
+  # Startup diagnostics must be useful without making the disposable smoke
+  # runner a secret-disclosure path. The app migration runner independently
+  # redacts its connection string; this masks common URL forms again at the
+  # boundary before CI emits the output.
+  sed -E \
+    -e 's#(postgres(ql)?://)[^[:space:]]+#\1<redacted>#g' \
+    -e 's#(redis://)[^[:space:]]+#\1<redacted>#g'
+}
+
+report_app_startup_failure() {
+  local app_container
+  app_container=$(compose ps -q app 2>/dev/null || true)
+  echo "ERROR: Compose app did not become healthy; safe startup diagnostic follows." >&2
+  compose ps >&2 || true
+  if [ -n "$app_container" ]; then
+    docker inspect --format '{{range .State.Health.Log}}{{.Output}}{{end}}' "$app_container" \
+      2>&1 | redact_runtime_output >&2 || true
+  fi
+  compose logs --no-log-prefix --tail 80 app 2>&1 \
+    | grep -E '\[entrypoint\]|migration_startup_gucs|FATAL|ERROR|Error|Prisma' \
+    | redact_runtime_output >&2 || true
+}
+
 cleanup() {
   local exit_code="$?"
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -76,7 +100,10 @@ echo "Validating disposable Compose configuration"
 compose config --quiet
 
 echo "Building and starting self-hosted services"
-compose up --build --wait --wait-timeout "$SMOKE_WAIT_TIMEOUT" "${services[@]}"
+if ! compose up --build --wait --wait-timeout "$SMOKE_WAIT_TIMEOUT" "${services[@]}"; then
+  report_app_startup_failure
+  exit 1
+fi
 
 worker_container=$(compose ps -q worker-general)
 if [ -z "$worker_container" ]; then
