@@ -40,7 +40,9 @@ export function NotificationMenu({ className }: NotificationMenuProps) {
     try {
       const response = await fetch('/api/users/me/notification-inbox', { credentials: 'include' });
       const data = await response.json();
-      if (!response.ok) {throw new Error(data.error || 'Unable to load notifications');}
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to load notifications');
+      }
       setItems(data.items || []);
       setUnreadCount(data.unreadCount || 0);
     } catch (loadError) {
@@ -59,13 +61,23 @@ export function NotificationMenu({ className }: NotificationMenuProps) {
         body: JSON.stringify(notificationId ? { notificationId } : { all: true }),
       });
       const data = await response.json();
-      if (!response.ok) {throw new Error(data.error || 'Unable to update notifications');}
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to update notifications');
+      }
       setUnreadCount(data.unreadCount || 0);
       setItems((current) =>
-        current.map((item) => (notificationId ? item.id === notificationId ? { ...item, isRead: true } : item : { ...item, isRead: true }))
+        current.map((item) =>
+          notificationId
+            ? item.id === notificationId
+              ? { ...item, isRead: true }
+              : item
+            : { ...item, isRead: true }
+        )
       );
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Unable to update notifications');
+      setError(
+        updateError instanceof Error ? updateError.message : 'Unable to update notifications'
+      );
     }
   };
 
@@ -74,7 +86,9 @@ export function NotificationMenu({ className }: NotificationMenuProps) {
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
-        if (nextOpen) {void load();}
+        if (nextOpen) {
+          void load();
+        }
       }}
     >
       <DropdownMenuTrigger asChild>
@@ -82,7 +96,9 @@ export function NotificationMenu({ className }: NotificationMenuProps) {
           variant="ghost"
           size="icon"
           className={clsx('relative', className)}
-          aria-label={unreadCount > 0 ? `Notifications, ${Math.min(unreadCount, 99)} unread` : 'Notifications'}
+          aria-label={
+            unreadCount > 0 ? `Notifications, ${Math.min(unreadCount, 99)} unread` : 'Notifications'
+          }
         >
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
@@ -96,7 +112,12 @@ export function NotificationMenu({ className }: NotificationMenuProps) {
         <div className="flex items-center justify-between px-2 py-1">
           <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
           {unreadCount > 0 && (
-            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => void markRead()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs"
+              onClick={() => void markRead()}
+            >
               <CheckCheck className="h-3.5 w-3.5" />
               Mark all read
             </Button>
@@ -121,14 +142,23 @@ export function NotificationMenu({ className }: NotificationMenuProps) {
             {items.map((item) => (
               <DropdownMenuItem
                 key={item.id}
-                className={clsx('block cursor-pointer whitespace-normal px-3 py-3', !item.isRead && 'bg-primary-50/70 dark:bg-primary-950/20')}
+                className={clsx(
+                  'block cursor-pointer whitespace-normal px-3 py-3',
+                  !item.isRead && 'bg-primary-50/70 dark:bg-primary-950/20'
+                )}
                 onSelect={() => {
-                  if (!item.isRead) {void markRead(item.id);}
+                  if (!item.isRead) {
+                    void markRead(item.id);
+                  }
                 }}
               >
                 <p className="font-medium text-neutral-950 dark:text-white">{item.title}</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">{item.message}</p>
-                <p className="mt-1 text-xs text-neutral-400">{new Date(item.createdAt).toLocaleString()}</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-600 dark:text-neutral-300">
+                  {item.message}
+                </p>
+                <p className="mt-1 text-xs text-neutral-400">
+                  {new Date(item.createdAt).toLocaleString()}
+                </p>
               </DropdownMenuItem>
             ))}
           </div>

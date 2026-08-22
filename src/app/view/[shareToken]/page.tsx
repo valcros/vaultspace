@@ -256,7 +256,7 @@ export default function ViewerAccessPage() {
 
             {/* NDA Acceptance */}
             {linkInfo?.ndaRequired && linkInfo.ndaOnFile ? (
-              <Alert className="border-success-200 bg-success-50 text-success-900 dark:border-success-900/60 dark:bg-success-950/20 dark:text-success-100">
+              <Alert className="dark:bg-success-950/20 border-success-200 bg-success-50 text-success-900 dark:border-success-900/60 dark:text-success-100">
                 <CheckCircle className="h-4 w-4" />
                 <AlertDescription>
                   An executed NDA is on file for your organization membership. You may proceed.

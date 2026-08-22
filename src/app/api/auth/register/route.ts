@@ -156,9 +156,7 @@ export async function POST(request: NextRequest) {
                 ndaOnFile: invitation.ndaOnFile,
                 ndaOnFileReference: invitation.ndaOnFileReference,
                 ndaOnFileRecordedAt: invitation.ndaOnFile ? invitation.createdAt : null,
-                ndaOnFileRecordedByUserId: invitation.ndaOnFile
-                  ? invitation.invitedByUserId
-                  : null,
+                ndaOnFileRecordedByUserId: invitation.ndaOnFile ? invitation.invitedByUserId : null,
               },
             });
 
@@ -269,7 +267,10 @@ export async function POST(request: NextRequest) {
                     action: 'SET_FROM_INVITATION',
                     referencePresent: Boolean(invitation.ndaOnFileReference),
                     referenceSha256: invitation.ndaOnFileReference
-                      ? crypto.createHash('sha256').update(invitation.ndaOnFileReference).digest('hex')
+                      ? crypto
+                          .createHash('sha256')
+                          .update(invitation.ndaOnFileReference)
+                          .digest('hex')
                       : null,
                   },
                 },

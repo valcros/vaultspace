@@ -64,7 +64,9 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizeOptionalText = (value: unknown, max: number, field: string) => {
-      if (value === undefined || value === null) {return null;}
+      if (value === undefined || value === null) {
+        return null;
+      }
       if (typeof value !== 'string' || value.trim().length > max) {
         throw new Error(`Invalid ${field}`);
       }
@@ -76,7 +78,14 @@ export async function POST(request: NextRequest) {
       lastName: string | null;
       company: string | null;
       phone: string | null;
-      userType: 'FOUNDER' | 'INVESTOR' | 'PARTNER' | 'INVESTOR_REPRESENTATIVE' | 'EMPLOYEE' | 'CONSULTANT' | null;
+      userType:
+        | 'FOUNDER'
+        | 'INVESTOR'
+        | 'PARTNER'
+        | 'INVESTOR_REPRESENTATIVE'
+        | 'EMPLOYEE'
+        | 'CONSULTANT'
+        | null;
       ndaOnFile: boolean;
       ndaOnFileReference: string | null;
     };
