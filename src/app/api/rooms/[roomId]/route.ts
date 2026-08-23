@@ -3,19 +3,22 @@
  *
  * GET    /api/rooms/:roomId - Get room details
  * PATCH  /api/rooms/:roomId - Update room
- * DELETE /api/rooms/:roomId - Soft delete room
+ * DELETE /api/rooms/:roomId - Close and retain room
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getRequestContext, requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { AppError } from '@/lib/errors';
 import { createServiceContext, roomService } from '@/services';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 
 import type { RoomStatus } from '@prisma/client';
+
+const ROOM_STATUSES: readonly RoomStatus[] = ['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED'];
 
 interface RouteContext {
   params: Promise<{ roomId: string }>;
@@ -80,6 +83,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       allDocumentsConfidential,
     } = body;
 
+    if (
+      status !== undefined &&
+      (typeof status !== 'string' || !ROOM_STATUSES.includes(status as RoomStatus))
+    ) {
+      return NextResponse.json({ error: 'Invalid room status' }, { status: 400 });
+    }
+
     // Use RLS context for org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
       // Get current room
@@ -94,41 +104,33 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         return { error: 'Room not found', status: 404 };
       }
 
-      // Validate status transition (F108)
-      if (status && status !== room.status) {
-        const validTransitions: Record<RoomStatus, RoomStatus[]> = {
-          DRAFT: ['ACTIVE'],
-          ACTIVE: ['ARCHIVED', 'CLOSED'],
-          ARCHIVED: ['ACTIVE', 'CLOSED'],
-          CLOSED: [], // No transitions from CLOSED
-        };
+      // Status is deliberately excluded from generic room updates. The
+      // lifecycle service is the only authority for transitions, timestamps,
+      // and immutable audit evidence.
+      const updateData = {
+        ...(name && { name }),
+        ...(description !== undefined && { description }),
+        ...(allowDownloads !== undefined && { allowDownloads }),
+        ...(allowViewerVersionHistory !== undefined && { allowViewerVersionHistory }),
+        ...(defaultExpiryDays !== undefined && { defaultExpiryDays }),
+        ...(requiresPassword !== undefined && { requiresPassword }),
+        ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
+        ...(enableWatermark !== undefined && { enableWatermark }),
+        ...(watermarkTemplate !== undefined && { watermarkTemplate }),
+        ...(requiresNda !== undefined && { requiresNda }),
+        ...(ndaContent !== undefined && { ndaContent }),
+        ...(allDocumentsConfidential !== undefined && { allDocumentsConfidential }),
+      };
 
-        const allowed = validTransitions[room.status] ?? [];
-        if (!allowed.includes(status)) {
-          return { error: `Cannot transition from ${room.status} to ${status}`, status: 400 };
-        }
-      }
-
-      // Update room
-      const updatedRoom = await tx.room.update({
-        where: { id: roomId },
-        data: {
-          ...(name && { name }),
-          ...(description !== undefined && { description }),
-          ...(status && { status }),
-          ...(status === 'ARCHIVED' && { archivedAt: new Date() }),
-          ...(allowDownloads !== undefined && { allowDownloads }),
-          ...(allowViewerVersionHistory !== undefined && { allowViewerVersionHistory }),
-          ...(defaultExpiryDays !== undefined && { defaultExpiryDays }),
-          ...(requiresPassword !== undefined && { requiresPassword }),
-          ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
-          ...(enableWatermark !== undefined && { enableWatermark }),
-          ...(watermarkTemplate !== undefined && { watermarkTemplate }),
-          ...(requiresNda !== undefined && { requiresNda }),
-          ...(ndaContent !== undefined && { ndaContent }),
-          ...(allDocumentsConfidential !== undefined && { allDocumentsConfidential }),
-        },
-      });
+      // A lifecycle-only PATCH must not issue an empty Prisma update before
+      // the lifecycle service is called.
+      const updatedRoom =
+        Object.keys(updateData).length === 0
+          ? room
+          : await tx.room.update({
+              where: { id: roomId },
+              data: updateData,
+            });
 
       return { room: updatedRoom };
     });
@@ -137,8 +139,26 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json({ room: result.room });
+    let room = result.room;
+    if (status !== undefined && status !== result.room.status) {
+      const reqContext = getRequestContext(request);
+      room = await roomService.changeStatus(
+        createServiceContext({
+          session,
+          requestId: reqContext.requestId,
+          ipAddress: reqContext.ipAddress,
+          userAgent: reqContext.userAgent,
+        }),
+        roomId,
+        status as RoomStatus
+      );
+    }
+
+    return NextResponse.json({ room });
   } catch (error) {
+    if (error instanceof AppError) {
+      return NextResponse.json(error.toJSON(), { status: error.statusCode });
+    }
     console.error('[RoomAPI] PATCH error:', error);
     return NextResponse.json({ error: 'Failed to update room' }, { status: 500 });
   }
@@ -146,7 +166,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 /**
  * DELETE /api/rooms/:roomId
- * Soft delete (close) room
+ * Close and retain room
  */
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
@@ -158,39 +178,24 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Use RLS context for org-scoped queries
-    const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Get current room
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!room) {
-        return { error: 'Room not found', status: 404 };
-      }
-
-      // Soft delete by setting status to CLOSED
-      await tx.room.update({
-        where: { id: roomId },
-        data: {
-          status: 'CLOSED',
-          closedAt: new Date(),
-        },
-      });
-
-      return { success: true };
-    });
-
-    if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
-    }
+    const reqContext = getRequestContext(request);
+    await roomService.changeStatus(
+      createServiceContext({
+        session,
+        requestId: reqContext.requestId,
+        ipAddress: reqContext.ipAddress,
+        userAgent: reqContext.userAgent,
+      }),
+      roomId,
+      'CLOSED'
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof AppError) {
+      return NextResponse.json(error.toJSON(), { status: error.statusCode });
+    }
     console.error('[RoomAPI] DELETE error:', error);
-    return NextResponse.json({ error: 'Failed to delete room' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to close room' }, { status: 500 });
   }
 }

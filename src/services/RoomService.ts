@@ -70,6 +70,18 @@ const ROOM_LIST_SELECT = {
 export type RoomListItem = Prisma.RoomGetPayload<{ select: typeof ROOM_LIST_SELECT }>;
 
 /**
+ * The canonical room lifecycle. All status mutations must flow through
+ * RoomService.changeStatus so authorization, timestamps, and audit evidence
+ * cannot diverge between API surfaces.
+ */
+export const ROOM_STATUS_TRANSITIONS: Readonly<Record<RoomStatus, readonly RoomStatus[]>> = {
+  DRAFT: ['ACTIVE', 'CLOSED'],
+  ACTIVE: ['ARCHIVED', 'CLOSED'],
+  ARCHIVED: ['ACTIVE', 'CLOSED'],
+  CLOSED: [],
+};
+
+/**
  * Generate URL-safe slug from name
  */
 function generateSlug(name: string): string {
@@ -188,6 +200,23 @@ export class RoomService {
         return null;
       }
 
+      // Draft, archived, and closed rooms are administrative workspaces. An
+      // ordinary Viewer must not be able to bypass lifecycle discovery rules by
+      // navigating directly to a known room URL. Room-scoped administrators
+      // retain setup and retention access, while publishing itself remains an
+      // organization-admin operation in changeStatus().
+      if (room.status !== 'ACTIVE') {
+        const canManage = await permissionEngine.can(
+          { userId: session.userId, role: session.organization.role },
+          'admin',
+          { type: 'ROOM', organizationId: session.organizationId, roomId },
+          tx
+        );
+        if (!canManage) {
+          return null;
+        }
+      }
+
       const { passwordHash: _passwordHash, ...safeRoom } = room;
       return safeRoom;
     });
@@ -234,6 +263,18 @@ export class RoomService {
 
       if (!canView) {
         return null;
+      }
+
+      if (room.status !== 'ACTIVE') {
+        const canManage = await permissionEngine.can(
+          { userId: session.userId, role: session.organization.role },
+          'admin',
+          { type: 'ROOM', organizationId: session.organizationId, roomId: room.id },
+          tx
+        );
+        if (!canManage) {
+          return null;
+        }
       }
 
       const { passwordHash: _passwordHash, ...safeRoom } = room;
@@ -481,8 +522,17 @@ export class RoomService {
   async changeStatus(ctx: ServiceContext, roomId: string, status: RoomStatus): Promise<Room> {
     const { session, eventBus } = ctx;
 
+    // Publishing and closing change the room's exposure boundary. Keep this
+    // authority at the organization-admin level even when a user has a
+    // room-scoped administrative assignment.
+    if (session.organization.role !== 'ADMIN') {
+      throw new ConflictError(
+        'Organization administrator access is required to change room status'
+      );
+    }
+
     // Use RLS context for all org-scoped operations
-    const { updated, previousStatus } = await withOrgContext(session.organizationId, async (tx) => {
+    return withOrgContext(session.organizationId, async (tx) => {
       // Get the room
       const room = await tx.room.findFirst({
         where: {
@@ -510,33 +560,51 @@ export class RoomService {
 
       const previousStatus = room.status;
 
-      // Update status
+      const allowed = ROOM_STATUS_TRANSITIONS[previousStatus] ?? [];
+      if (!allowed.includes(status)) {
+        throw new ValidationError(`Cannot transition from ${previousStatus} to ${status}`);
+      }
+
+      const transitionAt = new Date();
+      const lifecycleData: Prisma.RoomUpdateInput = { status };
+      if (status === 'ARCHIVED') {
+        lifecycleData.archivedAt = transitionAt;
+      }
+      if (previousStatus === 'ARCHIVED' && status === 'ACTIVE') {
+        lifecycleData.archivedAt = null;
+      }
+      if (status === 'CLOSED') {
+        lifecycleData.closedAt = transitionAt;
+      }
+
+      // Persist status, lifecycle timestamp, and immutable audit evidence in
+      // the same tenant-scoped transaction.
       const updated = await tx.room.update({
         where: { id: roomId },
-        data: { status },
+        data: lifecycleData,
       });
+      const eventType =
+        status === 'ARCHIVED'
+          ? 'ROOM_ARCHIVED'
+          : status === 'CLOSED'
+            ? 'ROOM_CLOSED'
+            : 'ROOM_STATUS_CHANGED';
 
-      return { updated, previousStatus };
+      await eventBus.emit(
+        eventType,
+        {
+          roomId,
+          description: `Room status changed from ${previousStatus} to ${status}`,
+          metadata: {
+            previousStatus,
+            newStatus: status,
+          },
+        },
+        tx
+      );
+
+      return updated;
     });
-
-    // Emit appropriate event (EventBus wraps in RLS context internally)
-    const eventType =
-      status === 'ARCHIVED'
-        ? 'ROOM_ARCHIVED'
-        : status === 'CLOSED'
-          ? 'ROOM_CLOSED'
-          : 'ROOM_STATUS_CHANGED';
-
-    await eventBus.emit(eventType, {
-      roomId,
-      description: `Room status changed from ${previousStatus} to ${status}`,
-      metadata: {
-        previousStatus,
-        newStatus: status,
-      },
-    });
-
-    return updated;
   }
 
   /**

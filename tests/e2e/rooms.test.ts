@@ -29,6 +29,32 @@ test.describe('Room Management', () => {
     await expect(page.getByRole('main').getByRole('button', { name: 'Create Room' })).toBeVisible();
   });
 
+  test('admin can rediscover and publish a newly created draft room', async ({ page }) => {
+    const roomName = 'Lifecycle Draft Verification';
+
+    await page.getByRole('main').getByRole('button', { name: 'Create Room' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create Data Room' });
+    await dialog.getByLabel('Room Name').fill(roomName);
+    await dialog.getByRole('button', { name: 'Create Room', exact: true }).click();
+    await page.waitForURL('**/rooms/**', { timeout: 10000 });
+
+    await page.goto('/rooms');
+    await expect(page.getByRole('heading', { name: /Draft Rooms \(1\)/ })).toBeVisible();
+    const draftCard = page.getByRole('link', { name: new RegExp(roomName) });
+    await expect(draftCard).toContainText('Draft');
+
+    await draftCard.getByRole('button', { name: 'Actions' }).click();
+    await page.getByRole('menuitem', { name: 'Publish room' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Publish room?' });
+    await expect(confirm).toContainText('discoverable to authorized viewers');
+    await confirm.getByRole('button', { name: 'Publish room' }).click();
+
+    await expect(page.getByRole('heading', { name: /Active Rooms \(/ })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByRole('link', { name: new RegExp(roomName) })).toContainText('Live room');
+  });
+
   test('room detail page shows seeded content and management sections', async ({ page }) => {
     await page.click('text=Due Diligence Package');
     await page.waitForURL('**/rooms/**', { timeout: 5000 });

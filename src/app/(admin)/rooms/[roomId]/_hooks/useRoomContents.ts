@@ -10,7 +10,7 @@ export interface Room {
   id: string;
   name: string;
   description: string | null;
-  status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
+  status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED' | 'CLOSED';
   enableWatermark: boolean;
   watermarkTemplate: string | null;
   downloadEnabled: boolean;
