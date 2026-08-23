@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 import { getPermissionEngine } from '@/lib/permissions';
 import { serializeBigInt } from '@/lib/serialization';
 import { getProviders } from '@/providers';
@@ -140,6 +141,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     // Use RLS context for all org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
+      }
       // Verify room access
       const room = await tx.room.findFirst({
         where: {

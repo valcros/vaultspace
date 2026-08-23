@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,10 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     const storage = providers.storage;
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
+      }
       const room = await tx.room.findFirst({
         where: { id: roomId, organizationId: session.organizationId },
       });

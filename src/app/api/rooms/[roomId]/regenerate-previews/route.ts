@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { isServable } from '@/lib/documents/scanGate';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 import { getProviders } from '@/providers';
 import { hasCapability, createCapabilityUnavailableResponse } from '@/lib/deployment-capabilities';
 
@@ -39,6 +40,10 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     }
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
+      }
       const room = await tx.room.findFirst({
         where: { id: roomId, organizationId: session.organizationId },
       });

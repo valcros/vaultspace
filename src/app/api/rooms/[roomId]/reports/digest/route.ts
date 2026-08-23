@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 import { hasCapability, createCapabilityUnavailableResponse } from '@/lib/deployment-capabilities';
 import { JOB_NAMES, QUEUE_NAMES } from '@/workers/types';
 
@@ -481,6 +482,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { fromDate, toDate } = getDefaultDateRange(period);
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
+      }
       const digest = await buildDigestReport(
         tx,
         session.organizationId,
