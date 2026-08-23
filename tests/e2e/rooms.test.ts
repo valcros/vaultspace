@@ -7,20 +7,20 @@
 
 import { test, expect } from '@playwright/test';
 
-// Login helper - reused across tests
-async function loginAsAdmin(page: import('@playwright/test').Page) {
-  await page.goto('/auth/login');
-  await page.fill('input[type="email"]', 'admin@demo.vaultspace.app');
-  await page.fill('input[type="password"]', 'Demo123!');
-  await page.click('button[type="submit"]');
-  await page.waitForURL('**/dashboard', { timeout: 10000 });
+// The auth-setup project owns the browser login flow and persists this state.
+// Reusing it is both faster and more representative of an established admin
+// session; repeated UI logins were intermittently timing out in CI WebKit.
+const ADMIN_STORAGE_STATE = 'tests/e2e/.auth/admin.json';
+test.use({ storageState: ADMIN_STORAGE_STATE });
+
+async function openRooms(page: import('@playwright/test').Page) {
   await page.goto('/rooms');
   await page.waitForURL('**/rooms', { timeout: 10000 });
 }
 
 test.describe('Room Management', () => {
   test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page);
+    await openRooms(page);
   });
 
   test('rooms dashboard displays seed data', async ({ page }) => {
@@ -149,7 +149,7 @@ test.describe('Room Management', () => {
 
 test.describe('Room Settings', () => {
   test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page);
+    await openRooms(page);
   });
 
   test('room settings page loads with current values', async ({ page }) => {
