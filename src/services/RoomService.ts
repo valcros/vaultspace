@@ -27,7 +27,21 @@ export interface CreateRoomOptions {
  */
 export interface UpdateRoomOptions {
   name?: string;
-  description?: string;
+  description?: string | null;
+  status?: RoomStatus;
+  allowDownloads?: boolean;
+  allowViewerVersionHistory?: boolean;
+  defaultExpiryDays?: number | null;
+  requiresPassword?: boolean;
+  requiresEmailVerification?: boolean;
+  enableWatermark?: boolean;
+  watermarkTemplate?: string | null;
+  requiresNda?: boolean;
+  ndaContent?: string | null;
+  allDocumentsConfidential?: boolean;
+  brandColor?: string | null;
+  brandLogoUrl?: string | null;
+  ipAllowlist?: string[];
 }
 
 /**
@@ -345,8 +359,14 @@ export class RoomService {
   async update(ctx: ServiceContext, roomId: string, options: UpdateRoomOptions): Promise<Room> {
     const { session, eventBus } = ctx;
 
+    if (options.status !== undefined && session.organization.role !== 'ADMIN') {
+      throw new ConflictError(
+        'Organization administrator access is required to change room status'
+      );
+    }
+
     // Use RLS context for all org-scoped operations
-    const updated = await withOrgContext(session.organizationId, async (tx) => {
+    return withOrgContext(session.organizationId, async (tx) => {
       // Get the room
       const room = await tx.room.findFirst({
         where: {
@@ -372,7 +392,10 @@ export class RoomService {
         throw new ConflictError('You do not have permission to update this room');
       }
 
-      // Build update data
+      const { status, ...settings } = options;
+
+      // Build settings update data. Status is intentionally handled below so
+      // lifecycle validation completes before any write is issued.
       const data: Prisma.RoomUpdateInput = {};
 
       if (options.name !== undefined) {
@@ -386,23 +409,108 @@ export class RoomService {
         data.description = options.description?.trim() || null;
       }
 
-      // Update room
-      return tx.room.update({
-        where: { id: roomId },
-        data,
-      });
-    });
+      if (options.allowDownloads !== undefined) {
+        data.allowDownloads = options.allowDownloads;
+      }
+      if (options.allowViewerVersionHistory !== undefined) {
+        data.allowViewerVersionHistory = options.allowViewerVersionHistory;
+      }
+      if (options.defaultExpiryDays !== undefined) {
+        data.defaultExpiryDays = options.defaultExpiryDays;
+      }
+      if (options.requiresPassword !== undefined) {
+        data.requiresPassword = options.requiresPassword;
+      }
+      if (options.requiresEmailVerification !== undefined) {
+        data.requiresEmailVerification = options.requiresEmailVerification;
+      }
+      if (options.enableWatermark !== undefined) {
+        data.enableWatermark = options.enableWatermark;
+      }
+      if (options.watermarkTemplate !== undefined) {
+        data.watermarkTemplate = options.watermarkTemplate?.trim() || null;
+      }
+      if (options.requiresNda !== undefined) {
+        data.requiresNda = options.requiresNda;
+      }
+      if (options.ndaContent !== undefined) {
+        data.ndaContent = options.ndaContent?.trim() || null;
+      }
+      if (options.allDocumentsConfidential !== undefined) {
+        data.allDocumentsConfidential = options.allDocumentsConfidential;
+      }
+      if (options.brandColor !== undefined) {
+        data.brandColor = options.brandColor;
+      }
+      if (options.brandLogoUrl !== undefined) {
+        data.brandLogoUrl = options.brandLogoUrl?.trim() || null;
+      }
+      if (options.ipAllowlist !== undefined) {
+        data.ipAllowlist = options.ipAllowlist;
+      }
 
-    // Emit event (EventBus wraps in RLS context internally)
-    await eventBus.emit('ROOM_UPDATED', {
-      roomId,
-      description: `Updated room: ${updated.name}`,
-      metadata: {
-        changes: options,
-      },
-    });
+      const previousStatus = room.status;
+      const statusChanged = status !== undefined && status !== previousStatus;
+      if (statusChanged) {
+        const allowed = ROOM_STATUS_TRANSITIONS[previousStatus] ?? [];
+        if (!allowed.includes(status)) {
+          throw new ValidationError(`Cannot transition from ${previousStatus} to ${status}`);
+        }
 
-    return updated;
+        const transitionAt = new Date();
+        data.status = status;
+        if (status === 'ARCHIVED') {
+          data.archivedAt = transitionAt;
+        }
+        if (previousStatus === 'ARCHIVED' && status === 'ACTIVE') {
+          data.archivedAt = null;
+        }
+        if (status === 'CLOSED') {
+          data.closedAt = transitionAt;
+        }
+      }
+
+      const hasSettingsChange = Object.keys(settings).length > 0;
+      if (!hasSettingsChange && !statusChanged) {
+        return room;
+      }
+
+      // Settings, lifecycle state, timestamps, and all audit records are
+      // committed in the same tenant-scoped transaction.
+      const updated = await tx.room.update({ where: { id: roomId }, data });
+
+      if (hasSettingsChange) {
+        await eventBus.emit(
+          'ROOM_UPDATED',
+          {
+            roomId,
+            description: `Updated room: ${updated.name}`,
+            metadata: { changes: settings },
+          },
+          tx
+        );
+      }
+
+      if (statusChanged) {
+        const eventType =
+          status === 'ARCHIVED'
+            ? 'ROOM_ARCHIVED'
+            : status === 'CLOSED'
+              ? 'ROOM_CLOSED'
+              : 'ROOM_STATUS_CHANGED';
+        await eventBus.emit(
+          eventType,
+          {
+            roomId,
+            description: `Room status changed from ${previousStatus} to ${status}`,
+            metadata: { previousStatus, newStatus: status },
+          },
+          tx
+        );
+      }
+
+      return updated;
+    });
   }
 
   /**
@@ -520,135 +628,15 @@ export class RoomService {
    * @mutating
    */
   async changeStatus(ctx: ServiceContext, roomId: string, status: RoomStatus): Promise<Room> {
-    const { session, eventBus } = ctx;
-
-    // Publishing and closing change the room's exposure boundary. Keep this
-    // authority at the organization-admin level even when a user has a
-    // room-scoped administrative assignment.
-    if (session.organization.role !== 'ADMIN') {
-      throw new ConflictError(
-        'Organization administrator access is required to change room status'
-      );
-    }
-
-    // Use RLS context for all org-scoped operations
-    return withOrgContext(session.organizationId, async (tx) => {
-      // Get the room
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!room) {
-        throw new NotFoundError('Room not found');
-      }
-
-      // Check permissions (pass transaction for RLS context)
-      const permissionEngine = getPermissionEngine();
-      const canAdmin = await permissionEngine.can(
-        { userId: session.userId, role: session.organization.role },
-        'admin',
-        { type: 'ROOM', organizationId: session.organizationId, roomId },
-        tx
-      );
-
-      if (!canAdmin) {
-        throw new ConflictError('You do not have permission to change room status');
-      }
-
-      const previousStatus = room.status;
-
-      const allowed = ROOM_STATUS_TRANSITIONS[previousStatus] ?? [];
-      if (!allowed.includes(status)) {
-        throw new ValidationError(`Cannot transition from ${previousStatus} to ${status}`);
-      }
-
-      const transitionAt = new Date();
-      const lifecycleData: Prisma.RoomUpdateInput = { status };
-      if (status === 'ARCHIVED') {
-        lifecycleData.archivedAt = transitionAt;
-      }
-      if (previousStatus === 'ARCHIVED' && status === 'ACTIVE') {
-        lifecycleData.archivedAt = null;
-      }
-      if (status === 'CLOSED') {
-        lifecycleData.closedAt = transitionAt;
-      }
-
-      // Persist status, lifecycle timestamp, and immutable audit evidence in
-      // the same tenant-scoped transaction.
-      const updated = await tx.room.update({
-        where: { id: roomId },
-        data: lifecycleData,
-      });
-      const eventType =
-        status === 'ARCHIVED'
-          ? 'ROOM_ARCHIVED'
-          : status === 'CLOSED'
-            ? 'ROOM_CLOSED'
-            : 'ROOM_STATUS_CHANGED';
-
-      await eventBus.emit(
-        eventType,
-        {
-          roomId,
-          description: `Room status changed from ${previousStatus} to ${status}`,
-          metadata: {
-            previousStatus,
-            newStatus: status,
-          },
-        },
-        tx
-      );
-
-      return updated;
-    });
+    return this.update(ctx, roomId, { status });
   }
 
   /**
-   * Delete a room (soft delete by setting status to CLOSED and archiving)
+   * Close and retain a room through the canonical lifecycle transition.
    * @mutating
    */
   async delete(ctx: ServiceContext, roomId: string): Promise<Room> {
-    const { session, eventBus } = ctx;
-
-    // Only org admins can delete rooms
-    if (session.organization.role !== 'ADMIN') {
-      throw new ConflictError('Only organization admins can delete rooms');
-    }
-
-    // Use RLS context for all org-scoped operations
-    const { room, updated } = await withOrgContext(session.organizationId, async (tx) => {
-      // Get the room
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!room) {
-        throw new NotFoundError('Room not found');
-      }
-
-      // Update to CLOSED status
-      const updated = await tx.room.update({
-        where: { id: roomId },
-        data: { status: 'CLOSED' },
-      });
-
-      return { room, updated };
-    });
-
-    // Emit event (EventBus wraps in RLS context internally)
-    await eventBus.emit('ROOM_DELETED', {
-      roomId,
-      description: `Deleted room: ${room.name}`,
-    });
-
-    return updated;
+    return this.changeStatus(ctx, roomId, 'CLOSED');
   }
 }
 

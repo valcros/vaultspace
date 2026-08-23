@@ -6,8 +6,7 @@ const mocks = vi.hoisted(() => ({
   getRequestContext: vi.fn(),
   createServiceContext: vi.fn(),
   getById: vi.fn(),
-  changeStatus: vi.fn(),
-  withOrgContext: vi.fn(),
+  update: vi.fn(),
 }));
 
 vi.mock('@/lib/middleware', () => ({
@@ -15,13 +14,9 @@ vi.mock('@/lib/middleware', () => ({
   getRequestContext: mocks.getRequestContext,
 }));
 
-vi.mock('@/lib/db', () => ({
-  withOrgContext: mocks.withOrgContext,
-}));
-
 vi.mock('@/services', () => ({
   createServiceContext: mocks.createServiceContext,
-  roomService: { getById: mocks.getById, changeStatus: mocks.changeStatus },
+  roomService: { getById: mocks.getById, update: mocks.update },
 }));
 
 import { GET, PATCH } from './route';
@@ -84,44 +79,36 @@ describe('PATCH /api/rooms/[roomId] lifecycle adapter', () => {
     mocks.createServiceContext.mockReturnValue({ session, requestId: 'request-1' });
   });
 
-  it('delegates a status transition to RoomService without directly writing status', async () => {
-    const draft = { id: 'room-1', organizationId: 'org-1', status: 'DRAFT' };
-    const active = { ...draft, status: 'ACTIVE' };
-    const update = vi.fn().mockResolvedValue(draft);
-    mocks.withOrgContext.mockImplementation(async (_orgId, callback) =>
-      callback({ room: { findFirst: vi.fn().mockResolvedValue(draft), update } })
-    );
-    mocks.changeStatus.mockResolvedValue(active);
+  it('delegates settings and a status transition together to RoomService', async () => {
+    const active = { id: 'room-1', organizationId: 'org-1', status: 'ACTIVE' };
+    mocks.update.mockResolvedValue(active);
 
     const response = await PATCH(
       new NextRequest('https://vaultspace.org/api/rooms/room-1', {
         method: 'PATCH',
-        body: JSON.stringify({ status: 'ACTIVE' }),
+        body: JSON.stringify({ status: 'ACTIVE', allowDownloads: false }),
       }),
       { params: Promise.resolve({ roomId: 'room-1' }) }
     );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ room: active });
-    expect(update).not.toHaveBeenCalled();
-    expect(mocks.changeStatus).toHaveBeenCalledWith(
-      { session, requestId: 'request-1' },
-      'room-1',
-      'ACTIVE'
-    );
+    expect(mocks.update).toHaveBeenCalledWith({ session, requestId: 'request-1' }, 'room-1', {
+      status: 'ACTIVE',
+      allowDownloads: false,
+    });
   });
 
-  it('rejects an unknown status before invoking storage or lifecycle services', async () => {
+  it('rejects invalid request fields before invoking the lifecycle service', async () => {
     const response = await PATCH(
       new NextRequest('https://vaultspace.org/api/rooms/room-1', {
         method: 'PATCH',
-        body: JSON.stringify({ status: 'DELETED' }),
+        body: JSON.stringify({ allowDownloads: 'false' }),
       }),
       { params: Promise.resolve({ roomId: 'room-1' }) }
     );
 
     expect(response.status).toBe(400);
-    expect(mocks.withOrgContext).not.toHaveBeenCalled();
-    expect(mocks.changeStatus).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 });

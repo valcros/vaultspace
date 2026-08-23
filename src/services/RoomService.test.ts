@@ -339,6 +339,21 @@ describe('RoomService', () => {
   });
 
   describe('changeStatus', () => {
+    it('validates a requested lifecycle transition before committing combined settings', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'DRAFT',
+      });
+
+      await expect(
+        service.update(ctx, 'room-1', { name: 'Should not persist', status: 'ARCHIVED' })
+      ).rejects.toThrow('Cannot transition from DRAFT to ARCHIVED');
+
+      expect(mockTx.room.update).not.toHaveBeenCalled();
+      expect(mockEventBus.emit).not.toHaveBeenCalled();
+    });
+
     it('publishes a draft atomically with lifecycle audit evidence', async () => {
       const publishedRoom = {
         id: 'room-1',
@@ -424,6 +439,27 @@ describe('RoomService', () => {
         'Organization administrator access is required'
       );
       expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('closes through the canonical lifecycle method when the legacy delete API is used', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+      });
+      mockTx.room.update.mockResolvedValue({ id: 'room-1', status: 'CLOSED' });
+
+      await service.delete(ctx, 'room-1');
+
+      expect(mockTx.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: expect.objectContaining({ status: 'CLOSED', closedAt: expect.any(Date) }),
+      });
+      expect(mockEventBus.emit).toHaveBeenCalledWith(
+        'ROOM_CLOSED',
+        expect.objectContaining({ roomId: 'room-1' }),
+        mockTx
+      );
     });
   });
 
