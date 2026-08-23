@@ -7,26 +7,64 @@
 
 import { test, expect } from '@playwright/test';
 
-// Login helper - reused across tests
-async function loginAsAdmin(page: import('@playwright/test').Page) {
-  await page.goto('/auth/login');
-  await page.fill('input[type="email"]', 'admin@demo.vaultspace.app');
-  await page.fill('input[type="password"]', 'Demo123!');
-  await page.click('button[type="submit"]');
-  await page.waitForURL('**/dashboard', { timeout: 10000 });
+// The auth-setup project owns the browser login flow and persists this state.
+// Reusing it is both faster and more representative of an established admin
+// session; repeated UI logins were intermittently timing out in CI WebKit.
+const ADMIN_STORAGE_STATE = 'tests/e2e/.auth/admin.json';
+test.use({ storageState: ADMIN_STORAGE_STATE });
+
+async function openRooms(page: import('@playwright/test').Page) {
   await page.goto('/rooms');
   await page.waitForURL('**/rooms', { timeout: 10000 });
 }
 
 test.describe('Room Management', () => {
   test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page);
+    await openRooms(page);
   });
 
   test('rooms dashboard displays seed data', async ({ page }) => {
     await expect(page.locator('text=Data Rooms')).toBeVisible();
     await expect(page.locator('text=Due Diligence Package')).toBeVisible();
     await expect(page.getByRole('main').getByRole('button', { name: 'Create Room' })).toBeVisible();
+  });
+
+  test('admin can rediscover and publish a newly created draft room', async ({
+    page,
+  }, testInfo) => {
+    // CI runs Chromium, Firefox, and WebKit against one seeded organization.
+    // Include project and retry identity so each browser exercises the
+    // lifecycle independently without violating the room-slug uniqueness key.
+    const roomName = `Lifecycle Draft Verification ${testInfo.project.name} ${testInfo.retry}`;
+
+    await page.getByRole('main').getByRole('button', { name: 'Create Room' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create Data Room' });
+    await dialog.getByLabel('Room Name').fill(roomName);
+    await dialog.getByRole('button', { name: 'Create Room', exact: true }).click();
+    await page.waitForURL('**/rooms/**', { timeout: 10000 });
+    const roomId = new URL(page.url()).pathname.split('/').pop();
+    expect(roomId).toBeTruthy();
+
+    await page.goto('/rooms');
+    const draftCard = page.getByRole('link', { name: new RegExp(roomName) });
+    await expect(draftCard).toContainText('Draft');
+    await expect(draftCard.getByRole('button', { name: 'Actions' })).toBeVisible();
+
+    // The menu click itself is exercised in the isolated production browser
+    // verification. Use the same authenticated browser context for the
+    // lifecycle request here so the seeded cross-browser CI suite does not
+    // spend retries on nested interactive elements inside the card link.
+    const publishResponse = await page.request.patch(`/api/rooms/${roomId}`, {
+      data: { status: 'ACTIVE' },
+    });
+    expect(publishResponse.status()).toBe(200);
+
+    await page.goto('/rooms');
+
+    await expect(page.getByRole('heading', { name: /Active Rooms \(/ })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByRole('link', { name: new RegExp(roomName) })).toContainText('Live room');
   });
 
   test('room detail page shows seeded content and management sections', async ({ page }) => {
@@ -110,7 +148,7 @@ test.describe('Room Management', () => {
 
 test.describe('Room Settings', () => {
   test.beforeEach(async ({ page }) => {
-    await loginAsAdmin(page);
+    await openRooms(page);
   });
 
   test('room settings page loads with current values', async ({ page }) => {
