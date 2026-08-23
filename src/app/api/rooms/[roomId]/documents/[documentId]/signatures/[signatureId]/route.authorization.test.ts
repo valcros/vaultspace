@@ -90,6 +90,7 @@ describe('viewer link policy on signature actions', () => {
     mockSignatureUpdate.mockResolvedValue({ id: 'sig-1', status: 'DECLINED' });
     mockWithOrgContext.mockImplementation(async (_organizationId, callback) =>
       callback({
+        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status: 'ACTIVE' }) },
         signatureRequest: {
           findFirst: mockSignatureFindFirst,
           update: mockSignatureUpdate,

@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -55,6 +56,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const { name, description, status, isRequired, documentId, assignedToEmail } = parsed.data;
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
+      }
       // Verify room access
       const room = await tx.room.findFirst({
         where: {
@@ -188,6 +193,10 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
+      }
       // Verify room access
       const room = await tx.room.findFirst({
         where: {

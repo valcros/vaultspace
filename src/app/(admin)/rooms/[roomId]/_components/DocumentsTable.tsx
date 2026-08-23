@@ -71,6 +71,7 @@ interface DocumentActionHandlers {
 }
 
 interface FolderListRowProps {
+  readOnly: boolean;
   nameTextSize: NameTextSize;
   magnifyNames: boolean;
   folder: FolderItem;
@@ -82,6 +83,7 @@ interface FolderListRowProps {
 }
 
 const FolderListRow = React.memo(function FolderListRow({
+  readOnly,
   nameTextSize,
   magnifyNames,
   folder,
@@ -123,35 +125,41 @@ const FolderListRow = React.memo(function FolderListRow({
         </td>
       )}
       <td className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`} onClick={(e) => e.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={`Actions for folder ${folder.name}`}
-              className={`${compact ? 'h-6 w-6' : 'h-9 w-9 sm:h-7 sm:w-7'} p-0`}
-            >
-              <MoreHorizontal aria-hidden="true" className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onOpen(folder)}>
-              <Eye className="mr-2 h-4 w-4" />
-              Open
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onDelete(folder)} className="text-danger-600">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {!readOnly && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Actions for folder ${folder.name}`}
+                className={`${compact ? 'h-6 w-6' : 'h-9 w-9 sm:h-7 sm:w-7'} p-0`}
+              >
+                <MoreHorizontal
+                  aria-hidden="true"
+                  className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onOpen(folder)}>
+                <Eye className="mr-2 h-4 w-4" />
+                Open
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onDelete(folder)} className="text-danger-600">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </td>
     </tr>
   );
 });
 
 interface DocumentListRowProps extends DocumentActionHandlers {
+  readOnly: boolean;
   nameTextSize: NameTextSize;
   magnifyNames: boolean;
   doc: Document;
@@ -165,6 +173,7 @@ interface DocumentListRowProps extends DocumentActionHandlers {
 }
 
 const DocumentListRow = React.memo(function DocumentListRow({
+  readOnly,
   nameTextSize,
   magnifyNames,
   doc,
@@ -190,19 +199,24 @@ const DocumentListRow = React.memo(function DocumentListRow({
     <tr
       className={`cursor-pointer border-b last:border-0 hover:bg-neutral-50 ${selected ? 'bg-primary-50' : ''}`}
       onClick={() => onPreview(doc)}
-      onContextMenu={(e) => onContextMenu(e, doc)}
+      onContextMenu={readOnly ? undefined : (e) => onContextMenu(e, doc)}
     >
-      <td
-        className="w-8 px-2"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleSelect(doc.id);
-        }}
-      >
-        {selected ? (
-          <CheckSquare className="h-4 w-4 text-primary-500" />
-        ) : (
-          <Square className="h-4 w-4 text-neutral-300" />
+      <td className="w-8 px-2">
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect(doc.id);
+            }}
+            aria-label={selected ? `Deselect ${doc.name}` : `Select ${doc.name}`}
+          >
+            {selected ? (
+              <CheckSquare className="h-4 w-4 text-primary-500" />
+            ) : (
+              <Square className="h-4 w-4 text-neutral-300" />
+            )}
+          </button>
         )}
       </td>
       <td className={`px-3 ${compact ? 'py-1' : 'py-1.5'}`}>
@@ -274,59 +288,64 @@ const DocumentListRow = React.memo(function DocumentListRow({
         </td>
       )}
       <td className={`px-2 ${compact ? 'py-0.5' : 'py-1'}`} onClick={(e) => e.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label={`Actions for ${doc.name}`}
-              className={`${compact ? 'h-6 w-6' : 'h-9 w-9 sm:h-7 sm:w-7'} p-0`}
-            >
-              <MoreHorizontal aria-hidden="true" className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onPreview(doc)}>
-              <Eye className="mr-2 h-4 w-4" />
-              Preview
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDownload(doc)}>
-              <Download className="mr-2 h-4 w-4" />
-              Download
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onEditProperties(doc)}>
-              <Tag className="mr-2 h-4 w-4" />
-              Edit Properties
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onToggleBookmark(doc)}>
-              <Star
-                className={`mr-2 h-4 w-4 ${bookmarked ? 'fill-amber-400 text-amber-400' : ''}`}
-              />
-              {bookmarked ? 'Remove Bookmark' : 'Bookmark'}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onShowVersions(doc)}>
-              <History className="mr-2 h-4 w-4" />
-              Version History
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onToggleConfidential(doc)}>
-              <Lock className="mr-2 h-4 w-4" />
-              {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onMove(doc)}>
-              <FolderInput className="mr-2 h-4 w-4" />
-              Move to folder…
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onWithdraw(doc)}>
-              <Ban className="mr-2 h-4 w-4" />
-              {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onDelete(doc)} className="text-danger-600">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {!readOnly && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Actions for ${doc.name}`}
+                className={`${compact ? 'h-6 w-6' : 'h-9 w-9 sm:h-7 sm:w-7'} p-0`}
+              >
+                <MoreHorizontal
+                  aria-hidden="true"
+                  className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onPreview(doc)}>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDownload(doc)}>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onEditProperties(doc)}>
+                <Tag className="mr-2 h-4 w-4" />
+                Edit Properties
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onToggleBookmark(doc)}>
+                <Star
+                  className={`mr-2 h-4 w-4 ${bookmarked ? 'fill-amber-400 text-amber-400' : ''}`}
+                />
+                {bookmarked ? 'Remove Bookmark' : 'Bookmark'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onShowVersions(doc)}>
+                <History className="mr-2 h-4 w-4" />
+                Version History
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onToggleConfidential(doc)}>
+                <Lock className="mr-2 h-4 w-4" />
+                {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onMove(doc)}>
+                <FolderInput className="mr-2 h-4 w-4" />
+                Move to folder…
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onWithdraw(doc)}>
+                <Ban className="mr-2 h-4 w-4" />
+                {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onDelete(doc)} className="text-danger-600">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </td>
     </tr>
   );
@@ -371,6 +390,7 @@ const FolderGridTile = React.memo(function FolderGridTile({
 });
 
 interface DocumentGridCardProps extends DocumentActionHandlers {
+  readOnly: boolean;
   nameTextSize: NameTextSize;
   magnifyNames: boolean;
   doc: Document;
@@ -380,6 +400,7 @@ interface DocumentGridCardProps extends DocumentActionHandlers {
 }
 
 const DocumentGridCard = React.memo(function DocumentGridCard({
+  readOnly,
   nameTextSize,
   magnifyNames,
   doc,
@@ -401,7 +422,7 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
     <div
       className="group relative cursor-pointer rounded-xl border border-slate-200/80 bg-white p-3 transition-all duration-150 hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-primary-700"
       onClick={() => onPreview(doc)}
-      onContextMenu={(e) => onContextMenu(e, doc)}
+      onContextMenu={readOnly ? undefined : (e) => onContextMenu(e, doc)}
     >
       <DocumentThumbnail
         docId={doc.id}
@@ -448,69 +469,72 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
         )}
       </div>
       {/* Action menu */}
-      <div
-        className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-7 w-7 p-0 shadow-sm"
-              aria-label={`Actions for ${doc.name}`}
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onPreview(doc)}>
-              <Eye className="mr-2 h-4 w-4" />
-              Preview
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDownload(doc)}>
-              <Download className="mr-2 h-4 w-4" />
-              Download
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onEditProperties(doc)}>
-              <Tag className="mr-2 h-4 w-4" />
-              Edit Properties
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onToggleBookmark(doc)}>
-              <Star
-                className={`mr-2 h-4 w-4 ${bookmarked ? 'fill-amber-400 text-amber-400' : ''}`}
-              />
-              {bookmarked ? 'Remove Bookmark' : 'Bookmark'}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onShowVersions(doc)}>
-              <History className="mr-2 h-4 w-4" />
-              Version History
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onToggleConfidential(doc)}>
-              <Lock className="mr-2 h-4 w-4" />
-              {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onMove(doc)}>
-              <FolderInput className="mr-2 h-4 w-4" />
-              Move to folder…
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onWithdraw(doc)}>
-              <Ban className="mr-2 h-4 w-4" />
-              {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onDelete(doc)} className="text-danger-600">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {!readOnly && (
+        <div
+          className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-7 w-7 p-0 shadow-sm"
+                aria-label={`Actions for ${doc.name}`}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onPreview(doc)}>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDownload(doc)}>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onEditProperties(doc)}>
+                <Tag className="mr-2 h-4 w-4" />
+                Edit Properties
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onToggleBookmark(doc)}>
+                <Star
+                  className={`mr-2 h-4 w-4 ${bookmarked ? 'fill-amber-400 text-amber-400' : ''}`}
+                />
+                {bookmarked ? 'Remove Bookmark' : 'Bookmark'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onShowVersions(doc)}>
+                <History className="mr-2 h-4 w-4" />
+                Version History
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onToggleConfidential(doc)}>
+                <Lock className="mr-2 h-4 w-4" />
+                {doc.confidential ? 'Remove Confidential' : 'Mark Confidential'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onMove(doc)}>
+                <FolderInput className="mr-2 h-4 w-4" />
+                Move to folder…
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onWithdraw(doc)}>
+                <Ban className="mr-2 h-4 w-4" />
+                {doc.withdrawnAt ? 'Restore (un-withdraw)' : 'Withdraw'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onDelete(doc)} className="text-danger-600">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
     </div>
   );
 });
 
 export interface DocumentsTableProps extends DocumentActionHandlers {
+  readOnly: boolean;
   nameTextSize: NameTextSize;
   magnifyNames: boolean;
   /** Which layout to render; matches the page's persisted view mode. */
@@ -541,6 +565,7 @@ export interface DocumentsTableProps extends DocumentActionHandlers {
  * referentially stable callbacks so memoization holds.
  */
 export function DocumentsTable({
+  readOnly,
   nameTextSize,
   magnifyNames,
   view,
@@ -590,21 +615,23 @@ export function DocumentsTable({
           <thead className="border-b border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/70">
             <tr>
               <th className="w-8 px-2 py-2">
-                <button
-                  onClick={onToggleSelectAll}
-                  aria-label={
-                    selectedDocs.size > 0 && selectedDocs.size === documents.length
-                      ? 'Deselect all'
-                      : 'Select all'
-                  }
-                  className="flex items-center text-neutral-500 hover:text-neutral-600"
-                >
-                  {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
-                    <CheckSquare className="h-4 w-4 text-primary-500" />
-                  ) : (
-                    <Square className="h-4 w-4" />
-                  )}
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={onToggleSelectAll}
+                    aria-label={
+                      selectedDocs.size > 0 && selectedDocs.size === documents.length
+                        ? 'Deselect all'
+                        : 'Select all'
+                    }
+                    className="flex items-center text-neutral-500 hover:text-neutral-600"
+                  >
+                    {selectedDocs.size > 0 && selectedDocs.size === documents.length ? (
+                      <CheckSquare className="h-4 w-4 text-primary-500" />
+                    ) : (
+                      <Square className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
               </th>
               <th
                 className="cursor-pointer select-none px-3 py-2 text-left text-xs font-medium text-neutral-500 hover:text-neutral-700"
@@ -666,6 +693,7 @@ export function DocumentsTable({
               <FolderListRow
                 nameTextSize={nameTextSize}
                 magnifyNames={magnifyNames}
+                readOnly={readOnly}
                 key={folder.id}
                 folder={folder}
                 compact={compact}
@@ -688,6 +716,7 @@ export function DocumentsTable({
                 selected={selectedDocs.has(doc.id)}
                 bookmarked={bookmarkedDocs.has(doc.id)}
                 allDocumentsConfidential={allDocumentsConfidential}
+                readOnly={readOnly}
                 onToggleSelect={onToggleDocSelection}
                 {...docHandlers}
               />
@@ -726,6 +755,7 @@ export function DocumentsTable({
           roomId={roomId}
           bookmarked={bookmarkedDocs.has(doc.id)}
           allDocumentsConfidential={allDocumentsConfidential}
+          readOnly={readOnly}
           {...docHandlers}
         />
       ))}

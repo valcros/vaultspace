@@ -66,6 +66,7 @@ describe('PATCH /api/rooms/:roomId/folders/:folderId', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status: 'ACTIVE' }) },
         folder: {
           findFirst: vi
             .fn()
@@ -93,6 +94,7 @@ describe('PATCH /api/rooms/:roomId/folders/:folderId', () => {
   it('rejects move into self', async () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status: 'ACTIVE' }) },
         folder: {
           findFirst: vi
             .fn()
@@ -120,6 +122,7 @@ describe('PATCH /api/rooms/:roomId/folders/:folderId', () => {
   it('rejects move into a descendant', async () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status: 'ACTIVE' }) },
         folder: {
           findFirst: vi
             .fn()
@@ -146,6 +149,7 @@ describe('PATCH /api/rooms/:roomId/folders/:folderId', () => {
   it('rejects move that would push subtree past depth 3', async () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status: 'ACTIVE' }) },
         folder: {
           findFirst: vi
             .fn()
@@ -179,6 +183,7 @@ describe('PATCH /api/rooms/:roomId/folders/:folderId', () => {
 
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status: 'ACTIVE' }) },
         folder: {
           findFirst: vi
             .fn()
@@ -219,6 +224,32 @@ describe('PATCH /api/rooms/:roomId/folders/:folderId', () => {
       })
     );
   });
+
+  it.each(['ARCHIVED', 'CLOSED'] as const)(
+    'returns ROOM_NOT_MUTABLE before changing a folder in a %s room',
+    async (status) => {
+      const update = vi.fn();
+      mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+        const tx = {
+          room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status }) },
+          folder: { findFirst: vi.fn(), findMany: vi.fn(), update },
+        };
+        return callback(tx as unknown as Parameters<typeof callback>[0]);
+      });
+
+      const response = await PATCH(makeRequest({ name: 'Not allowed' }), makeContext());
+
+      await expect(response.json()).resolves.toEqual({
+        success: false,
+        error: {
+          message: 'This room is not available for changes',
+          code: 'ROOM_NOT_MUTABLE',
+        },
+      });
+      expect(response.status).toBe(409);
+      expect(update).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('GET /api/rooms/:roomId/folders/:folderId', () => {
@@ -234,6 +265,7 @@ describe('GET /api/rooms/:roomId/folders/:folderId', () => {
   it('authorizes the requested folder resource rather than requiring room discovery', async () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
+        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status: 'ACTIVE' }) },
         folder: {
           findFirst: vi.fn().mockResolvedValue({ id: 'fld-source', name: 'Direct folder' }),
         },

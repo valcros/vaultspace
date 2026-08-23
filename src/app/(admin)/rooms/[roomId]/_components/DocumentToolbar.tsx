@@ -37,6 +37,8 @@ export type SortField = 'name' | 'size' | 'createdAt';
 export type SortDir = 'asc' | 'desc';
 
 export interface DocumentToolbarProps {
+  /** Closed and archived rooms retain history but must not expose content mutations. */
+  canMutateContent: boolean;
   nameTextSize: NameTextSize;
   onNameTextSizeChange: (size: NameTextSize) => void;
   magnifyNames: boolean;
@@ -73,6 +75,7 @@ export interface DocumentToolbarProps {
  * utilities (density / columns / view-mode) are visually quieter still.
  */
 export function DocumentToolbar({
+  canMutateContent,
   nameTextSize,
   onNameTextSizeChange,
   magnifyNames,
@@ -130,14 +133,18 @@ export function DocumentToolbar({
             <PanelLeftOpen className="h-4 w-4" />
           )}
         </Button>
-        <Button size="sm" onClick={onUploadClick}>
-          <Upload className="mr-2 h-4 w-4" />
-          Upload Files
-        </Button>
-        <Button size="sm" variant="outline" onClick={onNewFolderClick}>
-          <FolderPlus className="mr-2 h-4 w-4" />
-          New Folder
-        </Button>
+        {canMutateContent && (
+          <>
+            <Button size="sm" onClick={onUploadClick}>
+              <Upload className="mr-2 h-4 w-4" />
+              Upload Files
+            </Button>
+            <Button size="sm" variant="outline" onClick={onNewFolderClick}>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              New Folder
+            </Button>
+          </>
+        )}
         {/* Visual separator between primary actions and secondary
             browsing utilities. Hidden on mobile where the selects are
             also hidden. */}

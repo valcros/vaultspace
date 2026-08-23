@@ -10,6 +10,7 @@ import type { Prisma, Room, RoomStatus } from '@prisma/client';
 import { withOrgContext } from '@/lib/db';
 import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 import { getPermissionEngine } from '@/lib/permissions';
+import { isRoomMutable } from '@/lib/rooms/roomLifecyclePolicy';
 
 import type { PaginatedResult, PaginationOptions, ServiceContext } from './types';
 
@@ -400,7 +401,18 @@ export class RoomService {
         throw new AuthorizationError('You do not have permission to update this room');
       }
 
+      const previousStatus = room.status;
       const { status, passwordHash, ...settings } = options;
+      const hasMutationRequest =
+        Object.keys(settings).length > 0 || passwordHash !== undefined || status !== undefined;
+      const hasSettingsChange = Object.keys(settings).length > 0 || passwordHash !== undefined;
+      const isArchivedLifecycleTransition =
+        previousStatus === 'ARCHIVED' &&
+        !hasSettingsChange &&
+        (status === 'ACTIVE' || status === 'CLOSED');
+      if (!isRoomMutable(previousStatus) && hasMutationRequest && !isArchivedLifecycleTransition) {
+        throw new ConflictError('This room is not available for changes');
+      }
 
       // Build settings update data. Status is intentionally handled below so
       // lifecycle validation completes before any write is issued.
@@ -460,7 +472,6 @@ export class RoomService {
         data.passwordHash = passwordHash;
       }
 
-      const previousStatus = room.status;
       const statusChanged = status !== undefined && status !== previousStatus;
       if (statusChanged) {
         const allowed = ROOM_STATUS_TRANSITIONS[previousStatus] ?? [];
@@ -481,7 +492,6 @@ export class RoomService {
         }
       }
 
-      const hasSettingsChange = Object.keys(settings).length > 0 || passwordHash !== undefined;
       if (!hasSettingsChange && !statusChanged) {
         const { passwordHash: _passwordHash, ...safeRoom } = room;
         return safeRoom;
@@ -550,6 +560,10 @@ export class RoomService {
 
         if (!room) {
           throw new NotFoundError('Room not found');
+        }
+
+        if (!isRoomMutable(room.status)) {
+          throw new ConflictError('This room is not available for changes');
         }
 
         const permissionEngine = getPermissionEngine();

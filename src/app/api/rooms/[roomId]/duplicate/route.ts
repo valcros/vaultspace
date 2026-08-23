@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -32,18 +33,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    const newRoom = await withOrgContext(session.organizationId, async (tx) => {
-      // Fetch the source room
-      const sourceRoom = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!sourceRoom) {
-        return null;
+    const result = await withOrgContext(session.organizationId, async (tx) => {
+      const sourceAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!sourceAccess.ok) {
+        return sourceAccess;
       }
+      const sourceRoom = sourceAccess.room;
 
       // Generate slug with random suffix for uniqueness
       const randomSuffix = Math.random().toString(36).substring(2, 8);
@@ -129,14 +124,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
       }
 
-      return duplicatedRoom;
+      return { ok: true as const, room: duplicatedRoom };
     });
 
-    if (!newRoom) {
-      return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error, ...('code' in result ? { code: result.code } : {}) },
+        { status: result.status }
+      );
     }
 
-    return NextResponse.json({ room: newRoom }, { status: 201 });
+    return NextResponse.json({ room: result.room }, { status: 201 });
   } catch (error) {
     console.error('[RoomDuplicateAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to duplicate room' }, { status: 500 });
