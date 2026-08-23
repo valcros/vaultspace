@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getSession } from '@/lib/middleware';
 import { db, withOrgContext } from '@/lib/db';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 import { canViewerLinkAccessDocument, type LinkServeSession } from '@/lib/permissions/LinkPolicy';
 import {
   getViewerSessionByToken,
@@ -124,6 +125,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       'unknown';
 
     const result = await withOrgContext(organizationId, async (tx) => {
+      const roomAccess = await requireMutableRoom(tx, organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
+      }
       // Fetch the signature request
       const signatureRequest = await tx.signatureRequest.findFirst({
         where: {

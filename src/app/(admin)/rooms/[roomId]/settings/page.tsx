@@ -156,7 +156,13 @@ export default function RoomSettingsPage() {
     fetchRoom();
   }, [fetchRoom]);
 
+  const isRoomMutable = room?.status === 'DRAFT' || room?.status === 'ACTIVE';
+
   const handleSave = async () => {
+    if (!isRoomMutable) {
+      setError('This room is retained for history and is not available for changes');
+      return;
+    }
     setIsSaving(true);
     setError(null);
     setSuccess(false);
@@ -281,7 +287,7 @@ export default function RoomSettingsPage() {
 
               <Button
                 onClick={handleSave}
-                disabled={isSaving}
+                disabled={isSaving || !isRoomMutable}
                 className="bg-indigo-600 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
                 <Save className="mr-1.5 h-4 w-4" />
@@ -294,6 +300,14 @@ export default function RoomSettingsPage() {
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {!isRoomMutable && (
+          <Alert className="mb-6 border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            <AlertDescription>
+              This room is retained for history. Settings and room contents cannot be changed.
+            </AlertDescription>
           </Alert>
         )}
 

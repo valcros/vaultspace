@@ -17,6 +17,7 @@ import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 import { buildInviteEmail } from '@/lib/email/inviteEmail';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const loaded = await withOrgContext(session.organizationId, async (tx) => {
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
+      }
       const room = await tx.room.findFirst({
         where: { id: roomId, organizationId: session.organizationId },
         select: { id: true, name: true },

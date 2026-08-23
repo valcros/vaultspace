@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getPermissionEngine } from '@/lib/permissions';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 import { serializeBigInt } from '@/lib/serialization';
 
 // This route uses cookies for auth, so it must be dynamic
@@ -162,16 +163,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     // Use RLS context for org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Verify room access
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!room) {
-        return { error: 'Room not found', status: 404 };
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
       }
 
       // Get current document
@@ -269,16 +263,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     // Use RLS context for org-scoped queries
     const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Verify room access
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!room) {
-        return { error: 'Room not found', status: 404 };
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
       }
 
       // Get current document
