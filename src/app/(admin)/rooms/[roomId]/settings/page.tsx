@@ -215,10 +215,10 @@ export default function RoomSettingsPage() {
         router.push('/rooms');
       } else {
         const data = await response.json();
-        setError(data.error || 'Failed to delete room');
+        setError(data.error || 'Failed to close room');
       }
     } catch (err) {
-      console.error('Failed to delete room:', err);
+      console.error('Failed to close room:', err);
     }
   };
 
@@ -442,7 +442,13 @@ export default function RoomSettingsPage() {
                   variant="outline"
                   className="border-slate-300 text-[11px] text-slate-600 dark:border-slate-700 dark:text-slate-400"
                 >
-                  Active Room
+                  {room.status === 'DRAFT'
+                    ? 'Draft Room'
+                    : room.status === 'ACTIVE'
+                      ? 'Active Room'
+                      : room.status === 'ARCHIVED'
+                        ? 'Archived Room'
+                        : 'Closed Room'}
                 </Badge>
               }
             >
@@ -770,7 +776,7 @@ export default function RoomSettingsPage() {
             <AccordionItem
               id="danger"
               title="Danger Zone"
-              description="Irreversible actions including archiving or permanently deleting this room."
+              description="Close this room to remove it from normal workflows while retaining its history."
               icon={AlertTriangle}
               isOpen={!!openSections['danger']}
               onToggle={() => toggleSection('danger')}
@@ -782,7 +788,8 @@ export default function RoomSettingsPage() {
                     Danger Zone
                   </h3>
                   <p className="text-xs text-red-600/80 dark:text-red-400/70">
-                    Permanently removes all documents, folders, permissions, and audit logs.
+                    Closes the room and retains its documents, folders, permissions, and audit
+                    history.
                   </p>
                 </div>
                 <Button
@@ -792,30 +799,31 @@ export default function RoomSettingsPage() {
                   className="bg-red-600 text-xs hover:bg-red-700"
                 >
                   <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                  Delete Room
+                  Close Room
                 </Button>
               </div>
             </AccordionItem>
           </div>
         </div>
 
-        {/* Delete Confirmation Modal */}
+        {/* Close Room Confirmation Modal */}
         <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
-                <AlertTriangle className="h-5 w-5" /> Delete Room Permanent Action
+                <AlertTriangle className="h-5 w-5" /> Close Room
               </DialogTitle>
               <DialogDescription className="text-xs">
-                This will permanently delete{' '}
-                <span className="font-semibold text-slate-900 dark:text-white">{room.name}</span>.
-                This action cannot be undone.
+                This will change{' '}
+                <span className="font-semibold text-slate-900 dark:text-white">{room.name}</span>.{' '}
+                to CLOSED and retain the room and its contents for audit history. This action cannot
+                be undone.
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-3 py-2">
               <p className="text-xs text-slate-600 dark:text-slate-400">
-                To confirm deletion, type{' '}
+                To confirm closure, type{' '}
                 <span className="font-mono font-bold text-slate-900 dark:text-white">
                   {room.name}
                 </span>{' '}
@@ -839,7 +847,7 @@ export default function RoomSettingsPage() {
                 disabled={deleteConfirmation !== room.name}
                 className="bg-red-600 hover:bg-red-700"
               >
-                Permanently Delete Room
+                Close Room
               </Button>
             </DialogFooter>
           </DialogContent>

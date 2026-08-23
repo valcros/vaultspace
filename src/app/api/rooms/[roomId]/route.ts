@@ -7,18 +7,39 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { getRequestContext, requireAuth } from '@/lib/middleware';
-import { withOrgContext } from '@/lib/db';
 import { AppError } from '@/lib/errors';
 import { createServiceContext, roomService } from '@/services';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 
-import type { RoomStatus } from '@prisma/client';
-
-const ROOM_STATUSES: readonly RoomStatus[] = ['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED'];
+const roomUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255).optional(),
+    description: z.string().max(10_000).nullable().optional(),
+    status: z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED']).optional(),
+    allowDownloads: z.boolean().optional(),
+    allowViewerVersionHistory: z.boolean().optional(),
+    defaultExpiryDays: z.number().int().min(1).nullable().optional(),
+    requiresPassword: z.boolean().optional(),
+    requiresEmailVerification: z.boolean().optional(),
+    enableWatermark: z.boolean().optional(),
+    watermarkTemplate: z.string().max(500).nullable().optional(),
+    requiresNda: z.boolean().optional(),
+    ndaContent: z.string().max(10_000).nullable().optional(),
+    allDocumentsConfidential: z.boolean().optional(),
+    brandColor: z
+      .string()
+      .regex(/^#[0-9A-Fa-f]{6}$/)
+      .nullable()
+      .optional(),
+    brandLogoUrl: z.string().max(10_000).nullable().optional(),
+    ipAllowlist: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
+  })
+  .strict();
 
 interface RouteContext {
   params: Promise<{ roomId: string }>;
@@ -66,93 +87,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const {
-      name,
-      description,
-      status,
-      allowDownloads,
-      allowViewerVersionHistory,
-      defaultExpiryDays,
-      requiresPassword,
-      requiresEmailVerification,
-      enableWatermark,
-      watermarkTemplate,
-      requiresNda,
-      ndaContent,
-      allDocumentsConfidential,
-    } = body;
-
-    if (
-      status !== undefined &&
-      (typeof status !== 'string' || !ROOM_STATUSES.includes(status as RoomStatus))
-    ) {
-      return NextResponse.json({ error: 'Invalid room status' }, { status: 400 });
-    }
-
-    // Use RLS context for org-scoped queries
-    const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Get current room
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-      });
-
-      if (!room) {
-        return { error: 'Room not found', status: 404 };
-      }
-
-      // Status is deliberately excluded from generic room updates. The
-      // lifecycle service is the only authority for transitions, timestamps,
-      // and immutable audit evidence.
-      const updateData = {
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
-        ...(allowDownloads !== undefined && { allowDownloads }),
-        ...(allowViewerVersionHistory !== undefined && { allowViewerVersionHistory }),
-        ...(defaultExpiryDays !== undefined && { defaultExpiryDays }),
-        ...(requiresPassword !== undefined && { requiresPassword }),
-        ...(requiresEmailVerification !== undefined && { requiresEmailVerification }),
-        ...(enableWatermark !== undefined && { enableWatermark }),
-        ...(watermarkTemplate !== undefined && { watermarkTemplate }),
-        ...(requiresNda !== undefined && { requiresNda }),
-        ...(ndaContent !== undefined && { ndaContent }),
-        ...(allDocumentsConfidential !== undefined && { allDocumentsConfidential }),
-      };
-
-      // A lifecycle-only PATCH must not issue an empty Prisma update before
-      // the lifecycle service is called.
-      const updatedRoom =
-        Object.keys(updateData).length === 0
-          ? room
-          : await tx.room.update({
-              where: { id: roomId },
-              data: updateData,
-            });
-
-      return { room: updatedRoom };
-    });
-
-    if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
-    }
-
-    let room = result.room;
-    if (status !== undefined && status !== result.room.status) {
-      const reqContext = getRequestContext(request);
-      room = await roomService.changeStatus(
-        createServiceContext({
-          session,
-          requestId: reqContext.requestId,
-          ipAddress: reqContext.ipAddress,
-          userAgent: reqContext.userAgent,
-        }),
-        roomId,
-        status as RoomStatus
+    const parsed = roomUpdateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid room update', details: parsed.error.flatten() },
+        { status: 400 }
       );
     }
+
+    const reqContext = getRequestContext(request);
+    const room = await roomService.update(
+      createServiceContext({
+        session,
+        requestId: reqContext.requestId,
+        ipAddress: reqContext.ipAddress,
+        userAgent: reqContext.userAgent,
+      }),
+      roomId,
+      parsed.data
+    );
 
     return NextResponse.json({ room });
   } catch (error) {

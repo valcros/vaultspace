@@ -214,7 +214,7 @@ export default function RoomsPage() {
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {draftRooms.map((room) => (
-                    <RoomCard key={room.id} room={room} onRefresh={fetchRooms} />
+                    <RoomCard key={room.id} room={room} isAdmin={isAdmin} onRefresh={fetchRooms} />
                   ))}
                 </div>
               </div>
@@ -228,7 +228,7 @@ export default function RoomsPage() {
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {activeRooms.map((room) => (
-                    <RoomCard key={room.id} room={room} onRefresh={fetchRooms} />
+                    <RoomCard key={room.id} room={room} isAdmin={isAdmin} onRefresh={fetchRooms} />
                   ))}
                 </div>
               </div>
@@ -242,7 +242,7 @@ export default function RoomsPage() {
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {archivedRooms.map((room) => (
-                    <RoomCard key={room.id} room={room} onRefresh={fetchRooms} />
+                    <RoomCard key={room.id} room={room} isAdmin={isAdmin} onRefresh={fetchRooms} />
                   ))}
                 </div>
               </div>
@@ -255,7 +255,7 @@ export default function RoomsPage() {
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {closedRooms.map((room) => (
-                    <RoomCard key={room.id} room={room} onRefresh={fetchRooms} />
+                    <RoomCard key={room.id} room={room} isAdmin={isAdmin} onRefresh={fetchRooms} />
                   ))}
                 </div>
               </div>
@@ -318,7 +318,15 @@ export default function RoomsPage() {
   );
 }
 
-function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
+function RoomCard({
+  room,
+  isAdmin,
+  onRefresh,
+}: {
+  room: Room;
+  isAdmin: boolean;
+  onRefresh: () => void;
+}) {
   const [isChangingStatus, setIsChangingStatus] = React.useState(false);
   const [showLifecycleConfirm, setShowLifecycleConfirm] = React.useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
@@ -440,7 +448,7 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
                   </CardDescription>
                 )}
               </div>
-              {room.status !== 'CLOSED' && (
+              {isAdmin && room.status !== 'CLOSED' && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Actions">
