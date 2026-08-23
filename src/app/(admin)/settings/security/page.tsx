@@ -16,6 +16,7 @@ type SetupStep = 'idle' | 'setup' | 'verify' | 'backup' | 'disable';
 
 export default function SecuritySettingsPage() {
   const [twoFactorEnabled, setTwoFactorEnabled] = React.useState<boolean | null>(null);
+  const [twoFactorEnrollmentEnabled, setTwoFactorEnrollmentEnabled] = React.useState(false);
   const [step, setStep] = React.useState<SetupStep>('idle');
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -42,6 +43,7 @@ export default function SecuritySettingsPage() {
       if (response.ok) {
         const data = await response.json();
         setTwoFactorEnabled(data.user?.twoFactorEnabled ?? false);
+        setTwoFactorEnrollmentEnabled(data.twoFactorEnrollmentEnabled === true);
       }
     } catch {
       // Fallback: assume not enabled
@@ -202,7 +204,9 @@ export default function SecuritySettingsPage() {
                   <p className="mt-1 text-sm text-neutral-500">
                     {twoFactorEnabled
                       ? 'Your account is protected with two-factor authentication.'
-                      : 'Add an extra layer of security to your account by requiring a verification code in addition to your password.'}
+                      : twoFactorEnrollmentEnabled
+                        ? 'Add an extra layer of security to your account by requiring a verification code in addition to your password.'
+                        : 'Enrollment is temporarily unavailable while two-factor authentication verification is completed.'}
                   </p>
                   <div className="mt-1">
                     <span
@@ -212,7 +216,11 @@ export default function SecuritySettingsPage() {
                           : 'bg-neutral-100 text-neutral-600'
                       }`}
                     >
-                      {twoFactorEnabled ? 'Enabled' : 'Disabled'}
+                      {twoFactorEnabled
+                        ? 'Enabled'
+                        : twoFactorEnrollmentEnabled
+                          ? 'Disabled'
+                          : 'Temporarily unavailable'}
                     </span>
                   </div>
                 </div>
@@ -223,12 +231,12 @@ export default function SecuritySettingsPage() {
                         <ShieldOff className="mr-2 h-4 w-4" />
                         Disable
                       </Button>
-                    ) : (
+                    ) : twoFactorEnrollmentEnabled ? (
                       <Button size="sm" onClick={handleSetup} loading={isLoading}>
                         <Shield className="mr-2 h-4 w-4" />
                         Enable 2FA
                       </Button>
-                    ))}
+                    ) : null)}
                 </div>
               </div>
             </CardContent>
