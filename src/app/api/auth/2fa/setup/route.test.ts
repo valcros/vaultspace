@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const originalEnrollmentFlag = process.env['TWO_FACTOR_ENROLLMENT_ENABLED'];
 
 const mockRequireAuth = vi.fn();
 const mockWithOrgContext = vi.fn();
@@ -25,6 +27,7 @@ import { POST } from './route';
 describe('POST /api/auth/2fa/setup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env['TWO_FACTOR_ENROLLMENT_ENABLED'] = 'true';
     mockRequireAuth.mockResolvedValue({ userId: 'user-1', organizationId: 'org-1' });
     mockUserFindUnique.mockResolvedValue({
       email: 'admin@example.com',
@@ -39,6 +42,29 @@ describe('POST /api/auth/2fa/setup', () => {
         return operation({ user: { findUnique: mockUserFindUnique, update: mockUserUpdate } });
       }
     );
+  });
+
+  afterEach(() => {
+    if (originalEnrollmentFlag === undefined) {
+      delete process.env['TWO_FACTOR_ENROLLMENT_ENABLED'];
+    } else {
+      process.env['TWO_FACTOR_ENROLLMENT_ENABLED'] = originalEnrollmentFlag;
+    }
+  });
+
+  it('fails closed before authentication or mutation while enrollment is disabled', async () => {
+    delete process.env['TWO_FACTOR_ENROLLMENT_ENABLED'];
+
+    const response = await POST();
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: 'Two-factor authentication enrollment is temporarily unavailable.',
+    });
+    expect(mockRequireAuth).not.toHaveBeenCalled();
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(mockGenerateTOTPSecret).not.toHaveBeenCalled();
+    expect(mockUserUpdate).not.toHaveBeenCalled();
   });
 
   it('stores the pending secret inside the session organization context', async () => {

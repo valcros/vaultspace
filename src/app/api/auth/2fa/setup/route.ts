@@ -11,9 +11,20 @@ import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { generateTOTPSecret, buildOTPAuthURI } from '@/lib/totp';
+import {
+  isTwoFactorEnrollmentEnabled,
+  TWO_FACTOR_ENROLLMENT_UNAVAILABLE_MESSAGE,
+} from '@/lib/auth/twoFactorAvailability';
 
 export async function POST() {
   try {
+    if (!isTwoFactorEnrollmentEnabled()) {
+      return NextResponse.json(
+        { error: TWO_FACTOR_ENROLLMENT_UNAVAILABLE_MESSAGE },
+        { status: 503 }
+      );
+    }
+
     const session = await requireAuth();
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
