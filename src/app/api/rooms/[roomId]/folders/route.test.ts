@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+const mockCan = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+
 vi.mock('@/lib/middleware', () => ({
   requireAuth: vi.fn(),
 }));
@@ -11,13 +13,13 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: vi.fn(() => ({
-    can: vi.fn().mockResolvedValue(true),
+    can: mockCan,
   })),
 }));
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
-import { POST } from './route';
+import { GET, POST } from './route';
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockWithOrgContext = vi.mocked(withOrgContext);
@@ -43,6 +45,7 @@ function makeRequest(body: unknown) {
 describe('POST /api/rooms/:roomId/folders depth enforcement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCan.mockResolvedValue(true);
     mockRequireAuth.mockResolvedValue(adminSession);
   });
 
@@ -116,5 +119,40 @@ describe('POST /api/rooms/:roomId/folders depth enforcement', () => {
     expect(response.status).toBe(201);
     expect(body.success).toBe(true);
     expect(create).toHaveBeenCalledOnce();
+  });
+});
+
+describe('GET /api/rooms/:roomId/folders lifecycle visibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue({
+      ...adminSession,
+      organization: {
+        id: 'org-1',
+        name: 'Test Org',
+        slug: 'test-org',
+        role: 'VIEWER',
+        canManageUsers: false,
+        canManageRooms: false,
+      },
+    } as typeof adminSession);
+  });
+
+  it('does not expose draft folder metadata to a Viewer with only view access', async () => {
+    mockCan.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      const tx = {
+        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1', status: 'DRAFT' }) },
+        folder: { findMany: vi.fn() },
+      };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await GET(
+      new NextRequest('http://localhost/api/rooms/room-1/folders'),
+      makeContext()
+    );
+
+    expect(response.status).toBe(404);
   });
 });

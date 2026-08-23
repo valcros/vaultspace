@@ -7,10 +7,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AuthorizationError } from '@/lib/errors';
+
 import { RoomService } from './RoomService';
 import type { ServiceContext } from './types';
 
 const mockGetViewableRoomIds = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+const mockCan = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 
 // Mock dependencies
 vi.mock('@/lib/db', () => ({
@@ -19,7 +22,7 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: vi.fn(() => ({
-    can: vi.fn().mockResolvedValue(true),
+    can: mockCan,
     getViewableRoomIds: mockGetViewableRoomIds,
   })),
 }));
@@ -83,6 +86,7 @@ describe('RoomService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetViewableRoomIds.mockResolvedValue(null);
+    mockCan.mockResolvedValue(true);
     service = new RoomService();
     ctx = createMockContext();
   });
@@ -200,6 +204,24 @@ describe('RoomService', () => {
 
       expect(result).toBeNull();
     });
+
+    it('hides a draft room from an ordinary viewer even when a legacy view grant exists', async () => {
+      const viewerContext = createMockContext({
+        session: {
+          ...ctx.session,
+          organization: { ...ctx.session.organization, role: 'VIEWER' },
+        },
+      });
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'DRAFT',
+        _count: { documents: 0, folders: 0, links: 0, permissions: 1 },
+      });
+      mockCan.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+      await expect(service.getById(viewerContext, 'room-1')).resolves.toBeNull();
+    });
   });
 
   describe('list', () => {
@@ -314,6 +336,160 @@ describe('RoomService', () => {
         expect.objectContaining({
           where: expect.objectContaining({ id: { in: [] }, status: 'ACTIVE' }),
         })
+      );
+    });
+  });
+
+  describe('changeStatus', () => {
+    it('validates a requested lifecycle transition before committing combined settings', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'DRAFT',
+      });
+
+      await expect(
+        service.update(ctx, 'room-1', { name: 'Should not persist', status: 'ARCHIVED' })
+      ).rejects.toThrow('Cannot transition from DRAFT to ARCHIVED');
+
+      expect(mockTx.room.update).not.toHaveBeenCalled();
+      expect(mockEventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it('publishes a draft atomically with lifecycle audit evidence', async () => {
+      const publishedRoom = {
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+        archivedAt: null,
+        closedAt: null,
+      };
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'DRAFT',
+      });
+      mockTx.room.update.mockResolvedValue(publishedRoom);
+
+      await expect(service.changeStatus(ctx, 'room-1', 'ACTIVE')).resolves.toEqual(publishedRoom);
+
+      expect(mockTx.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: { status: 'ACTIVE' },
+      });
+      expect(mockEventBus.emit).toHaveBeenCalledWith(
+        'ROOM_STATUS_CHANGED',
+        expect.objectContaining({
+          roomId: 'room-1',
+          metadata: { previousStatus: 'DRAFT', newStatus: 'ACTIVE' },
+        }),
+        mockTx
+      );
+    });
+
+    it('sets and clears archivedAt through the canonical lifecycle path', async () => {
+      mockTx.room.findFirst.mockResolvedValueOnce({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+      });
+      mockTx.room.update.mockResolvedValueOnce({ id: 'room-1', status: 'ARCHIVED' });
+
+      await service.changeStatus(ctx, 'room-1', 'ARCHIVED');
+      expect(mockTx.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: expect.objectContaining({ status: 'ARCHIVED', archivedAt: expect.any(Date) }),
+      });
+
+      mockTx.room.findFirst.mockResolvedValueOnce({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ARCHIVED',
+      });
+      mockTx.room.update.mockResolvedValueOnce({ id: 'room-1', status: 'ACTIVE' });
+
+      await service.changeStatus(ctx, 'room-1', 'ACTIVE');
+      expect(mockTx.room.update).toHaveBeenLastCalledWith({
+        where: { id: 'room-1' },
+        data: { status: 'ACTIVE', archivedAt: null },
+      });
+    });
+
+    it('rejects forbidden transitions before mutating or emitting an event', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'DRAFT',
+      });
+
+      await expect(service.changeStatus(ctx, 'room-1', 'ARCHIVED')).rejects.toThrow(
+        'Cannot transition from DRAFT to ARCHIVED'
+      );
+      expect(mockTx.room.update).not.toHaveBeenCalled();
+      expect(mockEventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it('does not let a room-scoped viewer publish or close a room', async () => {
+      const viewerContext = createMockContext({
+        session: {
+          ...ctx.session,
+          organization: { ...ctx.session.organization, role: 'VIEWER' },
+        },
+      });
+
+      await expect(service.changeStatus(viewerContext, 'room-1', 'ACTIVE')).rejects.toBeInstanceOf(
+        AuthorizationError
+      );
+      expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('redacts a password hash from room mutation results and audit metadata', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+        passwordHash: 'existing-secret-hash',
+      });
+      mockTx.room.update.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+        passwordHash: 'replacement-secret-hash',
+      });
+
+      const result = await service.update(ctx, 'room-1', {
+        requiresPassword: true,
+        passwordHash: 'replacement-secret-hash',
+      });
+
+      expect(result).not.toHaveProperty('passwordHash');
+      expect(mockEventBus.emit).toHaveBeenCalledWith(
+        'ROOM_UPDATED',
+        expect.objectContaining({
+          metadata: { changes: { requiresPassword: true } },
+        }),
+        mockTx
+      );
+    });
+
+    it('closes through the canonical lifecycle method when the legacy delete API is used', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+      });
+      mockTx.room.update.mockResolvedValue({ id: 'room-1', status: 'CLOSED' });
+
+      await service.delete(ctx, 'room-1');
+
+      expect(mockTx.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: expect.objectContaining({ status: 'CLOSED', closedAt: expect.any(Date) }),
+      });
+      expect(mockEventBus.emit).toHaveBeenCalledWith(
+        'ROOM_CLOSED',
+        expect.objectContaining({ roomId: 'room-1' }),
+        mockTx
       );
     });
   });

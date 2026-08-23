@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getRequestContext: vi.fn(),
   createServiceContext: vi.fn(),
   getById: vi.fn(),
+  update: vi.fn(),
 }));
 
 vi.mock('@/lib/middleware', () => ({
@@ -13,16 +14,12 @@ vi.mock('@/lib/middleware', () => ({
   getRequestContext: mocks.getRequestContext,
 }));
 
-vi.mock('@/lib/db', () => ({
-  withOrgContext: vi.fn(),
-}));
-
 vi.mock('@/services', () => ({
   createServiceContext: mocks.createServiceContext,
-  roomService: { getById: mocks.getById },
+  roomService: { getById: mocks.getById, update: mocks.update },
 }));
 
-import { GET } from './route';
+import { GET, PATCH } from './route';
 
 const session = {
   userId: 'user-1',
@@ -64,5 +61,75 @@ describe('GET /api/rooms/[roomId] authorization adapter', () => {
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: 'Room not found' });
+  });
+});
+
+describe('PATCH /api/rooms/[roomId] lifecycle adapter', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireAuth.mockResolvedValue({
+      ...session,
+      organization: { role: 'ADMIN' },
+    });
+    mocks.getRequestContext.mockReturnValue({
+      requestId: 'request-1',
+      ipAddress: '127.0.0.1',
+      userAgent: 'vitest',
+    });
+    mocks.createServiceContext.mockReturnValue({ session, requestId: 'request-1' });
+  });
+
+  it('delegates settings and a status transition together to RoomService', async () => {
+    const active = { id: 'room-1', organizationId: 'org-1', status: 'ACTIVE' };
+    mocks.update.mockResolvedValue(active);
+
+    const response = await PATCH(
+      new NextRequest('https://vaultspace.org/api/rooms/room-1', {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'ACTIVE', allowDownloads: false }),
+      }),
+      { params: Promise.resolve({ roomId: 'room-1' }) }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ room: active });
+    expect(mocks.update).toHaveBeenCalledWith({ session, requestId: 'request-1' }, 'room-1', {
+      status: 'ACTIVE',
+      allowDownloads: false,
+    });
+  });
+
+  it('rejects invalid request fields before invoking the lifecycle service', async () => {
+    const response = await PATCH(
+      new NextRequest('https://vaultspace.org/api/rooms/room-1', {
+        method: 'PATCH',
+        body: JSON.stringify({ allowDownloads: 'false' }),
+      }),
+      { params: Promise.resolve({ roomId: 'room-1' }) }
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-HTTPS logo URLs and invalid IPv4/CIDR allowlist entries', async () => {
+    const insecureLogo = await PATCH(
+      new NextRequest('https://vaultspace.org/api/rooms/room-1', {
+        method: 'PATCH',
+        body: JSON.stringify({ brandLogoUrl: 'http://example.test/logo.svg' }),
+      }),
+      { params: Promise.resolve({ roomId: 'room-1' }) }
+    );
+    const invalidAllowlist = await PATCH(
+      new NextRequest('https://vaultspace.org/api/rooms/room-1', {
+        method: 'PATCH',
+        body: JSON.stringify({ ipAllowlist: ['not-an-ip'] }),
+      }),
+      { params: Promise.resolve({ roomId: 'room-1' }) }
+    );
+
+    expect(insecureLogo.status).toBe(400);
+    expect(invalidAllowlist.status).toBe(400);
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 });
