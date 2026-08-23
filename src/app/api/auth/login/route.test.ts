@@ -281,6 +281,33 @@ describe('POST /api/auth/login', () => {
     }
   });
 
+  it('correlates malformed request failures without attempting account lookup', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const response = await POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{',
+        })
+      );
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: 'Failed to sign in' });
+      expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toEqual({
+        component: 'login-api',
+        outcome: 'failed',
+        requestId: 'req-test',
+        errorName: 'SyntaxError',
+      });
+      expect(mockFindLoginCandidate).not.toHaveBeenCalled();
+      expect(mockCompare).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('keeps a successful login available when the bounded audit write fails', async () => {
     process.env['SESSION_SECRET'] = 'test-session-secret';
     mockFindLoginCandidate.mockResolvedValue({

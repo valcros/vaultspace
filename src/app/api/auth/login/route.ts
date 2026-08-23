@@ -33,10 +33,10 @@ const loginSchema = z.object({
 export async function POST(request: NextRequest) {
   let requestId: string | undefined;
   try {
-    const body = await request.json();
-    const { email, password, rememberMe } = loginSchema.parse(body);
     const reqContext = getRequestContext(request);
     requestId = reqContext.requestId;
+    const body = await request.json();
+    const { email, password, rememberMe } = loginSchema.parse(body);
     const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
     const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
 
