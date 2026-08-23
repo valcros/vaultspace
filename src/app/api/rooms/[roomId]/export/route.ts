@@ -11,6 +11,7 @@ import { isAuthenticationError } from '@/lib/errors';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
+import { isRoomMutable } from '@/lib/rooms/roomLifecyclePolicy';
 import { QUEUE_NAMES } from '@/workers/types';
 import { hasCapability, createCapabilityUnavailableResponse } from '@/lib/deployment-capabilities';
 
@@ -52,6 +53,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (!room) {
       return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+    }
+    if (!isRoomMutable(room.status)) {
+      return NextResponse.json(
+        { error: 'This room is not available for changes', code: 'ROOM_NOT_MUTABLE' },
+        { status: 409 }
+      );
     }
 
     const body = await request.json();

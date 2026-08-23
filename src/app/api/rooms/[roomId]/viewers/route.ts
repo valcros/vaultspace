@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 import { getProviders } from '@/providers';
 import { buildInviteEmail } from '@/lib/email/inviteEmail';
 
@@ -200,18 +201,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const inviteExpiresAt = new Date(Date.now() + (expiresInDays ?? 14) * 24 * 60 * 60 * 1000);
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Verify room access
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-        select: { id: true, name: true },
-      });
-
-      if (!room) {
-        return { error: 'Room not found', status: 404 };
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
       }
+      const room = roomAccess.room;
 
       const normalizedEmails = emails.map((e) => e.toLowerCase().trim());
       let invited = 0;
@@ -379,17 +373,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     const { emails } = parsed.data;
 
     const result = await withOrgContext(session.organizationId, async (tx) => {
-      // Verify room access
-      const room = await tx.room.findFirst({
-        where: {
-          id: roomId,
-          organizationId: session.organizationId,
-        },
-        select: { id: true },
-      });
-
-      if (!room) {
-        return { error: 'Room not found', status: 404 };
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
       }
 
       const normalizedEmails = emails.map((e) => e.toLowerCase().trim());

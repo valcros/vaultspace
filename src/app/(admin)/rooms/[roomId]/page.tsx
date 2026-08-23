@@ -643,10 +643,15 @@ export default function RoomDetailPage() {
     return null;
   }
 
+  // Archived and closed rooms are retained history. The server separately
+  // enforces this boundary, while the UI must not advertise mutation paths.
+  const isRoomMutable = room.status === 'DRAFT' || room.status === 'ACTIVE';
+
   // Shared props for the list-table / grid renderings of the room contents.
   // Every callback here is referentially stable (see useCallback sites) so
   // the memoized rows / tiles / cards inside DocumentsTable stay memoized.
   const documentsTableProps = {
+    readOnly: !isRoomMutable,
     nameTextSize,
     magnifyNames,
     roomId,
@@ -703,7 +708,8 @@ export default function RoomDetailPage() {
           actions={
             <div className="flex flex-wrap items-center justify-end gap-2">
               {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
-              {isAdmin && (
+              {room.status === 'CLOSED' && <Badge variant="secondary">Closed</Badge>}
+              {isAdmin && isRoomMutable && (
                 <>
                   <Button
                     variant="outline"
@@ -814,6 +820,7 @@ export default function RoomDetailPage() {
           toggleFolderPane={toggleFolderPane}
           folderDrawerTriggerRef={folderDrawerTriggerRef}
           onOpenFolderDrawer={openFolderDrawer}
+          canMutateContent={isRoomMutable}
           onUploadClick={openUploadDialog}
           onNewFolderClick={openFolderDialog}
           categoryFilter={categoryFilter}
@@ -842,10 +849,12 @@ export default function RoomDetailPage() {
           title="No documents yet"
           description="Upload your first files or create folders to start structuring this room for secure review."
           action={
-            <Button onClick={() => setShowUploadDialog(true)}>
-              <Upload className="mr-2 h-4 w-4" />
-              Upload Files
-            </Button>
+            isRoomMutable ? (
+              <Button onClick={() => setShowUploadDialog(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Files
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -951,17 +960,19 @@ export default function RoomDetailPage() {
       {/* Manage Room drawer (Access / Share Links / Q&A / Checklist /
           Calendar). Owns its own pane data; the page only holds the
           open/pane state so the ?manage= deep link can initialize it. */}
-      <ManageDrawer
-        roomId={roomId}
-        room={room}
-        open={manageOpen}
-        onOpenChange={setManageOpen}
-        pane={managePane}
-        onPaneChange={setManagePane}
-      />
+      {isRoomMutable && (
+        <ManageDrawer
+          roomId={roomId}
+          room={room}
+          open={manageOpen}
+          onOpenChange={setManageOpen}
+          pane={managePane}
+          onPaneChange={setManagePane}
+        />
+      )}
 
       {/* Bulk Actions Bar */}
-      {selectedDocs.size > 0 && (
+      {isRoomMutable && selectedDocs.size > 0 && (
         <div className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border bg-white px-4 py-2 shadow-lg">
           <span className="text-sm font-medium text-neutral-700">{selectedDocs.size} selected</span>
           <div className="mx-2 h-4 w-px bg-neutral-200" />
@@ -1029,7 +1040,7 @@ export default function RoomDetailPage() {
       )}
 
       {/* Right-click Context Menu */}
-      {contextMenu && (
+      {isRoomMutable && contextMenu && (
         <div
           className="fixed inset-0 z-50"
           onClick={() => setContextMenu(null)}

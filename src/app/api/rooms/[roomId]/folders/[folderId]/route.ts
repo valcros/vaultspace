@@ -13,6 +13,7 @@ import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { getPermissionEngine } from '@/lib/permissions';
 import { FolderDepthExceededError, validateFolderMoveDepth } from '@/lib/rooms/folderDepth';
+import { requireMutableRoom } from '@/lib/rooms/roomLifecyclePolicy';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -193,6 +194,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
       if (!canAdmin) {
         return { error: 'Admin access required', status: 403 };
+      }
+
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
       }
 
       const folder = await tx.folder.findFirst({
@@ -387,6 +393,11 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
       if (!canDelete) {
         return { error: 'Admin access required', status: 403 };
+      }
+
+      const roomAccess = await requireMutableRoom(tx, session.organizationId, roomId);
+      if (!roomAccess.ok) {
+        return roomAccess;
       }
 
       // Get folder
