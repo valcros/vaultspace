@@ -45,7 +45,7 @@ interface Room {
   id: string;
   name: string;
   description: string | null;
-  status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
+  status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED' | 'CLOSED';
   documentCount: number;
   memberCount: number;
   linkCount: number;
@@ -120,6 +120,13 @@ export default function RoomsPage() {
 
   const activeRooms = filteredRooms.filter((r) => r.status === 'ACTIVE');
   const archivedRooms = filteredRooms.filter((r) => r.status === 'ARCHIVED');
+  const draftRooms = filteredRooms.filter((r) => r.status === 'DRAFT');
+  const closedRooms = filteredRooms.filter((r) => r.status === 'CLOSED');
+  const hasVisibleRooms =
+    draftRooms.length > 0 ||
+    activeRooms.length > 0 ||
+    archivedRooms.length > 0 ||
+    closedRooms.length > 0;
 
   return (
     <>
@@ -197,8 +204,22 @@ export default function RoomsPage() {
               </>
             )}
           </Card>
-        ) : (
+        ) : hasVisibleRooms ? (
           <>
+            {/* Draft Rooms */}
+            {draftRooms.length > 0 && (
+              <div className="mb-8">
+                <h2 className="mb-4 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Draft Rooms ({draftRooms.length})
+                </h2>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {draftRooms.map((room) => (
+                    <RoomCard key={room.id} room={room} onRefresh={fetchRooms} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Active Rooms */}
             {activeRooms.length > 0 && (
               <div className="mb-8">
@@ -226,7 +247,29 @@ export default function RoomsPage() {
                 </div>
               </div>
             )}
+
+            {closedRooms.length > 0 && isAdmin && (
+              <div>
+                <h2 className="mb-4 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  Closed Rooms ({closedRooms.length})
+                </h2>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {closedRooms.map((room) => (
+                    <RoomCard key={room.id} room={room} onRefresh={fetchRooms} />
+                  ))}
+                </div>
+              </div>
+            )}
           </>
+        ) : (
+          <Card className="p-8 text-center">
+            <h3 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              No matching data rooms
+            </h3>
+            <p className="mx-auto max-w-sm text-neutral-500">
+              Try a different search term or clear the current filter.
+            </p>
+          </Card>
         )}
       </div>
 
@@ -276,52 +319,107 @@ export default function RoomsPage() {
 }
 
 function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
-  const [isDeleting, setIsDeleting] = React.useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [isChangingStatus, setIsChangingStatus] = React.useState(false);
+  const [showLifecycleConfirm, setShowLifecycleConfirm] = React.useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
+  const [actionError, setActionError] = React.useState<string | null>(null);
 
-  const handleArchive = async () => {
+  const transition =
+    room.status === 'DRAFT'
+      ? {
+          status: 'ACTIVE' as const,
+          label: 'Publish room',
+          title: 'Publish room?',
+          description:
+            'Publishing makes this room discoverable to authorized viewers and eligible for active-room workflows.',
+        }
+      : room.status === 'ACTIVE'
+        ? {
+            status: 'ARCHIVED' as const,
+            label: 'Archive room',
+            title: 'Archive room?',
+            description:
+              'Archiving removes this room from viewer workflows while retaining it for administrator review.',
+          }
+        : room.status === 'ARCHIVED'
+          ? {
+              status: 'ACTIVE' as const,
+              label: 'Restore room',
+              title: 'Restore room?',
+              description:
+                'Restoring makes this room active again for authorized viewer and invitation workflows.',
+            }
+          : null;
+
+  const handleTransition = async () => {
+    if (!transition) {
+      return;
+    }
+    setIsChangingStatus(true);
+    setActionError(null);
     try {
-      await fetch(`/api/rooms/${room.id}`, {
+      const response = await fetch(`/api/rooms/${room.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: room.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE' }),
+        body: JSON.stringify({ status: transition.status }),
         credentials: 'include',
       });
-      onRefresh();
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Unable to update room status');
+      }
+      await onRefresh();
     } catch (error) {
-      console.error('Failed to archive room:', error);
+      setActionError(error instanceof Error ? error.message : 'Unable to update room status');
+    } finally {
+      setIsChangingStatus(false);
     }
   };
 
-  const handleDelete = async () => {
-    setIsDeleting(true);
+  const handleClose = async () => {
+    setIsChangingStatus(true);
+    setActionError(null);
     try {
       const response = await fetch(`/api/rooms/${room.id}`, {
         method: 'DELETE',
         credentials: 'include',
       });
-      if (response.ok) {
-        onRefresh();
-      } else {
-        const data = await response.json();
-        console.error('Failed to delete room:', data.error);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Unable to close room');
       }
+      await onRefresh();
     } catch (error) {
-      console.error('Failed to delete room:', error);
+      setActionError(error instanceof Error ? error.message : 'Unable to close room');
     } finally {
-      setIsDeleting(false);
+      setIsChangingStatus(false);
     }
   };
+
+  const statusLabel =
+    room.status === 'DRAFT'
+      ? 'Draft room'
+      : room.status === 'ACTIVE'
+        ? 'Live room'
+        : room.status === 'ARCHIVED'
+          ? 'Archived room'
+          : 'Closed room';
 
   return (
     <>
       <Link href={`/rooms/${room.id}`}>
         <Card
-          className={`group relative cursor-pointer overflow-hidden border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 ${isDeleting ? 'opacity-50' : ''}`}
+          className={`group relative cursor-pointer overflow-hidden border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 ${isChangingStatus ? 'opacity-50' : ''}`}
         >
           <div
             className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${
-              room.status === 'ACTIVE' ? 'bg-primary-500' : 'bg-neutral-200 dark:bg-neutral-600'
+              room.status === 'ACTIVE'
+                ? 'bg-primary-500'
+                : room.status === 'DRAFT'
+                  ? 'bg-amber-400'
+                  : room.status === 'ARCHIVED'
+                    ? 'bg-neutral-400'
+                    : 'bg-neutral-700'
             }`}
           />
           <CardHeader className="pb-2">
@@ -332,7 +430,7 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
                     <FolderOpen className="h-4 w-4" />
                   </span>
                   <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                    {room.status === 'ACTIVE' ? 'Live room' : 'Archived room'}
+                    {statusLabel}
                   </span>
                 </div>
                 <CardTitle className="truncate text-lg tracking-tight">{room.name}</CardTitle>
@@ -342,35 +440,39 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
                   </CardDescription>
                 )}
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Actions">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleArchive();
-                    }}
-                  >
-                    <Archive className="mr-2 h-4 w-4" />
-                    {room.status === 'ACTIVE' ? 'Archive' : 'Unarchive'}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setShowDeleteConfirm(true);
-                    }}
-                    className="text-danger-600"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {room.status !== 'CLOSED' && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Actions">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {transition && (
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setShowLifecycleConfirm(true);
+                        }}
+                      >
+                        <Archive className="mr-2 h-4 w-4" />
+                        {transition.label}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setShowCloseConfirm(true);
+                      }}
+                      className="text-danger-600"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Close room
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -405,9 +507,17 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
             </div>
 
             <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-4 text-sm font-medium text-neutral-500">
-              {room.status === 'ARCHIVED' ? (
+              {room.status === 'DRAFT' ? (
+                <Badge variant="secondary" className="rounded-full px-2.5 py-1">
+                  Draft
+                </Badge>
+              ) : room.status === 'ARCHIVED' ? (
                 <Badge variant="secondary" className="rounded-full px-2.5 py-1">
                   Archived
+                </Badge>
+              ) : room.status === 'CLOSED' ? (
+                <Badge variant="secondary" className="rounded-full px-2.5 py-1">
+                  Closed
                 </Badge>
               ) : (
                 <span>Ready for review</span>
@@ -420,15 +530,31 @@ function RoomCard({ room, onRefresh }: { room: Room; onRefresh: () => void }) {
         </Card>
       </Link>
 
+      {actionError && (
+        <p className="mt-2 text-sm text-danger-600" role="alert">
+          {actionError}
+        </p>
+      )}
+      {transition && (
+        <ConfirmDialog
+          open={showLifecycleConfirm}
+          onOpenChange={setShowLifecycleConfirm}
+          title={transition.title}
+          description={transition.description}
+          confirmLabel={transition.label}
+          onConfirm={handleTransition}
+          loading={isChangingStatus}
+        />
+      )}
       <ConfirmDialog
-        open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
-        title="Delete Room"
-        description={`Are you sure you want to delete "${room.name}"? This action cannot be undone.`}
-        confirmLabel="Delete"
+        open={showCloseConfirm}
+        onOpenChange={setShowCloseConfirm}
+        title="Close room?"
+        description={`This retains "${room.name}" for audit history, removes it from normal workflows, and cannot be undone.`}
+        confirmLabel="Close room"
         variant="destructive"
-        onConfirm={handleDelete}
-        loading={isDeleting}
+        onConfirm={handleClose}
+        loading={isChangingStatus}
       />
     </>
   );

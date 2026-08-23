@@ -11,6 +11,7 @@ import { RoomService } from './RoomService';
 import type { ServiceContext } from './types';
 
 const mockGetViewableRoomIds = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+const mockCan = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 
 // Mock dependencies
 vi.mock('@/lib/db', () => ({
@@ -19,7 +20,7 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: vi.fn(() => ({
-    can: vi.fn().mockResolvedValue(true),
+    can: mockCan,
     getViewableRoomIds: mockGetViewableRoomIds,
   })),
 }));
@@ -83,6 +84,7 @@ describe('RoomService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetViewableRoomIds.mockResolvedValue(null);
+    mockCan.mockResolvedValue(true);
     service = new RoomService();
     ctx = createMockContext();
   });
@@ -200,6 +202,24 @@ describe('RoomService', () => {
 
       expect(result).toBeNull();
     });
+
+    it('hides a draft room from an ordinary viewer even when a legacy view grant exists', async () => {
+      const viewerContext = createMockContext({
+        session: {
+          ...ctx.session,
+          organization: { ...ctx.session.organization, role: 'VIEWER' },
+        },
+      });
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'DRAFT',
+        _count: { documents: 0, folders: 0, links: 0, permissions: 1 },
+      });
+      mockCan.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+      await expect(service.getById(viewerContext, 'room-1')).resolves.toBeNull();
+    });
   });
 
   describe('list', () => {
@@ -315,6 +335,95 @@ describe('RoomService', () => {
           where: expect.objectContaining({ id: { in: [] }, status: 'ACTIVE' }),
         })
       );
+    });
+  });
+
+  describe('changeStatus', () => {
+    it('publishes a draft atomically with lifecycle audit evidence', async () => {
+      const publishedRoom = {
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+        archivedAt: null,
+        closedAt: null,
+      };
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'DRAFT',
+      });
+      mockTx.room.update.mockResolvedValue(publishedRoom);
+
+      await expect(service.changeStatus(ctx, 'room-1', 'ACTIVE')).resolves.toEqual(publishedRoom);
+
+      expect(mockTx.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: { status: 'ACTIVE' },
+      });
+      expect(mockEventBus.emit).toHaveBeenCalledWith(
+        'ROOM_STATUS_CHANGED',
+        expect.objectContaining({
+          roomId: 'room-1',
+          metadata: { previousStatus: 'DRAFT', newStatus: 'ACTIVE' },
+        }),
+        mockTx
+      );
+    });
+
+    it('sets and clears archivedAt through the canonical lifecycle path', async () => {
+      mockTx.room.findFirst.mockResolvedValueOnce({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+      });
+      mockTx.room.update.mockResolvedValueOnce({ id: 'room-1', status: 'ARCHIVED' });
+
+      await service.changeStatus(ctx, 'room-1', 'ARCHIVED');
+      expect(mockTx.room.update).toHaveBeenCalledWith({
+        where: { id: 'room-1' },
+        data: expect.objectContaining({ status: 'ARCHIVED', archivedAt: expect.any(Date) }),
+      });
+
+      mockTx.room.findFirst.mockResolvedValueOnce({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ARCHIVED',
+      });
+      mockTx.room.update.mockResolvedValueOnce({ id: 'room-1', status: 'ACTIVE' });
+
+      await service.changeStatus(ctx, 'room-1', 'ACTIVE');
+      expect(mockTx.room.update).toHaveBeenLastCalledWith({
+        where: { id: 'room-1' },
+        data: { status: 'ACTIVE', archivedAt: null },
+      });
+    });
+
+    it('rejects forbidden transitions before mutating or emitting an event', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'DRAFT',
+      });
+
+      await expect(service.changeStatus(ctx, 'room-1', 'ARCHIVED')).rejects.toThrow(
+        'Cannot transition from DRAFT to ARCHIVED'
+      );
+      expect(mockTx.room.update).not.toHaveBeenCalled();
+      expect(mockEventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it('does not let a room-scoped viewer publish or close a room', async () => {
+      const viewerContext = createMockContext({
+        session: {
+          ...ctx.session,
+          organization: { ...ctx.session.organization, role: 'VIEWER' },
+        },
+      });
+
+      await expect(service.changeStatus(viewerContext, 'room-1', 'ACTIVE')).rejects.toThrow(
+        'Organization administrator access is required'
+      );
+      expect(mockTx.room.findFirst).not.toHaveBeenCalled();
     });
   });
 

@@ -44,7 +44,7 @@ interface RoomSettings {
   id: string;
   name: string;
   description: string | null;
-  status: 'ACTIVE' | 'ARCHIVED' | 'DELETED';
+  status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED' | 'CLOSED';
   watermarkEnabled: boolean;
   watermarkTemplate: string | null;
   downloadEnabled: boolean;

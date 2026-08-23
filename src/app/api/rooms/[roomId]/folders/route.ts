@@ -265,6 +265,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
           return { error: 'Room not found', status: HTTP_STATUS.NOT_FOUND };
         }
 
+        // Discovery of non-active rooms is limited to administrative users.
+        // This prevents an ordinary Viewer with a legacy or direct permission
+        // from using a known room ID to enumerate draft, archived, or closed
+        // folder metadata.
+        if (room.status !== 'ACTIVE') {
+          const canManage = await permissionEngine.can(
+            { userId: session.userId, role: session.organization.role },
+            'admin',
+            { type: 'ROOM', organizationId: session.organizationId, roomId },
+            tx
+          );
+          if (!canManage) {
+            return { error: 'Room not found', status: HTTP_STATUS.NOT_FOUND };
+          }
+        }
+
         // Get folders. In tree mode, ignore parentId and return the whole room.
         const folders = await tx.folder.findMany({
           where: treeMode
