@@ -12,7 +12,10 @@ import {
   generateTwoFactorChallengeToken,
   hashTwoFactorChallengeToken,
 } from '@/lib/auth/twoFactorChallengeToken';
-import { issueTenantTwoFactorChallenge } from '@/lib/auth/twoFactorChallengeRepository';
+import {
+  issueTenantTwoFactorChallenge,
+  type IssuedTwoFactorChallenge,
+} from '@/lib/auth/twoFactorChallengeRepository';
 import { bootstrapRepository } from '@/lib/auth/bootstrapRepository';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
@@ -28,10 +31,12 @@ const loginSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  let requestId: string | undefined;
   try {
+    const reqContext = getRequestContext(request);
+    requestId = reqContext.requestId;
     const body = await request.json();
     const { email, password, rememberMe } = loginSchema.parse(body);
-    const reqContext = getRequestContext(request);
     const ipAddress = reqContext.ipAddress === 'unknown' ? null : reqContext.ipAddress;
     const userAgent = reqContext.userAgent === 'unknown' ? null : reqContext.userAgent;
 
@@ -53,6 +58,8 @@ export async function POST(request: NextRequest) {
         JSON.stringify({
           component: 'login-api',
           outcome: 'rate-limiter-unavailable',
+          reasonCode: 'LOGIN_RATE_LIMITER_UNAVAILABLE',
+          requestId,
           errorName: error instanceof Error ? error.name : 'UnknownError',
         })
       );
@@ -81,14 +88,39 @@ export async function POST(request: NextRequest) {
       if (!tokenHash) {
         throw new Error('TWO_FACTOR_CHALLENGE_TOKEN_INVALID');
       }
-      const challenge = await issueTenantTwoFactorChallenge({
-        userId: candidate.userId,
-        organizationId: candidate.organizationId,
-        tokenHash,
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      });
+      let challenge: IssuedTwoFactorChallenge | null;
+      try {
+        challenge = await issueTenantTwoFactorChallenge({
+          userId: candidate.userId,
+          organizationId: candidate.organizationId,
+          tokenHash,
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+        });
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            component: 'login-api',
+            outcome: 'mfa-challenge-issue-failed',
+            reasonCode:
+              error instanceof Error && error.message === 'TWO_FACTOR_CHALLENGE_ISSUE_ROW_INVALID'
+                ? 'MFA_CHALLENGE_ISSUER_INVALID_RESULT'
+                : 'MFA_CHALLENGE_ISSUER_EXCEPTION',
+            requestId,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          })
+        );
+        return NextResponse.json({ error: 'Failed to sign in' }, { status: 503 });
+      }
       if (!challenge) {
-        return NextResponse.json({ error: 'Failed to sign in' }, { status: 401 });
+        console.error(
+          JSON.stringify({
+            component: 'login-api',
+            outcome: 'mfa-challenge-issue-empty',
+            reasonCode: 'MFA_CHALLENGE_ISSUER_EMPTY',
+            requestId,
+          })
+        );
+        return NextResponse.json({ error: 'Failed to sign in' }, { status: 503 });
       }
       return NextResponse.json({
         requiresTwoFactor: true,
@@ -166,6 +198,7 @@ export async function POST(request: NextRequest) {
       JSON.stringify({
         component: 'login-api',
         outcome: 'failed',
+        requestId,
         errorName: error instanceof Error ? error.name : 'UnknownError',
       })
     );

@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+
+const originalEnrollmentFlag = process.env['TWO_FACTOR_ENROLLMENT_ENABLED'];
 
 const mockRequireAuth = vi.fn();
 const mockWithOrgContext = vi.fn();
@@ -28,6 +30,7 @@ import { POST } from './route';
 describe('POST /api/auth/2fa/verify', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env['TWO_FACTOR_ENROLLMENT_ENABLED'] = 'true';
     mockRequireAuth.mockResolvedValue({ userId: 'user-1', organizationId: 'org-1' });
     mockUserFindUnique.mockResolvedValue({ twoFactorEnabled: false, twoFactorSecret: 'secret' });
     mockUserUpdate.mockResolvedValue({ id: 'user-1' });
@@ -40,6 +43,34 @@ describe('POST /api/auth/2fa/verify', () => {
         return operation({ user: { findUnique: mockUserFindUnique, update: mockUserUpdate } });
       }
     );
+  });
+
+  afterEach(() => {
+    if (originalEnrollmentFlag === undefined) {
+      delete process.env['TWO_FACTOR_ENROLLMENT_ENABLED'];
+    } else {
+      process.env['TWO_FACTOR_ENROLLMENT_ENABLED'] = originalEnrollmentFlag;
+    }
+  });
+
+  it('fails closed before authentication or mutation while enrollment is disabled', async () => {
+    delete process.env['TWO_FACTOR_ENROLLMENT_ENABLED'];
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/auth/2fa/verify', {
+        method: 'POST',
+        body: JSON.stringify({ code: '123456' }),
+      })
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: 'Two-factor authentication enrollment is temporarily unavailable.',
+    });
+    expect(mockRequireAuth).not.toHaveBeenCalled();
+    expect(mockWithOrgContext).not.toHaveBeenCalled();
+    expect(mockVerifyTOTP).not.toHaveBeenCalled();
+    expect(mockUserUpdate).not.toHaveBeenCalled();
   });
 
   it('enables 2FA inside the session organization context', async () => {

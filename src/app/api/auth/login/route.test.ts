@@ -218,9 +218,91 @@ describe('POST /api/auth/login', () => {
       expect(JSON.parse(String(logged))).toEqual({
         component: 'login-api',
         outcome: 'rate-limiter-unavailable',
+        reasonCode: 'LOGIN_RATE_LIMITER_UNAVAILABLE',
+        requestId: 'req-test',
         errorName: 'Error',
       });
       expect(String(logged)).not.toContain('sensitive provider detail');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('returns a safe service failure and an observable reason when MFA challenge issuance returns no row', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockIssueTenantTwoFactorChallenge.mockResolvedValueOnce(null);
+
+    try {
+      const response = await POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'user@example.com', password: 'password123' }),
+        })
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'Failed to sign in' });
+      expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toEqual({
+        component: 'login-api',
+        outcome: 'mfa-challenge-issue-empty',
+        reasonCode: 'MFA_CHALLENGE_ISSUER_EMPTY',
+        requestId: 'req-test',
+      });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('keeps MFA issuer exceptions private while exposing a categorical server log', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockIssueTenantTwoFactorChallenge.mockRejectedValueOnce(
+      new Error('TWO_FACTOR_CHALLENGE_ISSUE_ROW_INVALID')
+    );
+
+    try {
+      const response = await POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'user@example.com', password: 'password123' }),
+        })
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'Failed to sign in' });
+      expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toEqual({
+        component: 'login-api',
+        outcome: 'mfa-challenge-issue-failed',
+        reasonCode: 'MFA_CHALLENGE_ISSUER_INVALID_RESULT',
+        requestId: 'req-test',
+        errorName: 'Error',
+      });
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('correlates malformed request failures without attempting account lookup', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const response = await POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{',
+        })
+      );
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: 'Failed to sign in' });
+      expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toEqual({
+        component: 'login-api',
+        outcome: 'failed',
+        requestId: 'req-test',
+        errorName: 'SyntaxError',
+      });
+      expect(mockFindLoginCandidate).not.toHaveBeenCalled();
+      expect(mockCompare).not.toHaveBeenCalled();
     } finally {
       consoleError.mockRestore();
     }
