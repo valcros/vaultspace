@@ -29,8 +29,13 @@ test.describe('Room Management', () => {
     await expect(page.getByRole('main').getByRole('button', { name: 'Create Room' })).toBeVisible();
   });
 
-  test('admin can rediscover and publish a newly created draft room', async ({ page }) => {
-    const roomName = 'Lifecycle Draft Verification';
+  test('admin can rediscover and publish a newly created draft room', async ({
+    page,
+  }, testInfo) => {
+    // CI runs Chromium, Firefox, and WebKit against one seeded organization.
+    // Include project and retry identity so each browser exercises the
+    // lifecycle independently without violating the room-slug uniqueness key.
+    const roomName = `Lifecycle Draft Verification ${testInfo.project.name} ${testInfo.retry}`;
 
     await page.getByRole('main').getByRole('button', { name: 'Create Room' }).click();
     const dialog = page.getByRole('dialog', { name: 'Create Data Room' });
