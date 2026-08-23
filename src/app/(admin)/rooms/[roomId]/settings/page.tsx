@@ -818,9 +818,9 @@ export default function RoomSettingsPage() {
               </DialogTitle>
               <DialogDescription className="text-xs">
                 This will change{' '}
-                <span className="font-semibold text-slate-900 dark:text-white">{room.name}</span>{' '}
-                to CLOSED and retain the room and its contents for audit history. This action cannot
-                be undone.
+                <span className="font-semibold text-slate-900 dark:text-white">{room.name}</span> to
+                CLOSED and retain the room and its contents for audit history. This action cannot be
+                undone.
               </DialogDescription>
             </DialogHeader>
 
