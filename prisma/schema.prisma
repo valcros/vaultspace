@@ -569,6 +569,7 @@ model Session {
 
   @@index([token])
   @@index([userId])
+  @@index([organizationId, lastActiveAt])
   @@index([expiresAt])
   @@index([isActive])
   @@map("sessions")

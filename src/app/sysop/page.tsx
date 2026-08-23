@@ -62,11 +62,33 @@ interface SysOpOverviewData {
     usagePercentage: number;
     quotaAlertLevel: 'NORMAL' | 'WARNING_90' | 'CRITICAL_98';
     createdAt: string;
+    lastAccessAt: string | null;
   }>;
 }
 
-type SortField = 'name' | 'slug' | 'roomCount' | 'userCount' | 'usagePercentage' | 'isActive';
+type SortField =
+  | 'name'
+  | 'slug'
+  | 'roomCount'
+  | 'userCount'
+  | 'usagePercentage'
+  | 'isActive'
+  | 'createdAt'
+  | 'lastAccessAt';
 type StatusFilter = 'all' | 'active' | 'disabled';
+
+function formatTenantDate(value: string | null) {
+  if (!value) {
+    return 'Never';
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
 
 export default function SysOpOverviewPage() {
   const [data, setData] = React.useState<SysOpOverviewData | null>(null);
@@ -87,7 +109,7 @@ export default function SysOpOverviewPage() {
 
   // Sorting & Filtering State
   const [searchQuery, setSearchQuery] = React.useState('');
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active');
   const [sortField, setSortField] = React.useState<SortField>('name');
   const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('asc');
 
@@ -132,12 +154,15 @@ export default function SysOpOverviewPage() {
 
     // Sorting
     list.sort((a, b) => {
-      let valA: string | number = (a[sortField] as string | number | undefined) ?? 0;
-      let valB: string | number = (b[sortField] as string | number | undefined) ?? 0;
+      let valA: string | number = (a[sortField] as string | number | null | undefined) ?? 0;
+      let valB: string | number = (b[sortField] as string | number | null | undefined) ?? 0;
 
       if (sortField === 'isActive') {
         valA = a.isActive !== false ? 1 : 0;
         valB = b.isActive !== false ? 1 : 0;
+      } else if (sortField === 'createdAt' || sortField === 'lastAccessAt') {
+        valA = a[sortField] ? Date.parse(a[sortField]) : 0;
+        valB = b[sortField] ? Date.parse(b[sortField]) : 0;
       }
 
       if (typeof valA === 'string' && typeof valB === 'string') {
@@ -538,8 +563,9 @@ export default function SysOpOverviewPage() {
             Tenant Directory & Storage Management
           </CardTitle>
           <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
-            Organizations provisioned across the platform. Only active tenants are listed. Disabling
-            a tenant blocks its logins immediately and is reversible.
+            Organizations provisioned across the platform. Active tenants are shown by default; use
+            the status filter to include disabled tenants. Disabling a tenant blocks its logins
+            immediately and is reversible.
           </CardDescription>
           <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50/60 p-3 dark:border-rose-900/50 dark:bg-rose-950/20">
             {bulkResult ? (
@@ -715,6 +741,32 @@ export default function SysOpOverviewPage() {
                         )}
                       </th>
                       <th
+                        onClick={() => handleSort('createdAt')}
+                        className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
+                      >
+                        Created{' '}
+                        {sortField !== 'createdAt' ? (
+                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                        ) : sortDirection === 'asc' ? (
+                          <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <ArrowDown className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </th>
+                      <th
+                        onClick={() => handleSort('lastAccessAt')}
+                        className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
+                      >
+                        Last Access{' '}
+                        {sortField !== 'lastAccessAt' ? (
+                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                        ) : sortDirection === 'asc' ? (
+                          <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        ) : (
+                          <ArrowDown className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                        )}
+                      </th>
+                      <th
                         onClick={() => handleSort('isActive')}
                         className="group cursor-pointer select-none px-3 py-2.5 hover:text-slate-900 dark:hover:text-white"
                       >
@@ -734,7 +786,7 @@ export default function SysOpOverviewPage() {
                     {filteredAndSortedOrgs.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={9}
                           className="py-8 text-center text-xs text-slate-500 dark:text-slate-400"
                         >
                           No tenant organizations match the selected filter or search query.
@@ -768,6 +820,12 @@ export default function SysOpOverviewPage() {
                                 {org.usagePercentage}%
                               </span>
                             </div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 text-slate-600 dark:text-slate-400">
+                            {formatTenantDate(org.createdAt)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 text-slate-600 dark:text-slate-400">
+                            {formatTenantDate(org.lastAccessAt)}
                           </td>
                           <td className="px-3 py-3">
                             {org.isActive === false ? (

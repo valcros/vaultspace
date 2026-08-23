@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   count: vi.fn(),
   findMany: vi.fn(),
   findUnique: vi.fn(),
+  groupBy: vi.fn(),
 }));
 
 vi.mock('@/lib/middleware', () => ({
@@ -27,6 +28,9 @@ vi.mock('@/lib/db', () => ({
     },
     document: {
       count: mocks.count,
+    },
+    session: {
+      groupBy: mocks.groupBy,
     },
   },
 }));
@@ -69,6 +73,9 @@ describe('SysOp Behavioral Authorization Contract (P0 #1b)', () => {
         organizationId: 'org-1',
       });
       mocks.count.mockResolvedValue(10);
+      mocks.groupBy.mockResolvedValue([
+        { organizationId: 'org-1', _max: { lastActiveAt: new Date('2026-02-01T00:00:00.000Z') } },
+      ]);
       mocks.findMany.mockResolvedValue([
         {
           id: 'org-1',
@@ -92,6 +99,10 @@ describe('SysOp Behavioral Authorization Contract (P0 #1b)', () => {
       });
       expect(data.infrastructure.environment).toBe('Azure Staging');
       expect(data.organizations).toHaveLength(1);
+      expect(data.organizations[0]).toMatchObject({
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastAccessAt: '2026-02-01T00:00:00.000Z',
+      });
     });
   });
 
