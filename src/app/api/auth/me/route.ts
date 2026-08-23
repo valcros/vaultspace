@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { isTwoFactorEnrollmentEnabled } from '@/lib/auth/twoFactorAvailability';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,10 @@ export async function GET() {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ user });
+    return NextResponse.json({
+      user,
+      twoFactorEnrollmentEnabled: isTwoFactorEnrollmentEnabled(),
+    });
   } catch (error) {
     console.error('[Auth Me] Error:', error);
     if (error instanceof Error && error.message === 'Authentication required') {

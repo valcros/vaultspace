@@ -12,6 +12,10 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { verifyTOTP, generateBackupCodes, hashBackupCode } from '@/lib/totp';
+import {
+  isTwoFactorEnrollmentEnabled,
+  TWO_FACTOR_ENROLLMENT_UNAVAILABLE_MESSAGE,
+} from '@/lib/auth/twoFactorAvailability';
 
 const verifySchema = z.object({
   code: z
@@ -22,6 +26,13 @@ const verifySchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isTwoFactorEnrollmentEnabled()) {
+      return NextResponse.json(
+        { error: TWO_FACTOR_ENROLLMENT_UNAVAILABLE_MESSAGE },
+        { status: 503 }
+      );
+    }
+
     const session = await requireAuth();
     const body = await request.json();
     const { code } = verifySchema.parse(body);

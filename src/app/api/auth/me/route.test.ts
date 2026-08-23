@@ -41,6 +41,7 @@ describe('GET /api/auth/me', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(body.twoFactorEnrollmentEnabled).toBe(false);
     expect(body.user).toEqual(
       expect.objectContaining({ id: 'user-1', email: 'admin@example.com' })
     );
