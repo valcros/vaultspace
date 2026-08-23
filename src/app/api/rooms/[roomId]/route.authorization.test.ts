@@ -111,4 +111,25 @@ describe('PATCH /api/rooms/[roomId] lifecycle adapter', () => {
     expect(response.status).toBe(400);
     expect(mocks.update).not.toHaveBeenCalled();
   });
+
+  it('rejects non-HTTPS logo URLs and invalid IPv4/CIDR allowlist entries', async () => {
+    const insecureLogo = await PATCH(
+      new NextRequest('https://vaultspace.org/api/rooms/room-1', {
+        method: 'PATCH',
+        body: JSON.stringify({ brandLogoUrl: 'http://example.test/logo.svg' }),
+      }),
+      { params: Promise.resolve({ roomId: 'room-1' }) }
+    );
+    const invalidAllowlist = await PATCH(
+      new NextRequest('https://vaultspace.org/api/rooms/room-1', {
+        method: 'PATCH',
+        body: JSON.stringify({ ipAllowlist: ['not-an-ip'] }),
+      }),
+      { params: Promise.resolve({ roomId: 'room-1' }) }
+    );
+
+    expect(insecureLogo.status).toBe(400);
+    expect(invalidAllowlist.status).toBe(400);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
 });

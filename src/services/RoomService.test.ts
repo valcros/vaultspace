@@ -7,6 +7,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AuthorizationError } from '@/lib/errors';
+
 import { RoomService } from './RoomService';
 import type { ServiceContext } from './types';
 
@@ -435,10 +437,39 @@ describe('RoomService', () => {
         },
       });
 
-      await expect(service.changeStatus(viewerContext, 'room-1', 'ACTIVE')).rejects.toThrow(
-        'Organization administrator access is required'
+      await expect(service.changeStatus(viewerContext, 'room-1', 'ACTIVE')).rejects.toBeInstanceOf(
+        AuthorizationError
       );
       expect(mockTx.room.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('redacts a password hash from room mutation results and audit metadata', async () => {
+      mockTx.room.findFirst.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+        passwordHash: 'existing-secret-hash',
+      });
+      mockTx.room.update.mockResolvedValue({
+        id: 'room-1',
+        organizationId: 'org-1',
+        status: 'ACTIVE',
+        passwordHash: 'replacement-secret-hash',
+      });
+
+      const result = await service.update(ctx, 'room-1', {
+        requiresPassword: true,
+        passwordHash: 'replacement-secret-hash',
+      });
+
+      expect(result).not.toHaveProperty('passwordHash');
+      expect(mockEventBus.emit).toHaveBeenCalledWith(
+        'ROOM_UPDATED',
+        expect.objectContaining({
+          metadata: { changes: { requiresPassword: true } },
+        }),
+        mockTx
+      );
     });
 
     it('closes through the canonical lifecycle method when the legacy delete API is used', async () => {
