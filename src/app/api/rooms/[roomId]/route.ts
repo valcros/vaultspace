@@ -7,39 +7,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 
 import { getRequestContext, requireAuth } from '@/lib/middleware';
 import { AppError } from '@/lib/errors';
+import { roomUpdateSchema } from '@/lib/rooms/roomUpdateValidation';
 import { createServiceContext, roomService } from '@/services';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
-
-const roomUpdateSchema = z
-  .object({
-    name: z.string().trim().min(1).max(255).optional(),
-    description: z.string().max(10_000).nullable().optional(),
-    status: z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED', 'CLOSED']).optional(),
-    allowDownloads: z.boolean().optional(),
-    allowViewerVersionHistory: z.boolean().optional(),
-    defaultExpiryDays: z.number().int().min(1).nullable().optional(),
-    requiresPassword: z.boolean().optional(),
-    requiresEmailVerification: z.boolean().optional(),
-    enableWatermark: z.boolean().optional(),
-    watermarkTemplate: z.string().max(500).nullable().optional(),
-    requiresNda: z.boolean().optional(),
-    ndaContent: z.string().max(10_000).nullable().optional(),
-    allDocumentsConfidential: z.boolean().optional(),
-    brandColor: z
-      .string()
-      .regex(/^#[0-9A-Fa-f]{6}$/)
-      .nullable()
-      .optional(),
-    brandLogoUrl: z.string().max(10_000).nullable().optional(),
-    ipAllowlist: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
-  })
-  .strict();
 
 interface RouteContext {
   params: Promise<{ roomId: string }>;

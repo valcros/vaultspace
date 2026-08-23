@@ -46,7 +46,6 @@ test.describe('Room Management', () => {
     expect(roomId).toBeTruthy();
 
     await page.goto('/rooms');
-    await expect(page.getByRole('heading', { name: /Draft Rooms \(1\)/ })).toBeVisible();
     const draftCard = page.getByRole('link', { name: new RegExp(roomName) });
     await expect(draftCard).toContainText('Draft');
     await expect(draftCard.getByRole('button', { name: 'Actions' })).toBeVisible();

@@ -8,7 +8,7 @@
 import type { Prisma, Room, RoomStatus } from '@prisma/client';
 
 import { withOrgContext } from '@/lib/db';
-import { ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '@/lib/errors';
 import { getPermissionEngine } from '@/lib/permissions';
 
 import type { PaginatedResult, PaginationOptions, ServiceContext } from './types';
@@ -42,7 +42,11 @@ export interface UpdateRoomOptions {
   brandColor?: string | null;
   brandLogoUrl?: string | null;
   ipAllowlist?: string[];
+  /** Internal-only input set by the settings route after hashing a new password. */
+  passwordHash?: string | null;
 }
+
+export type RoomWithoutPassword = Omit<Room, 'passwordHash'>;
 
 /**
  * Room list filters
@@ -356,11 +360,15 @@ export class RoomService {
    * Update a room
    * @mutating
    */
-  async update(ctx: ServiceContext, roomId: string, options: UpdateRoomOptions): Promise<Room> {
+  async update(
+    ctx: ServiceContext,
+    roomId: string,
+    options: UpdateRoomOptions
+  ): Promise<RoomWithoutPassword> {
     const { session, eventBus } = ctx;
 
     if (options.status !== undefined && session.organization.role !== 'ADMIN') {
-      throw new ConflictError(
+      throw new AuthorizationError(
         'Organization administrator access is required to change room status'
       );
     }
@@ -389,10 +397,10 @@ export class RoomService {
       );
 
       if (!canAdmin) {
-        throw new ConflictError('You do not have permission to update this room');
+        throw new AuthorizationError('You do not have permission to update this room');
       }
 
-      const { status, ...settings } = options;
+      const { status, passwordHash, ...settings } = options;
 
       // Build settings update data. Status is intentionally handled below so
       // lifecycle validation completes before any write is issued.
@@ -448,6 +456,9 @@ export class RoomService {
       if (options.ipAllowlist !== undefined) {
         data.ipAllowlist = options.ipAllowlist;
       }
+      if (passwordHash !== undefined) {
+        data.passwordHash = passwordHash;
+      }
 
       const previousStatus = room.status;
       const statusChanged = status !== undefined && status !== previousStatus;
@@ -470,9 +481,10 @@ export class RoomService {
         }
       }
 
-      const hasSettingsChange = Object.keys(settings).length > 0;
+      const hasSettingsChange = Object.keys(settings).length > 0 || passwordHash !== undefined;
       if (!hasSettingsChange && !statusChanged) {
-        return room;
+        const { passwordHash: _passwordHash, ...safeRoom } = room;
+        return safeRoom;
       }
 
       // Settings, lifecycle state, timestamps, and all audit records are
@@ -509,7 +521,8 @@ export class RoomService {
         );
       }
 
-      return updated;
+      const { passwordHash: _passwordHash, ...safeRoom } = updated;
+      return safeRoom;
     });
   }
 
@@ -627,7 +640,11 @@ export class RoomService {
    * Change room status
    * @mutating
    */
-  async changeStatus(ctx: ServiceContext, roomId: string, status: RoomStatus): Promise<Room> {
+  async changeStatus(
+    ctx: ServiceContext,
+    roomId: string,
+    status: RoomStatus
+  ): Promise<RoomWithoutPassword> {
     return this.update(ctx, roomId, { status });
   }
 
@@ -635,7 +652,7 @@ export class RoomService {
    * Close and retain a room through the canonical lifecycle transition.
    * @mutating
    */
-  async delete(ctx: ServiceContext, roomId: string): Promise<Room> {
+  async delete(ctx: ServiceContext, roomId: string): Promise<RoomWithoutPassword> {
     return this.changeStatus(ctx, roomId, 'CLOSED');
   }
 }

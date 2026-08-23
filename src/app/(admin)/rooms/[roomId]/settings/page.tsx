@@ -219,6 +219,7 @@ export default function RoomSettingsPage() {
       }
     } catch (err) {
       console.error('Failed to close room:', err);
+      setError(err instanceof Error ? err.message : 'Failed to close room');
     }
   };
 
@@ -792,15 +793,17 @@ export default function RoomSettingsPage() {
                     history.
                   </p>
                 </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setShowDeleteDialog(true)}
-                  className="bg-red-600 text-xs hover:bg-red-700"
-                >
-                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                  Close Room
-                </Button>
+                {room.status !== 'CLOSED' && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="bg-red-600 text-xs hover:bg-red-700"
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    Close Room
+                  </Button>
+                )}
               </div>
             </AccordionItem>
           </div>
@@ -815,7 +818,7 @@ export default function RoomSettingsPage() {
               </DialogTitle>
               <DialogDescription className="text-xs">
                 This will change{' '}
-                <span className="font-semibold text-slate-900 dark:text-white">{room.name}</span>.{' '}
+                <span className="font-semibold text-slate-900 dark:text-white">{room.name}</span>{' '}
                 to CLOSED and retain the room and its contents for audit history. This action cannot
                 be undone.
               </DialogDescription>
