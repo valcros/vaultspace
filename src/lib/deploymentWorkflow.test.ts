@@ -518,10 +518,7 @@ describe('worker revision readiness', () => {
 
 describe('container environment worker image repository validation', () => {
   it.each([
-    [
-      'a tagged ACR reference',
-      `<azure-container-registry>/vaultspace-worker:${targetRevision}`,
-    ],
+    ['a tagged ACR reference', `<azure-container-registry>/vaultspace-worker:${targetRevision}`],
     [
       'a digest-pinned ACR reference',
       `<azure-container-registry>/vaultspace-worker@sha256:${'1'.repeat(64)}`,
