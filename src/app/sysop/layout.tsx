@@ -59,9 +59,7 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
                   Platform Operator
                 </span>
               </span>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                DA-VAL-001 Governed Operations
-              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Privileged operations</p>
             </div>
           </div>
 
@@ -119,8 +117,7 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
 
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white px-6 py-4 text-center text-xs text-slate-500 dark:border-slate-900 dark:bg-slate-950 dark:text-slate-500">
-        VaultSpace SysOp Control Plane &bull; DA-VAL-001 Value & Simplicity Gate Active &bull;
-        REDACTED
+        VaultSpace SysOp Control Plane &bull; Authorized platform operations
       </footer>
     </div>
   );

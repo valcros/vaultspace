@@ -46,11 +46,6 @@ interface SysOpOverviewData {
     environment: string;
     governance?: string;
     status?: string;
-    subscription?: string;
-    webApp?: string;
-    databaseHost?: string;
-    aiService?: string;
-    vmHost?: string;
   };
   organizations: Array<{
     id: string;
@@ -459,24 +454,25 @@ export default function SysOpOverviewPage() {
         </Card>
       </div>
 
-      {/* Infrastructure Telemetry */}
+      {/* Platform Telemetry */}
       <Card className="border-slate-200 bg-white backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
         <CardHeader className="border-b border-slate-200 pb-3 dark:border-slate-800/80">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-base text-slate-900 dark:text-white">
                 <Server className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                Infrastructure & Environment Telemetry
+                Platform Telemetry
               </CardTitle>
               <CardDescription className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                Azure Staging Environment status and configuration boundaries.
+                Coarse service health for authorized operators. Detailed infrastructure identifiers
+                are not displayed.
               </CardDescription>
             </div>
             <Badge
               variant="outline"
               className="border-indigo-500/30 bg-indigo-500/10 text-xs text-indigo-700 dark:text-indigo-300"
             >
-              REDACTED
+              {data?.infrastructure.environment ?? 'Managed deployment'}
             </Badge>
           </div>
         </CardHeader>
@@ -484,10 +480,10 @@ export default function SysOpOverviewPage() {
         <CardContent className="grid gap-4 pt-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-100/70 p-3 dark:border-slate-800/60 dark:bg-slate-950/60">
             <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-              Container Web Workload
+              Application Service
             </span>
             <p className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-200">
-              {data?.infrastructure.webApp || '<web-container-app>--0000306'}
+              {data?.infrastructure.status === 'HEALTHY' ? 'Available' : 'Status unavailable'}
             </p>
             <p className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
               <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Active (100% Traffic)
@@ -496,37 +492,37 @@ export default function SysOpOverviewPage() {
 
           <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-100/70 p-3 dark:border-slate-800/60 dark:bg-slate-950/60">
             <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-              Database Cluster
+              Data Service
             </span>
             <p className="truncate font-mono text-sm font-semibold text-slate-900 dark:text-slate-200">
-              {data?.infrastructure.databaseHost || 'REDACTED'}
+              {data?.infrastructure.status === 'HEALTHY' ? 'Available' : 'Status unavailable'}
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              PostgreSQL 15 (SSL Required)
+              Connectivity status is verified by the health contract.
             </p>
           </div>
 
           <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-100/70 p-3 dark:border-slate-800/60 dark:bg-slate-950/60">
             <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-              Azure OpenAI Service
+              Optional Services
             </span>
             <p className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-200">
-              {data?.infrastructure.aiService || 'REDACTED'}
+              Capability-dependent
             </p>
             <p className="text-xs text-indigo-600 dark:text-indigo-400">
-              Azure Credit Funded ($1,000+ Pool)
+              Availability is reported without infrastructure details.
             </p>
           </div>
 
           <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-100/70 p-3 dark:border-slate-800/60 dark:bg-slate-950/60">
             <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-              Autonomous Agent Host
+              Background Processing
             </span>
             <p className="font-mono text-sm font-semibold text-slate-900 dark:text-slate-200">
-              {data?.infrastructure.vmHost || 'REDACTED'}
+              {data?.infrastructure.status === 'HEALTHY' ? 'Available' : 'Status unavailable'}
             </p>
             <p className="text-xs text-emerald-600 dark:text-emerald-400">
-              Standard_D4s_v5 (4 vCPU, 16GB)
+              Operational details are restricted.
             </p>
           </div>
 
@@ -535,10 +531,10 @@ export default function SysOpOverviewPage() {
               Governance Framework
             </span>
             <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-              {data?.infrastructure.governance || 'DA-VAL-001 Value & Simplicity Gate'}
+              {data?.infrastructure.governance || 'Platform operating controls'}
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              80/20 Pareto & Human Elevation Gate
+              Privileged actions remain independently audited.
             </p>
           </div>
 
@@ -547,10 +543,10 @@ export default function SysOpOverviewPage() {
               Maintenance Window
             </span>
             <p className="text-sm font-semibold text-slate-900 dark:text-slate-200">
-              Saturday 12:00 AM – 1:00 AM PT
+              Scheduled notices only
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Auto 5-min maintenance allowed
+              Maintenance details are communicated through approved channels.
             </p>
           </div>
         </CardContent>

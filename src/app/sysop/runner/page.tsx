@@ -18,12 +18,9 @@ export default function SysOpRunnerPage() {
   };
 
   const logs = [
-    `[2026-08-14 17:24:36 UTC] [BUILD] Deployment to Azure Staging succeeded. Revision: <web-container-app>--0000306.`,
-    `[2026-08-14 17:16:56 UTC] [GOVERNANCE] DA-VAL-001 Value & Simplicity Gate integrated into repository docs.`,
-    `[2026-08-14 16:34:43 UTC] [NOTIFY] Azure Communication Services status update delivered (MessageId: 4f332cdd...).`,
-    `[2026-08-14 15:00:50 UTC] [VM-HOST] REDACTED (Standard_D4s_v5) healthcheck PASSED.`,
-    `[2026-08-14 14:58:59 UTC] [SECURITY] RLS tenant isolation verified for app.current_organization_id context.`,
-    `[2026-08-14 14:19:11 UTC] [SYSOP] Cluster 1 (SysOp Control Plane F159) 80/20 sprint initiated under DA-VAL-001.`,
+    '[STATUS] Detailed runner telemetry is restricted to the operational control plane.',
+    '[SECURITY] Tenant-isolation controls are verified through the release pipeline.',
+    '[NOTICE] This view intentionally does not expose infrastructure identifiers or execution logs.',
   ];
 
   return (
@@ -36,7 +33,7 @@ export default function SysOpRunnerPage() {
             Autonomous Agent Runner Status
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            24/7 background Lead Dev execution loop status and real-time output stream.
+            Restricted runner status surface. Detailed execution data is not rendered in the client.
           </p>
         </div>
 
@@ -71,45 +68,47 @@ export default function SysOpRunnerPage() {
         <Card className="border-slate-200 bg-white backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Runner Host Status
+              Runner Status
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
                 <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                VM Running
+                Telemetry Restricted
               </span>
               <Badge className="border-emerald-500/30 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-                24/7 Active
+                Authorized only
               </Badge>
             </div>
             <p className="font-mono text-xs text-slate-600 dark:text-slate-400">
-              REDACTED (REDACTED)
+              Detailed host information is not displayed.
             </p>
-            <p className="text-[11px] text-slate-500">Standard_D4s_v5 (4 vCPU, 16GB RAM)</p>
+            <p className="text-[11px] text-slate-500">
+              Use approved operational channels for diagnostics.
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-slate-200 bg-white backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Active Roadmap Sprint
+              Execution Visibility
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-lg font-bold text-indigo-700 dark:text-indigo-300">
-                Cluster 1: SysOp
+                Restricted
               </span>
               <Badge className="border-indigo-500/30 bg-indigo-500/20 text-indigo-700 dark:text-indigo-300">
-                In Progress
+                Controlled
               </Badge>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              F159 SysOp DevOps Control Plane (80/20 Value Architecture)
+              Client-visible status is intentionally limited to non-sensitive information.
             </p>
-            <p className="text-[11px] text-slate-500">Pragmatic 2-Screen Core Control Plane</p>
+            <p className="text-[11px] text-slate-500">No deployment topology is published here.</p>
           </CardContent>
         </Card>
 
@@ -123,19 +122,21 @@ export default function SysOpRunnerPage() {
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
                 <ShieldCheck className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                DA-VAL-001
+                Audited Operations
               </span>
               <Badge
                 variant="outline"
                 className="border-indigo-500/30 text-indigo-700 dark:text-indigo-300"
               >
-                Active
+                Enforced
               </Badge>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              80/20 Pareto Value & Human Elevation Gate
+              Privileged actions are subject to authorization and audit controls.
             </p>
-            <p className="text-[11px] text-slate-500">Accountable Authority: Project Owner</p>
+            <p className="text-[11px] text-slate-500">
+              Operational ownership details are restricted.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -146,9 +147,9 @@ export default function SysOpRunnerPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base text-slate-900 dark:text-white">
               <Terminal className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-              Live Execution Output Log
+              Restricted Execution Status
             </CardTitle>
-            <span className="font-mono text-xs text-slate-500">Auto-updating stream</span>
+            <span className="font-mono text-xs text-slate-500">Sanitized client surface</span>
           </div>
         </CardHeader>
 

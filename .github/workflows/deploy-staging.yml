@@ -59,6 +59,7 @@ jobs:
       LIFECYCLE_JOB_APP: ${{ vars.LIFECYCLE_JOB_APP }}
       RESET_RECONCILER_JOB_APP: ${{ vars.RESET_RECONCILER_JOB_APP }}
       DESIRED_RESET_WRITE_MODE: ${{ vars.PASSWORD_RESET_TOKEN_WRITE_MODE }}
+      PLATFORM_PROTECTED_ORG_SLUGS: ${{ secrets.PLATFORM_PROTECTED_ORG_SLUGS }}
       ALLOW_RESET_MODE_DOWNGRADE: ${{ inputs.allow_reset_mode_downgrade || 'false' }}
       APP_URL: ${{ vars.APP_URL }}
       DEPLOYMENT_MUTATED: 'false'
@@ -97,6 +98,11 @@ jobs:
               exit 1
             fi
           done
+
+          if [ -z "$PLATFORM_PROTECTED_ORG_SLUGS" ]; then
+            echo "ERROR: staging secret PLATFORM_PROTECTED_ORG_SLUGS is required"
+            exit 1
+          fi
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -940,6 +946,16 @@ jobs:
             --resource-group $RESOURCE_GROUP \
             --mode single
 
+      - name: Configure protected organization guard
+        # This deployment-specific list is confidential operational data. It is
+        # stored as a Container App secret and exposed to the web container only
+        # via secretRef. It must never be printed or committed as a fallback.
+        run: |
+          az containerapp secret set \
+            --name "$WEB_CONTAINER_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secrets "platform-protected-org-slugs=$PLATFORM_PROTECTED_ORG_SLUGS"
+
       - name: Update Container App - Web
         run: |
           az containerapp update \
@@ -947,7 +963,7 @@ jobs:
             --resource-group $RESOURCE_GROUP \
             --container-name $WEB_CONTAINER_NAME \
             --image "$TARGET_WEB_IMAGE_PINNED" \
-            --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$TARGET_RESET_WRITE_MODE"
+            --set-env-vars "PASSWORD_RESET_TOKEN_WRITE_MODE=$TARGET_RESET_WRITE_MODE" "PLATFORM_PROTECTED_ORG_SLUGS=secretref:platform-protected-org-slugs"
 
       - name: Update Container App Job - Delayed Waker
         env:

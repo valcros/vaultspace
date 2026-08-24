@@ -435,6 +435,6 @@ Then re-run `./scripts/setup.sh`.
 
 ## Further Reading
 
-- `DEPLOYMENT.md` — full environment variable reference and Azure deployment
+- `DEPLOYMENT.md` — public deployment contract and configuration guidance
 - `ARCHITECTURE.md` — system design and provider interfaces
 - `SECURITY.md` — security policies and vulnerability reporting

@@ -63,6 +63,9 @@ test-results/
 
 # Private configuration (not committed to public repo)
 .private/
+.dev-notes/
+docs/audit/
+tmp/
 
 # Test upload files (not committed)
 Sample Upload Files/

@@ -130,12 +130,15 @@ function validateContainerEnv(workerImage: string) {
     'REDIS_URL',
     'AZURE_STORAGE_ACCOUNT_KEY',
     'ACS_CONNECTION_STRING',
+    'PLATFORM_PROTECTED_ORG_SLUGS',
   ]);
   const envEntry = (name: string) =>
     secretNames.has(name)
       ? { name, secretRef: `synthetic-${name.toLowerCase()}` }
       : { name, value: `synthetic-${name.toLowerCase()}` };
-  const webEnv = [...sharedNames, 'DATABASE_URL_ADMIN'].map(envEntry);
+  const webEnv = [...sharedNames, 'DATABASE_URL_ADMIN', 'PLATFORM_PROTECTED_ORG_SLUGS'].map(
+    envEntry
+  );
   const workerEnv = [...sharedNames, 'WORKER_TYPE'].map(envEntry);
   const controlledAzure = `
 az() {

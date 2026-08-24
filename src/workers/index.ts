@@ -28,7 +28,7 @@ if (!valid) {
     `[VaultSpace Worker] STARTUP BLOCKED - Missing required configuration for ${mode} mode:`
   );
   errors.forEach((err) => console.error(`  - ${err}`));
-  console.error('\nSee DEPLOYMENT.md for configuration requirements.\n');
+  console.error('\nSee .env.example for public configuration requirements.\n');
   process.exit(1);
 }
 

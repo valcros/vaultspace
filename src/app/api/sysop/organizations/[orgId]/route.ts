@@ -5,7 +5,10 @@ import { requirePlatformOperator, getRequestContext } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { bootstrapDb as db } from '@/lib/db';
 import { captureSecurityAudit } from '@/lib/audit/securityAudit';
-import { PROTECTED_ORG_SLUGS } from '@/lib/sysop/protectedOrgs';
+import {
+  getProtectedOrganizationSlugs,
+  ProtectedOrganizationConfigurationError,
+} from '@/lib/sysop/protectedOrgs';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +50,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
       // Keep-list: never disable a protected real org (enforced at THIS mutation
       // boundary, not only in bulk-disable). Resolved to immutable IDs.
       const protectedOrgs = await db.organization.findMany({
-        where: { slug: { in: PROTECTED_ORG_SLUGS } },
+        where: { slug: { in: getProtectedOrganizationSlugs() } },
         select: { id: true },
       });
       if (protectedOrgs.some((o) => o.id === orgId)) {
@@ -120,6 +123,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ o
       isActive: org.isActive,
     });
   } catch (error) {
+    if (error instanceof ProtectedOrganizationConfigurationError) {
+      console.error('SysOp organization protection configuration error:', error.message);
+      return NextResponse.json(
+        { error: 'Organization protection is not configured. No change was applied.' },
+        { status: 503 }
+      );
+    }
     if (error instanceof AuthorizationError) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }

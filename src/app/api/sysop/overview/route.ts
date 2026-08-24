@@ -102,8 +102,8 @@ export async function GET() {
         quotaAlertsCount,
       },
       infrastructure: {
-        environment: 'Azure Staging',
-        governance: 'DA-VAL-001 Value & Simplicity Gate',
+        environment: process.env['DEPLOYMENT_MODE'] === 'azure' ? 'Managed cloud' : 'Self-hosted',
+        governance: 'Platform operating controls',
         status: 'HEALTHY',
       },
       organizations: orgSummaries,
