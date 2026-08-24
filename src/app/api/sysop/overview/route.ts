@@ -22,28 +22,42 @@ export async function GET() {
     });
 
     // Fetch platform tenant metrics
-    const [orgCount, userCount, roomCount, docCount, orgs] = await Promise.all([
-      db.organization.count(),
-      db.user.count(),
-      db.room.count(),
-      db.document.count(),
-      db.organization.findMany({
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          isActive: true,
-          createdAt: true,
-          _count: {
-            select: {
-              rooms: true,
-              users: true,
+    const [orgCount, userCount, roomCount, docCount, orgs, latestOrganizationActivity] =
+      await Promise.all([
+        db.organization.count(),
+        db.user.count(),
+        db.room.count(),
+        db.document.count(),
+        db.organization.findMany({
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            isActive: true,
+            createdAt: true,
+            _count: {
+              select: {
+                rooms: true,
+                users: true,
+              },
             },
           },
-        },
-        orderBy: { name: 'asc' },
-      }),
-    ]);
+          orderBy: { name: 'asc' },
+        }),
+        db.session.groupBy({
+          by: ['organizationId'],
+          where: { organizationId: { not: null } },
+          _max: { lastActiveAt: true },
+        }),
+      ]);
+
+    const lastAccessByOrganizationId = new Map(
+      latestOrganizationActivity.flatMap((activity) =>
+        activity.organizationId && activity._max.lastActiveAt
+          ? [[activity.organizationId, activity._max.lastActiveAt] as const]
+          : []
+      )
+    );
 
     // Calculate storage quota usage for demo/staging
     const orgSummaries = orgs.map((org) => {
@@ -72,6 +86,7 @@ export async function GET() {
         usagePercentage,
         quotaAlertLevel,
         createdAt: org.createdAt.toISOString(),
+        lastAccessAt: lastAccessByOrganizationId.get(org.id)?.toISOString() ?? null,
       };
     });
 
