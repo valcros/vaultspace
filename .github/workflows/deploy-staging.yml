@@ -104,6 +104,32 @@ jobs:
             exit 1
           fi
 
+      # GitHub masks secret values automatically, but repository variables are
+      # not secret by default. Azure CLI diagnostics and our deployment summary
+      # can contain those values as substrings, so mask the operational metadata
+      # before any cloud command executes. This preserves diagnostic outcomes
+      # without publishing environment topology in Actions logs.
+      - name: Mask deployment metadata in logs
+        run: |
+          metadata_values=(
+            "$ACR_SERVER"
+            "$RESOURCE_GROUP"
+            "$WEB_CONTAINER_APP"
+            "$WORKER_CONTAINER_APP"
+            "$WEB_CONTAINER_NAME"
+            "$WORKER_CONTAINER_NAME"
+            "$WAKER_JOB_APP"
+            "$WAKER_CONTAINER_NAME"
+            "$LIFECYCLE_JOB_APP"
+            "$RESET_RECONCILER_JOB_APP"
+          )
+
+          for metadata_value in "${metadata_values[@]}"; do
+            if [ -n "$metadata_value" ]; then
+              echo "::add-mask::$metadata_value"
+            fi
+          done
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
