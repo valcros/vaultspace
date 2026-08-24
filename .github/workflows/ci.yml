@@ -16,6 +16,21 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  public-repository-safety:
+    name: Public Repository Safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Verify public repository content policy
+        run: npm run security:public-repo
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

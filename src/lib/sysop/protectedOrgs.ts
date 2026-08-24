@@ -1,14 +1,57 @@
 /**
- * Organizations that platform operators must never disable or delete.
+ * Protected organizations are deployment-specific operational data, not public
+ * application configuration. The list is injected through a secret-backed
+ * runtime variable and is intentionally never logged or given a source fallback.
  *
- * These are the three real tenants. The structural classifier (0 rooms AND <=1
- * user) already excludes them from bulk cleanup, but this explicit list is a
- * second, independent guard enforced at EVERY mutation boundary (single PATCH
- * disable AND bulk-disable). Resolved to immutable org IDs at request time; slugs
- * are normalized (^[a-z0-9-]+$) and effectively immutable.
- *
- * NOTE: two of these orgs exist only in production (not in seed/test fixtures),
- * so tests assert exclusion via the structural classifier + this list, and the
- * runtime resolution simply excludes whichever slugs are present.
+ * SysOp destructive operations call this resolver immediately before querying
+ * the protected organizations. If the setting is missing or malformed, those
+ * operations fail closed instead of silently treating every organization as
+ * disposable.
  */
-export const PROTECTED_ORG_SLUGS = ['brightside', 'series-a-funding', 'org-1774897343302-qzig5'];
+const ENVIRONMENT_VARIABLE = 'PLATFORM_PROTECTED_ORG_SLUGS';
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export class ProtectedOrganizationConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProtectedOrganizationConfigurationError';
+  }
+}
+
+export function getProtectedOrganizationSlugs(
+  rawValue: string | undefined = process.env[ENVIRONMENT_VARIABLE]
+): string[] {
+  if (!rawValue?.trim()) {
+    throw new ProtectedOrganizationConfigurationError(
+      `${ENVIRONMENT_VARIABLE} must be configured before organization disable operations are available.`
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch {
+    throw new ProtectedOrganizationConfigurationError(
+      `${ENVIRONMENT_VARIABLE} must be a JSON array of normalized organization slugs.`
+    );
+  }
+
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length === 0 ||
+    !parsed.every((value) => typeof value === 'string')
+  ) {
+    throw new ProtectedOrganizationConfigurationError(
+      `${ENVIRONMENT_VARIABLE} must be a non-empty JSON array of normalized organization slugs.`
+    );
+  }
+
+  const slugs = parsed.map((value) => value.trim());
+  if (slugs.some((slug) => !SLUG_PATTERN.test(slug)) || new Set(slugs).size !== slugs.length) {
+    throw new ProtectedOrganizationConfigurationError(
+      `${ENVIRONMENT_VARIABLE} contains an invalid or duplicate organization slug.`
+    );
+  }
+
+  return slugs;
+}

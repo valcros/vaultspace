@@ -5,7 +5,10 @@ import { requirePlatformOperator, getRequestContext } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { bootstrapDb as db } from '@/lib/db';
 import { captureSecurityAudit } from '@/lib/audit/securityAudit';
-import { PROTECTED_ORG_SLUGS } from '@/lib/sysop/protectedOrgs';
+import {
+  getProtectedOrganizationSlugs,
+  ProtectedOrganizationConfigurationError,
+} from '@/lib/sysop/protectedOrgs';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +36,7 @@ export async function POST(request: NextRequest) {
     // Resolve the keep-list to immutable IDs + the operator's own org IDs.
     const [keepOrgs, operatorMemberships] = await Promise.all([
       db.organization.findMany({
-        where: { slug: { in: PROTECTED_ORG_SLUGS } },
+        where: { slug: { in: getProtectedOrganizationSlugs() } },
         select: { id: true },
       }),
       db.userOrganization.findMany({
@@ -125,6 +128,13 @@ export async function POST(request: NextRequest) {
       auditFailed,
     });
   } catch (error) {
+    if (error instanceof ProtectedOrganizationConfigurationError) {
+      console.error('SysOp bulk-disable protection configuration error:', error.message);
+      return NextResponse.json(
+        { error: 'Organization protection is not configured. No changes were applied.' },
+        { status: 503 }
+      );
+    }
     if (error instanceof AuthorizationError) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }

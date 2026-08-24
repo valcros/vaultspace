@@ -44,12 +44,17 @@ function makeRequest(body: unknown): NextRequest {
 
 const operatorSession = { userId: 'op-1', organizationId: 'op-org', user: { email: 'op@x.com' } };
 
-// Candidates the classifier returns (0 rooms). Includes a keep-list org and the
-// operator's org that must be EXCLUDED, plus real junk.
+// Candidates the classifier returns (0 rooms). Includes a protected synthetic
+// fixture and the operator's org that must be EXCLUDED, plus real junk.
 const candidates = [
   { id: 'junk-1', name: 'gibberish', slug: 'org-1-a', _count: { users: 1 } },
   { id: 'junk-2', name: 'gibberish2', slug: 'org-2-b', _count: { users: 1 } },
-  { id: 'keep-brightside', name: 'Brightside', slug: 'brightside', _count: { users: 1 } },
+  {
+    id: 'keep-protected',
+    name: 'Protected Fixture',
+    slug: 'protected-tenant-a',
+    _count: { users: 1 },
+  },
   { id: 'op-org', name: 'Operator Org', slug: 'op-org-slug', _count: { users: 1 } },
   { id: 'too-many-users', name: 'Has members', slug: 'org-3-c', _count: { users: 5 } },
 ];
@@ -57,11 +62,12 @@ const candidates = [
 describe('POST /api/sysop/organizations/bulk-disable', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env['PLATFORM_PROTECTED_ORG_SLUGS'] = JSON.stringify(['protected-tenant-a']);
     mockRequireOperator.mockResolvedValue(operatorSession);
-    // keep-list resolves brightside by slug; operator membership adds op-org.
+    // The protected fixture resolves by slug; operator membership adds op-org.
     mockOrgFindMany.mockImplementation((args: { where?: { slug?: unknown } }) => {
       if (args?.where && 'slug' in args.where) {
-        return Promise.resolve([{ id: 'keep-brightside' }]);
+        return Promise.resolve([{ id: 'keep-protected' }]);
       }
       return Promise.resolve(candidates);
     });
@@ -100,17 +106,24 @@ describe('POST /api/sysop/organizations/bulk-disable', () => {
   });
 
   it('execute disables only confirmIds ∩ eligible; skips the rest', async () => {
-    // Operator submits junk-1 (eligible), keep-brightside (NOT eligible), and a stale id.
+    // Operator submits junk-1 (eligible), the protected fixture (NOT eligible), and a stale id.
     const res = await POST(
-      makeRequest({ dryRun: false, confirmIds: ['junk-1', 'keep-brightside', 'stale-id'] })
+      makeRequest({ dryRun: false, confirmIds: ['junk-1', 'keep-protected', 'stale-id'] })
     );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.disabled).toEqual(['junk-1']);
-    expect(body.skipped).toEqual(expect.arrayContaining(['keep-brightside', 'stale-id']));
+    expect(body.skipped).toEqual(expect.arrayContaining(['keep-protected', 'stale-id']));
     expect(mockOrgUpdate).toHaveBeenCalledOnce(); // only junk-1 written
     expect(mockCaptureAudit).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'ORG_DISABLED', organizationId: 'op-org' })
     );
+  });
+
+  it('missing protected-organization configuration fails closed before a write', async () => {
+    delete process.env['PLATFORM_PROTECTED_ORG_SLUGS'];
+    const res = await POST(makeRequest({ dryRun: false, confirmIds: ['junk-1'] }));
+    expect(res.status).toBe(503);
+    expect(mockOrgUpdate).not.toHaveBeenCalled();
   });
 });

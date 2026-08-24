@@ -18,6 +18,7 @@
     "lint:fix": "eslint src next.config.js eslint.config.mjs --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "security:public-repo": "node scripts/check-public-repository-safety.mjs",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
