@@ -32,7 +32,7 @@ const mockWithOrgContext = vi.mocked(withOrgContext);
 // Shared two-viewer fixture.
 const MEMBER = {
   id: 'member-1',
-  email: 'mary@REDACTED.test',
+  email: 'member@example.test',
   firstName: 'Mary',
   lastName: 'Member',
   viewedAt: new Date('2026-08-04T10:00:00Z'),
