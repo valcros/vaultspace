@@ -92,7 +92,7 @@ az containerapp up ...  # Deploy to Azure Container Apps
 DEPLOYMENT_MODE=standalone npm run dev:standalone  # Local development
 ```
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for full deployment instructions including Docker Compose for self-hosted deployments.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the public deployment contract and self-hosted guidance.
 
 ```bash
 # Build Docker images
@@ -136,7 +136,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 | [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)                 | Prisma schema, indexes, RLS                               |
 | [PERMISSION_MODEL.md](PERMISSION_MODEL.md)               | 14-layer permission engine specification                  |
 | [API_SPEC.md](API_SPEC.md)                               | REST API endpoints and schemas                            |
-| [DEPLOYMENT.md](DEPLOYMENT.md)                           | Azure deployment guide                                    |
+| [DEPLOYMENT.md](DEPLOYMENT.md)                           | Public deployment contract and self-hosted guidance       |
 | [SECURITY.md](SECURITY.md)                               | Security policies and vulnerability disclosure            |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                       | Development workflow and code standards                   |
 

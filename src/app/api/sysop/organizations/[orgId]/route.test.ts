@@ -53,6 +53,7 @@ const operatorSession = {
 describe('PATCH /api/sysop/organizations/[orgId]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env['PLATFORM_PROTECTED_ORG_SLUGS'] = JSON.stringify(['protected-tenant-a']);
     mockRequireOperator.mockResolvedValue(operatorSession);
     mockUserOrgFindFirst.mockResolvedValue(null);
     mockOrgFindMany.mockResolvedValue([]); // no protected org matches by default
@@ -111,6 +112,13 @@ describe('PATCH /api/sysop/organizations/[orgId]', () => {
     mockOrgFindMany.mockResolvedValue([{ id: 'org-x' }]); // target is protected
     const res = await PATCH(makeRequest({ isActive: false }), params);
     expect(res.status).toBe(409);
+    expect(mockOrgUpdate).not.toHaveBeenCalled();
+  });
+
+  it('missing protected-organization configuration fails closed before a write', async () => {
+    delete process.env['PLATFORM_PROTECTED_ORG_SLUGS'];
+    const res = await PATCH(makeRequest({ isActive: false }), params);
+    expect(res.status).toBe(503);
     expect(mockOrgUpdate).not.toHaveBeenCalled();
   });
 

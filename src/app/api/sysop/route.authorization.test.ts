@@ -97,7 +97,7 @@ describe('SysOp Behavioral Authorization Contract (P0 #1b)', () => {
         totalDocuments: 10,
         quotaAlertsCount: 0,
       });
-      expect(data.infrastructure.environment).toBe('Azure Staging');
+      expect(data.infrastructure.environment).toBe('Self-hosted');
       expect(data.organizations).toHaveLength(1);
       expect(data.organizations[0]).toMatchObject({
         createdAt: '2026-01-01T00:00:00.000Z',
