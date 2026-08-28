@@ -41,6 +41,8 @@ interface SysOpOverviewData {
     totalRooms: number;
     totalDocuments: number;
     quotaAlertsCount: number;
+    emptyOrganizationsCount?: number;
+    pendingUnverifiedOrglessUsers?: number;
   };
   infrastructure: {
     environment: string;
@@ -54,6 +56,7 @@ interface SysOpOverviewData {
     isActive?: boolean;
     roomCount: number;
     userCount: number;
+    isEmpty?: boolean;
     usagePercentage: number;
     quotaAlertLevel: 'NORMAL' | 'WARNING_90' | 'CRITICAL_98';
     createdAt: string;
@@ -452,6 +455,27 @@ export default function SysOpOverviewPage() {
             <p className="mt-1 text-[11px] text-slate-500">Tenants ≥ 90% Storage Limit</p>
           </CardContent>
         </Card>
+
+        <Card className="border-slate-200 bg-white backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              Empty Tenants
+            </CardTitle>
+            <AlertTriangle className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-8 w-16 bg-slate-200 dark:bg-slate-800" />
+            ) : (
+              <div className="text-2xl font-bold text-slate-900 dark:text-white">
+                {data?.summary.emptyOrganizationsCount ?? 0}
+              </div>
+            )}
+            <p className="mt-1 text-[11px] text-slate-500">
+              {data?.summary.pendingUnverifiedOrglessUsers ?? 0} pending unverified sign-ups
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Platform Telemetry */}
@@ -824,29 +848,40 @@ export default function SysOpOverviewPage() {
                             {formatTenantDate(org.lastAccessAt)}
                           </td>
                           <td className="px-3 py-3">
-                            {org.isActive === false ? (
-                              <Badge
-                                variant="outline"
-                                className="border-rose-500/30 bg-rose-500/10 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
-                              >
-                                Disabled
-                              </Badge>
-                            ) : org.quotaAlertLevel === 'CRITICAL_98' ? (
-                              <Badge className="border-rose-500/30 bg-rose-500/20 text-rose-700 dark:text-rose-300">
-                                Critical (98%)
-                              </Badge>
-                            ) : org.quotaAlertLevel === 'WARNING_90' ? (
-                              <Badge className="border-amber-500/30 bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                                Warning (90%)
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-400"
-                              >
-                                Normal
-                              </Badge>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1">
+                              {org.isActive === false ? (
+                                <Badge
+                                  variant="outline"
+                                  className="border-rose-500/30 bg-rose-500/10 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-400"
+                                >
+                                  Disabled
+                                </Badge>
+                              ) : org.quotaAlertLevel === 'CRITICAL_98' ? (
+                                <Badge className="border-rose-500/30 bg-rose-500/20 text-rose-700 dark:text-rose-300">
+                                  Critical (98%)
+                                </Badge>
+                              ) : org.quotaAlertLevel === 'WARNING_90' ? (
+                                <Badge className="border-amber-500/30 bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                                  Warning (90%)
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-400"
+                                >
+                                  Normal
+                                </Badge>
+                              )}
+                              {org.isEmpty ? (
+                                <Badge
+                                  variant="outline"
+                                  className="border-slate-400/40 bg-slate-500/10 text-slate-600 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-300"
+                                  title="No rooms and at most one active member"
+                                >
+                                  Empty
+                                </Badge>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="px-3 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
