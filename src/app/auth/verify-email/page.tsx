@@ -4,56 +4,79 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-type VerifyStatus = 'verifying' | 'verified' | 'already' | 'error';
+// 'ready' shows a confirmation button and does NOT consume the token. Token
+// consumption happens only on an explicit click (see handleConfirm). This blocks
+// passive mail-security link scanners (Safe Links, Proofpoint, Mimecast) that
+// fetch and render the page but do not click application buttons, which would
+// otherwise auto-verify and create an organization with no human present.
+type VerifyStatus = 'ready' | 'verifying' | 'verified' | 'already' | 'error';
 
 function VerifyEmailInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
 
-  const [status, setStatus] = React.useState<VerifyStatus>('verifying');
-  const [error, setError] = React.useState<string | null>(null);
-  const hasRun = React.useRef(false);
+  const [status, setStatus] = React.useState<VerifyStatus>(token ? 'ready' : 'error');
+  const [error, setError] = React.useState<string | null>(
+    token ? null : 'This verification link is missing its token.'
+  );
+  // Guards against a double-click issuing more than one POST.
+  const submitting = React.useRef(false);
 
-  React.useEffect(() => {
-    if (hasRun.current) {
+  const handleConfirm = React.useCallback(async () => {
+    if (!token || submitting.current) {
       return;
     }
-    hasRun.current = true;
+    submitting.current = true;
+    setStatus('verifying');
 
-    if (!token) {
-      setStatus('error');
-      setError('This verification link is missing its token.');
-      return;
-    }
-
-    (async () => {
-      try {
-        const res = await fetch('/api/auth/verify-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
-        });
-        const data = await res.json();
-        if (res.ok && data.status === 'verified') {
-          setStatus('verified');
-          // The API set the session cookie (auto-login). Send them to the app.
-          setTimeout(() => {
-            router.push('/rooms');
-            router.refresh();
-          }, 1200);
-        } else if (res.ok && data.status === 'already_verified') {
-          setStatus('already');
-        } else {
-          setStatus('error');
-          setError(data.error || 'This verification link is invalid or has expired.');
-        }
-      } catch {
+    try {
+      const res = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'verified') {
+        setStatus('verified');
+        // The API set the session cookie (auto-login). Send them to the app.
+        setTimeout(() => {
+          router.push('/rooms');
+          router.refresh();
+        }, 1200);
+      } else if (res.ok && data.status === 'already_verified') {
+        setStatus('already');
+      } else {
         setStatus('error');
-        setError('Something went wrong verifying your email. Please try again.');
+        setError(data.error || 'This verification link is invalid or has expired.');
+        submitting.current = false;
       }
-    })();
+    } catch {
+      setStatus('error');
+      setError('Something went wrong verifying your email. Please try again.');
+      submitting.current = false;
+    }
   }, [token, router]);
+
+  if (status === 'ready') {
+    return (
+      <div className="text-center">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-950">
+          Confirm your email address
+        </h1>
+        <p className="mt-2 text-sm text-slate-500">
+          Click the button below to verify your email and finish setting up your account.
+        </p>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          className="mt-6 inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        >
+          Confirm my email address
+        </button>
+      </div>
+    );
+  }
 
   if (status === 'verifying') {
     return (

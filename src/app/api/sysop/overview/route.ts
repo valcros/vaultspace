@@ -22,34 +22,49 @@ export async function GET() {
     });
 
     // Fetch platform tenant metrics
-    const [orgCount, userCount, roomCount, docCount, orgs, latestOrganizationActivity] =
-      await Promise.all([
-        db.organization.count(),
-        db.user.count(),
-        db.room.count(),
-        db.document.count(),
-        db.organization.findMany({
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            isActive: true,
-            createdAt: true,
-            _count: {
-              select: {
-                rooms: true,
-                users: true,
-              },
+    const [
+      orgCount,
+      userCount,
+      roomCount,
+      docCount,
+      pendingUnverifiedOrglessUsers,
+      orgs,
+      latestOrganizationActivity,
+    ] = await Promise.all([
+      db.organization.count(),
+      db.user.count(),
+      db.room.count(),
+      db.document.count(),
+      // Inert pending registrations: unverified AND not attached to any org. This
+      // matches the lifecycle-janitor population, not all unverified users (an
+      // invited-but-unverified user with a membership is not inert).
+      db.user.count({
+        where: { emailVerifiedAt: null, organizations: { none: {} } },
+      }),
+      db.organization.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          isActive: true,
+          createdAt: true,
+          _count: {
+            select: {
+              rooms: true,
+              // Count only active memberships so a disabled second member does
+              // not mask an otherwise-empty shell.
+              users: { where: { isActive: true } },
             },
           },
-          orderBy: { name: 'asc' },
-        }),
-        db.session.groupBy({
-          by: ['organizationId'],
-          where: { organizationId: { not: null } },
-          _max: { lastActiveAt: true },
-        }),
-      ]);
+        },
+        orderBy: { name: 'asc' },
+      }),
+      db.session.groupBy({
+        by: ['organizationId'],
+        where: { organizationId: { not: null } },
+        _max: { lastActiveAt: true },
+      }),
+    ]);
 
     const lastAccessByOrganizationId = new Map(
       latestOrganizationActivity.flatMap((activity) =>
@@ -82,6 +97,10 @@ export async function GET() {
         isActive: org.isActive,
         roomCount: org._count.rooms,
         userCount: org._count.users,
+        // A tenant with no rooms and at most one active member is an empty shell
+        // (abandoned self-service signup or a machine-created org). Surfaced so
+        // operators can distinguish real tenants from junk.
+        isEmpty: org._count.rooms === 0 && org._count.users <= 1,
         estimatedStorageBytes,
         usagePercentage,
         quotaAlertLevel,
@@ -100,6 +119,8 @@ export async function GET() {
         totalRooms: roomCount,
         totalDocuments: docCount,
         quotaAlertsCount,
+        emptyOrganizationsCount: orgSummaries.filter((o) => o.isEmpty).length,
+        pendingUnverifiedOrglessUsers,
       },
       infrastructure: {
         environment: process.env['DEPLOYMENT_MODE'] === 'azure' ? 'Managed cloud' : 'Self-hosted',
