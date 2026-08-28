@@ -55,6 +55,7 @@
     "worker:password-reset-preflight": "tsx src/workers/passwordResetReconciler.ts --preflight",
     "worker:provider-event-preflight": "tsx src/workers/providerEventInboxPreflight.ts",
     "worker:send-pending-invites": "tsx src/workers/sendPendingInvites.ts",
+    "worker:stale-token-cleanup": "tsx src/workers/staleTokenCleanup.ts",
     "worker:standalone": "DEPLOYMENT_MODE=standalone tsx src/workers/index.ts",
     "postinstall": "prisma generate"
   },
