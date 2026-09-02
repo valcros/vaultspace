@@ -40,6 +40,10 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useIsAdmin } from '@/components/layout/role-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyRooms } from '@/components/illustrations/EmptyState';
+import {
+  StarterFolderPicker,
+  type StarterFolderSelection,
+} from '@/components/rooms/StarterFolderPicker';
 
 interface Room {
   id: string;
@@ -62,6 +66,11 @@ export default function RoomsPage() {
   const [showCreateDialog, setShowCreateDialog] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [newRoom, setNewRoom] = React.useState({ name: '', description: '' });
+  const [starterFolderSelection, setStarterFolderSelection] =
+    React.useState<StarterFolderSelection>({
+      selectedFolderPaths: [],
+    });
+  const [createError, setCreateError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     fetchRooms();
@@ -91,22 +100,29 @@ export default function RoomsPage() {
     }
 
     setIsCreating(true);
+    setCreateError(null);
     try {
       const response = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRoom),
+        body: JSON.stringify(
+          starterFolderSelection.templateId ? { ...newRoom, ...starterFolderSelection } : newRoom
+        ),
         credentials: 'include',
       });
 
       const data = await response.json();
-      if (response.ok) {
-        setShowCreateDialog(false);
-        setNewRoom({ name: '', description: '' });
-        router.push(`/rooms/${data.room.id}`);
+      if (!response.ok) {
+        setCreateError(data.error || 'Unable to create the data room. Please try again.');
+        return;
       }
+      setShowCreateDialog(false);
+      setNewRoom({ name: '', description: '' });
+      setStarterFolderSelection({ selectedFolderPaths: [] });
+      router.push(`/rooms/${data.room.id}`);
     } catch (error) {
       console.error('Failed to create room:', error);
+      setCreateError('Unable to create the data room. Please try again.');
     } finally {
       setIsCreating(false);
     }
@@ -274,8 +290,16 @@ export default function RoomsPage() {
       </div>
 
       {/* Create Room Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
+      <Dialog
+        open={showCreateDialog}
+        onOpenChange={(open) => {
+          setShowCreateDialog(open);
+          if (open) {
+            setCreateError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Data Room</DialogTitle>
             <DialogDescription>
@@ -283,6 +307,14 @@ export default function RoomsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {createError && (
+              <p
+                className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                role="alert"
+              >
+                {createError}
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="roomName">Room Name</Label>
               <Input
@@ -303,6 +335,12 @@ export default function RoomsPage() {
                 rows={3}
               />
             </div>
+            <StarterFolderPicker
+              idPrefix="create-room"
+              value={starterFolderSelection}
+              onChange={setStarterFolderSelection}
+              disabled={isCreating}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>

@@ -12,6 +12,13 @@ import { z } from 'zod';
 import { isAuthenticationError } from '@/lib/errors';
 import { getRequestContext, requireAuthFromRequest } from '@/lib/middleware';
 import { createServiceContext, roomService } from '@/services';
+import { createStarterFolderTree } from '@/lib/rooms/createStarterFolderTree';
+import {
+  getBuiltInRoomTemplate,
+  readTemplateFolders,
+  resolveStarterFolderSelection,
+  type StarterFolderDefinition,
+} from '@/lib/rooms/starterFolderTemplates';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -44,6 +51,17 @@ const roomListQuerySchema = z.object({
   limit: z.preprocess((value) => normalizeInteger(value, 50, 1, 100), z.number().int()),
   offset: z.preprocess((value) => normalizeInteger(value, 0, 0), z.number().int()),
 });
+
+const roomStarterFolderInputSchema = z
+  .object({
+    name: z.unknown().optional(),
+    description: z.string().optional(),
+    templateId: z.string().trim().min(1).optional(),
+    selectedFolderPaths: z.array(z.string()).max(100).optional(),
+    allowDownloads: z.boolean().optional(),
+    defaultExpiryDays: z.number().int().optional(),
+  })
+  .passthrough();
 
 /**
  * GET /api/rooms
@@ -105,11 +123,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { name, description, templateId, allowDownloads, defaultExpiryDays } = body;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'Request body must be valid JSON', code: 'MALFORMED_JSON' },
+        { status: 400 }
+      );
+    }
+    const starterFolderInput = roomStarterFolderInputSchema.safeParse(body);
+    if (!starterFolderInput.success) {
+      return NextResponse.json(
+        { error: 'Template selection or selected folders are invalid' },
+        { status: 400 }
+      );
+    }
+    const {
+      name,
+      description,
+      allowDownloads,
+      defaultExpiryDays,
+      templateId,
+      selectedFolderPaths,
+    } = starterFolderInput.data;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return NextResponse.json({ error: 'Room name is required' }, { status: 400 });
+    }
+    if (selectedFolderPaths !== undefined && !templateId) {
+      return NextResponse.json({ error: 'Selected folders require a template' }, { status: 400 });
     }
 
     // Generate slug from name
@@ -120,28 +163,35 @@ export async function POST(request: NextRequest) {
       .slice(0, 100);
 
     // If templateId provided, copy structure from template
-    let templateFolders: Array<{ name: string; path: string }> = [];
+    let templateFolders: StarterFolderDefinition[] = [];
 
     // Use RLS context for all org-scoped operations
     const room = await withOrgContext(session.organizationId, async (tx) => {
       if (templateId) {
-        const template = await tx.roomTemplate.findFirst({
-          where: {
-            id: templateId,
-            OR: [
-              { organizationId: session.organizationId },
-              { isSystemTemplate: true },
-              { isPublic: true },
-            ],
-          },
-        });
-
-        if (template && template.folderStructure) {
-          const structure = template.folderStructure as {
-            folders?: Array<{ name: string; path: string }>;
-          };
-          templateFolders = structure.folders ?? [];
+        const builtInTemplate = getBuiltInRoomTemplate(templateId);
+        let availableFolders = builtInTemplate ? builtInTemplate.structure.folders : null;
+        if (!availableFolders) {
+          const template = await tx.roomTemplate.findFirst({
+            where: {
+              id: templateId,
+              OR: [
+                { organizationId: session.organizationId },
+                { isSystemTemplate: true },
+                { isPublic: true },
+              ],
+            },
+          });
+          availableFolders = template ? readTemplateFolders(template.folderStructure) : null;
         }
+
+        if (!availableFolders) {
+          throw new Error('ROOM_TEMPLATE_NOT_FOUND');
+        }
+        const selection = resolveStarterFolderSelection(availableFolders, selectedFolderPaths);
+        if (!selection.ok) {
+          throw new Error(`ROOM_TEMPLATE_INVALID:${selection.error}`);
+        }
+        templateFolders = selection.folders;
       }
 
       // Create room
@@ -159,16 +209,13 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Create template folders in one round trip (template folders are flat;
-      // parent relationships are not part of template definitions).
+      // Starter templates only create selected, independent room-owned folders.
+      // They do not copy documents or share material with another room.
       if (templateFolders.length > 0) {
-        await tx.folder.createMany({
-          data: templateFolders.map((folder) => ({
-            organizationId: session.organizationId,
-            roomId: newRoom.id,
-            name: folder.name,
-            path: folder.path,
-          })),
+        await createStarterFolderTree(tx, {
+          organizationId: session.organizationId,
+          roomId: newRoom.id,
+          folders: templateFolders,
         });
       }
 
@@ -181,7 +228,9 @@ export async function POST(request: NextRequest) {
           actorEmail: session.user.email,
           roomId: newRoom.id,
           description: `Created room "${newRoom.name}"`,
-          ...(templateId && { metadata: { templateId } }),
+          ...(templateId && {
+            metadata: { templateId, starterFolderCount: templateFolders.length },
+          }),
         },
       });
 
@@ -192,6 +241,15 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (isAuthenticationError(error)) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === 'ROOM_TEMPLATE_NOT_FOUND') {
+      return NextResponse.json({ error: 'Selected template was not found' }, { status: 404 });
+    }
+    if (error instanceof Error && error.message.startsWith('ROOM_TEMPLATE_INVALID:')) {
+      return NextResponse.json(
+        { error: error.message.slice('ROOM_TEMPLATE_INVALID:'.length) },
+        { status: 400 }
+      );
     }
     console.error('[RoomsAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to create room' }, { status: 500 });
