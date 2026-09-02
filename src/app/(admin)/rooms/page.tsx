@@ -40,6 +40,10 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useIsAdmin } from '@/components/layout/role-provider';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyRooms } from '@/components/illustrations/EmptyState';
+import {
+  StarterFolderPicker,
+  type StarterFolderSelection,
+} from '@/components/rooms/StarterFolderPicker';
 
 interface Room {
   id: string;
@@ -62,6 +66,10 @@ export default function RoomsPage() {
   const [showCreateDialog, setShowCreateDialog] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [newRoom, setNewRoom] = React.useState({ name: '', description: '' });
+  const [starterFolderSelection, setStarterFolderSelection] =
+    React.useState<StarterFolderSelection>({
+      selectedFolderPaths: [],
+    });
 
   React.useEffect(() => {
     fetchRooms();
@@ -95,7 +103,9 @@ export default function RoomsPage() {
       const response = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRoom),
+        body: JSON.stringify(
+          starterFolderSelection.templateId ? { ...newRoom, ...starterFolderSelection } : newRoom
+        ),
         credentials: 'include',
       });
 
@@ -103,6 +113,7 @@ export default function RoomsPage() {
       if (response.ok) {
         setShowCreateDialog(false);
         setNewRoom({ name: '', description: '' });
+        setStarterFolderSelection({ selectedFolderPaths: [] });
         router.push(`/rooms/${data.room.id}`);
       }
     } catch (error) {
@@ -275,7 +286,7 @@ export default function RoomsPage() {
 
       {/* Create Room Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Data Room</DialogTitle>
             <DialogDescription>
@@ -303,6 +314,12 @@ export default function RoomsPage() {
                 rows={3}
               />
             </div>
+            <StarterFolderPicker
+              idPrefix="create-room"
+              value={starterFolderSelection}
+              onChange={setStarterFolderSelection}
+              disabled={isCreating}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>

@@ -9,85 +9,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
+import { BUILT_IN_ROOM_TEMPLATES } from '@/lib/rooms/starterFolderTemplates';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
-
-// Built-in templates
-const BUILT_IN_TEMPLATES = [
-  {
-    id: 'investor-data-room',
-    name: 'Investor Data Room',
-    description: 'Standard folder structure for fundraising and investor due diligence',
-    isGlobal: true,
-    structure: {
-      folders: [
-        { name: 'Company Overview', path: '/company-overview' },
-        { name: 'Financials', path: '/financials' },
-        { name: 'Cap Table', path: '/cap-table' },
-        { name: 'Legal', path: '/legal' },
-        { name: 'Team', path: '/team' },
-        { name: 'Product', path: '/product' },
-        { name: 'Market Analysis', path: '/market-analysis' },
-        { name: 'Customer References', path: '/customer-references' },
-      ],
-    },
-  },
-  {
-    id: 'ma-due-diligence',
-    name: 'M&A Due Diligence',
-    description: 'Comprehensive folder structure for mergers and acquisitions',
-    isGlobal: true,
-    structure: {
-      folders: [
-        { name: 'Corporate', path: '/corporate' },
-        { name: 'Financial', path: '/financial' },
-        { name: 'Legal', path: '/legal' },
-        { name: 'Tax', path: '/tax' },
-        { name: 'Intellectual Property', path: '/intellectual-property' },
-        { name: 'HR & Employment', path: '/hr-employment' },
-        { name: 'Operations', path: '/operations' },
-        { name: 'Real Estate', path: '/real-estate' },
-        { name: 'Environmental', path: '/environmental' },
-        { name: 'Insurance', path: '/insurance' },
-        { name: 'IT & Systems', path: '/it-systems' },
-        { name: 'Contracts', path: '/contracts' },
-      ],
-    },
-  },
-  {
-    id: 'board-portal',
-    name: 'Board Portal',
-    description: 'Organized structure for board meetings and governance documents',
-    isGlobal: true,
-    structure: {
-      folders: [
-        { name: 'Board Meetings', path: '/board-meetings' },
-        { name: 'Committee Materials', path: '/committee-materials' },
-        { name: 'Governance Documents', path: '/governance-documents' },
-        { name: 'Financial Reports', path: '/financial-reports' },
-        { name: 'Strategic Plans', path: '/strategic-plans' },
-        { name: 'Compliance', path: '/compliance' },
-      ],
-    },
-  },
-  {
-    id: 'compliance-audit',
-    name: 'Compliance & Audit',
-    description: 'Structure for regulatory compliance and audit documentation',
-    isGlobal: true,
-    structure: {
-      folders: [
-        { name: 'Policies & Procedures', path: '/policies-procedures' },
-        { name: 'Audit Reports', path: '/audit-reports' },
-        { name: 'Regulatory Filings', path: '/regulatory-filings' },
-        { name: 'Certifications', path: '/certifications' },
-        { name: 'Risk Assessment', path: '/risk-assessment' },
-        { name: 'Training Records', path: '/training-records' },
-      ],
-    },
-  },
-];
 
 /**
  * GET /api/rooms/templates
@@ -109,7 +34,7 @@ export async function GET(_request: NextRequest) {
 
     // Combine built-in and custom templates
     const templates = [
-      ...BUILT_IN_TEMPLATES.map((t) => ({
+      ...BUILT_IN_ROOM_TEMPLATES.map((t) => ({
         ...t,
         isCustom: false,
       })),

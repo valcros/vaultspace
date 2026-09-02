@@ -77,6 +77,7 @@ const VersionHistoryDialog = dynamic(
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS } from '@/lib/documentCategories';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
+import type { StarterFolderSelection } from '@/components/rooms/StarterFolderPicker';
 import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
 import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
 import { EditPropertiesDialog } from './_components/EditPropertiesDialog';
@@ -200,6 +201,7 @@ export default function RoomDetailPage() {
   // Dialog states
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
   const [showFolderDialog, setShowFolderDialog] = React.useState(false);
+  const [folderDialogMode, setFolderDialogMode] = React.useState<'single' | 'starter'>('single');
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = React.useState(false);
   const [selectedDocument, setSelectedDocument] = React.useState<Document | null>(null);
@@ -261,7 +263,14 @@ export default function RoomDetailPage() {
 
   const openUploadDialog = React.useCallback(() => setShowUploadDialog(true), []);
 
-  const openFolderDialog = React.useCallback(() => setShowFolderDialog(true), []);
+  const openFolderDialog = React.useCallback(() => {
+    setFolderDialogMode('single');
+    setShowFolderDialog(true);
+  }, []);
+  const openStarterFolderDialog = React.useCallback(() => {
+    setFolderDialogMode('starter');
+    setShowFolderDialog(true);
+  }, []);
 
   const handleSortChange = React.useCallback(
     (field: 'name' | 'size' | 'createdAt', dir: 'asc' | 'desc') => {
@@ -428,6 +437,51 @@ export default function RoomDetailPage() {
     [roomId, currentFolderId, fetchFolders, fetchFolderTree]
   );
 
+  const handleApplyStarterFolders = React.useCallback(
+    async (selection: StarterFolderSelection) => {
+      if (!selection.templateId || selection.selectedFolderPaths.length === 0) {
+        return false;
+      }
+      setIsCreatingFolder(true);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/folders/starter`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(selection),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          toast({
+            title: 'Unable to add starter folders',
+            description: data.error || 'Please try again.',
+            variant: 'destructive',
+          });
+          return false;
+        }
+        setShowFolderDialog(false);
+        fetchFolders();
+        fetchFolderTree();
+        toast({
+          title: 'Starter folders added',
+          description: `${data.createdFolderCount} folders were added to this independent room.`,
+          variant: 'success',
+        });
+        return true;
+      } catch (error) {
+        console.error('Failed to add starter folders:', error);
+        toast({
+          title: 'Unable to add starter folders',
+          description: 'Please try again.',
+          variant: 'destructive',
+        });
+        return false;
+      } finally {
+        setIsCreatingFolder(false);
+      }
+    },
+    [fetchFolderTree, fetchFolders, roomId]
+  );
+
   // Handle document download
   const handleDownload = React.useCallback(
     async (doc: Document) => {
@@ -533,7 +587,7 @@ export default function RoomDetailPage() {
         });
       }
     },
-    [roomId, fetchDocuments, toast]
+    [roomId, fetchDocuments]
   );
 
   // Confirm delete
@@ -829,6 +883,7 @@ export default function RoomDetailPage() {
           canMutateContent={isRoomMutable}
           onUploadClick={openUploadDialog}
           onNewFolderClick={openFolderDialog}
+          onStarterFoldersClick={openStarterFolderDialog}
           categoryFilter={categoryFilter}
           onCategoryFilterChange={setCategoryFilter}
           sortField={sortField}
@@ -1183,7 +1238,9 @@ export default function RoomDetailPage() {
         open={showFolderDialog}
         onOpenChange={setShowFolderDialog}
         onCreate={handleCreateFolder}
+        onApplyStarter={handleApplyStarterFolders}
         isCreating={isCreatingFolder}
+        initialMode={folderDialogMode}
       />
 
       {/* Delete Document Confirmation Dialog */}
