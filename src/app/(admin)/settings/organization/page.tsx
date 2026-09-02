@@ -17,6 +17,7 @@ import { AdminPageContent, AdminToolbar } from '@/components/layout/admin-page';
 interface OrganizationSettings {
   name: string;
   slug: string;
+  workspaceUrlClaimedAt: string | null;
   logoUrl: string | null;
   primaryColor: string | null;
   faviconUrl: string | null;
@@ -28,6 +29,7 @@ export default function OrganizationSettingsPage() {
   const [settings, setSettings] = React.useState<OrganizationSettings>({
     name: '',
     slug: '',
+    workspaceUrlClaimedAt: null,
     logoUrl: null,
     primaryColor: null,
     faviconUrl: null,
@@ -91,6 +93,7 @@ export default function OrganizationSettingsPage() {
         setSettings({
           name: data.branding.name || '',
           slug: data.branding.slug || '',
+          workspaceUrlClaimedAt: data.branding.workspaceUrlClaimedAt || null,
           logoUrl: data.branding.logoUrl || null,
           primaryColor: data.branding.primaryColor || '#2563eb',
           faviconUrl: data.branding.faviconUrl || null,
@@ -240,23 +243,24 @@ export default function OrganizationSettingsPage() {
               />
             </div>
 
-            {/* Workspace URL (read-only after one-time onboarding claim) */}
-            <div className="space-y-2">
-              <Label htmlFor="slug">Workspace URL</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-neutral-500">https://</span>
-                <Input
-                  id="slug"
-                  value={settings.slug}
-                  disabled
-                  className="flex-1 bg-slate-50 dark:bg-slate-900"
-                />
-                <span className="text-sm text-neutral-500">.vaultspace.org</span>
+            {settings.workspaceUrlClaimedAt && (
+              <div className="space-y-2">
+                <Label htmlFor="slug">Workspace URL</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-neutral-500">https://</span>
+                  <Input
+                    id="slug"
+                    value={settings.slug}
+                    disabled
+                    className="flex-1 bg-slate-50 dark:bg-slate-900"
+                  />
+                  <span className="text-sm text-neutral-500">.vaultspace.org</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  This URL was claimed during workspace setup and cannot be changed.
+                </p>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                This URL was claimed during workspace setup and cannot be changed.
-              </p>
-            </div>
+            )}
           </CardContent>
         </Card>
 

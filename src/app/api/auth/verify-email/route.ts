@@ -103,7 +103,12 @@ export async function POST(request: NextRequest) {
       // Fresh claim: create the organization + ADMIN membership, mark verified.
       const slug = `org-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const organization = await tx.organization.create({
-        data: { name: `${user.firstName}'s Organization`, slug, isActive: true },
+        data: {
+          name: `${user.firstName}'s Organization`,
+          slug,
+          isActive: true,
+          workspaceUrlClaimEligible: true,
+        },
       });
       await tx.userOrganization.create({
         data: { userId: user.id, organizationId: organization.id, role: 'ADMIN', isActive: true },

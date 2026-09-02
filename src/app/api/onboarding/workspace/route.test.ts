@@ -40,6 +40,7 @@ describe('workspace setup API', () => {
     mocks.organizationFindUnique.mockResolvedValue({
       name: "Alice's Organization",
       slug: 'org-1756789012345-abc12',
+      workspaceUrlClaimEligible: true,
       workspaceUrlClaimedAt: null,
     });
     mocks.roomCount.mockResolvedValue(1);
@@ -99,6 +100,7 @@ describe('workspace setup API', () => {
         where: expect.objectContaining({
           id: 'org-1',
           slug: 'org-1756789012345-abc12',
+          workspaceUrlClaimEligible: true,
           workspaceUrlClaimedAt: null,
         }),
         data: expect.objectContaining({
@@ -121,6 +123,30 @@ describe('workspace setup API', () => {
     expect(mocks.eventCreate).toHaveBeenCalledOnce();
   });
 
+  it('allows a second organization admin to complete the untouched setup', async () => {
+    mocks.requireAuth.mockResolvedValue({
+      ...session,
+      userId: 'user-2',
+      user: { email: 'second-admin@example.com' },
+    });
+
+    const response = await POST(
+      request({ organizationName: 'Acme', workspaceSlug: 'acme', roomName: 'Data Room' })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.roomFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ createdByUserId: expect.anything() }),
+      })
+    );
+    expect(mocks.roomUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ createdByUserId: expect.anything() }),
+      })
+    );
+  });
+
   it('rejects reserved subdomains before any organization or room mutation', async () => {
     const response = await POST(
       request({ organizationName: 'Acme', workspaceSlug: 'admin', roomName: 'Data Room' })
@@ -134,11 +160,28 @@ describe('workspace setup API', () => {
   it('refuses a second claim or an existing non-provisional organization', async () => {
     mocks.organizationFindUnique.mockResolvedValue({
       slug: 'acme',
+      workspaceUrlClaimEligible: true,
       workspaceUrlClaimedAt: new Date(),
     });
 
     const response = await POST(
       request({ organizationName: 'Acme', workspaceSlug: 'another-acme', roomName: 'Data Room' })
+    );
+
+    expect(response.status).toBe(409);
+    expect(mocks.organizationUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.roomUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('excludes a pre-existing organization even if its legacy data resembles the starter state', async () => {
+    mocks.organizationFindUnique.mockResolvedValue({
+      slug: 'org-1756789012345-abc12',
+      workspaceUrlClaimEligible: false,
+      workspaceUrlClaimedAt: null,
+    });
+
+    const response = await POST(
+      request({ organizationName: 'Acme', workspaceSlug: 'acme', roomName: 'Data Room' })
     );
 
     expect(response.status).toBe(409);

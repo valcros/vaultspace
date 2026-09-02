@@ -37,17 +37,12 @@ function noStoreJson(body: Record<string, unknown>, init: { status?: number } = 
   });
 }
 
-async function getEligibleStarterRoom(
-  tx: Prisma.TransactionClient,
-  organizationId: string,
-  userId: string
-) {
+async function getEligibleStarterRoom(tx: Prisma.TransactionClient, organizationId: string) {
   const [roomCount, starterRoom] = await Promise.all([
     tx.room.count({ where: { organizationId } }),
     tx.room.findFirst({
       where: {
         organizationId,
-        createdByUserId: userId,
         slug: INITIAL_SELF_SERVICE_ROOM_SLUG,
         status: 'DRAFT',
       },
@@ -63,14 +58,20 @@ export async function GET() {
     const result = await withOrgContext(session.organizationId, async (tx) => {
       const organization = await tx.organization.findUnique({
         where: { id: session.organizationId },
-        select: { name: true, slug: true, workspaceUrlClaimedAt: true },
+        select: {
+          name: true,
+          slug: true,
+          workspaceUrlClaimEligible: true,
+          workspaceUrlClaimedAt: true,
+        },
       });
       if (!organization) {
         return null;
       }
-      const starterRoom = await getEligibleStarterRoom(tx, session.organizationId, session.userId);
+      const starterRoom = await getEligibleStarterRoom(tx, session.organizationId);
       const onboardingRequired =
         session.organization.role === 'ADMIN' &&
+        organization.workspaceUrlClaimEligible &&
         organization.workspaceUrlClaimedAt === null &&
         isProvisionalWorkspaceSlug(organization.slug) &&
         starterRoom !== null;
@@ -120,16 +121,17 @@ export async function POST(request: NextRequest) {
     const result = await withOrgContext(session.organizationId, async (tx) => {
       const organization = await tx.organization.findUnique({
         where: { id: session.organizationId },
-        select: { slug: true, workspaceUrlClaimedAt: true },
+        select: { slug: true, workspaceUrlClaimEligible: true, workspaceUrlClaimedAt: true },
       });
       if (
         !organization ||
+        !organization.workspaceUrlClaimEligible ||
         organization.workspaceUrlClaimedAt !== null ||
         !isProvisionalWorkspaceSlug(organization.slug)
       ) {
         throw new WorkspaceSetupConflictError('WORKSPACE_URL_ALREADY_CLAIMED');
       }
-      const starterRoom = await getEligibleStarterRoom(tx, session.organizationId, session.userId);
+      const starterRoom = await getEligibleStarterRoom(tx, session.organizationId);
       if (!starterRoom) {
         throw new WorkspaceSetupConflictError('WORKSPACE_SETUP_NO_LONGER_ELIGIBLE');
       }
@@ -139,6 +141,7 @@ export async function POST(request: NextRequest) {
         where: {
           id: session.organizationId,
           slug: organization.slug,
+          workspaceUrlClaimEligible: true,
           workspaceUrlClaimedAt: null,
         },
         data: {
@@ -154,7 +157,6 @@ export async function POST(request: NextRequest) {
         where: {
           id: starterRoom.id,
           organizationId: session.organizationId,
-          createdByUserId: session.userId,
           slug: INITIAL_SELF_SERVICE_ROOM_SLUG,
           status: 'DRAFT',
         },

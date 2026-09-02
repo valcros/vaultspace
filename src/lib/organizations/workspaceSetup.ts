@@ -50,8 +50,8 @@ export function suggestWorkspaceSlug(organizationName: string): string {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63);
-  const candidate = normalized.length >= 3 ? normalized : 'my-workspace';
+    .replace(/^-+|-+$/g, '');
+  const truncated = normalized.slice(0, 63).replace(/-+$/g, '');
+  const candidate = truncated.length >= 3 ? truncated : 'my-workspace';
   return RESERVED_WORKSPACE_SLUGS.has(candidate) ? `${candidate}-workspace` : candidate;
 }

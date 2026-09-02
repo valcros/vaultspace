@@ -26,4 +26,11 @@ describe('workspace setup slug contract', () => {
     expect(suggestWorkspaceSlug('API')).toBe('api-workspace');
     expect(suggestWorkspaceSlug('!!')).toBe('my-workspace');
   });
+
+  it('keeps a truncated suggestion claimable when truncation would end in a hyphen', () => {
+    const suggestion = suggestWorkspaceSlug(`${'a'.repeat(62)}-b`);
+
+    expect(suggestion).toBe('a'.repeat(62));
+    expect(isClaimableWorkspaceSlug(suggestion)).toBe(true);
+  });
 });

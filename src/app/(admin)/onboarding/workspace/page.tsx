@@ -27,20 +27,24 @@ export default function WorkspaceSetupPage() {
 
   React.useEffect(() => {
     void (async () => {
-      const response = await fetch('/api/onboarding/workspace', { cache: 'no-store' });
-      if (!response.ok) {
+      try {
+        const response = await fetch('/api/onboarding/workspace', { cache: 'no-store' });
+        if (!response.ok) {
+          setError('Unable to load workspace setup. Please refresh and try again.');
+          return;
+        }
+        const data = (await response.json()) as SetupData;
+        setSetup(data);
+        if (!data.onboardingRequired || !data.organization || !data.starterRoom) {
+          router.replace('/rooms');
+          return;
+        }
+        setOrganizationName(data.organization.name);
+        setWorkspaceSlug(data.organization.suggestedSlug);
+        setRoomName(data.starterRoom.name);
+      } catch {
         setError('Unable to load workspace setup. Please refresh and try again.');
-        return;
       }
-      const data = (await response.json()) as SetupData;
-      setSetup(data);
-      if (!data.onboardingRequired || !data.organization || !data.starterRoom) {
-        router.replace('/rooms');
-        return;
-      }
-      setOrganizationName(data.organization.name);
-      setWorkspaceSlug(data.organization.suggestedSlug);
-      setRoomName(data.starterRoom.name);
     })();
   }, [router]);
 
