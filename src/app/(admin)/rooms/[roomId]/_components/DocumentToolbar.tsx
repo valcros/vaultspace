@@ -4,7 +4,6 @@ import * as React from 'react';
 import {
   Upload,
   FolderPlus,
-  FolderTree,
   List,
   LayoutGrid,
   ArrowUpDown,
@@ -56,7 +55,6 @@ export interface DocumentToolbarProps {
   onOpenFolderDrawer: () => void;
   onUploadClick: () => void;
   onNewFolderClick: () => void;
-  onStarterFoldersClick: () => void;
   categoryFilter: string | null;
   onCategoryFilterChange: (category: string | null) => void;
   sortField: SortField;
@@ -92,7 +90,6 @@ export function DocumentToolbar({
   onOpenFolderDrawer,
   onUploadClick,
   onNewFolderClick,
-  onStarterFoldersClick,
   categoryFilter,
   onCategoryFilterChange,
   sortField,
@@ -145,10 +142,6 @@ export function DocumentToolbar({
             <Button size="sm" variant="outline" onClick={onNewFolderClick}>
               <FolderPlus className="mr-2 h-4 w-4" />
               New Folder
-            </Button>
-            <Button size="sm" variant="outline" onClick={onStarterFoldersClick}>
-              <FolderTree className="mr-2 h-4 w-4" />
-              Starter Folders
             </Button>
           </>
         )}

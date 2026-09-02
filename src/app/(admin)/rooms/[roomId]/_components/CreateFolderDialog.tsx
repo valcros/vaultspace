@@ -26,7 +26,6 @@ export interface CreateFolderDialogProps {
   /** Adds selected root-level starter folders. It never copies documents. */
   onApplyStarter: (selection: StarterFolderSelection) => Promise<boolean>;
   isCreating: boolean;
-  initialMode?: 'single' | 'starter';
 }
 
 export function CreateFolderDialog({
@@ -35,21 +34,19 @@ export function CreateFolderDialog({
   onCreate,
   onApplyStarter,
   isCreating,
-  initialMode = 'single',
 }: CreateFolderDialogProps) {
   const [newFolderName, setNewFolderName] = React.useState('');
-  const [mode, setMode] = React.useState<'single' | 'starter'>(initialMode);
+  const [mode, setMode] = React.useState<'single' | 'starter'>('single');
   const [starterSelection, setStarterSelection] = React.useState<StarterFolderSelection>({
     selectedFolderPaths: [],
   });
 
   React.useEffect(() => {
-    if (open) {
-      setMode(initialMode);
-    } else {
+    setMode('single');
+    if (!open) {
       setStarterSelection({ selectedFolderPaths: [] });
     }
-  }, [initialMode, open]);
+  }, [open]);
 
   const handleCreateFolder = React.useCallback(async () => {
     const created = await onCreate(newFolderName);
