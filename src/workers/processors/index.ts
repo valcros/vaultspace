@@ -13,6 +13,7 @@ export {
   processPasswordResetAcceptanceJob,
   processPasswordResetDeliveryJob,
 } from './passwordResetDeliveryProcessor';
+export { processEmailVerificationDeliveryJob } from './emailVerificationDeliveryProcessor';
 export { processRoomExportJob } from './exportProcessor';
 export { processPreviewJob, processThumbnailJob } from './previewProcessor';
 export { processScanJob } from './scanProcessor';

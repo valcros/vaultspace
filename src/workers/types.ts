@@ -97,6 +97,13 @@ export interface PasswordResetDeliveryJobPayload {
   deliveryAttempt: number;
 }
 
+/** Flow-only payload. No bearer verification token or recipient enters Redis. */
+export interface EmailVerificationDeliveryJobPayload {
+  schemaVersion: 1;
+  flowId: string;
+  deliveryAttempt: number;
+}
+
 /** Sensitive provider acceptance bookkeeping recovery. Contains no bearer token. */
 export interface PasswordResetAcceptanceJobPayload {
   schemaVersion: 1;
@@ -167,6 +174,7 @@ export const JOB_NAMES = {
 
   // Email
   EMAIL_SEND: 'email.send',
+  EMAIL_VERIFICATION_DELIVER: 'email-verification.deliver',
   PASSWORD_RESET_DELIVER: 'password-reset.deliver',
   PASSWORD_RESET_ACCEPTANCE_RECONCILE: 'password-reset.acceptance-reconcile',
   NOTIFY_DOCUMENT_UPLOADED: 'notify-document-uploaded',
@@ -201,6 +209,18 @@ export const PASSWORD_RESET_EMAIL_JOB_OPTIONS = {
   },
   // Reset URLs are bearer credentials. Remove successful payloads immediately
   // and remove terminal failures immediately after retries are exhausted.
+  removeOnComplete: true,
+  removeOnFail: true,
+} as const;
+
+export const EMAIL_VERIFICATION_DELIVERY_JOB_OPTIONS = {
+  attempts: 5,
+  backoff: {
+    type: 'exponential',
+    delay: 60_000,
+  },
+  // This job is intentionally flow-only, but completed and failed job records
+  // still need no retention once the durable PostgreSQL lifecycle is updated.
   removeOnComplete: true,
   removeOnFail: true,
 } as const;

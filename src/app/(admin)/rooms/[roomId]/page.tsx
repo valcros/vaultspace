@@ -709,6 +709,7 @@ export default function RoomDetailPage() {
             <div className="flex flex-wrap items-center justify-end gap-2">
               {room.status === 'ARCHIVED' && <Badge variant="secondary">Archived</Badge>}
               {room.status === 'CLOSED' && <Badge variant="secondary">Closed</Badge>}
+              {room.status === 'DRAFT' && <Badge variant="secondary">Private draft</Badge>}
               {isAdmin && isRoomMutable && (
                 <>
                   <Button
@@ -775,6 +776,11 @@ export default function RoomDetailPage() {
             </div>
           }
         />
+        {room.status === 'DRAFT' && (
+          <p className="text-muted-foreground mt-2 text-sm">
+            This is a private draft room. Add documents and invite people when you are ready.
+          </p>
+        )}
 
         {/* Folder breadcrumb. The current folder uses a primary chip so the
             user sees "where am I" at a glance without relying on gray-tone

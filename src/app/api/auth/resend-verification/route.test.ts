@@ -106,6 +106,7 @@ describe('POST /api/auth/resend-verification', () => {
     mockResendByEmail.mockRejectedValue(new RateLimitError(60));
     const res = await POST(makeRequest({ email: 'alice@example.com' }));
     expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('60');
     expect(mockTokenCreate).not.toHaveBeenCalled();
   });
 });

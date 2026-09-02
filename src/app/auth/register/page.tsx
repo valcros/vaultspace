@@ -162,11 +162,13 @@ function RegisterForm() {
             />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-950">Check your email</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-950">Verify your email</h1>
         <p className="mt-3 text-sm text-slate-500">
-          We&apos;ve sent a verification link to{' '}
-          <span className="font-medium text-slate-700">{formData.email}</span>. Click it to finish
-          setting up your account. The link expires in 24 hours.
+          We&apos;ve requested a verification link for{' '}
+          <span className="font-medium text-slate-700">{formData.email}</span>. It usually arrives
+          within a few minutes. Look for “Verify your email for VaultSpace” from
+          noreply@vaultspace.org, including in Spam, Junk, or your organization&apos;s email
+          quarantine. The link expires in 24 hours.
         </p>
         <p className="mt-6 text-sm text-slate-500">
           Didn&apos;t get it?{' '}
@@ -175,11 +177,6 @@ function RegisterForm() {
             className="font-medium text-primary-600 hover:text-primary-700"
           >
             Resend verification email
-          </Link>
-        </p>
-        <p className="mt-2 text-sm text-slate-500">
-          <Link href="/auth/login" className="font-medium text-primary-600 hover:text-primary-700">
-            Back to sign in
           </Link>
         </p>
       </div>

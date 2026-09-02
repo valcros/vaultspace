@@ -1802,10 +1802,66 @@ model EmailVerificationToken {
   // Usage tracking
   usedAt DateTime?
 
+  // Non-secret durable delivery lifecycle. The public verification token is a
+  // bearer credential and is stored only in the encrypted recovery record.
+  requestId                 String?   @db.VarChar(100)
+  deliveryContractVersion   Int?
+  deliveryStatus            String    @default("PENDING") @db.VarChar(32)
+  queueJobId                String?   @db.VarChar(255)
+  provider                  String?   @db.VarChar(32)
+  providerOperationId       String?   @db.VarChar(255)
+  providerMessageId         String?   @db.VarChar(255)
+  providerAcceptedAt        DateTime?
+  deliveryErrorCode         String?   @db.VarChar(100)
+  deliveryAttempts          Int       @default(0)
+  lastDeliveryAttemptAt     DateTime?
+
+  recovery EmailVerificationRecovery?
+
   @@index([token])
   @@index([userId])
   @@index([expiresAt])
+  @@index([deliveryStatus, createdAt])
+  @@index([provider, providerMessageId])
   @@map("email_verification_tokens")
+}
+
+// Encrypted, short-lived material used only by the verification-delivery
+// worker. Queue payloads hold the flow ID only, never a recipient or bearer
+// token. The user row remains the source of the recipient identity.
+model EmailVerificationRecovery {
+  flowId String @id
+  userId String
+
+  recipientFingerprint String    @db.VarChar(64)
+  keyId                String?   @db.VarChar(64)
+  nonce                Bytes?
+  ciphertext           Bytes?
+  authTag              Bytes?
+  encryptedAt          DateTime  @default(now())
+  wipedAt              DateTime?
+
+  enqueueStatus         String    @default("PENDING") @db.VarChar(32)
+  enqueueAttempts       Int       @default(0)
+  nextEnqueueAt         DateTime  @default(now())
+  enqueueLeaseId        String?   @db.VarChar(64)
+  enqueueLeaseExpiresAt DateTime?
+
+  deliveryAttempt     Int       @default(1)
+  sendLeaseId         String?   @db.VarChar(64)
+  sendLeaseExpiresAt  DateTime?
+  sendFence           Int       @default(0)
+  providerOperationId String    @db.VarChar(255)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  token EmailVerificationToken @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@unique([flowId, providerOperationId], map: "email_verification_recoveries_flow_operation_key")
+  @@index([enqueueStatus, nextEnqueueAt, enqueueLeaseExpiresAt], map: "evr_enqueue_due_lease_idx")
+  @@index([sendLeaseExpiresAt], map: "evr_send_lease_idx")
+  @@index([wipedAt, createdAt], map: "evr_wipe_created_idx")
+  @@map("email_verification_recoveries")
 }
 
 // =============================================================================
