@@ -46,6 +46,8 @@ export function CreateFolderDialog({
   React.useEffect(() => {
     if (open) {
       setMode(initialMode);
+    } else {
+      setStarterSelection({ selectedFolderPaths: [] });
     }
   }, [initialMode, open]);
 

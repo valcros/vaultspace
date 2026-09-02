@@ -70,6 +70,7 @@ export default function RoomsPage() {
     React.useState<StarterFolderSelection>({
       selectedFolderPaths: [],
     });
+  const [createError, setCreateError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     fetchRooms();
@@ -99,6 +100,7 @@ export default function RoomsPage() {
     }
 
     setIsCreating(true);
+    setCreateError(null);
     try {
       const response = await fetch('/api/rooms', {
         method: 'POST',
@@ -110,14 +112,17 @@ export default function RoomsPage() {
       });
 
       const data = await response.json();
-      if (response.ok) {
-        setShowCreateDialog(false);
-        setNewRoom({ name: '', description: '' });
-        setStarterFolderSelection({ selectedFolderPaths: [] });
-        router.push(`/rooms/${data.room.id}`);
+      if (!response.ok) {
+        setCreateError(data.error || 'Unable to create the data room. Please try again.');
+        return;
       }
+      setShowCreateDialog(false);
+      setNewRoom({ name: '', description: '' });
+      setStarterFolderSelection({ selectedFolderPaths: [] });
+      router.push(`/rooms/${data.room.id}`);
     } catch (error) {
       console.error('Failed to create room:', error);
+      setCreateError('Unable to create the data room. Please try again.');
     } finally {
       setIsCreating(false);
     }
@@ -285,7 +290,15 @@ export default function RoomsPage() {
       </div>
 
       {/* Create Room Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog
+        open={showCreateDialog}
+        onOpenChange={(open) => {
+          setShowCreateDialog(open);
+          if (open) {
+            setCreateError(null);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Data Room</DialogTitle>
@@ -294,6 +307,14 @@ export default function RoomsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {createError && (
+              <p
+                className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                role="alert"
+              >
+                {createError}
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="roomName">Room Name</Label>
               <Input

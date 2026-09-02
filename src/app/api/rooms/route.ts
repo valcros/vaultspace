@@ -52,6 +52,17 @@ const roomListQuerySchema = z.object({
   offset: z.preprocess((value) => normalizeInteger(value, 0, 0), z.number().int()),
 });
 
+const roomStarterFolderInputSchema = z
+  .object({
+    name: z.unknown().optional(),
+    description: z.string().optional(),
+    templateId: z.string().trim().min(1).optional(),
+    selectedFolderPaths: z.array(z.string()).max(100).optional(),
+    allowDownloads: z.boolean().optional(),
+    defaultExpiryDays: z.number().int().optional(),
+  })
+  .passthrough();
+
 /**
  * GET /api/rooms
  * List all rooms for the organization
@@ -112,29 +123,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'Request body must be valid JSON', code: 'MALFORMED_JSON' },
+        { status: 400 }
+      );
+    }
+    const starterFolderInput = roomStarterFolderInputSchema.safeParse(body);
+    if (!starterFolderInput.success) {
+      return NextResponse.json(
+        { error: 'Template selection or selected folders are invalid' },
+        { status: 400 }
+      );
+    }
     const {
       name,
       description,
-      templateId,
       allowDownloads,
       defaultExpiryDays,
+      templateId,
       selectedFolderPaths,
-    } = body;
+    } = starterFolderInput.data;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return NextResponse.json({ error: 'Room name is required' }, { status: 400 });
-    }
-    if (templateId !== undefined && (typeof templateId !== 'string' || !templateId.trim())) {
-      return NextResponse.json({ error: 'Template selection is invalid' }, { status: 400 });
-    }
-    if (
-      selectedFolderPaths !== undefined &&
-      (!Array.isArray(selectedFolderPaths) ||
-        selectedFolderPaths.length > 100 ||
-        selectedFolderPaths.some((path) => typeof path !== 'string'))
-    ) {
-      return NextResponse.json({ error: 'Selected folders are invalid' }, { status: 400 });
     }
     if (selectedFolderPaths !== undefined && !templateId) {
       return NextResponse.json({ error: 'Selected folders require a template' }, { status: 400 });

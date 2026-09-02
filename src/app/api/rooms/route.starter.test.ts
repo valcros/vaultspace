@@ -107,4 +107,18 @@ describe('POST /api/rooms starter folders', () => {
     expect(mocks.roomCreate).toHaveBeenCalledOnce();
     expect(mocks.folderCreateMany).not.toHaveBeenCalled();
   });
+
+  it('rejects malformed JSON before attempting to create a room', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/rooms', {
+        method: 'POST',
+        body: '{',
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'MALFORMED_JSON' });
+    expect(mocks.roomCreate).not.toHaveBeenCalled();
+  });
 });

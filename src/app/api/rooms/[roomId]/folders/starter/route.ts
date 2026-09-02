@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
@@ -22,6 +23,11 @@ interface RouteContext {
   params: Promise<{ roomId: string }>;
 }
 
+const starterFolderRequestSchema = z.object({
+  templateId: z.string().trim().min(1),
+  selectedFolderPaths: z.array(z.string()).max(100),
+});
+
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const session = await requireAuth();
@@ -30,18 +36,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const { roomId } = await context.params;
-    const body = await request.json();
-    const { templateId, selectedFolderPaths } = body;
-    if (typeof templateId !== 'string' || !templateId.trim()) {
-      return NextResponse.json({ error: 'Template selection is required' }, { status: 400 });
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'Request body must be valid JSON', code: 'MALFORMED_JSON' },
+        { status: 400 }
+      );
     }
-    if (
-      !Array.isArray(selectedFolderPaths) ||
-      selectedFolderPaths.length > 100 ||
-      selectedFolderPaths.some((path) => typeof path !== 'string')
-    ) {
-      return NextResponse.json({ error: 'Selected folders are invalid' }, { status: 400 });
+    const parsed = starterFolderRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Template selection or selected folders are invalid' },
+        { status: 400 }
+      );
     }
+    const { templateId, selectedFolderPaths } = parsed.data;
     if (selectedFolderPaths.length === 0) {
       return NextResponse.json({ error: 'Choose at least one starter folder' }, { status: 400 });
     }
@@ -126,6 +137,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 201 }
     );
   } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2002'
+    ) {
+      return NextResponse.json(
+        { error: 'One or more selected folders already exist in this room' },
+        { status: 409 }
+      );
+    }
     console.error('[StarterFoldersAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to add starter folders' }, { status: 500 });
   }

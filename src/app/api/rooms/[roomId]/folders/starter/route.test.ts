@@ -102,4 +102,32 @@ describe('POST /api/rooms/:roomId/folders/starter', () => {
     expect(response.status).toBe(403);
     expect(mocks.withOrgContext).not.toHaveBeenCalled();
   });
+
+  it('rejects malformed JSON before any room query', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/rooms/room-1/folders/starter', {
+        method: 'POST',
+        body: '{',
+        headers: { 'content-type': 'application/json' },
+      }),
+      context()
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'MALFORMED_JSON' });
+    expect(mocks.withOrgContext).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 if a concurrent request wins the folder path race', async () => {
+    mocks.withOrgContext.mockRejectedValueOnce(
+      Object.assign(new Error('duplicate'), { code: 'P2002' })
+    );
+
+    const response = await POST(
+      request({ templateId: 'board-portal', selectedFolderPaths: ['/board-meetings'] }),
+      context()
+    );
+
+    expect(response.status).toBe(409);
+  });
 });
