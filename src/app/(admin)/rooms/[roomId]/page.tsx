@@ -201,7 +201,6 @@ export default function RoomDetailPage() {
   // Dialog states
   const [showUploadDialog, setShowUploadDialog] = React.useState(false);
   const [showFolderDialog, setShowFolderDialog] = React.useState(false);
-  const [folderDialogMode, setFolderDialogMode] = React.useState<'single' | 'starter'>('single');
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = React.useState(false);
   const [selectedDocument, setSelectedDocument] = React.useState<Document | null>(null);
@@ -263,14 +262,7 @@ export default function RoomDetailPage() {
 
   const openUploadDialog = React.useCallback(() => setShowUploadDialog(true), []);
 
-  const openFolderDialog = React.useCallback(() => {
-    setFolderDialogMode('single');
-    setShowFolderDialog(true);
-  }, []);
-  const openStarterFolderDialog = React.useCallback(() => {
-    setFolderDialogMode('starter');
-    setShowFolderDialog(true);
-  }, []);
+  const openFolderDialog = React.useCallback(() => setShowFolderDialog(true), []);
 
   const handleSortChange = React.useCallback(
     (field: 'name' | 'size' | 'createdAt', dir: 'asc' | 'desc') => {
@@ -883,7 +875,6 @@ export default function RoomDetailPage() {
           canMutateContent={isRoomMutable}
           onUploadClick={openUploadDialog}
           onNewFolderClick={openFolderDialog}
-          onStarterFoldersClick={openStarterFolderDialog}
           categoryFilter={categoryFilter}
           onCategoryFilterChange={setCategoryFilter}
           sortField={sortField}
@@ -1240,7 +1231,6 @@ export default function RoomDetailPage() {
         onCreate={handleCreateFolder}
         onApplyStarter={handleApplyStarterFolders}
         isCreating={isCreatingFolder}
-        initialMode={folderDialogMode}
       />
 
       {/* Delete Document Confirmation Dialog */}
