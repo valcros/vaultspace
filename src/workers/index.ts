@@ -14,6 +14,13 @@ import {
   validatePasswordResetRecoveryConfiguration,
 } from '@/lib/auth/passwordResetRecovery';
 import { getPasswordResetTokenWriteMode } from '@/lib/auth/passwordResetToken';
+import {
+  EmailVerificationDeliveryContractError,
+  getEmailVerificationDeliveryMode,
+  validateEmailVerificationDeliveryConfiguration,
+  validateEmailVerificationDeliveryUrlConfiguration,
+} from '@/lib/auth/emailVerificationDeliveryContract';
+import { hasCapability } from '@/lib/deployment-capabilities';
 import { getDeploymentMode } from '@/lib/deployment-mode';
 
 const mode = getDeploymentMode();
@@ -72,6 +79,31 @@ if (
   }
 }
 
+if (getEmailVerificationDeliveryMode() === 'durable') {
+  try {
+    validateEmailVerificationDeliveryConfiguration();
+    validateEmailVerificationDeliveryUrlConfiguration();
+    if (!hasCapability('canSendAsyncEmail')) {
+      throw new Error('EMAIL_VERIFICATION_ASYNC_DELIVERY_UNAVAILABLE');
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        component: 'worker-startup',
+        event: 'email_verification_delivery_configuration',
+        outcome: 'blocked',
+        errorCode:
+          error instanceof EmailVerificationDeliveryContractError
+            ? error.code
+            : error instanceof Error
+              ? error.message
+              : 'EMAIL_VERIFICATION_DELIVERY_CONFIGURATION_INVALID',
+      })
+    );
+    process.exit(1);
+  }
+}
+
 // Log warnings
 if (warnings.length > 0) {
   console.warn(`[VaultSpace Worker] Configuration warnings:`);
@@ -86,6 +118,7 @@ import {
   processEmailJob,
   processPasswordResetAcceptanceJob,
   processPasswordResetDeliveryJob,
+  processEmailVerificationDeliveryJob,
   processDocumentUploadedNotification,
   processDocumentViewedNotification,
   processPreviewJob,
@@ -149,6 +182,10 @@ async function processJob(job: Job): Promise<void> {
 
     case JOB_NAMES.EMAIL_SEND:
       await processEmailJob(job);
+      break;
+
+    case JOB_NAMES.EMAIL_VERIFICATION_DELIVER:
+      await processEmailVerificationDeliveryJob(job);
       break;
 
     case JOB_NAMES.PASSWORD_RESET_DELIVER:

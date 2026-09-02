@@ -14,6 +14,7 @@ import { RateLimitError } from '@/lib/errors';
 
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
 const mockRegistrationByIp = vi.fn().mockResolvedValue(undefined);
+const mockVerificationSendByEmail = vi.fn().mockResolvedValue(undefined);
 const mockCreateVerificationToken = vi.fn(() => ({
   publicToken: 'evt1_' + 'a'.repeat(43),
   storedToken: 'evh1:' + 'b'.repeat(64),
@@ -31,7 +32,10 @@ vi.mock('@/lib/middleware', () => ({
     userAgent: 'vitest',
   })),
   setSessionCookie: vi.fn().mockResolvedValue(undefined),
-  rateLimiters: { registrationByIp: (ip: string) => mockRegistrationByIp(ip) },
+  rateLimiters: {
+    registrationByIp: (ip: string) => mockRegistrationByIp(ip),
+    emailVerificationResendByEmailFingerprint: (key: string) => mockVerificationSendByEmail(key),
+  },
 }));
 
 vi.mock('@/lib/audit/accessAudit', () => ({
@@ -112,6 +116,7 @@ describe('POST /api/auth/register', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRegistrationByIp.mockResolvedValue(undefined);
+    mockVerificationSendByEmail.mockResolvedValue(undefined);
     mockUserFindUnique.mockResolvedValue(null);
     mockUserCreate.mockResolvedValue({
       id: 'user-new',

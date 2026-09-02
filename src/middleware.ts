@@ -119,12 +119,13 @@ function addSecurityHeaders(response: NextResponse, pathname: string): NextRespo
   // Security headers
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-XSS-Protection', '1; mode=block');
-  const isPasswordResetRoute = pathname === '/auth/reset-password';
+  const isSensitiveTokenRoute =
+    pathname === '/auth/reset-password' || pathname === '/auth/verify-email';
   response.headers.set(
     'Referrer-Policy',
-    isPasswordResetRoute ? 'no-referrer' : 'strict-origin-when-cross-origin'
+    isSensitiveTokenRoute ? 'no-referrer' : 'strict-origin-when-cross-origin'
   );
-  if (isPasswordResetRoute) {
+  if (isSensitiveTokenRoute) {
     response.headers.set('Cache-Control', 'private, no-store');
   }
 

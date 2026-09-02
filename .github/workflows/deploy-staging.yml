@@ -58,6 +58,7 @@ jobs:
       WAKER_CONTAINER_NAME: ${{ vars.WAKER_CONTAINER_NAME }}
       LIFECYCLE_JOB_APP: ${{ vars.LIFECYCLE_JOB_APP }}
       RESET_RECONCILER_JOB_APP: ${{ vars.RESET_RECONCILER_JOB_APP }}
+      EMAIL_VERIFICATION_RECONCILER_JOB_APP: ${{ vars.EMAIL_VERIFICATION_RECONCILER_JOB_APP }}
       DESIRED_RESET_WRITE_MODE: ${{ vars.PASSWORD_RESET_TOKEN_WRITE_MODE }}
       PLATFORM_PROTECTED_ORG_SLUGS: ${{ secrets.PLATFORM_PROTECTED_ORG_SLUGS }}
       ALLOW_RESET_MODE_DOWNGRADE: ${{ inputs.allow_reset_mode_downgrade || 'false' }}
@@ -89,6 +90,7 @@ jobs:
             WAKER_JOB_APP
             WAKER_CONTAINER_NAME
             LIFECYCLE_JOB_APP
+            EMAIL_VERIFICATION_RECONCILER_JOB_APP
             APP_URL
           )
 
@@ -122,6 +124,7 @@ jobs:
             "$WAKER_CONTAINER_NAME"
             "$LIFECYCLE_JOB_APP"
             "$RESET_RECONCILER_JOB_APP"
+            "$EMAIL_VERIFICATION_RECONCILER_JOB_APP"
           )
 
           for metadata_value in "${metadata_values[@]}"; do
@@ -238,6 +241,31 @@ jobs:
               --query properties.template.containers[0].image \
               --output tsv)
           fi
+          PREVIOUS_EMAIL_VERIFICATION_RECONCILER_IMAGE=$(az containerapp job show \
+            --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.template.containers[0].image \
+            --output tsv)
+          PREVIOUS_EMAIL_VERIFICATION_RECONCILER_CRON=$(az containerapp job show \
+            --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.scheduleTriggerConfig.cronExpression \
+            --output tsv)
+          PREVIOUS_EMAIL_VERIFICATION_RECONCILER_COMPLETIONS=$(az containerapp job show \
+            --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.configuration.replicaCompletionCount || `1`' \
+            --output tsv)
+          PREVIOUS_EMAIL_VERIFICATION_RECONCILER_PARALLELISM=$(az containerapp job show \
+            --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.configuration.parallelism || `1`' \
+            --output tsv)
+          PREVIOUS_EMAIL_VERIFICATION_RECONCILER_TIMEOUT=$(az containerapp job show \
+            --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.configuration.replicaTimeout || `1800`' \
+            --output tsv)
 
           for value in \
             "$PREVIOUS_WEB_REVISION" \
@@ -245,7 +273,9 @@ jobs:
             "$PREVIOUS_WEB_IMAGE" \
             "$PREVIOUS_WORKER_IMAGE" \
             "$PREVIOUS_WAKER_IMAGE" \
-            "$PREVIOUS_LIFECYCLE_IMAGE"; do
+            "$PREVIOUS_LIFECYCLE_IMAGE" \
+            "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_IMAGE" \
+            "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_CRON"; do
             if [ -z "$value" ]; then
               echo "ERROR: staging before-state is incomplete"
               exit 1
@@ -261,6 +291,11 @@ jobs:
             echo "PREVIOUS_WAKER_IMAGE=$PREVIOUS_WAKER_IMAGE"
             echo "PREVIOUS_LIFECYCLE_IMAGE=$PREVIOUS_LIFECYCLE_IMAGE"
             echo "PREVIOUS_RESET_RECONCILER_IMAGE=$PREVIOUS_RESET_RECONCILER_IMAGE"
+            echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_IMAGE=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_IMAGE"
+            echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_CRON=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_CRON"
+            echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_COMPLETIONS=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_COMPLETIONS"
+            echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_PARALLELISM=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_PARALLELISM"
+            echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_TIMEOUT=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_TIMEOUT"
           } >> "$GITHUB_ENV"
 
       # Safety net for build-once: images are published by CI's "Build & Push
@@ -654,6 +689,66 @@ jobs:
             --name "$RESET_RECONCILER_JOB_APP" \
             --resource-group "$RESOURCE_GROUP" \
             --image "$TARGET_WORKER_IMAGE_PINNED"
+
+      - name: Update Container App Job - Email Verification Reconciler
+        run: |
+          echo "JOBS_MUTATED=true" >> "$GITHUB_ENV"
+          az containerapp job update \
+            --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$TARGET_WORKER_IMAGE_PINNED" \
+            --cron-expression "* * * * *" \
+            --replica-completion-count 1 \
+            --parallelism 1 \
+            --replica-timeout 55
+
+      - name: Validate email verification reconciler before Web cutover
+        run: |
+          JOB_JSON=$(az containerapp job show \
+            --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output json)
+          IMAGE=$(echo "$JOB_JSON" | jq -r '.properties.template.containers[0].image')
+          COMMAND=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].command // []) | join(" ")')
+          ARGS=$(echo "$JOB_JSON" | jq -r '(.properties.template.containers[0].args // []) | join(" ")')
+          TRIGGER=$(echo "$JOB_JSON" | jq -r '.properties.configuration.triggerType')
+          CRON=$(echo "$JOB_JSON" | jq -r '.properties.configuration.scheduleTriggerConfig.cronExpression // empty')
+          COMPLETIONS=$(echo "$JOB_JSON" | jq -r '.properties.configuration.replicaCompletionCount // 1')
+          PARALLELISM=$(echo "$JOB_JSON" | jq -r '.properties.configuration.parallelism // 1')
+          TIMEOUT=$(echo "$JOB_JSON" | jq -r '.properties.configuration.replicaTimeout // 1800')
+          ENV=$(echo "$JOB_JSON" | jq -c '.properties.template.containers[0].env // []')
+          if [ "$IMAGE" != "$TARGET_WORKER_IMAGE_PINNED" ]; then
+            echo "ERROR: email verification reconciler image mismatch"
+            exit 1
+          fi
+          if [ "$COMMAND" != "npm" ] || [ "$ARGS" != "run worker:email-verification-reconcile" ]; then
+            echo "ERROR: email verification reconciler command mismatch"
+            exit 1
+          fi
+          if [ "$TRIGGER" != "Schedule" ] || ! echo "$CRON" | grep -Eq '^(\*|\*/1) \* \* \* \*$'; then
+            echo "ERROR: email verification reconciler must run every minute"
+            exit 1
+          fi
+          if [ "$COMPLETIONS" != "1" ] || [ "$PARALLELISM" != "1" ] || [ "$TIMEOUT" -gt 55 ]; then
+            echo "ERROR: email verification reconciler requires one completion, parallelism one, and timeout below its one-minute schedule"
+            exit 1
+          fi
+          for key in DATABASE_URL REDIS_URL EMAIL_VERIFICATION_RECOVERY_KEYS; do
+            if ! echo "$ENV" | jq -e --arg key "$key" '.[] | select(.name == $key and (.secretRef // "") != "")' >/dev/null; then
+              echo "ERROR: email verification reconciler requires secret-backed $key"
+              exit 1
+            fi
+          done
+          if ! echo "$ENV" | jq -e '.[] | select(.name == "EMAIL_VERIFICATION_DELIVERY_MODE" and .value == "durable")' >/dev/null || \
+             ! echo "$ENV" | jq -e '.[] | select(.name == "EMAIL_VERIFICATION_RECOVERY_ACTIVE_KEY_ID" and (.value // "") != "")' >/dev/null; then
+            echo "ERROR: email verification reconciler durable-mode configuration is incomplete"
+            exit 1
+          fi
+          if echo "$ENV" | jq -e '.[] | select(.name == "DATABASE_URL_ADMIN")' >/dev/null; then
+            echo "ERROR: email verification reconciler must not have DATABASE_URL_ADMIN"
+            exit 1
+          fi
+          echo "Email verification reconciler image, schedule, and secret-backed environment verified"
 
       - name: Validate password reset reconciler before Web cutover
         if: env.RESET_RECONCILER_JOB_APP != ''
@@ -1450,6 +1545,14 @@ jobs:
                 --resource-group "$RESOURCE_GROUP" \
                 --image "$PREVIOUS_RESET_RECONCILER_IMAGE_PINNED" || ROLLBACK_FAILED=1
             fi
+            az containerapp job update \
+              --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_IMAGE" \
+              --cron-expression "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_CRON" \
+              --replica-completion-count "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_COMPLETIONS" \
+              --parallelism "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_PARALLELISM" \
+              --replica-timeout "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_TIMEOUT" || ROLLBACK_FAILED=1
           fi
 
           # A verified forward worker is backward-compatible with the restored

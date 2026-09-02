@@ -53,6 +53,7 @@
     "worker:invitation-lifecycle": "tsx src/workers/invitationLifecycle.ts",
     "worker:password-reset-reconcile": "tsx src/workers/passwordResetReconciler.ts",
     "worker:password-reset-preflight": "tsx src/workers/passwordResetReconciler.ts --preflight",
+    "worker:email-verification-reconcile": "tsx src/workers/emailVerificationReconciler.ts",
     "worker:provider-event-preflight": "tsx src/workers/providerEventInboxPreflight.ts",
     "worker:send-pending-invites": "tsx src/workers/sendPendingInvites.ts",
     "worker:stale-token-cleanup": "tsx src/workers/staleTokenCleanup.ts",

@@ -15,6 +15,24 @@ Start from [`.env.example`](.env.example). Variable names are public configurati
 
 Do not commit a populated environment file. Do not place operational command output, deployment revisions, container image identifiers, or tenant data in pull requests, issues, release notes, or generated artifacts.
 
+### Durable self-service verification email
+
+Self-service signup verification uses the legacy direct-send path by default for backward-compatible deployment. Do not switch to durable delivery until migration `20260901200000_add_email_verification_delivery_contract` is deployed to web and worker environments, and a scheduled reconciler is available.
+
+To activate the reviewed durable flow, configure these secret-backed settings in both the web and worker revisions:
+
+```text
+EMAIL_VERIFICATION_DELIVERY_MODE=durable
+EMAIL_VERIFICATION_RECOVERY_KEYS={"verify-YYYY-MM":"<32-byte base64 key>"}
+EMAIL_VERIFICATION_RECOVERY_ACTIVE_KEY_ID=verify-YYYY-MM
+```
+
+The key ring is dedicated to verification delivery and must not reuse the password-reset recovery key ring. Schedule `npm run worker:email-verification-reconcile` at least once per minute. The worker must have Redis, a deliverable email provider, `APP_URL`, and the same verification key ring. Queue payloads are flow-only and do not contain a recipient or verification URL.
+
+Before enabling, run a controlled-mailbox canary and prove token/recovery row creation, job enqueue, worker provider acceptance, absence of bearer tokens from logs and Redis, explicit-click verification, and creation of exactly one draft initial room.
+
+Keep ACS final-delivery projection disabled. Its existing Event Grid inbox is shadow ingestion only and requires a separately approved protected-projector release before it may affect verification lifecycle state.
+
 ## Managed-cloud release flow
 
 1. Open a reviewed pull request against the protected default branch.

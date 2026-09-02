@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { createSession } from '@/lib/auth';
-import { bootstrapDb as db } from '@/lib/db';
+import { bootstrapDb as db, setTransactionOrganizationContext } from '@/lib/db';
 import { resolveStoredToken } from '@/lib/auth/emailVerificationToken';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { getRequestContext, setSessionCookie } from '@/lib/middleware';
@@ -23,12 +23,22 @@ const verifySchema = z.object({
   token: z.string().min(1, 'Token is required'),
 });
 
+const INITIAL_ROOM_NAME = 'My First Data Room';
+const INITIAL_ROOM_SLUG = 'my-first-data-room';
+
+function noStoreJson(body: Record<string, unknown>, init: { status: number } = { status: 200 }) {
+  return NextResponse.json(body, {
+    ...init,
+    headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' },
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { token } = verifySchema.parse(await request.json());
     const digest = resolveStoredToken(token);
     if (!digest) {
-      return NextResponse.json(
+      return noStoreJson(
         { error: 'This verification link is invalid or has expired. Request a new one.' },
         { status: 400 }
       );
@@ -97,20 +107,74 @@ export async function POST(request: NextRequest) {
       await tx.userOrganization.create({
         data: { userId: user.id, organizationId: organization.id, role: 'ADMIN', isActive: true },
       });
+      // Production RLS requires the new tenant context before any tenant-scoped
+      // resource or audit write. Keep initial room provisioning in this same
+      // transaction so a verified owner can never receive a half-built workspace.
+      await setTransactionOrganizationContext(tx, organization.id);
+      const room = await tx.room.create({
+        data: {
+          organizationId: organization.id,
+          name: INITIAL_ROOM_NAME,
+          slug: INITIAL_ROOM_SLUG,
+          status: 'DRAFT',
+          createdByUserId: user.id,
+        },
+      });
+      await tx.event.create({
+        data: {
+          organizationId: organization.id,
+          roomId: room.id,
+          eventType: 'ROOM_CREATED',
+          actorType: 'ADMIN',
+          actorId: user.id,
+          actorEmail: user.email,
+          description: `Created initial draft room "${INITIAL_ROOM_NAME}"`,
+          metadata: { provisioningKind: 'SELF_SERVICE_INITIAL_ROOM' },
+        },
+      });
       await tx.user.update({ where: { id: user.id }, data: { emailVerifiedAt: now } });
+      // Verification makes every outstanding delivery envelope for this user
+      // unnecessary. Wipe them atomically so queued jobs cannot retain a
+      // bearer credential after the account has been activated.
+      await tx.emailVerificationToken.updateMany({
+        where: {
+          userId: user.id,
+          deliveryContractVersion: 1,
+          usedAt: null,
+          providerAcceptedAt: null,
+          deliveryStatus: {
+            in: ['PENDING', 'QUEUED', 'QUEUE_RETRYING', 'FAILED_RETRYING', 'SENDING'],
+          },
+        },
+        data: { deliveryStatus: 'CANCELLED', deliveryErrorCode: 'EMAIL_VERIFICATION_COMPLETED' },
+      });
+      await tx.emailVerificationRecovery.updateMany({
+        where: { userId: user.id, wipedAt: null },
+        data: {
+          wipedAt: now,
+          keyId: null,
+          nonce: null,
+          ciphertext: null,
+          authTag: null,
+          sendLeaseId: null,
+          sendLeaseExpiresAt: null,
+          enqueueLeaseId: null,
+          enqueueLeaseExpiresAt: null,
+        },
+      });
 
-      return { status: 'verified' as const, user, organization };
+      return { status: 'verified' as const, user, organization, room };
     });
 
     if (outcome.status === 'invalid' || outcome.status === 'expired') {
-      return NextResponse.json(
+      return noStoreJson(
         { error: 'This verification link is invalid or has expired. Request a new one.' },
         { status: 400 }
       );
     }
 
     if (outcome.status === 'already_verified') {
-      return NextResponse.json({ status: 'already_verified' }, { status: 200 });
+      return noStoreJson({ status: 'already_verified' });
     }
 
     // Verified for the first time — sign the new owner in.
@@ -137,7 +201,7 @@ export async function POST(request: NextRequest) {
       userAgent,
     });
 
-    return NextResponse.json({
+    return noStoreJson({
       status: 'verified',
       user: {
         id: outcome.user.id,
@@ -150,15 +214,18 @@ export async function POST(request: NextRequest) {
         name: outcome.organization.name,
         slug: outcome.organization.slug,
       },
+      room: {
+        id: outcome.room.id,
+        name: outcome.room.name,
+        slug: outcome.room.slug,
+        status: outcome.room.status,
+      },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: error.errors[0]?.message || 'Invalid input' },
-        { status: 400 }
-      );
+      return noStoreJson({ error: error.errors[0]?.message || 'Invalid input' }, { status: 400 });
     }
     console.error('[VerifyEmailAPI] Error:', error);
-    return NextResponse.json({ error: 'Failed to verify email' }, { status: 500 });
+    return noStoreJson({ error: 'Failed to verify email' }, { status: 500 });
   }
 }

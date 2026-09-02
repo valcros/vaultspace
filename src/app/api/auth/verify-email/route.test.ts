@@ -34,9 +34,15 @@ vi.mock('@/lib/audit/accessAudit', () => ({
 }));
 
 const mockTransaction = vi.fn();
+const mockSetTransactionOrganizationContext = vi.fn().mockResolvedValue(undefined);
 vi.mock('@/lib/db', () => {
   const client = { $transaction: (...a: unknown[]) => mockTransaction(...a) };
-  return { db: client, bootstrapDb: client };
+  return {
+    db: client,
+    bootstrapDb: client,
+    setTransactionOrganizationContext: (...a: unknown[]) =>
+      mockSetTransactionOrganizationContext(...a),
+  };
 });
 
 import { POST } from './route';
@@ -57,26 +63,42 @@ function buildTx(opts: { claimCount: number; tokenUserId: string | null; user: u
     slug: 'org-abc',
   });
   const membershipCreate = vi.fn().mockResolvedValue({});
+  const roomCreate = vi.fn().mockResolvedValue({
+    id: 'room-initial',
+    name: 'My First Data Room',
+    slug: 'my-first-data-room',
+    status: 'DRAFT',
+  });
+  const eventCreate = vi.fn().mockResolvedValue({});
   const userUpdate = vi.fn().mockResolvedValue({});
+  const tokenUpdateMany = vi.fn().mockResolvedValue({ count: opts.claimCount });
+  const recoveryUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
   return {
     tx: {
       $executeRaw: vi.fn().mockResolvedValue(0),
       emailVerificationToken: {
-        updateMany: vi.fn().mockResolvedValue({ count: opts.claimCount }),
+        updateMany: tokenUpdateMany,
         findFirst: vi
           .fn()
           .mockResolvedValue(opts.tokenUserId ? { userId: opts.tokenUserId } : null),
       },
+      emailVerificationRecovery: { updateMany: recoveryUpdateMany },
       user: {
         findUnique: vi.fn().mockResolvedValue(opts.user),
         update: userUpdate,
       },
       organization: { create: orgCreate },
       userOrganization: { create: membershipCreate },
+      room: { create: roomCreate },
+      event: { create: eventCreate },
     },
     orgCreate,
     membershipCreate,
+    roomCreate,
+    eventCreate,
     userUpdate,
+    tokenUpdateMany,
+    recoveryUpdateMany,
   };
 }
 
@@ -119,7 +141,20 @@ describe('POST /api/auth/verify-email', () => {
     });
     expect(built.orgCreate).toHaveBeenCalledOnce();
     expect(built.membershipCreate).toHaveBeenCalledOnce();
+    expect(built.roomCreate).toHaveBeenCalledOnce();
+    expect(built.eventCreate).toHaveBeenCalledOnce();
+    expect(mockSetTransactionOrganizationContext).toHaveBeenCalledWith(built.tx, 'org-new');
+    expect(body.room).toEqual({
+      id: 'room-initial',
+      name: 'My First Data Room',
+      slug: 'my-first-data-room',
+      status: 'DRAFT',
+    });
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
     expect(built.userUpdate).toHaveBeenCalledOnce();
+    expect(built.tokenUpdateMany).toHaveBeenCalledTimes(2);
+    expect(built.recoveryUpdateMany).toHaveBeenCalledOnce();
     expect(mockCreateSession).toHaveBeenCalledWith(
       'user-1',
       'org-new',

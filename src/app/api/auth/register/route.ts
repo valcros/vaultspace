@@ -15,12 +15,16 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
+import { createHmac } from 'crypto';
 import { Prisma } from '@prisma/client';
 
 import { createSession } from '@/lib/auth';
 import { bootstrapDb as db, setTransactionOrganizationContext } from '@/lib/db';
-import { createEmailVerificationToken } from '@/lib/auth/emailVerificationToken';
 import { sendEmailVerificationEmail } from '@/lib/auth/emailVerificationDelivery';
+import {
+  enqueueEmailVerificationDelivery,
+  issueEmailVerificationDelivery,
+} from '@/lib/auth/emailVerificationDeliveryFlow';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { getRequestContext, setSessionCookie, rateLimiters } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
@@ -41,6 +45,12 @@ const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 // Normalize self-service response time so "email already exists" (fast) is
 // indistinguishable from "new pending user" (slow, includes bcrypt).
 const MINIMUM_SELF_SERVICE_RESPONSE_MS = 350;
+
+function emailFingerprint(normalizedEmail: string): string {
+  return createHmac('sha256', process.env['SESSION_SECRET'] || '')
+    .update(`vaultspace/email-verification-resend\0${normalizedEmail}`, 'utf8')
+    .digest('hex');
+}
 
 class InvitationRoomAssignmentUnavailableError extends Error {}
 class InvitationAlreadyUsedError extends Error {}
@@ -321,6 +331,10 @@ export async function POST(request: NextRequest) {
     // No organization, membership, or session is created here. The organization
     // is created only when the email is verified (see /api/auth/verify-email).
     //
+    // Apply the recipient throttle before account lookup. Applying it only to a
+    // known pending account would make rate-limit behavior an enumeration oracle.
+    await rateLimiters.emailVerificationResendByEmailFingerprint(emailFingerprint(normalizedEmail));
+
     // Compute the password hash UNCONDITIONALLY, before the existence lookup, so
     // bcrypt cost (the dominant work) does not vary by whether the email already
     // exists. This is BEST-EFFORT timing normalization (paired with the response
@@ -386,25 +400,35 @@ export async function POST(request: NextRequest) {
     }
 
     if (pendingUserId) {
-      const { publicToken, storedToken } = createEmailVerificationToken();
-      await db.emailVerificationToken.create({
-        data: {
-          userId: pendingUserId,
-          token: storedToken,
-          expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
-        },
+      const issued = await issueEmailVerificationDelivery({
+        userId: pendingUserId,
+        email: normalizedEmail,
+        requestId: reqContext.requestId,
+        expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
       });
-      // Fire-and-forget: do NOT await email-provider latency inside the response
-      // path — that latency (present only for new/pending branches) would
-      // differentiate timing and leak account existence. Failures are logged;
-      // the resend endpoint is the recovery path.
-      void sendEmailVerificationEmail({
-        to: normalizedEmail,
-        firstName: firstNameForEmail,
-        publicToken,
-      }).catch((sendError) => {
-        console.error('[RegisterAPI] Verification email send failed:', sendError);
-      });
+      if (issued.mode === 'durable') {
+        // The database commit is authoritative. Queue failures are persisted
+        // by the enqueue helper and recovered by the scheduled reconciler.
+        void enqueueEmailVerificationDelivery(issued.flowId);
+      } else {
+        // Compatibility-only rollout path. It is removed once durable mode is
+        // enabled in every deployment after migration/key/worker validation.
+        void sendEmailVerificationEmail({
+          to: normalizedEmail,
+          firstName: firstNameForEmail,
+          publicToken: issued.publicToken,
+        }).catch(() => {
+          console.error(
+            JSON.stringify({
+              component: 'email-verification-delivery',
+              event: 'legacy_submission',
+              outcome: 'failed',
+              requestId: reqContext.requestId,
+              errorCode: 'EMAIL_PROVIDER_ERROR',
+            })
+          );
+        });
+      }
     }
 
     return await neutralVerificationResponse(startedAt);

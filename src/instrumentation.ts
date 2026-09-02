@@ -21,6 +21,12 @@ export async function register() {
     const { getDeploymentMode } = await import('@/lib/deployment-mode');
     const { resolveCapabilities, getDegradedCapabilities } =
       await import('@/lib/deployment-capabilities');
+    const {
+      EmailVerificationDeliveryContractError,
+      getEmailVerificationDeliveryMode,
+      validateEmailVerificationDeliveryConfiguration,
+      validateEmailVerificationDeliveryUrlConfiguration,
+    } = await import('@/lib/auth/emailVerificationDeliveryContract');
 
     const mode = getDeploymentMode();
 
@@ -47,6 +53,34 @@ export async function register() {
     // Log capabilities
     const capabilities = resolveCapabilities();
     const degraded = getDegradedCapabilities();
+
+    if (getEmailVerificationDeliveryMode() === 'durable') {
+      try {
+        validateEmailVerificationDeliveryConfiguration();
+        validateEmailVerificationDeliveryUrlConfiguration();
+        if (!capabilities.canSendAsyncEmail) {
+          throw new Error('EMAIL_VERIFICATION_ASYNC_DELIVERY_UNAVAILABLE');
+        }
+      } catch (error) {
+        const errorCode =
+          error instanceof EmailVerificationDeliveryContractError
+            ? error.code
+            : error instanceof Error
+              ? error.message
+              : 'EMAIL_VERIFICATION_DELIVERY_CONFIGURATION_INVALID';
+        console.error(
+          JSON.stringify({
+            component: 'web-startup',
+            event: 'email_verification_delivery_configuration',
+            outcome: 'blocked',
+            errorCode,
+          })
+        );
+        throw new Error(
+          `Durable email verification delivery is not safely configured: ${errorCode}`
+        );
+      }
+    }
 
     console.log(`[DeploymentGuard] Deployment mode: ${mode}`);
     console.log(`[DeploymentGuard] Capabilities:`);

@@ -41,7 +41,7 @@ function VerifyEmailInner() {
         setStatus('verified');
         // The API set the session cookie (auto-login). Send them to the app.
         setTimeout(() => {
-          router.push('/rooms');
+          router.push(data.room?.id ? `/rooms/${data.room.id}` : '/rooms');
           router.refresh();
         }, 1200);
       } else if (res.ok && data.status === 'already_verified') {
@@ -93,7 +93,8 @@ function VerifyEmailInner() {
       <div className="text-center">
         <h1 className="text-2xl font-bold tracking-tight text-slate-950">Email verified</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Your account is ready. Taking you to your workspace&hellip;
+          Your private draft data room is ready. You can add documents and invite people only when
+          you&apos;re ready. Taking you there now&hellip;
         </p>
       </div>
     );

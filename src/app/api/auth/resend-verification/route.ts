@@ -15,8 +15,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { bootstrapDb as db } from '@/lib/db';
-import { createEmailVerificationToken } from '@/lib/auth/emailVerificationToken';
 import { sendEmailVerificationEmail } from '@/lib/auth/emailVerificationDelivery';
+import {
+  enqueueEmailVerificationDelivery,
+  issueEmailVerificationDelivery,
+} from '@/lib/auth/emailVerificationDeliveryFlow';
 import { getRequestContext, rateLimiters } from '@/lib/middleware';
 import { RateLimitError } from '@/lib/errors';
 
@@ -65,26 +68,33 @@ export async function POST(request: NextRequest) {
     // Only a pending (unverified) account gets a fresh token. Verified accounts
     // and unknown emails fall through to the identical neutral response.
     if (user && user.emailVerifiedAt === null) {
-      const { publicToken, storedToken } = createEmailVerificationToken();
       // Do NOT invalidate prior unconsumed tokens — bounded concurrent tokens are
       // acceptable; the verify claim consumes one and the rest simply expire.
-      await db.emailVerificationToken.create({
-        data: {
-          userId: user.id,
-          token: storedToken,
-          expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
-        },
+      const issued = await issueEmailVerificationDelivery({
+        userId: user.id,
+        email: normalizedEmail,
+        requestId: reqContext.requestId,
+        expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
       });
-      // Fire-and-forget: do not await email-provider latency in the response
-      // path — that latency occurs only for pending accounts and would leak
-      // account existence via timing. Failures are logged.
-      void sendEmailVerificationEmail({
-        to: normalizedEmail,
-        firstName: user.firstName,
-        publicToken,
-      }).catch((sendError) => {
-        console.error('[ResendVerificationAPI] Verification email send failed:', sendError);
-      });
+      if (issued.mode === 'durable') {
+        void enqueueEmailVerificationDelivery(issued.flowId);
+      } else {
+        void sendEmailVerificationEmail({
+          to: normalizedEmail,
+          firstName: user.firstName,
+          publicToken: issued.publicToken,
+        }).catch(() => {
+          console.error(
+            JSON.stringify({
+              component: 'email-verification-delivery',
+              event: 'legacy_submission',
+              outcome: 'failed',
+              requestId: reqContext.requestId,
+              errorCode: 'EMAIL_PROVIDER_ERROR',
+            })
+          );
+        });
+      }
     }
 
     return await neutralResponse(startedAt);
@@ -92,7 +102,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof RateLimitError) {
       return NextResponse.json(
         { error: 'Too many attempts. Please try again later.' },
-        { status: 429 }
+        { status: 429, headers: { 'Retry-After': String(error.retryAfter) } }
       );
     }
     if (error instanceof z.ZodError) {
