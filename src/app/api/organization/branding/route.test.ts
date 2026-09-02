@@ -57,6 +57,7 @@ describe('GET /api/organization/branding', () => {
       id: 'org-1',
       name: 'Acme Corp',
       slug: 'acme',
+      workspaceUrlClaimedAt: new Date('2026-09-02T00:00:00.000Z'),
       logoUrl: 'https://example.com/logo.png',
       primaryColor: '#2563eb',
       faviconUrl: 'https://example.com/favicon.ico',
@@ -71,6 +72,7 @@ describe('GET /api/organization/branding', () => {
     expect(body.branding.name).toBe('Acme Corp');
     expect(body.branding.primaryColor).toBe('#2563eb');
     expect(body.branding.logoUrl).toBe('https://example.com/logo.png');
+    expect(body.branding.workspaceUrlClaimedAt).toBe('2026-09-02T00:00:00.000Z');
   });
 
   it('allows non-admin users to read branding', async () => {

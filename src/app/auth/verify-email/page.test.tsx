@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockPush = vi.fn();
@@ -23,6 +23,7 @@ describe('email verification page (gesture-gated)', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -39,22 +40,28 @@ describe('email verification page (gesture-gated)', () => {
     ).toBeInTheDocument();
   });
 
-  it('consumes the token only on click and redirects on success', async () => {
+  it('consumes the token only on click and redirects to workspace setup on success', async () => {
+    vi.useFakeTimers();
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'verified' }) });
     vi.stubGlobal('fetch', fetchMock);
 
     render(<VerifyEmailPage />);
-    fireEvent.click(await screen.findByRole('button', { name: /confirm my email address/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm my email address/i }));
 
-    // Reaching the verified screen proves the POST fired and succeeded; the
-    // redirect itself is behind a 1.2s delay and is not asserted here.
-    expect(await screen.findByText(/email verified/i)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(/email verified/i)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/auth/verify-email',
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ token: 'evt-token' }) })
     );
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
+    expect(mockPush).toHaveBeenCalledWith('/onboarding/workspace');
   });
 
   it('issues only one POST even on a double click', async () => {

@@ -39,9 +39,10 @@ function VerifyEmailInner() {
       const data = await res.json();
       if (res.ok && data.status === 'verified') {
         setStatus('verified');
-        // The API set the session cookie (auto-login). Send them to the app.
+        // The API set the session cookie. Claim the public workspace URL before
+        // presenting the private starter room.
         setTimeout(() => {
-          router.push(data.room?.id ? `/rooms/${data.room.id}` : '/rooms');
+          router.push('/onboarding/workspace');
           router.refresh();
         }, 1200);
       } else if (res.ok && data.status === 'already_verified') {

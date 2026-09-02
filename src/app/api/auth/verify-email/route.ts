@@ -16,15 +16,16 @@ import { createSession } from '@/lib/auth';
 import { bootstrapDb as db, setTransactionOrganizationContext } from '@/lib/db';
 import { resolveStoredToken } from '@/lib/auth/emailVerificationToken';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
+import {
+  INITIAL_SELF_SERVICE_ROOM_NAME,
+  INITIAL_SELF_SERVICE_ROOM_SLUG,
+} from '@/lib/organizations/workspaceSetup';
 import { getRequestContext, setSessionCookie } from '@/lib/middleware';
 import { SESSION_CONFIG } from '@/lib/constants';
 
 const verifySchema = z.object({
   token: z.string().min(1, 'Token is required'),
 });
-
-const INITIAL_ROOM_NAME = 'My First Data Room';
-const INITIAL_ROOM_SLUG = 'my-first-data-room';
 
 function noStoreJson(body: Record<string, unknown>, init: { status: number } = { status: 200 }) {
   return NextResponse.json(body, {
@@ -102,7 +103,12 @@ export async function POST(request: NextRequest) {
       // Fresh claim: create the organization + ADMIN membership, mark verified.
       const slug = `org-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const organization = await tx.organization.create({
-        data: { name: `${user.firstName}'s Organization`, slug, isActive: true },
+        data: {
+          name: `${user.firstName}'s Organization`,
+          slug,
+          isActive: true,
+          workspaceUrlClaimEligible: true,
+        },
       });
       await tx.userOrganization.create({
         data: { userId: user.id, organizationId: organization.id, role: 'ADMIN', isActive: true },
@@ -114,8 +120,8 @@ export async function POST(request: NextRequest) {
       const room = await tx.room.create({
         data: {
           organizationId: organization.id,
-          name: INITIAL_ROOM_NAME,
-          slug: INITIAL_ROOM_SLUG,
+          name: INITIAL_SELF_SERVICE_ROOM_NAME,
+          slug: INITIAL_SELF_SERVICE_ROOM_SLUG,
           status: 'DRAFT',
           createdByUserId: user.id,
         },
@@ -128,7 +134,7 @@ export async function POST(request: NextRequest) {
           actorType: 'ADMIN',
           actorId: user.id,
           actorEmail: user.email,
-          description: `Created initial draft room "${INITIAL_ROOM_NAME}"`,
+          description: `Created initial draft room "${INITIAL_SELF_SERVICE_ROOM_NAME}"`,
           metadata: { provisioningKind: 'SELF_SERVICE_INITIAL_ROOM' },
         },
       });
