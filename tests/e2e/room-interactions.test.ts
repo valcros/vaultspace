@@ -104,6 +104,35 @@ test.describe('Room interactions', () => {
     );
   });
 
+  test('More-menu management actions close cleanly with Escape and leave the room clickable', async ({
+    page,
+  }) => {
+    const roomId = await findRoomId(page);
+    await page.goto(`/rooms/${roomId}`);
+
+    const moreActions = page.getByRole('button', { name: 'More room actions' });
+    const manageButton = page.getByRole('button', { name: 'Manage' });
+    const managementTabs = page.getByRole('tablist', { name: 'Room management sections' });
+
+    for (const pane of ['Share Links', 'Access'] as const) {
+      await expect(moreActions).toBeVisible({ timeout: 15000 });
+      await moreActions.click();
+      await page.getByRole('menuitem', { name: pane }).click();
+      await expect(managementTabs).toBeVisible({ timeout: 10000 });
+      await expect(page.getByRole('tab', { name: pane })).toHaveAttribute('aria-selected', 'true');
+
+      await page.keyboard.press('Escape');
+      await expect(managementTabs).not.toBeVisible();
+
+      // This click is the regression assertion. An orphaned modal layer would
+      // intercept it and Playwright would report the page as non-actionable.
+      await manageButton.click();
+      await expect(managementTabs).toBeVisible({ timeout: 10000 });
+      await page.keyboard.press('Escape');
+      await expect(managementTabs).not.toBeVisible();
+    }
+  });
+
   test('Upload Files opens the upload dialog', async ({ page }) => {
     const roomId = await findRoomId(page);
     await page.goto(`/rooms/${roomId}`);

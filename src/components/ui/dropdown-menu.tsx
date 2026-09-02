@@ -5,7 +5,17 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronRight, Circle } from 'lucide-react';
 import { clsx } from 'clsx';
 
-const DropdownMenu = DropdownMenuPrimitive.Root;
+/**
+ * Action menus should not make the application inert. A dialog or sheet opened
+ * from a menu remains modal, but keeping the menu itself non-modal prevents two
+ * independent overlay managers from competing to hide and restore focus.
+ */
+const DropdownMenu = ({
+  modal = false,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Root>) => (
+  <DropdownMenuPrimitive.Root modal={modal} {...props} />
+);
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal;

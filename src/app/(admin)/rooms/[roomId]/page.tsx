@@ -226,6 +226,8 @@ export default function RoomDetailPage() {
   const [manageOpen, setManageOpen] = React.useState(() =>
     isManagePane(searchParams.get('manage'))
   );
+  const [moreMenuOpen, setMoreMenuOpen] = React.useState(false);
+  const pendingManagePaneRef = React.useRef<ManagePane | null>(null);
 
   const sortedDocuments = React.useMemo(() => {
     return [...documents].sort((a, b) => {
@@ -263,6 +265,30 @@ export default function RoomDetailPage() {
   const openUploadDialog = React.useCallback(() => setShowUploadDialog(true), []);
 
   const openFolderDialog = React.useCallback(() => setShowFolderDialog(true), []);
+
+  const openManagePaneFromMenu = React.useCallback((pane: ManagePane) => {
+    pendingManagePaneRef.current = pane;
+    setMoreMenuOpen(false);
+  }, []);
+
+  const handleMoreMenuCloseAutoFocus = React.useCallback((event: Event) => {
+    const pane = pendingManagePaneRef.current;
+    if (!pane) {
+      return;
+    }
+
+    // A Radix menu normally restores focus to its trigger while closing. When
+    // this action launches a modal drawer, that transient focus sits inside the
+    // content the drawer must make inert, producing the aria-hidden warning and
+    // an orphaned pointer-blocking layer after Escape. Complete the menu close
+    // first, then let the drawer take focus in the next frame.
+    event.preventDefault();
+    pendingManagePaneRef.current = null;
+    window.requestAnimationFrame(() => {
+      setManagePane(pane);
+      setManageOpen(true);
+    });
+  }, []);
 
   const handleSortChange = React.useCallback(
     (field: 'name' | 'size' | 'createdAt', dir: 'asc' | 'desc') => {
@@ -767,27 +793,30 @@ export default function RoomDetailPage() {
                     <Settings className="h-4 w-4 sm:mr-2" />
                     <span className="hidden sm:inline">Manage</span>
                   </Button>
-                  <DropdownMenu>
+                  <DropdownMenu open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" aria-label="More room actions">
                         <MoreHorizontal className="h-4 w-4 sm:mr-2" />
                         <span className="hidden sm:inline">More</span>
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent
+                      align="end"
+                      onCloseAutoFocus={handleMoreMenuCloseAutoFocus}
+                    >
                       <DropdownMenuItem
-                        onClick={() => {
-                          setManageOpen(true);
-                          setManagePane('links');
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          openManagePaneFromMenu('links');
                         }}
                       >
                         <Link2 className="mr-2 h-4 w-4" />
                         Share Links
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={() => {
-                          setManageOpen(true);
-                          setManagePane('members');
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          openManagePaneFromMenu('members');
                         }}
                       >
                         <Users className="mr-2 h-4 w-4" />
