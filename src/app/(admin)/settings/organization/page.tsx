@@ -240,20 +240,21 @@ export default function OrganizationSettingsPage() {
               />
             </div>
 
-            {/* Slug (read-only) */}
+            {/* Workspace URL (read-only after one-time onboarding claim) */}
             <div className="space-y-2">
-              <Label htmlFor="slug">URL Slug</Label>
+              <Label htmlFor="slug">Workspace URL</Label>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-neutral-500">vaultspace.org/</span>
+                <span className="text-sm text-neutral-500">https://</span>
                 <Input
                   id="slug"
                   value={settings.slug}
                   disabled
                   className="flex-1 bg-slate-50 dark:bg-slate-900"
                 />
+                <span className="text-sm text-neutral-500">.vaultspace.org</span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                URL slug cannot be changed after creation
+                This URL was claimed during workspace setup and cannot be changed.
               </p>
             </div>
           </CardContent>

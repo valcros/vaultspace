@@ -363,6 +363,7 @@ model Organization {
   // Organization identity
   name String @db.VarChar(255)
   slug String @unique @db.VarChar(100)
+  workspaceUrlClaimedAt DateTime?
 
   // Branding
   // Text (not VarChar) because logos/favicons are stored as base64 data URLs,
