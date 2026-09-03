@@ -697,10 +697,10 @@ jobs:
             --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
             --resource-group "$RESOURCE_GROUP" \
             --image "$TARGET_WORKER_IMAGE_PINNED" \
-            --cron-expression "* * * * *" \
+            --cron-expression "*/5 * * * *" \
             --replica-completion-count 1 \
             --parallelism 1 \
-            --replica-timeout 55
+            --replica-timeout 300
 
       - name: Validate email verification reconciler before Web cutover
         run: |
@@ -725,12 +725,12 @@ jobs:
             echo "ERROR: email verification reconciler command mismatch"
             exit 1
           fi
-          if [ "$TRIGGER" != "Schedule" ] || ! echo "$CRON" | grep -Eq '^(\*|\*/1) \* \* \* \*$'; then
-            echo "ERROR: email verification reconciler must run every minute"
+          if [ "$TRIGGER" != "Schedule" ] || ! echo "$CRON" | grep -Eq '^\*/5 \* \* \* \*$'; then
+            echo "ERROR: email verification reconciler must run every five minutes"
             exit 1
           fi
-          if [ "$COMPLETIONS" != "1" ] || [ "$PARALLELISM" != "1" ] || [ "$TIMEOUT" -gt 55 ]; then
-            echo "ERROR: email verification reconciler requires one completion, parallelism one, and timeout below its one-minute schedule"
+          if [ "$COMPLETIONS" != "1" ] || [ "$PARALLELISM" != "1" ] || [ "$TIMEOUT" -gt 300 ]; then
+            echo "ERROR: email verification reconciler requires one completion, parallelism one, and timeout within its five-minute schedule"
             exit 1
           fi
           for key in DATABASE_URL REDIS_URL EMAIL_VERIFICATION_RECOVERY_KEYS; do
