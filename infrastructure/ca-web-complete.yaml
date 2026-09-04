@@ -11,8 +11,8 @@ properties:
       - name: vaultspace-web
         image: <your-acr>.azurecr.io/vaultspace-web:latest
         resources:
-          cpu: 0.25
-          memory: 0.5Gi
+          cpu: 1.0
+          memory: 2Gi
         env:
           - name: NODE_ENV
             value: production
@@ -41,6 +41,7 @@ properties:
             httpGet:
               path: /api/health
               port: 3000
+            timeoutSeconds: 5
             initialDelaySeconds: 30
             periodSeconds: 30
             failureThreshold: 3
@@ -48,6 +49,7 @@ properties:
             httpGet:
               path: /api/health?deep=true
               port: 3000
+            timeoutSeconds: 5
             initialDelaySeconds: 15
             periodSeconds: 30
             failureThreshold: 3
