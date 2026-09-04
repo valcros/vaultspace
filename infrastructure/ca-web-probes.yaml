@@ -4,13 +4,14 @@ properties:
       - name: vaultspace-web
         image: example.azurecr.io/vaultspace-web:latest
         resources:
-          cpu: 0.5
-          memory: 1Gi
+          cpu: 1.0
+          memory: 2Gi
         probes:
           - type: Liveness
             httpGet:
               path: /api/health
               port: 3000
+            timeoutSeconds: 5
             initialDelaySeconds: 30
             periodSeconds: 30
             failureThreshold: 3
@@ -18,6 +19,7 @@ properties:
             httpGet:
               path: /api/health
               port: 3000
+            timeoutSeconds: 5
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 3
