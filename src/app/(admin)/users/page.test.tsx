@@ -17,6 +17,36 @@ vi.mock('@/components/ui/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
+vi.mock('@/components/ui/select', async () => {
+  const React = await import('react');
+  return {
+    Select: ({
+      value,
+      onValueChange,
+      children,
+    }: {
+      value: string;
+      onValueChange: (value: string) => void;
+      children: React.ReactNode;
+    }) =>
+      React.createElement(
+        'select',
+        {
+          'aria-label': 'Role',
+          value,
+          onChange: (event: React.ChangeEvent<HTMLSelectElement>) =>
+            onValueChange(event.target.value),
+        },
+        children
+      ),
+    SelectTrigger: ({ children }: { children: React.ReactNode }) => children,
+    SelectValue: () => null,
+    SelectContent: ({ children }: { children: React.ReactNode }) => children,
+    SelectItem: ({ value }: { value: string; children: React.ReactNode }) =>
+      React.createElement('option', { value }, value),
+  };
+});
+
 import { RoleProvider } from '@/components/layout/role-provider';
 import UsersPage from './page';
 
@@ -30,6 +60,8 @@ let user = {
   lastLoginAt: null,
   createdAt: '2026-08-01T00:00:00.000Z',
 };
+let inviteRequests: Array<Record<string, unknown>> = [];
+let returnViewerConflict = false;
 
 beforeEach(() => {
   user = {
@@ -42,6 +74,8 @@ beforeEach(() => {
     lastLoginAt: null,
     createdAt: '2026-08-01T00:00:00.000Z',
   };
+  inviteRequests = [];
+  returnViewerConflict = false;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -65,6 +99,26 @@ beforeEach(() => {
         const body = JSON.parse(String(init.body));
         user = { ...user, ...body };
         return { ok: true, json: async () => ({}) } as Response;
+      }
+      if (url === '/api/users/invite' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        inviteRequests.push(body);
+        if (returnViewerConflict && body['replaceViewerAccess'] !== true) {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({
+              error: 'Viewer access already exists',
+              code: 'VIEWER_ACCESS_REPLACEMENT_REQUIRED',
+              conflict: {
+                pendingViewerInvitationCount: 0,
+                viewerLinkCount: 1,
+                roomNames: ['Series A'],
+              },
+            }),
+          } as Response;
+        }
+        return { ok: true, status: 201, json: async () => ({ invitation: {} }) } as Response;
       }
       throw new Error(`Unexpected fetch: ${url}`);
     }) as typeof fetch
@@ -106,5 +160,45 @@ describe('Users page row actions', () => {
     moreActions.focus();
     fireEvent.keyDown(moreActions, { key: 'ArrowDown' });
     expect(await screen.findByRole('menuitem', { name: 'Send Email' })).toBeInTheDocument();
+  });
+
+  it('confirms before replacing viewer access with an admin invitation', async () => {
+    returnViewerConflict = true;
+    render(
+      <RoleProvider role="ADMIN">
+        <UsersPage />
+      </RoleProvider>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Invite User' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Email Address'), {
+      target: { value: 'viewer@example.com' },
+    });
+
+    const roleSelect = within(dialog).getByRole('combobox');
+    fireEvent.change(roleSelect, { target: { value: 'ADMIN' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send Invitation' }));
+
+    expect(
+      await within(dialog).findByText('This email already has Viewer access.')
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/Affected room: Series A/)).toBeInTheDocument();
+    expect(inviteRequests).toEqual([{ email: 'viewer@example.com', role: 'ADMIN', roomIds: [] }]);
+
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Replace Viewer Access and Invite Admin' })
+    );
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(inviteRequests).toEqual([
+      { email: 'viewer@example.com', role: 'ADMIN', roomIds: [] },
+      {
+        email: 'viewer@example.com',
+        role: 'ADMIN',
+        roomIds: [],
+        replaceViewerAccess: true,
+      },
+    ]);
   });
 });

@@ -17,7 +17,7 @@ import { getProviders } from '@/providers';
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 
-class LegacyInvitationReissueConflictError extends Error {}
+class InvitationMutationConflictError extends Error {}
 
 /**
  * POST /api/users/invite
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { email, role = 'VIEWER', roomIds } = body;
+    const { email, role = 'VIEWER', roomIds, replaceViewerAccess = false } = body;
 
     // Validate email
     if (!email || typeof email !== 'string') {
@@ -50,6 +50,17 @@ export async function POST(request: NextRequest) {
     const validRoles = ['ADMIN', 'VIEWER'];
     if (!validRoles.includes(role)) {
       return NextResponse.json({ error: 'Invalid role. Must be ADMIN or VIEWER' }, { status: 400 });
+    }
+
+    if (typeof replaceViewerAccess !== 'boolean') {
+      return NextResponse.json({ error: 'replaceViewerAccess must be a boolean' }, { status: 400 });
+    }
+
+    if (replaceViewerAccess && role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Viewer access can only be replaced by an administrator invitation' },
+        { status: 400 }
+      );
     }
 
     if (
@@ -184,7 +195,57 @@ export async function POST(request: NextRequest) {
           (existingInvite) => !legacyViewerInviteIds.includes(existingInvite.id)
         );
 
-        if (hasBlockingInvite) {
+        const pendingAdminInvite = existingInvites.some(
+          (existingInvite) => existingInvite.role === 'ADMIN'
+        );
+        if (pendingAdminInvite) {
+          return { error: 'An invitation is already pending for this email', status: 400 };
+        }
+
+        const pendingViewerInviteIds =
+          role === 'ADMIN'
+            ? existingInvites
+                .filter((existingInvite) => existingInvite.role === 'VIEWER')
+                .map((existingInvite) => existingInvite.id)
+            : [];
+
+        const viewerLinks =
+          role === 'ADMIN'
+            ? await tx.link.findMany({
+                where: {
+                  organizationId: session.organizationId,
+                  isActive: true,
+                  allowedEmails: { has: normalizedEmail },
+                  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                },
+                select: {
+                  id: true,
+                  roomId: true,
+                  allowedEmails: true,
+                  room: { select: { name: true } },
+                },
+              })
+            : [];
+
+        if (
+          role === 'ADMIN' &&
+          !replaceViewerAccess &&
+          (pendingViewerInviteIds.length > 0 || viewerLinks.length > 0)
+        ) {
+          return {
+            error:
+              'Viewer access already exists for this email. Confirm replacement to invite them as an administrator.',
+            code: 'VIEWER_ACCESS_REPLACEMENT_REQUIRED',
+            status: 409,
+            conflict: {
+              pendingViewerInvitationCount: pendingViewerInviteIds.length,
+              viewerLinkCount: viewerLinks.length,
+              roomNames: [...new Set(viewerLinks.map((link) => link.room.name))].sort(),
+            },
+          };
+        }
+
+        if (role === 'VIEWER' && hasBlockingInvite) {
           return { error: 'An invitation is already pending for this email', status: 400 };
         }
 
@@ -194,7 +255,63 @@ export async function POST(request: NextRequest) {
             data: { status: 'REJECTED' },
           });
           if (invalidated.count !== legacyViewerInviteIds.length) {
-            throw new LegacyInvitationReissueConflictError();
+            throw new InvitationMutationConflictError();
+          }
+        }
+
+        let replacedViewerSessionCount = 0;
+        if (role === 'ADMIN' && replaceViewerAccess) {
+          if (pendingViewerInviteIds.length > 0) {
+            const invalidated = await tx.invitation.updateMany({
+              where: { id: { in: pendingViewerInviteIds }, status: 'PENDING' },
+              data: { status: 'REJECTED' },
+            });
+            if (invalidated.count !== pendingViewerInviteIds.length) {
+              throw new InvitationMutationConflictError();
+            }
+          }
+
+          for (const link of viewerLinks) {
+            const remainingEmails = link.allowedEmails.filter(
+              (allowedEmail) => allowedEmail.toLowerCase() !== normalizedEmail
+            );
+            await tx.link.update({
+              where: { id: link.id },
+              data: {
+                allowedEmails: remainingEmails,
+                ...(remainingEmails.length === 0 ? { isActive: false } : {}),
+              },
+            });
+            await tx.event.create({
+              data: {
+                organizationId: session.organizationId,
+                eventType: 'LINK_REVOKED',
+                actorType: 'ADMIN',
+                actorId: session.userId,
+                actorEmail: session.user.email,
+                roomId: link.roomId,
+                description: `Revoked viewer access for ${normalizedEmail} during administrator promotion`,
+                metadata: {
+                  email: normalizedEmail,
+                  linkId: link.id,
+                  action: 'replace_viewer_with_admin_invitation',
+                  linkDeactivated: remainingEmails.length === 0,
+                },
+              },
+            });
+          }
+
+          if (viewerLinks.length > 0) {
+            const deactivatedSessions = await tx.viewSession.updateMany({
+              where: {
+                organizationId: session.organizationId,
+                linkId: { in: viewerLinks.map((link) => link.id) },
+                visitorEmail: normalizedEmail,
+                isActive: true,
+              },
+              data: { isActive: false },
+            });
+            replacedViewerSessionCount = deactivatedSessions.count;
           }
         }
 
@@ -240,6 +357,11 @@ export async function POST(request: NextRequest) {
               roomIds: assignedRoomIds,
               reissuedLegacyInvitationCount: legacyViewerInviteIds.length,
               reissuedLegacyInvitationIds: legacyViewerInviteIds,
+              replacedViewerInvitationCount: pendingViewerInviteIds.length,
+              replacedViewerInvitationIds: pendingViewerInviteIds,
+              replacedViewerLinkCount: viewerLinks.length,
+              replacedViewerLinkIds: viewerLinks.map((link) => link.id),
+              replacedViewerSessionCount,
             },
           },
         });
@@ -259,9 +381,9 @@ export async function POST(request: NextRequest) {
         };
       });
     } catch (error) {
-      if (error instanceof LegacyInvitationReissueConflictError) {
+      if (error instanceof InvitationMutationConflictError) {
         return NextResponse.json(
-          { error: 'The legacy invitation changed before it could be reissued. Please try again.' },
+          { error: 'The existing invitation changed during the update. Please try again.' },
           { status: 409 }
         );
       }
@@ -269,7 +391,14 @@ export async function POST(request: NextRequest) {
     }
 
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
+      return NextResponse.json(
+        {
+          error: result.error,
+          ...('code' in result ? { code: result.code } : {}),
+          ...('conflict' in result ? { conflict: result.conflict } : {}),
+        },
+        { status: result.status }
+      );
     }
 
     const { invitation, organizationName, emailSenderName, emailSenderAddress, assignedRoomIds } =
