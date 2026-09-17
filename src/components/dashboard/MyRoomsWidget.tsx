@@ -107,7 +107,7 @@ export function MyRoomsWidget({ rooms, loading }: MyRoomsWidgetProps) {
 
             <div className="mt-4 flex items-center justify-between text-sm font-medium text-primary-600 dark:text-primary-400">
               <span>Open room</span>
-              <span className="transition-transform group-hover:translate-x-1">&rarr;</span>
+              <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
             </div>
           </Link>
         ))}

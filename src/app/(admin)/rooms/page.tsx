@@ -568,7 +568,7 @@ function RoomCard({
               ) : (
                 <span>Ready for review</span>
               )}
-              <span className="text-primary-700 transition-transform group-hover:translate-x-1">
+              <span className="group-hover:translate-x-1 text-primary-700 transition-transform">
                 Open room &rarr;
               </span>
             </div>

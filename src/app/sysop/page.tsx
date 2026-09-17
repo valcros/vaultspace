@@ -701,7 +701,7 @@ export default function SysOpOverviewPage() {
                       >
                         Organization Name{' '}
                         {sortField !== 'name' ? (
-                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                          <ArrowUpDown className="group-hover:opacity-100 ml-1 inline-block h-3 w-3 text-slate-400 opacity-50" />
                         ) : sortDirection === 'asc' ? (
                           <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                         ) : (
@@ -714,7 +714,7 @@ export default function SysOpOverviewPage() {
                       >
                         Slug{' '}
                         {sortField !== 'slug' ? (
-                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                          <ArrowUpDown className="group-hover:opacity-100 ml-1 inline-block h-3 w-3 text-slate-400 opacity-50" />
                         ) : sortDirection === 'asc' ? (
                           <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                         ) : (
@@ -727,7 +727,7 @@ export default function SysOpOverviewPage() {
                       >
                         Rooms{' '}
                         {sortField !== 'roomCount' ? (
-                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                          <ArrowUpDown className="group-hover:opacity-100 ml-1 inline-block h-3 w-3 text-slate-400 opacity-50" />
                         ) : sortDirection === 'asc' ? (
                           <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                         ) : (
@@ -740,7 +740,7 @@ export default function SysOpOverviewPage() {
                       >
                         Users{' '}
                         {sortField !== 'userCount' ? (
-                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                          <ArrowUpDown className="group-hover:opacity-100 ml-1 inline-block h-3 w-3 text-slate-400 opacity-50" />
                         ) : sortDirection === 'asc' ? (
                           <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                         ) : (
@@ -753,7 +753,7 @@ export default function SysOpOverviewPage() {
                       >
                         Storage Usage{' '}
                         {sortField !== 'usagePercentage' ? (
-                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                          <ArrowUpDown className="group-hover:opacity-100 ml-1 inline-block h-3 w-3 text-slate-400 opacity-50" />
                         ) : sortDirection === 'asc' ? (
                           <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                         ) : (
@@ -766,7 +766,7 @@ export default function SysOpOverviewPage() {
                       >
                         Created{' '}
                         {sortField !== 'createdAt' ? (
-                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                          <ArrowUpDown className="group-hover:opacity-100 ml-1 inline-block h-3 w-3 text-slate-400 opacity-50" />
                         ) : sortDirection === 'asc' ? (
                           <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                         ) : (
@@ -779,7 +779,7 @@ export default function SysOpOverviewPage() {
                       >
                         Last Access{' '}
                         {sortField !== 'lastAccessAt' ? (
-                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                          <ArrowUpDown className="group-hover:opacity-100 ml-1 inline-block h-3 w-3 text-slate-400 opacity-50" />
                         ) : sortDirection === 'asc' ? (
                           <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                         ) : (
@@ -792,7 +792,7 @@ export default function SysOpOverviewPage() {
                       >
                         Status{' '}
                         {sortField !== 'isActive' ? (
-                          <ArrowUpDown className="ml-1 inline-block h-3 w-3 text-slate-400 opacity-50 group-hover:opacity-100" />
+                          <ArrowUpDown className="group-hover:opacity-100 ml-1 inline-block h-3 w-3 text-slate-400 opacity-50" />
                         ) : sortDirection === 'asc' ? (
                           <ArrowUp className="ml-1 inline-block h-3 w-3 text-indigo-600 dark:text-indigo-400" />
                         ) : (

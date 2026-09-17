@@ -74,7 +74,7 @@ export function RoomOverviewCard({ room, continueDocument }: RoomOverviewCardPro
         )}
       </div>
 
-      <h3 className="mt-3 text-lg font-semibold text-neutral-900 group-hover:text-primary-700 dark:text-neutral-100 dark:group-hover:text-primary-300">
+      <h3 className="group-hover:text-primary-700 dark:group-hover:text-primary-300 mt-3 text-lg font-semibold text-neutral-900 dark:text-neutral-100">
         {room.name}
       </h3>
       {room.description && (

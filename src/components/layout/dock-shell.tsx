@@ -641,7 +641,7 @@ function DockIcon({ item, isActive, onClick, isTouch, isHorizontal }: DockIconPr
           className={clsx(
             'absolute whitespace-nowrap rounded-lg bg-slate-950 px-2 py-1',
             'text-xs text-white',
-            'opacity-0 group-hover:opacity-100',
+            'group-hover:opacity-100 opacity-0',
             'transition-opacity duration-200',
             'pointer-events-none',
             'dark:bg-slate-100 dark:text-slate-950',

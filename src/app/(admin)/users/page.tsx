@@ -97,6 +97,12 @@ interface AssignableRoom {
   description: string | null;
 }
 
+interface ViewerAccessReplacementConflict {
+  pendingViewerInvitationCount: number;
+  viewerLinkCount: number;
+  roomNames: string[];
+}
+
 interface MemberRoomAccess {
   id: string;
   name: string;
@@ -141,6 +147,8 @@ export default function UsersPage() {
     roomIds: [],
   });
   const [inviteError, setInviteError] = React.useState<string | null>(null);
+  const [viewerAccessConflict, setViewerAccessConflict] =
+    React.useState<ViewerAccessReplacementConflict | null>(null);
   // Compose-email dialog: sends via the VaultSpace platform (org sender), not
   // the local mail client.
   const [emailTarget, setEmailTarget] = React.useState<User | null>(null);
@@ -219,7 +227,7 @@ export default function UsersPage() {
     }
   };
 
-  const handleInvite = async () => {
+  const handleInvite = async (replaceViewerAccess = false) => {
     if (!inviteData.email.trim()) {
       return;
     }
@@ -240,7 +248,11 @@ export default function UsersPage() {
       const response = await fetch('/api/users/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...inviteData, roomIds: effectiveRoomIds }),
+        body: JSON.stringify({
+          ...inviteData,
+          roomIds: effectiveRoomIds,
+          ...(replaceViewerAccess ? { replaceViewerAccess: true } : {}),
+        }),
         credentials: 'include',
       });
 
@@ -250,7 +262,15 @@ export default function UsersPage() {
         setShowInviteDialog(false);
         setInviteData({ email: '', role: 'VIEWER', roomIds: [] });
         setInviteError(null);
+        setViewerAccessConflict(null);
         fetchUsers();
+      } else if (
+        response.status === 409 &&
+        data.code === 'VIEWER_ACCESS_REPLACEMENT_REQUIRED' &&
+        data.conflict
+      ) {
+        setViewerAccessConflict(data.conflict as ViewerAccessReplacementConflict);
+        setInviteError(null);
       } else {
         setInviteError(data.error || 'Failed to send invitation');
       }
@@ -1274,6 +1294,7 @@ export default function UsersPage() {
           setShowInviteDialog(open);
           if (!open) {
             setInviteError(null);
+            setViewerAccessConflict(null);
           }
         }}
       >
@@ -1286,8 +1307,29 @@ export default function UsersPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             {inviteError && (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+              <div
+                role="alert"
+                className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600"
+              >
                 {inviteError}
+              </div>
+            )}
+            {viewerAccessConflict && (
+              <div
+                role="alert"
+                className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+              >
+                <p className="font-medium">This email already has Viewer access.</p>
+                <p className="mt-1">
+                  Replacing it will revoke the existing Viewer access and send a new Admin
+                  invitation.
+                </p>
+                {viewerAccessConflict.roomNames.length > 0 && (
+                  <p className="mt-2 text-xs">
+                    Affected {viewerAccessConflict.roomNames.length === 1 ? 'room' : 'rooms'}:{' '}
+                    {viewerAccessConflict.roomNames.join(', ')}
+                  </p>
+                )}
               </div>
             )}
             <div className="space-y-2">
@@ -1300,6 +1342,7 @@ export default function UsersPage() {
                 onChange={(e) => {
                   setInviteData({ ...inviteData, email: e.target.value });
                   setInviteError(null);
+                  setViewerAccessConflict(null);
                 }}
                 autoFocus
               />
@@ -1308,13 +1351,15 @@ export default function UsersPage() {
               <Label htmlFor="role">Role</Label>
               <Select
                 value={inviteData.role}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
                   setInviteData({
                     ...inviteData,
                     role: value as 'ADMIN' | 'VIEWER',
                     roomIds: value === 'ADMIN' ? [] : inviteData.roomIds,
-                  })
-                }
+                  });
+                  setInviteError(null);
+                  setViewerAccessConflict(null);
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -1390,21 +1435,38 @@ export default function UsersPage() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleInvite}
-              loading={isInviting}
-              disabled={
-                !inviteData.email.trim() ||
-                (inviteData.role === 'VIEWER' &&
-                  assignableRooms.length !== 1 &&
-                  inviteData.roomIds.length === 0)
-              }
-            >
-              Send Invitation
-            </Button>
+            {viewerAccessConflict ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setViewerAccessConflict(null)}
+                  disabled={isInviting}
+                >
+                  Keep Viewer Access
+                </Button>
+                <Button onClick={() => handleInvite(true)} loading={isInviting}>
+                  Replace Viewer Access and Invite Admin
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => handleInvite()}
+                  loading={isInviting}
+                  disabled={
+                    !inviteData.email.trim() ||
+                    (inviteData.role === 'VIEWER' &&
+                      assignableRooms.length !== 1 &&
+                      inviteData.roomIds.length === 0)
+                  }
+                >
+                  Send Invitation
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

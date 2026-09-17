@@ -398,7 +398,7 @@ export default function RoomAnalyticsPage() {
                                 className="w-full rounded-t bg-primary-500 transition-colors hover:bg-primary-600"
                                 style={{ height: `${height}%` }}
                               />
-                              <div className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 rounded bg-neutral-800 px-2 py-1 text-xs text-white group-hover:block">
+                              <div className="group-hover:block pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 rounded bg-neutral-800 px-2 py-1 text-xs text-white">
                                 {point.count} views
                               </div>
                             </div>

@@ -172,6 +172,143 @@ describe('POST /api/users/invite', () => {
     expect(body.error).toContain('pending');
   });
 
+  it('requires confirmation before replacing pending viewer access with an admin invitation', async () => {
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      const tx = {
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
+        invitation: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ id: 'viewer-invite', role: 'VIEWER', roomAssignments: [] }]),
+        },
+        link: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'viewer-link',
+              roomId: 'room-1',
+              allowedEmails: ['viewer@example.com'],
+              room: { name: 'Series A' },
+            },
+          ]),
+        },
+      };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/users/invite', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'viewer@example.com', role: 'ADMIN' }),
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'VIEWER_ACCESS_REPLACEMENT_REQUIRED',
+      conflict: {
+        pendingViewerInvitationCount: 1,
+        viewerLinkCount: 1,
+        roomNames: ['Series A'],
+      },
+    });
+  });
+
+  it('replaces viewer access and creates an admin invitation after confirmation', async () => {
+    const rejectViewerInvite = vi.fn().mockResolvedValue({ count: 1 });
+    const updateLink = vi.fn().mockResolvedValue({});
+    const deactivateSessions = vi.fn().mockResolvedValue({ count: 1 });
+    const createEvent = vi.fn().mockResolvedValue({});
+    const createInvitation = vi.fn().mockResolvedValue({
+      id: 'admin-invite',
+      email: 'viewer@example.com',
+      role: 'ADMIN',
+      status: 'PENDING',
+      expiresAt: new Date('2026-09-23T00:00:00Z'),
+      invitationUrl: 'https://example.com/auth/register?token=admin-token',
+      invitedByUser: { firstName: 'Admin', lastName: 'User', email: 'admin@example.com' },
+    });
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+      const tx = {
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
+        invitation: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ id: 'viewer-invite', role: 'VIEWER', roomAssignments: [] }]),
+          updateMany: rejectViewerInvite,
+          create: createInvitation,
+        },
+        link: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'single-recipient-link',
+              roomId: 'room-1',
+              allowedEmails: ['viewer@example.com'],
+              room: { name: 'Series A' },
+            },
+            {
+              id: 'shared-link',
+              roomId: 'room-2',
+              allowedEmails: ['viewer@example.com', 'other@example.com'],
+              room: { name: 'Series B' },
+            },
+          ]),
+          update: updateLink,
+        },
+        viewSession: { updateMany: deactivateSessions },
+        event: { create: createEvent },
+        organization: { findUnique: vi.fn().mockResolvedValue({ name: 'Acme Corp' }) },
+      };
+      return callback(tx as unknown as Parameters<typeof callback>[0]);
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/users/invite', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: 'viewer@example.com',
+          role: 'ADMIN',
+          replaceViewerAccess: true,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(rejectViewerInvite).toHaveBeenCalledWith({
+      where: { id: { in: ['viewer-invite'] }, status: 'PENDING' },
+      data: { status: 'REJECTED' },
+    });
+    expect(updateLink).toHaveBeenNthCalledWith(1, {
+      where: { id: 'single-recipient-link' },
+      data: { allowedEmails: [], isActive: false },
+    });
+    expect(updateLink).toHaveBeenNthCalledWith(2, {
+      where: { id: 'shared-link' },
+      data: { allowedEmails: ['other@example.com'] },
+    });
+    expect(deactivateSessions).toHaveBeenCalledWith({
+      where: {
+        organizationId: 'org-1',
+        linkId: { in: ['single-recipient-link', 'shared-link'] },
+        visitorEmail: 'viewer@example.com',
+        isActive: true,
+      },
+      data: { isActive: false },
+    });
+    expect(createInvitation).toHaveBeenCalled();
+    expect(createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: 'USER_INVITED',
+          metadata: expect.objectContaining({
+            replacedViewerInvitationCount: 1,
+            replacedViewerLinkCount: 2,
+            replacedViewerSessionCount: 1,
+          }),
+        }),
+      })
+    );
+  });
+
   it('creates invitation successfully with default VIEWER role', async () => {
     const createAssignments = vi.fn().mockResolvedValue({ count: 1 });
     const mockInvitation = {
@@ -237,6 +374,7 @@ describe('POST /api/users/invite', () => {
           findMany: vi.fn().mockResolvedValue([]),
           create: vi.fn().mockResolvedValue(mockInvitation),
         },
+        link: { findMany: vi.fn().mockResolvedValue([]) },
         event: { create: vi.fn().mockResolvedValue({}) },
         organization: {
           findUnique: vi.fn().mockResolvedValue({ name: 'Acme Corp' }),
