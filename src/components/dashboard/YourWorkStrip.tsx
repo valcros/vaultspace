@@ -40,10 +40,10 @@ export function YourWorkStrip({ items }: { items: YourWorkItem[] }) {
             className="group inline-flex max-w-full items-center gap-1.5 text-neutral-700 hover:text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 dark:text-neutral-300 dark:hover:text-primary-300"
           >
             <Icon
-              className="h-4 w-4 shrink-0 text-neutral-400 group-hover:text-primary-600 dark:group-hover:text-primary-400"
+              className="group-hover:text-primary-600 dark:group-hover:text-primary-400 h-4 w-4 shrink-0 text-neutral-400"
               aria-hidden="true"
             />
-            <span className="truncate underline-offset-4 group-hover:underline">
+            <span className="group-hover:underline truncate underline-offset-4">
               {item.label}
               {item.detail && (
                 <span className="font-medium text-neutral-900 dark:text-neutral-100">

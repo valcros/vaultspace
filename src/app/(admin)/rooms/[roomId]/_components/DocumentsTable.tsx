@@ -471,7 +471,7 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
       {/* Action menu */}
       {!readOnly && (
         <div
-          className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+          className="group-hover:opacity-100 absolute right-2 top-2 opacity-0 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
           <DropdownMenu>
@@ -646,7 +646,7 @@ export function DocumentsTable({
                       <ChevronDown className="h-3 w-3" />
                     )
                   ) : (
-                    <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                    <ArrowUpDown className="group-hover:opacity-100 h-3 w-3 opacity-0" />
                   )}
                 </span>
               </th>

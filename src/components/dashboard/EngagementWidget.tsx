@@ -122,7 +122,7 @@ function MiniActivityChart({ data }: { data: { date: string; views: number }[] }
                 )}
                 style={{ height: `${Math.max(height, 4)}%` }}
               />
-              <div className="absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-neutral-900 px-2 py-1 text-xs text-white group-hover:block">
+              <div className="group-hover:block absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-neutral-900 px-2 py-1 text-xs text-white">
                 {day.views}
               </div>
             </div>

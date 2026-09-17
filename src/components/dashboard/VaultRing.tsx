@@ -19,7 +19,7 @@ export function VaultRing({ size = 22 }: { size?: number }) {
       height={size}
       viewBox={`0 0 ${size} ${size}`}
       aria-hidden="true"
-      className="shrink-0 text-neutral-300 transition-transform duration-300 group-hover:rotate-[30deg] dark:text-neutral-600"
+      className="group-hover:rotate-[30deg] shrink-0 text-neutral-300 transition-transform duration-300 dark:text-neutral-600"
     >
       <circle
         cx={center}
