@@ -198,6 +198,9 @@ test.describe('Room interactions', () => {
       .poll(async () => nameEl.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)))
       .toBeGreaterThan(beforePx);
 
+    // The font updates before Radix finishes the menu's exit animation. Wait
+    // for the old portal to unmount so its dismissal cannot close a new menu.
+    await expect(page.getByRole('menu', { includeHidden: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Adjust file and folder name text size' }).click();
     await page.getByRole('menuitem', { name: 'Magnify names on hover' }).click();
     await nameEl.hover();
