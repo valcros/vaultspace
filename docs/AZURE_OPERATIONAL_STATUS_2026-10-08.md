@@ -82,12 +82,66 @@ requested repository correction is complete; it does not assert a new Azure chan
 | 2.7 Certificate email     | Corrected | With explicit owner approval, created staging `ACME_EMAIL` secret from the script's existing address, removed the fallback, and wired the monthly workflow. Verified secret-name presence, shell syntax, and fail-fast behavior when missing. No renewal run; workflow takes effect after merge. |
 | 2.8 Backlog/status        | Corrected | Closed corrected documentation items and the false disabled-reconciler inference; retained real dependency, maintenance, credential, monitoring, and availability work.                                                                                                                          |
 
+## Decision Review Before Phase 3
+
+The owner requests strawman, steelman, and premortem reviews before major work.
+The following evaluates the next phase; it does not authorize infrastructure changes.
+
+### Strawman: smallest useful next step
+
+Approve a separate dependency remediation PR that clears the critical audit findings,
+then run release gates and deploy the reviewed build through the existing protected
+pipeline. Keep the current Azure topology and scheduled reconciler arrangement.
+This minimizes simultaneous variables and addresses the immediate release blocker.
+It leaves admin registry credentials, missing maintenance schedules, readiness coupling,
+and endpoint/job alerting unresolved. Its weakest assumption is that an audit-clean
+build and existing resource-pressure alerts are enough for a public launch; they are not
+sufficient evidence of recovery readiness or end-to-end operation.
+
+### Steelman: strongest practical plan and alternative
+
+Use staged, separately approved changes: dependency remediation first, then missing
+availability/job alert coverage and notification verification, then registry identity
+migration after proving both CI pushes and runtime cold-start pulls. Review cleanup
+jobs, readiness, and data-service availability in separate proposals with explicit
+success criteria and recovery plans. Preserve the existing working reset job and
+resource-pressure alerts. This gives each failure a smaller set of possible causes
+and keeps recovery artifacts usable.
+
+The strongest alternative is a coordinated hardening release that also enables HA,
+changes networking, replaces registry credentials, and adds maintenance jobs before
+public launch. It can enforce a consistent final posture and avoid repeated windows,
+but has greater cost, broader permissions, more coupled failure modes, and a harder
+rollback. Current evidence does not establish the load, budget, recovery objectives,
+or restore rehearsal needed to justify that scope.
+
+**Recommendation:** approve the narrow dependency PR first, with all critical findings
+addressed and the full audit rerun. Prepare the alerting and identity proposals next.
+Retain staging status until functional QA and recovery evidence meet launch criteria.
+Do not enable a second reset reconciler merely to make the web health flag true.
+
+### Premortem: assume the next release caused an outage or missed work
+
+| Failure scenario                                                                                                                                    | Early signal                                                                    | Gate before change and recovery plan                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Next.js/sharp upgrades land but CI still blocks releases because critical dev-tool findings remain                                                  | Fresh full audit still reports critical entries                                 | Inspect runtime and development findings together, align tooling, run the complete release gates, and retain the verified prior image for controlled rollback. Rollback restores availability, not a claim that vulnerable dependencies are safe. |
+| ACR admin is disabled and scaled-to-zero workers cannot pull an image                                                                               | Image-pull failures appear only on a new replica or scheduled execution         | Prove CI push and runtime pull permissions with the proposed identities before retiring credentials. Keep the existing auth path until cold-start verification succeeds and the approved rollback path is documented.                             |
+| A readiness change reports healthy while required dependencies fail, or deep readiness removes all web replicas during a transient dependency fault | Quick/deep health diverge; traffic failures or replica readiness churn          | Define what readiness promises, test dependency-failure behavior in an isolated environment, and preserve the prior probe template and image for rollback.                                                                                        |
+| New cleanup jobs delete records outside the intended retention scope or process invitations twice                                                   | Dry-run counts differ from the expected tenant/age scope; duplicate-send events | Review scope, idempotency, and destructive behavior; validate on isolated data and rehearse recovery before scheduling. Pause the approved job if its scoped verification fails.                                                                  |
+| Resource-pressure alerts stay green while a job silently skips work or email delivery stalls                                                        | Execution succeeds but useful-work/delivery indicators do not advance           | Add job failure/staleness and endpoint checks, verify notification delivery, and use an explicitly approved controlled-mailbox canary for delivery evidence. Job success alone is insufficient.                                                   |
+| Database storage fills or restoration exceeds the accepted outage window                                                                            | Capacity warnings fire; restore drill misses its target                         | Establish recovery objectives, verify capacity headroom/autogrow policy, and rehearse database plus blob recovery before changing availability or retention settings.                                                                             |
+
+The Phase 3 checklist in the draft PR remains unchecked. Live mutation, canary mail,
+destructive cleanup, and recovery drills require the applicable approval and isolated
+test scope before execution.
+
 ## Validation
 
 - Azure operations were read-only; no app/job execution, deployment, secret retrieval, restart, role assignment, or resource mutation was performed.
 - Live `scripts/validate-container-env.sh` passed using an explicit-subscription CLI wrapper. Its success does not establish that every secret is Key Vault-backed.
 - Local type-check and lint passed; unit suite: 177 files passed, 1 skipped; 1,574 tests passed, 7 skipped.
 - `npm audit --json` completed with the vulnerabilities above. This is a known release blocker, not a passing security result.
+- Standalone validation has now run on this PR; the earlier claim of no recorded runs is superseded. The workflow has path-filtered PR triggers and a manual full-stack path.
 - Quick public health returned `healthy`, `mode=azure`, and no degraded capabilities. The audit did not invoke deep health, send mail, or mutate tenant data.
 
 ## Sources

@@ -35,10 +35,11 @@
   - Add endpoint-availability and scheduled-job failure alerting, and test notification delivery. Preserve the 14 existing app/PostgreSQL/Redis metric alerts.
   - Review PostgreSQL and Redis HA, backup/recovery objectives, public network rules, and PostgreSQL autogrow before launch. No cloud settings changed in this review.
 
-- **Standalone validation workflow** (`.github/workflows/standalone-validation.yml`) has no recorded runs; wire it to a trigger or remove it.
+- **Standalone full-stack evidence:** the existing path-filtered workflow now runs on this review PR. Complete and review an approved full-stack smoke run before launch; that job is skipped on ordinary PR runs.
 
 ### Closed by the 2026-10-08 Azure review
 
+- Corrected the claim that standalone validation lacked a trigger: it has path-filtered PR triggers and a manual full-stack path, and this review produced recorded runs.
 - Removed the hard-coded ACME email fallback after owner-approved staging secret creation; the monthly workflow now passes `ACME_EMAIL`. No renewal was triggered.
 - Corrected the disabled-reset-reconciler inference: the scheduled job is enabled and runs every 15 minutes; web health is process-local.
 - Confirmed all four scheduled jobs use the current worker digest; no stale-token/pending-invite deployments exist to repin.
