@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
+import { isAuthenticationError } from '@/lib/errors';
 import { getRequestContext, requireAuth } from '@/lib/middleware';
 import { getPermissionEngine } from '@/lib/permissions';
 import { getProviders } from '@/providers';
@@ -356,6 +357,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       404
     );
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return jsonResponse({ error: 'Authentication required' }, 401);
+    }
     console.error('[AdminPreviewAPI] Error:', error);
     return jsonResponse({ error: 'Failed to get preview' }, 500);
   }

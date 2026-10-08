@@ -1,0 +1,219 @@
+[
+  {
+    "component": "email-worker",
+    "event": "provider_submission_failed",
+    "outcome": "failed",
+    "expected": "mail"
+  },
+  {
+    "component": "email-worker",
+    "event": "delivery_lifecycle_update",
+    "outcome": "failed",
+    "expected": "mail"
+  },
+  {
+    "component": "email-worker",
+    "event": "delivery_lifecycle_update",
+    "outcome": "failed_after_provider_acceptance",
+    "expected": "mail"
+  },
+  {
+    "component": "email-verification-delivery",
+    "event": "provider_submission",
+    "outcome": "unknown",
+    "expected": "mail"
+  },
+  {
+    "component": "email-verification-delivery",
+    "event": "provider_submission",
+    "outcome": "rejected",
+    "expected": "mail"
+  },
+  {
+    "component": "email-verification-delivery",
+    "event": "submission_failed",
+    "outcome": "blocked",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_submission_failed",
+    "outcome": "acceptance_unknown",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_submission_failed",
+    "outcome": "failed_permanent",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_submission_skipped",
+    "outcome": "blocked",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "recovery_decrypt",
+    "outcome": "blocked_configuration",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "recovery_decrypt",
+    "outcome": "failed_terminal",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_durability",
+    "outcome": "critical_conflict_audit_and_reconciliation_failed",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_durability",
+    "outcome": "critical_both_writes_failed",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_durability",
+    "outcome": "database_write_failed_reconciliation_queued",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_durability",
+    "outcome": "reconciliation_queue_failed_database_recorded",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_conflict",
+    "outcome": "terminal_correlation_conflict",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_reconciliation_failed",
+    "outcome": "terminal_correlation_conflict",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_reconciliation_failed",
+    "outcome": "terminal_persistence_error",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_reconciliation_failed",
+    "outcome": "terminal_state_conflict",
+    "expected": "mail"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_acceptance_reconciliation_failed",
+    "outcome": "audit_retry_required",
+    "expected": "mail"
+  },
+  {
+    "component": "invitation-email",
+    "event": "provider_submission",
+    "outcome": "failed_or_unknown",
+    "expected": "mail"
+  },
+  {
+    "component": "email-verification-reconciler",
+    "event": "run",
+    "outcome": "failed",
+    "expected": "reconciler"
+  },
+  {
+    "component": "password-reset-reconciler",
+    "event": "reconciliation_failed",
+    "outcome": "failed",
+    "expected": "reconciler"
+  },
+  {
+    "component": "email-worker",
+    "event": "provider_submission_failed",
+    "outcome": "retrying",
+    "expected": "none"
+  },
+  {
+    "component": "email-verification-delivery",
+    "event": "provider_submission",
+    "outcome": "accepted",
+    "expected": "none"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_submission_failed",
+    "outcome": "superseded_by_authoritative_state",
+    "expected": "none"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "provider_submission_skipped",
+    "outcome": "not_claimable",
+    "expected": "none"
+  },
+  {
+    "component": "password-reset-delivery",
+    "event": "delivery_flow_cancelled",
+    "outcome": "cancelled",
+    "expected": "none"
+  },
+  {
+    "component": "invitation-email",
+    "event": "provider_submission",
+    "outcome": "accepted",
+    "expected": "none"
+  },
+  {
+    "component": "email-verification-reconciler",
+    "event": "run",
+    "outcome": "completed",
+    "expected": "none"
+  },
+  {
+    "component": "password-reset-reconciler",
+    "event": "reconciliation_completed",
+    "outcome": "success",
+    "expected": "none"
+  },
+  {
+    "component": "unrelated-component",
+    "event": "provider_submission_failed",
+    "outcome": "failed",
+    "expected": "none"
+  },
+  {
+    "component": "email-worker",
+    "event": "provider_submission_failed",
+    "outcome": "failed",
+    "workload": "foreign",
+    "expected": "none"
+  },
+  {
+    "component": "email-worker",
+    "event": "provider_submission_failed",
+    "outcome": "failed",
+    "ageSeconds": 3600,
+    "expected": "none"
+  },
+  {
+    "raw": "not JSON",
+    "expected": "none"
+  },
+  {
+    "component": "email-verification-reconciler",
+    "event": "run",
+    "outcome": "failed",
+    "workload": "foreign",
+    "expected": "none"
+  }
+]

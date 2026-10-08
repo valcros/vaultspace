@@ -1,0 +1,115 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "0.1.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Region of the existing Log Analytics workspace."
+      }
+    },
+    "workspaceResourceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actionGroupResourceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workloadNames": {
+      "type": "array",
+      "minLength": 1,
+      "metadata": {
+        "description": "Exact web, worker and email reconciler job names in the selected workspace."
+      }
+    },
+    "namePrefix": {
+      "type": "string",
+      "defaultValue": "vaultspace-email",
+      "maxLength": 40,
+      "minLength": 1
+    },
+    "enabled": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable only after live query validation and review of the existing notification destination."
+      }
+    }
+  },
+  "variables": {
+    "sourceQuery": "ContainerAppConsoleLogs_CL\n| where TimeGenerated > ago(15m)\n| where ContainerAppName_s in (workloads) or tostring(column_ifexists('ContainerJobName_s', '')) in (workloads)\n| extend entry = parse_json(Log_s)\n| extend component = tostring(entry.component), event = tostring(entry.event), outcome = tostring(entry.outcome)\n",
+    "mailPredicate": "| where\n    (component == 'email-worker' and event == 'provider_submission_failed' and outcome == 'failed')\n    or (component == 'email-worker' and event == 'delivery_lifecycle_update' and outcome in ('failed', 'failed_after_provider_acceptance'))\n    or (component == 'email-verification-delivery' and event == 'provider_submission' and outcome in ('unknown', 'rejected'))\n    or (component == 'email-verification-delivery' and event == 'submission_failed' and outcome == 'blocked')\n    or (component == 'password-reset-delivery' and event == 'provider_submission_failed' and outcome in ('acceptance_unknown', 'failed_permanent'))\n    or (component == 'password-reset-delivery' and event == 'provider_submission_skipped' and outcome == 'blocked')\n    or (component == 'password-reset-delivery' and event == 'recovery_decrypt' and outcome in ('blocked_configuration', 'failed_terminal'))\n    or (component == 'password-reset-delivery' and event == 'provider_acceptance_durability' and outcome in ('critical_conflict_audit_and_reconciliation_failed', 'critical_both_writes_failed', 'database_write_failed_reconciliation_queued', 'reconciliation_queue_failed_database_recorded'))\n    or (component == 'password-reset-delivery' and event == 'provider_acceptance_conflict' and outcome == 'terminal_correlation_conflict')\n    or (component == 'password-reset-delivery' and event == 'provider_acceptance_reconciliation_failed' and outcome in ('terminal_correlation_conflict', 'terminal_persistence_error', 'terminal_state_conflict', 'audit_retry_required'))\n    or (component == 'invitation-email' and event == 'provider_submission' and outcome == 'failed_or_unknown')\n| project TimeGenerated, component, event, outcome",
+    "reconcilerPredicate": "| where (component == 'email-verification-reconciler' and event == 'run' and outcome == 'failed')\n    or (component == 'password-reset-reconciler' and event == 'reconciliation_failed' and outcome == 'failed')\n| project TimeGenerated, component, event, outcome"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[concat(parameters('namePrefix'), '-submission')]",
+      "location": "[parameters('location')]",
+      "kind": "LogAlert",
+      "properties": {
+        "description": "Email submission failed, acceptance is uncertain, or delivery state could not be persisted. Inspect the lifecycle before resending; this does not measure inbox delivery.",
+        "enabled": "[parameters('enabled')]",
+        "severity": 2,
+        "scopes": ["[parameters('workspaceResourceId')]"],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "autoMitigate": true,
+        "skipQueryValidation": false,
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[concat('let workloads = dynamic(', string(parameters('workloadNames')), ');\n', variables('sourceQuery'), variables('mailPredicate'))]",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": ["[parameters('actionGroupResourceId')]"]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[concat(parameters('namePrefix'), '-reconciler')]",
+      "location": "[parameters('location')]",
+      "kind": "LogAlert",
+      "properties": {
+        "description": "Email verification or password-reset reconciler logged an execution failure. Does not detect missing executions or missing log ingestion.",
+        "enabled": "[parameters('enabled')]",
+        "severity": 2,
+        "scopes": ["[parameters('workspaceResourceId')]"],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "autoMitigate": true,
+        "skipQueryValidation": false,
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[concat('let workloads = dynamic(', string(parameters('workloadNames')), ');\n', variables('sourceQuery'), variables('reconcilerPredicate'))]",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": ["[parameters('actionGroupResourceId')]"]
+        }
+      }
+    }
+  ]
+}
