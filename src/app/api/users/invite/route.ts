@@ -433,8 +433,24 @@ export async function POST(request: NextRequest) {
         invitationUrl,
         expiresAt,
       });
-    } catch (emailError) {
-      console.error('[InviteAPI] Failed to send invitation email:', emailError);
+      // eslint-disable-next-line no-console -- Structured acceptance telemetry without recipient or token data.
+      console.log(
+        JSON.stringify({
+          component: 'invitation-email',
+          event: 'provider_submission',
+          outcome: 'accepted',
+        })
+      );
+    } catch {
+      // Provider errors can contain recipient addresses or bearer invitation URLs.
+      // Creation succeeded, but submission failed or acceptance is uncertain.
+      console.error(
+        JSON.stringify({
+          component: 'invitation-email',
+          event: 'provider_submission',
+          outcome: 'failed_or_unknown',
+        })
+      );
       // Continue - invitation was created, email just failed
     }
 

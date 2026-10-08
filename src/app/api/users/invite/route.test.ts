@@ -4,7 +4,7 @@
  * Tests for invitation creation and listing.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 
@@ -28,9 +28,10 @@ vi.mock('@/providers', () => ({
 }));
 
 // Mock notification service
+const mockSendInvitationEmail = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('@/services/notifications', () => ({
   EmailNotificationService: vi.fn().mockImplementation(() => ({
-    sendInvitationEmail: vi.fn().mockResolvedValue(undefined),
+    sendInvitationEmail: mockSendInvitationEmail,
   })),
 }));
 
@@ -50,10 +51,20 @@ describe('POST /api/users/invite', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSendInvitationEmail.mockReset().mockResolvedValue(undefined);
     mockRequireAuth.mockResolvedValue(
       mockAdminSession as ReturnType<typeof requireAuth> extends Promise<infer T> ? T : never
     );
     process.env['APP_URL'] = 'https://example.com';
+  });
+
+  afterEach(() => {
+    if (vi.isMockFunction(console.log)) {
+      vi.mocked(console.log).mockRestore();
+    }
+    if (vi.isMockFunction(console.error)) {
+      vi.mocked(console.error).mockRestore();
+    }
   });
 
   it('returns 401 for unauthenticated requests', async () => {
@@ -309,52 +320,72 @@ describe('POST /api/users/invite', () => {
     );
   });
 
-  it('creates invitation successfully with default VIEWER role', async () => {
-    const createAssignments = vi.fn().mockResolvedValue({ count: 1 });
-    const mockInvitation = {
-      id: 'invite-1',
-      email: 'new@example.com',
-      role: 'VIEWER',
-      status: 'PENDING',
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      invitationUrl: 'https://example.com/auth/register?token=abc123',
-      invitedByUser: { firstName: 'Admin', lastName: 'User', email: 'admin@example.com' },
-    };
-
-    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
-      const tx = {
-        room: { findMany: vi.fn().mockResolvedValue([{ id: 'room-1' }]) },
-        user: { findUnique: vi.fn().mockResolvedValue(null) },
-        invitation: {
-          findMany: vi.fn().mockResolvedValue([]),
-          create: vi.fn().mockResolvedValue(mockInvitation),
-        },
-        invitationRoomAssignment: { createMany: createAssignments },
-        event: { create: vi.fn().mockResolvedValue({}) },
-        organization: {
-          findUnique: vi.fn().mockResolvedValue({ name: 'Acme Corp' }),
-        },
+  it.each([false, true])(
+    'creates invitation and reports submission separately (failure=%s)',
+    async (fails) => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      if (fails) {
+        mockSendInvitationEmail.mockRejectedValueOnce(
+          new Error('private recipient@example.test https://example.test/?token=secret')
+        );
+      }
+      const createAssignments = vi.fn().mockResolvedValue({ count: 1 });
+      const mockInvitation = {
+        id: 'invite-1',
+        email: 'new@example.com',
+        role: 'VIEWER',
+        status: 'PENDING',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        invitationUrl: 'https://example.com/auth/register?token=abc123',
+        invitedByUser: { firstName: 'Admin', lastName: 'User', email: 'admin@example.com' },
       };
-      return callback(tx as unknown as Parameters<typeof callback>[0]);
-    });
 
-    const request = new NextRequest('http://localhost/api/users/invite', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'new@example.com', roomIds: ['room-1'] }),
-    });
+      mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
+        const tx = {
+          room: { findMany: vi.fn().mockResolvedValue([{ id: 'room-1' }]) },
+          user: { findUnique: vi.fn().mockResolvedValue(null) },
+          invitation: {
+            findMany: vi.fn().mockResolvedValue([]),
+            create: vi.fn().mockResolvedValue(mockInvitation),
+          },
+          invitationRoomAssignment: { createMany: createAssignments },
+          event: { create: vi.fn().mockResolvedValue({}) },
+          organization: {
+            findUnique: vi.fn().mockResolvedValue({ name: 'Acme Corp' }),
+          },
+        };
+        return callback(tx as unknown as Parameters<typeof callback>[0]);
+      });
 
-    const response = await POST(request);
-    expect(response.status).toBe(201);
+      const request = new NextRequest('http://localhost/api/users/invite', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'new@example.com', roomIds: ['room-1'] }),
+      });
 
-    const body = await response.json();
-    expect(body.invitation.email).toBe('new@example.com');
-    expect(body.invitation.role).toBe('VIEWER');
-    expect(body.invitation.status).toBe('PENDING');
-    expect(body.invitation.roomCount).toBe(1);
-    expect(createAssignments).toHaveBeenCalledWith({
-      data: [{ invitationId: 'invite-1', roomId: 'room-1' }],
-    });
-  });
+      const response = await POST(request);
+      expect(response.status).toBe(201);
+
+      const body = await response.json();
+      expect(body.invitation.email).toBe('new@example.com');
+      expect(body.invitation.role).toBe('VIEWER');
+      expect(body.invitation.status).toBe('PENDING');
+      expect(body.invitation.roomCount).toBe(1);
+      expect(createAssignments).toHaveBeenCalledWith({
+        data: [{ invitationId: 'invite-1', roomId: 'room-1' }],
+      });
+      expect(mockSendInvitationEmail).toHaveBeenCalledTimes(1);
+      expect(fails ? errorLog : log).toHaveBeenCalledWith(
+        JSON.stringify({
+          component: 'invitation-email',
+          event: 'provider_submission',
+          outcome: fails ? 'failed_or_unknown' : 'accepted',
+        })
+      );
+      expect(fails ? errorLog : log).toHaveBeenCalledTimes(1);
+      expect(fails ? log : errorLog).not.toHaveBeenCalled();
+    }
+  );
 
   it('creates invitation with ADMIN role', async () => {
     const mockInvitation = {
