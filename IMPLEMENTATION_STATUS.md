@@ -6,15 +6,31 @@
 
 ## Snapshot (2026-10-08)
 
-| Item               | Value                                                                                                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------- |
-| Live release       | `814a6ec` (PR #184, merged 2026-09-16), deployed 2026-09-17; matches `main` HEAD                          |
-| Health             | `status=healthy`, `mode=azure`, `degraded=[]`; database, cache and storage checks healthy                 |
-| API route handlers | 114 (`src/app/api/**/route.ts`)                                                                           |
-| Prisma migrations  | 67                                                                                                        |
-| Source size        | ~119k lines of TypeScript across 587 files in `src/`                                                      |
-| Open PRs / issues  | 4 PRs (3 dependabot, 1 draft) / 5 issues                                                                  |
-| Dependency audit   | **Failing:** 1 critical (`next`) plus high advisories; CI Security Scan red for all new PRs (see BACKLOG) |
+| Item               | Value                                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Live release       | `814a6ec` (PR #184, merged 2026-09-16), deployed 2026-09-17; matches `main` HEAD                                     |
+| Health             | `status=healthy`, `mode=azure`, `degraded=[]`; database, cache and storage checks healthy                            |
+| API route handlers | 114 (`src/app/api/**/route.ts`)                                                                                      |
+| Prisma migrations  | 67                                                                                                                   |
+| Source size        | ~119k lines of TypeScript across 587 files in `src/`                                                                 |
+| Open PRs / issues  | 4 PRs (3 dependabot, 1 draft) / 5 issues                                                                             |
+| Dependency audit   | **Failing:** 3 critical, 10 high, 6 moderate, 1 low in fresh audit, including development dependencies (see BACKLOG) |
+
+## Azure verification and configuration cleanup (2026-10-08)
+
+Read-only control-plane review completed: 11 checks Confirmed, 4 Corrected, 0
+Unverifiable, with bounded coverage and caveats in
+`docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`. Web/worker digests match the reviewed
+build; all four scheduled jobs use the same worker digest. Password-reset
+reconciliation is enabled on its scheduled job, even though the web health flag is
+false. Log Analytics, 14 metric alerts, and an action group already exist.
+
+Public web YAML examples now reflect live settings with placeholders; the probe
+fragment is explicitly non-deployable. The environment catalog, deployment cadence,
+job implementation status, and AI-agent configuration pointers are aligned. These
+are repository corrections, not an Azure deployment. Deep readiness, credential
+migration, maintenance scheduling, alerting gaps, and dependency upgrades remain
+separately reviewed work in `BACKLOG.md`.
 
 ## Shipped Since the July 21 Update
 
@@ -36,7 +52,7 @@ The application is **deployed and operational** on Azure Container Apps staging 
 ### Live Site
 
 - **URL:** `https://www.vaultspace.org` (Azure staging on public VaultSpace domain)
-- **Health:** `status=healthy`, `mode=azure`, `degraded=[]` on 2026-10-08 (revision `ca-vaultspace-web--0000344`)
+- **Health:** `status=healthy`, `mode=azure`, `degraded=[]` on 2026-10-08
 - **Container Apps:** web runs warm for public responsiveness; worker scales to zero when idle
 - **Redis:** managed Redis on a BullMQ-supported version with encrypted protocol
 - **Auth:** Login, registration, password reset all functional
