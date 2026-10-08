@@ -112,6 +112,17 @@ Critical infrastructure layers use provider interfaces. At runtime, adapters are
 
 ---
 
+### Verified Azure staging topology (2026-10-08)
+
+The portable architecture below is a design, not a provisioned-resource inventory.
+Staging uses PostgreSQL Flexible Server **15**, Azure Managed Redis **7.4**, and
+Container Apps ingress with a wildcard certificate. **Front Door is not provisioned
+in the reviewed resource group.** Log Analytics is attached, with 14 metric alerts,
+an action group, and an activity-log alert; Application Insights was not found in
+that group or the app environment settings. AzureInsightsProvider remains a future
+adapter. The worker has Gotenberg and ClamAV sidecars; the web has Gotenberg only.
+See `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md` for evidence and review limits.
+
 ## Architecture Diagram
 
 ```

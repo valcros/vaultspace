@@ -1343,14 +1343,27 @@ Scheduled jobs are triggered by cron expressions, running on a specified schedul
 
 Jobs use **standard 5-field cron syntax**, evaluated in **UTC** (production) or **local timezone** (dev).
 
-| Job                 | Cron Expression | Timezone | Interval  | Purpose                                 |
-| ------------------- | --------------- | -------- | --------- | --------------------------------------- |
-| **audit.compact**   | `0 2 * * *`     | UTC      | Daily 2am | Compact previous day's events           |
-| **cleanup.expired** | `0 * * * *`     | UTC      | Hourly    | Remove expired sessions, tokens         |
-| **cleanup.trash**   | `0 3 * * *`     | UTC      | Daily 3am | Hard-delete soft-deleted items past 30d |
-| **backup.snapshot** | `0 4 * * *`     | UTC      | Daily 4am | Full database backup                    |
+The following table is a **proposed schedule**, not live deployment configuration.
+All four schedules are **not implemented** in the runtime scheduler. See
+`BACKLOG.md` (maintenance scheduling) for outstanding work. Cleanup type constants
+and manual backup scripts do not constitute registered processors and cron jobs.
+PostgreSQL managed backups do not replace the proposed application/blob snapshot.
+
+| Job                 | Proposed UTC cron | Implementation status                                                                   |
+| ------------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| **audit.compact**   | `0 2 * * *`       | Not implemented; see `BACKLOG.md`                                                       |
+| **cleanup.expired** | `0 * * * *`       | Not implemented; stale-token cleanup is a narrower one-shot script and is not scheduled |
+| **cleanup.trash**   | `0 3 * * *`       | Not implemented; see `BACKLOG.md`                                                       |
+| **backup.snapshot** | `0 4 * * *`       | Not implemented as a scheduled job; manual backup/restore tools exist                   |
+
+Four different Container Apps Jobs implement delayed-job waking, invitation lifecycle,
+password-reset reconciliation, and email-verification reconciliation. See
+`DEPLOYMENT.md` for verified cadences. None is a replacement for all the work in the
+proposed table above.
 
 ### Scheduled Job Implementation
+
+The following is illustrative specification code; `ScheduledJobService` is not a deployed service.
 
 ```typescript
 // src/services/ScheduledJobService.ts

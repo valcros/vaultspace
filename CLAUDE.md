@@ -52,7 +52,7 @@ Standalone mode uses graceful degradation. Missing optional services (Redis, Cla
 5. `DATABASE_SCHEMA.md` - Prisma schema, composite FKs, RLS operational contract + policy SQL, tenant scoping
 6. `PERMISSION_MODEL.md` - 14-layer PermissionEngine, security test matrix (SEC-001 to SEC-016)
 7. `EVENT_MODEL.md` - EventBus contract, event types, partitioning, compaction
-8. `DEPLOYMENT.md` - Public deployment guide; defers to `.env.example` for env var names (note: `.env.example` does not yet list every var the Azure deploy validator requires; see `scripts/validate-container-env.sh`)
+8. `DEPLOYMENT.md` - Public deployment guide; `.env.example` catalogs variables, while runtime guards and deployment validators enforce requirements
 9. `CONTRIBUTING.md` - Code style, testing requirements
 10. `SECURITY.md` - Security policies, vulnerability handling
 
@@ -74,7 +74,7 @@ Standalone mode uses graceful degradation. Missing optional services (Redis, Cla
 3. `DATABASE_SCHEMA.md` (data model and constraints)
 4. `PERMISSION_MODEL.md` (security invariants)
 5. `ARCHITECTURE.md` (system design)
-6. `DEPLOYMENT.md` (operational config, canonical env var names)
+6. `DEPLOYMENT.md` (operational guide; `.env.example` variable catalog, enforced by runtime guards and deployment validators)
 7. `AI_BUILD_PLAYBOOK.md` (process)
 
 ## Non-Negotiable Rules
