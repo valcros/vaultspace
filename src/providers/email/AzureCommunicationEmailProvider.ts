@@ -5,9 +5,35 @@
  */
 
 import { EmailClient, KnownEmailSendStatus } from '@azure/communication-email';
+import { createHash } from 'node:crypto';
 
 import type { EmailOptions, EmailProvider } from '../types';
 import { EmailDeliveryError, normalizeEmailError } from './errors';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DNS_UUID_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex');
+
+/**
+ * ACS requires a UUID, while durable verification/reset flows use CUIDs.
+ * Use UUIDv5 with a fixed namespace/name so retries keep the same wire ID.
+ * Keep the original flow ID in application records and encryption contexts;
+ * ACS's returned message ID remains the delivery-event correlation key.
+ */
+function azureOperationId(flowId: string): string {
+  if (UUID_PATTERN.test(flowId)) {
+    return flowId;
+  }
+
+  const bytes = createHash('sha1')
+    .update(DNS_UUID_NAMESPACE)
+    .update(`vaultspace.org/email/operation/${flowId}`, 'utf8')
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export interface AzureCommunicationEmailConfig {
   connectionString: string;
@@ -53,7 +79,9 @@ export class AzureCommunicationEmailProvider implements EmailProvider {
 
     try {
       const poller = options.operationId
-        ? await this.client.beginSend(message, { operationId: options.operationId })
+        ? await this.client.beginSend(message, {
+            operationId: azureOperationId(options.operationId),
+          })
         : await this.client.beginSend(message);
       const result = await poller.pollUntilDone();
 
