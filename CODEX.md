@@ -37,7 +37,7 @@ VaultSpace: open-source, self-hosted Virtual Data Room. AGPLv3 license.
 
 ## Canonical Bootstrap Contract
 
-- **Stack:** Next.js 14+, TypeScript, React 18+, Prisma ORM, PostgreSQL 15+, TailwindCSS, Redis/BullMQ
+- **Stack:** Next.js 16, TypeScript, React 19, Prisma ORM, PostgreSQL 15+, TailwindCSS, Redis/BullMQ
 - **Package manager:** npm
 - **Node:** 20+ LTS
 - **Layout:** src/app/, src/lib/, src/services/, src/providers/, src/workers/
@@ -48,4 +48,4 @@ VaultSpace: open-source, self-hosted Virtual Data Room. AGPLv3 license.
 
 ## Status
 
-Specification complete. Implementation not started. 63 MVP features across 6 build phases.
+Implementation in progress. Azure staging is live at `https://www.vaultspace.org` (beta candidate, not yet a public MVP launch). See `IMPLEMENTATION_STATUS.md` for current state and open work. MVP scope remains 63 features across 6 build phases.

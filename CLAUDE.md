@@ -10,9 +10,9 @@ VaultSpace uses shared operating roles across AI tools. See `AI_ROLES.md` for th
 
 ## Project Overview
 
-VaultSpace is an open-source, self-hosted secure Virtual Data Room (VDR) platform. License: AGPLv3. Tech stack: Next.js 14+ (App Router), TypeScript, React 18+, Prisma ORM, PostgreSQL 15+, TailwindCSS, Redis/BullMQ.
+VaultSpace is an open-source, self-hosted secure Virtual Data Room (VDR) platform. License: AGPLv3. Tech stack: Next.js 16 (App Router), TypeScript, React 19, Prisma ORM, PostgreSQL 15+, TailwindCSS, Redis/BullMQ.
 
-**Status:** Specification complete. Implementation not started.
+**Status:** Implementation in progress. Azure staging is live at `https://www.vaultspace.org` (beta candidate, not yet a public MVP launch). See `IMPLEMENTATION_STATUS.md` for current state and open work.
 
 ## Deployment Modes
 
@@ -23,7 +23,7 @@ VaultSpace supports two deployment modes controlled by `DEPLOYMENT_MODE` environ
 - **Runtime:** Azure Container Apps or AKS
 - **Database:** Azure PostgreSQL
 - **Storage:** Azure Blob Storage
-- **Cache:** Azure Cache for Redis
+- **Cache:** Azure Managed Redis (Enterprise 7.4 on staging; the guard also accepts Azure Cache for Redis hosts)
 - **Testing:** Against Azure-hosted services
 
 Missing Azure configuration causes startup failure with clear error messages.
@@ -52,7 +52,7 @@ Standalone mode uses graceful degradation. Missing optional services (Redis, Cla
 5. `DATABASE_SCHEMA.md` - Prisma schema, composite FKs, RLS operational contract + policy SQL, tenant scoping
 6. `PERMISSION_MODEL.md` - 14-layer PermissionEngine, security test matrix (SEC-001 to SEC-016)
 7. `EVENT_MODEL.md` - EventBus contract, event types, partitioning, compaction
-8. `DEPLOYMENT.md` - Docker Compose, environment variables (single source of truth for env var names), worker config
+8. `DEPLOYMENT.md` - Public deployment guide; defers to `.env.example` for env var names (note: `.env.example` does not yet list every var the Azure deploy validator requires; see `scripts/validate-container-env.sh`)
 9. `CONTRIBUTING.md` - Code style, testing requirements
 10. `SECURITY.md` - Security policies, vulnerability handling
 

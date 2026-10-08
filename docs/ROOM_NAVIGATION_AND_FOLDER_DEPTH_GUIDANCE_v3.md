@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-30
 **Status:** Stakeholder Direction For Lead Dev — Revised
-**Supersedes:** `ROOM_NAVIGATION_AND_FOLDER_DEPTH_GUIDANCE_v2.md` (which superseded v1)
+**Supersedes:** `archive/ROOM_NAVIGATION_AND_FOLDER_DEPTH_GUIDANCE_v2.md` (which superseded v1; both archived)
 **Scope:** Room browsing model, split-pane behavior, folder-depth policy, enforcement, and persistence
 
 ---
