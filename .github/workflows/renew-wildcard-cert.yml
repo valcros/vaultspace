@@ -41,6 +41,7 @@ jobs:
       RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
       WEB_CONTAINER_APP: ${{ vars.WEB_CONTAINER_APP }}
       DOMAIN: vaultspace.org
+      ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
       # Scheduled runs leave inputs.force empty -> 'false' -> expiry-gated.
       # Manual dispatch is expiry-gated too unless the operator ticks `force`.
       FORCE_RENEW: ${{ github.event.inputs.force || 'false' }}
