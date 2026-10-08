@@ -35,9 +35,9 @@ VaultSpace provides enterprise-grade document security and collaboration for M&A
 
 ## Status
 
-**MVP launch packaging in progress.** The Azure staging app is operational at `https://www.vaultspace.org`, the current API surface has 94 route handlers, the admin and viewer surfaces are broadly wired, and local validation currently passes with 668 Vitest tests. One live-Postgres search integration file remains intentionally opt-in and is skipped unless `RUN_POSTGRES_SEARCH_INTEGRATION=true`.
+**MVP launch packaging in progress.** The Azure staging app is operational at `https://www.vaultspace.org`, the current API surface has 114 route handlers, the admin, viewer and SysOp surfaces are wired, and local validation passes type-check, lint and 1,574 Vitest tests (2026-10-08). One live-Postgres search integration file remains intentionally opt-in and is skipped unless `RUN_POSTGRES_SEARCH_INTEGRATION=true`.
 
-See [docs/VAULTSPACE_MVP_PACKAGE_2026-06-30.md](docs/VAULTSPACE_MVP_PACKAGE_2026-06-30.md) for the current MVP package, [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for live progress, and [MASTER_PLAN.md](MASTER_PLAN.md) for the historical sprint plan.
+See [docs/VAULTSPACE_MVP_PACKAGE_2026-06-30.md](docs/VAULTSPACE_MVP_PACKAGE_2026-06-30.md) for the original MVP package, [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for live progress, [BACKLOG.md](BACKLOG.md) for outstanding work, and [MASTER_PLAN.md](MASTER_PLAN.md) for the historical sprint plan.
 
 ## Quick Start
 
@@ -57,7 +57,7 @@ npm install
 # Run checks (no Azure services required)
 npm run type-check    # TypeScript
 npm run lint          # ESLint
-npm run test          # Vitest suite (668 passing tests as of 2026-06-30)
+npm run test          # Vitest suite (1,574 passing tests as of 2026-10-08)
 ```
 
 ### Playwright MCP
