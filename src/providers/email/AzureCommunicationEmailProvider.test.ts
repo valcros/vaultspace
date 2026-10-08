@@ -79,7 +79,7 @@ describe('AzureCommunicationEmailProvider', () => {
     ).rejects.toThrow('ACS_SEND_NOT_ACCEPTED');
   });
 
-  it('uses the reset flow id as the ACS operation id for idempotent retries', async () => {
+  it('preserves an existing UUID as the ACS operation id for idempotent retries', async () => {
     const provider = new AzureCommunicationEmailProvider({
       connectionString:
         'endpoint=https://acs-vaultspace-staging.unitedstates.communication.azure.com/;accesskey=test',
