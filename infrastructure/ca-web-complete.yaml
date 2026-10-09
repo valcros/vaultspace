@@ -1,62 +1,87 @@
-# VaultSpace Container App — Web + Gotenberg Sidecar
-#
-# Replace placeholders with your actual Azure resource names.
-# See .private/azure-staging.md for real values (gitignored).
-#
-# Apply: az containerapp update --name <app-name> --resource-group <rg> --yaml infrastructure/ca-web-complete.yaml
-
+# Sanitized live web template, verified 2026-10-08. Not a bootstrap deployment.
+# Resolve every <placeholder> from the private operator runbook before use.
+# Existing app identity, ingress, registry auth, and secret definitions must be
+# preserved. Each secretRef placeholder must resolve to an existing app secret;
+# validate its Key Vault backing separately (the env validator checks secretRef).
+# Supply dedicated recovery key rings before retaining hmac/durable modes.
+# The web's passthrough scanner and deep readiness reproduce live configuration.
+# Actual document scanning runs on the worker with SCAN_ENGINE=clamav and ClamAV.
+# Changing readiness or scan topology requires a separate operational review.
+# After a separately approved deployment, run scripts/validate-container-env.sh
+# for BOTH web and worker, then the reconciler gates in deploy-staging.yml.
+# Real values: .private/azure-staging.md (gitignored).
 properties:
+  configuration:
+    activeRevisionsMode: Single
   template:
     containers:
-      - name: vaultspace-web
-        image: <your-acr>.azurecr.io/vaultspace-web:latest
+      - name: <web-container>
+        image: <registry>/vaultspace-web@sha256:<linux-amd64-digest>
         resources:
-          cpu: 1.0
+          cpu: 1
           memory: 2Gi
         env:
           - name: NODE_ENV
             value: production
           - name: APP_URL
-            value: https://<your-container-app-url>
+            value: <app-url>
           - name: SESSION_SECRET
-            secretRef: sessionsecret
+            secretRef: <session-secret>
           - name: DATABASE_URL
-            secretRef: databaseurl
+            secretRef: <database-url-secret>
           - name: REDIS_URL
-            secretRef: redisurl
+            secretRef: <redis-url-secret>
           - name: STORAGE_PROVIDER
             value: azure
           - name: AZURE_STORAGE_ACCOUNT_NAME
-            value: <your-storage-account>
+            value: <storage-account>
           - name: AZURE_STORAGE_ACCOUNT_KEY
-            secretRef: azurestoragekey
+            secretRef: <azure-storage-account-key-secret>
           - name: SCAN_ENGINE
             value: passthrough
           - name: PREVIEW_ENGINE
             value: gotenberg
           - name: GOTENBERG_URL
             value: http://localhost:3001
+          - name: EMAIL_PROVIDER
+            value: acs
+          - name: ACS_CONNECTION_STRING
+            secretRef: <acs-connection-string-secret>
+          - name: ACS_SENDER_ADDRESS
+            value: <verified-sender-address>
+          - name: DATABASE_URL_ADMIN
+            secretRef: <database-url-admin-secret>
+          - name: PASSWORD_RESET_TOKEN_WRITE_MODE
+            value: hmac
+          - name: PASSWORD_RESET_RECOVERY_KEYS
+            secretRef: <password-reset-recovery-keys-secret>
+          - name: PASSWORD_RESET_RECOVERY_ACTIVE_KEY_ID
+            value: <reset-key-id>
+          - name: PLATFORM_PROTECTED_ORG_SLUGS
+            secretRef: <platform-protected-org-slugs-secret>
+          - name: EMAIL_VERIFICATION_DELIVERY_MODE
+            value: durable
+          - name: EMAIL_VERIFICATION_RECOVERY_KEYS
+            secretRef: <email-verification-recovery-keys-secret>
+          - name: EMAIL_VERIFICATION_RECOVERY_ACTIVE_KEY_ID
+            value: <verification-key-id>
         probes:
-          - type: Liveness
+          - failureThreshold: 3
             httpGet:
               path: /api/health
               port: 3000
-            timeoutSeconds: 5
             initialDelaySeconds: 30
             periodSeconds: 30
-            failureThreshold: 3
-          - type: Readiness
+            timeoutSeconds: 5
+            type: Liveness
+          - failureThreshold: 3
             httpGet:
               path: /api/health?deep=true
               port: 3000
-            timeoutSeconds: 5
             initialDelaySeconds: 15
             periodSeconds: 30
-            failureThreshold: 3
-
-      # Gotenberg sidecar — document conversion (LibreOffice + Chromium)
-      # Runs alongside the web container, communicates via localhost:3001
-      # When real users arrive, split to separate container with scale-to-zero
+            timeoutSeconds: 5
+            type: Readiness
       - name: gotenberg
         image: gotenberg/gotenberg:8
         resources:
@@ -64,7 +89,13 @@ properties:
           memory: 0.5Gi
         command:
           - gotenberg
-          - --api-port=3001
-          - --api-timeout=30s
-          - --libreoffice-restart-after=10
-          - --log-level=warn
+          - '--api-port=3001'
+          - '--api-timeout=30s'
+          - '--libreoffice-restart-after=10'
+          - '--log-level=warn'
+    scale:
+      cooldownPeriod: 300
+      maxReplicas: 3
+      minReplicas: 1
+      pollingInterval: 30
+      rules: null

@@ -20,7 +20,7 @@ VaultSpace: open-source, self-hosted Virtual Data Room. AGPLv3 license.
 5. [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) - Prisma schema, composite FKs, RLS operational contract + policy SQL
 6. [PERMISSION_MODEL.md](./PERMISSION_MODEL.md) - 14-layer PermissionEngine, 16 security tests (SEC-001 to SEC-016)
 7. [EVENT_MODEL.md](./EVENT_MODEL.md) - EventBus contract, event types, partitioning
-8. [DEPLOYMENT.md](./DEPLOYMENT.md) - Docker Compose, environment variables (canonical source for env var names), worker config
+8. [DEPLOYMENT.md](./DEPLOYMENT.md) - Public deployment guide; `.env.example` catalogs variables, while runtime guards and deployment validators enforce requirements
 9. [CONTRIBUTING.md](./CONTRIBUTING.md) - Code style, testing requirements
 10. [SECURITY.md](./SECURITY.md) - Security policies, vulnerability handling
 

@@ -14,6 +14,8 @@
 
 - **Residual dependency advisories:** fresh audit of `e7ee77d` reports 0 critical, 15 high, 6 moderate, 0 low. CI Security Scan passes. The critical blocker was closed by #188; remaining findings need reachability review and bounded remediation. #193 applies the rendering dependency updates.
 
+- **Notification bell is inert and displays a false unread indicator (user report, 2026-10-08):** confirmed in both `src/components/layout/header.tsx` and `src/components/layout/dock-header.tsx`. The bell has neither an action nor a destination, and its red dot is unconditional. This is a UI placeholder defect, not evidence of unread messages or an email-delivery failure. Draft #157 includes an inbox implementation but remains unmerged; review and extract or complete that work against current main rather than merging its unrelated changes solely to address this report. Acceptance: both headers open the same membership-scoped inbox using pointer and keyboard; the badge reflects actual unread state and clears correctly; loading, empty and failure states are explicit; Escape/focus behavior is accessible; read-state writes and organization switching preserve tenant isolation. If inbox delivery is deferred, remove the false unread indicator and expose only a clearly labeled, functional notification-settings control. Validate with an approved synthetic organization and browser regression coverage before release.
+
 - Draft PR #157: secure profiles, notification inbox, and release gates.
 - Dependabot PR #180: `vitest` 3.x to 5.x is a separate major migration with failing test/type checks; it is not required to clear the already-remediated critical audit findings.
 - Dependency PRs #185, #186, #190, and #191 were superseded by the tested updates in #193 and are closed.
@@ -30,7 +32,7 @@
 - **Azure infrastructure drift** (read-only evidence in `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`):
   - Waker (`*/5 * * * *`) and lifecycle (`0 6 * * *`) cron values are documented but not enforced by deploy validation. Adding enforcement remains approval-gated.
   - **Maintenance scheduling:** no jobs exist for `worker:stale-token-cleanup` or `worker:send-pending-invites`; schedule or explicitly retire them after review. `JOB_SPECS.md` audit compaction, generic expiry/trash cleanup, and backup snapshot schedules are not implemented.
-  - Live web readiness is deep and writes a Redis health key. Decide separately whether to use quick readiness; the example prepared in #187 intentionally preserves the reviewed behavior.
+  - Live web readiness is deep and writes a Redis health key. Design bounded, nonmutating dependency readiness separately; quick liveness alone does not prove dependency readiness. The example in #187 preserves the reviewed behavior pending that decision.
   - Identity, credential-backing, resilience, network, recovery, and certificate-retention decisions are tracked privately. Review recommendations before any live change.
   - #192 deployed initial email submission/reconciler failure coverage. Endpoint availability, missing execution/ingestion detection, and notification receipt remain separate work; preserve existing resource-pressure alerts.
 
@@ -42,7 +44,7 @@
 - #192 added safe invitation telemetry, email failure monitoring, and preview authentication correction.
 - #193 added download/thumbnail authentication corrections, rendering dependency updates, and remote Linux native-image checks.
 
-The remaining Azure-review corrections below are prepared in follow-up #187; they are not all merged by this documentation PR.
+The remaining Azure-review corrections below are included in #187 and await its review and merge.
 
 - Corrected the claim that standalone validation lacked a trigger: it has path-filtered PR triggers and a manual full-stack path, and this review produced recorded runs.
 - Removed the hard-coded ACME email fallback after owner-approved staging secret creation; the monthly workflow now passes `ACME_EMAIL`. No renewal was triggered.
