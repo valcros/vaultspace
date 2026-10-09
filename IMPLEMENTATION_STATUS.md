@@ -130,12 +130,12 @@ The application is **deployed and operational** on Azure Container Apps staging 
 
 | Check               | Status                                                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Unit tests          | 1,598 passing in 177 files (Vitest, 2026-10-08), with 7 skipped tests in one opt-in live-Postgres search file |
+| Unit tests          | 1,598 passing in 179 files (Vitest, 2026-10-08), with 7 skipped tests in one opt-in live-Postgres search file |
 | Type check          | Passing (tsc --noEmit)                                                                                        |
 | ESLint              | Passing (no errors)                                                                                           |
 | Prettier            | Passing (all files formatted)                                                                                 |
 | CI (GitHub Actions) | Workflow covers lint, test, type-check, build, security, deployment-mode, and Docker validation               |
-| Integration tests   | Scaffolded (requires Docker for local; staging DB integration tests in `tests/integration/`)                  |
+| Integration tests   | PostgreSQL integration suites pass in remote CI using disposable services                                     |
 | E2E tests           | 22 Playwright cases (`tests/e2e/`) plus accessibility scan (`tests/e2e/a11y.test.ts`)                         |
 
 ### Security & Operational State (2026-06-30, audit row updated 2026-10-08)
