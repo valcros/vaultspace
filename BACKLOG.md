@@ -1,6 +1,6 @@
 # VaultSpace Backlog
 
-> **Last Updated:** 2026-10-08
+> **Last Updated:** 2026-10-09
 > Single list of outstanding work. `IMPLEMENTATION_STATUS.md` describes what is shipped; this file tracks what is not. GitHub issues and PRs remain the system of record for individual items.
 
 ## P0: Security and Release Blockers
@@ -14,8 +14,8 @@
 
 - **Residual dependency advisories:** fresh audit of `e7ee77d` reports 0 critical, 15 high, 6 moderate, 0 low. CI Security Scan passes. The critical blocker was closed by #188; remaining findings need reachability review and bounded remediation. #193 applies the rendering dependency updates.
 
-- **Notification bell correction prepared (2026-10-08):** both header variants now link to the existing notification-preferences page with an accurate accessible label; the fabricated unread dot is removed. This is a preferences shortcut, not an implemented inbox. Browser regression coverage exercises pointer and keyboard navigation on desktop and mobile. Pending PR review and deployment.
-- **In-app notification inbox remains open:** draft #157 supplies a reader/menu but no production notification-record producer was found in current source or its notification changes. Before extraction, define the event source, recipient policy, deduplication and retry behavior; add appropriate database isolation and recipient-scoped reads/writes; prevent stale reads and mutations across organization switches; define older-unread pagination and mark-all semantics; and test error recovery, keyboard access, and cross-member/cross-organization isolation. Keep unrelated profile/NDA and infrastructure changes out of the bell fix.
+- **Notification bell correction prepared in #194 (2026-10-09):** both header implementations link to the existing notification-preferences page with an accurate accessible label; the fabricated unread dot is removed. Only `DockHeader` renders in the current application. Browser regression coverage exercises its pointer and keyboard navigation on desktop and mobile. Claude approved the preferences-only scope; final merged-main checks, deployment, and staging admin/viewer verification remain release gates.
+- **In-app notification inbox remains open:** draft #157 supplies a reader/menu and one producer: `src/app/api/auth/register/route.ts` creates a `Welcome to the data room` notification on invitation registration. It has no event-driven producer. Before extraction, define the event sources, recipient policy, deduplication and retry behavior; add appropriate database isolation and recipient-scoped reads/writes; prevent stale reads and mutations across organization switches; define older-unread pagination and mark-all semantics; and test error recovery, keyboard access, and cross-member/cross-organization isolation. The interim bell should later become a real inbox or be replaced with a settings icon if preferences remain its purpose. Keep #157 unmerged and unrelated profile/NDA and infrastructure changes out of the bell fix.
 
 - Draft PR #157: secure profiles, notification inbox, and release gates.
 - Dependabot PR #180: `vitest` 3.x to 5.x is a separate major migration with failing test/type checks; it is not required to clear the already-remediated critical audit findings.
@@ -25,6 +25,8 @@
 
 ## P2: Technical Debt and Architecture
 
+- **Unused application shell cleanup:** remove unused `src/components/layout/header.tsx` and `src/components/layout/app-shell.tsx` (`AppShell`) in a separate cleanup after rechecking references. `DockHeader` is the active header. No removal is included in #194.
+
 - **Service-layer bypass.** About 68 API route files under `src/app/api/` write to the database directly instead of going through `src/services/` (4 services today). Audit for tenant scoping and event emission, then migrate mutations into CoreServices.
 - **Scan pipeline residuals** from the July scan-gating pass: CLEAN/INFECTED scan-worker side-effect isolation, `/api/search` legacy-row snippets, `scanProcessor` payload-key binding, ClamAV throw-in-callback, deterministic preview job id from the scan worker (PR #91 closed unmerged).
 - **Next.js middleware deprecation:** migrate `src/middleware.ts` to `proxy.ts` (requires separate approval).
@@ -33,19 +35,19 @@
 - **Azure infrastructure drift** (read-only evidence in `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`):
   - Waker (`*/5 * * * *`) and lifecycle (`0 6 * * *`) cron values are documented but not enforced by deploy validation. Adding enforcement remains approval-gated.
   - **Maintenance scheduling:** no jobs exist for `worker:stale-token-cleanup` or `worker:send-pending-invites`; schedule or explicitly retire them after review. `JOB_SPECS.md` audit compaction, generic expiry/trash cleanup, and backup snapshot schedules are not implemented.
-  - Live web readiness is deep and writes a Redis health key. Decide separately whether to use quick readiness; the example prepared in #187 intentionally preserves the reviewed behavior.
+  - Live web readiness is deep and writes a Redis health key. Design bounded, nonmutating dependency readiness separately; quick liveness alone does not prove dependency readiness. The example in #187 preserves the reviewed behavior pending that decision.
   - Identity, credential-backing, resilience, network, recovery, and certificate-retention decisions are tracked privately. Review recommendations before any live change.
   - #192 deployed initial email submission/reconciler failure coverage. Endpoint availability, missing execution/ingestion detection, and notification receipt remain separate work; preserve existing resource-pressure alerts.
 
 - **Standalone full-stack evidence:** the existing path-filtered workflow now runs on this review PR. Complete and review an approved full-stack smoke run before launch; that job is skipped on ordinary PR runs.
 
-### Released fixes and corrections prepared in #187
+### Released fixes and corrections in #187
 
 - #188 fixed verification-email provider operation IDs and closed the critical Next.js/tinypool audit blocker.
 - #192 added safe invitation telemetry, email failure monitoring, and preview authentication correction.
 - #193 added download/thumbnail authentication corrections, rendering dependency updates, and remote Linux native-image checks.
 
-The remaining Azure-review corrections below are prepared in follow-up #187; they are not all merged by this documentation PR.
+The Azure-review corrections below merged in #187. Its post-merge deployment succeeded, and quick health verified release `f4ea4b3` on 2026-10-09. C1–C7 remain recommendations requiring separate owner approval.
 
 - Corrected the claim that standalone validation lacked a trigger: it has path-filtered PR triggers and a manual full-stack path, and this review produced recorded runs.
 - Removed the hard-coded ACME email fallback after owner-approved staging secret creation; the monthly workflow now passes `ACME_EMAIL`. No renewal was triggered.

@@ -112,6 +112,15 @@ Critical infrastructure layers use provider interfaces. At runtime, adapters are
 
 ---
 
+### Architecture and deployed inventory
+
+The portable architecture below is a design, not a provisioned-resource inventory.
+Environment-specific topology, service versions, and monitoring posture belong in
+private operator evidence. The public operational summary retains the reviewed
+web/worker separation, ClamAV placement, job roles, and verification limits without
+making this diagram an assertion about a live environment.
+See `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md` for that summary.
+
 ## Architecture Diagram
 
 ```
