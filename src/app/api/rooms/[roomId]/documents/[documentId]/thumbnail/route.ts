@@ -15,6 +15,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { z } from 'zod';
 
+import { isAuthenticationError } from '@/lib/errors';
+
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { isServable, SERVABLE_SCAN_STATUS_FILTER } from '@/lib/documents/scanGate';
@@ -234,6 +236,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       },
     });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[ThumbnailAPI] Error:', error);
     return NextResponse.json({ error: 'Failed to get thumbnail' }, { status: 500 });
   }

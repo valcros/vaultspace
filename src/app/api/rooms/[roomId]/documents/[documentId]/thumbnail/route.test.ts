@@ -121,6 +121,11 @@ vi.mock('@/lib/deployment-capabilities', () => ({
   hasCapability: vi.fn().mockReturnValue(true),
 }));
 
+import { AuthenticationError } from '@/lib/errors';
+import { withOrgContext } from '@/lib/db';
+import { requireAuth } from '@/lib/middleware';
+import sharp from 'sharp';
+
 import { GET } from './route';
 import { NextRequest } from 'next/server';
 
@@ -145,6 +150,65 @@ describe('GET /api/rooms/:roomId/documents/:documentId/thumbnail', () => {
     mockDocument.versions[0]!.scanStatus = 'CLEAN';
     mockDocument.currentVersionId = 'ver-1';
     extraVersions.length = 0;
+  });
+
+  it.each([
+    new AuthenticationError(),
+    new AuthenticationError('Session expired: private detail'),
+    new Error('Authentication required'),
+  ])('returns generic 401 without downstream work for %s', async (error) => {
+    vi.mocked(requireAuth).mockRejectedValueOnce(error);
+    const response = await GET(createRequest(), createContext());
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Authentication required' });
+    expect(withOrgContext).not.toHaveBeenCalled();
+    expect(mockPermissionCan).not.toHaveBeenCalled();
+    expect(mockStorageExists).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockJobAddJob).not.toHaveBeenCalled();
+    expect(sharp).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new Error('private authentication infrastructure failure'),
+    Object.assign(new Error('provider credential failure'), { statusCode: 401 }),
+  ])('keeps unexpected authentication infrastructure errors as generic 500s: %s', async (error) => {
+    vi.mocked(requireAuth).mockRejectedValueOnce(error);
+    const response = await GET(createRequest(), createContext());
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to get thumbnail' });
+    expect(withOrgContext).not.toHaveBeenCalled();
+    expect(mockPermissionCan).not.toHaveBeenCalled();
+    expect(mockStorageExists).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockJobAddJob).not.toHaveBeenCalled();
+    expect(sharp).not.toHaveBeenCalled();
+  });
+
+  it('keeps downstream infrastructure errors as generic 500s', async () => {
+    vi.mocked(withOrgContext).mockRejectedValueOnce(new Error('private database detail'));
+    const response = await GET(createRequest(), createContext());
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to get thumbnail' });
+    expect(mockPermissionCan).not.toHaveBeenCalled();
+  });
+
+  it('authenticates before considering a conditional thumbnail response', async () => {
+    vi.mocked(requireAuth).mockRejectedValueOnce(new AuthenticationError());
+    const request = createRequest();
+    request.headers.set(
+      'If-None-Match',
+      `"${Buffer.from('thumbnails/doc-1/ver-1.png').toString('base64url')}"`
+    );
+    const response = await GET(request, createContext());
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Authentication required' });
+    expect(withOrgContext).not.toHaveBeenCalled();
+    expect(mockPermissionCan).not.toHaveBeenCalled();
+    expect(mockStorageExists).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockJobAddJob).not.toHaveBeenCalled();
+    expect(sharp).not.toHaveBeenCalled();
   });
 
   it('returns 404 and reads no storage when document view is denied', async () => {

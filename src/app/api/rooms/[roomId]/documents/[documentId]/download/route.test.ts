@@ -55,6 +55,10 @@ vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: () => ({ can: mockPermissionCan }),
 }));
 
+import { AuthenticationError } from '@/lib/errors';
+import { withOrgContext } from '@/lib/db';
+import { getRequestContext, requireAuth } from '@/lib/middleware';
+
 import { GET } from './route';
 
 function makeRequest(): NextRequest {
@@ -110,6 +114,49 @@ describe('GET /api/rooms/:roomId/documents/:documentId/download — current vers
       currentVersionId,
     });
   }
+
+  it.each([
+    new AuthenticationError(),
+    new AuthenticationError('Session expired: private detail'),
+    new Error('Authentication required'),
+  ])('returns generic 401 without downstream work for %s', async (error) => {
+    vi.mocked(requireAuth).mockRejectedValueOnce(error);
+    const response = await GET(makeRequest(), makeContext());
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Authentication required' });
+    expect(withOrgContext).not.toHaveBeenCalled();
+    expect(mockPermissionCan).not.toHaveBeenCalled();
+    expect(getRequestContext).not.toHaveBeenCalled();
+    expect(mockStorage.exists).not.toHaveBeenCalled();
+    expect(mockStorage.get).not.toHaveBeenCalled();
+    expect(mockDocUpdate).not.toHaveBeenCalled();
+    expect(mockCaptureAccessAudit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new Error('private authentication infrastructure failure'),
+    Object.assign(new Error('provider credential failure'), { statusCode: 401 }),
+  ])('keeps unexpected authentication infrastructure errors as generic 500s: %s', async (error) => {
+    vi.mocked(requireAuth).mockRejectedValueOnce(error);
+    const response = await GET(makeRequest(), makeContext());
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to download document' });
+    expect(withOrgContext).not.toHaveBeenCalled();
+    expect(mockPermissionCan).not.toHaveBeenCalled();
+    expect(getRequestContext).not.toHaveBeenCalled();
+    expect(mockStorage.exists).not.toHaveBeenCalled();
+    expect(mockStorage.get).not.toHaveBeenCalled();
+    expect(mockDocUpdate).not.toHaveBeenCalled();
+    expect(mockCaptureAccessAudit).not.toHaveBeenCalled();
+  });
+
+  it('keeps downstream infrastructure errors as generic 500s', async () => {
+    vi.mocked(withOrgContext).mockRejectedValueOnce(new Error('private database detail'));
+    const response = await GET(makeRequest(), makeContext());
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to download document' });
+    expect(mockPermissionCan).not.toHaveBeenCalled();
+  });
 
   it('returns 400 before database access for malformed route identifiers', async () => {
     const res = await GET(makeRequest(), {
