@@ -4,7 +4,33 @@ All notable VaultSpace changes from the current stabilization sprint are recorde
 
 ## [Unreleased]
 
+Verified Azure staging code release: `e7ee77d` (#193, 2026-10-08 Pacific). Detail by PR is in `IMPLEMENTATION_STATUS.md` ("Shipped Since the July 21 Update").
+
+### Added
+
+- SysOp control plane (`/sysop`) with explicit platform-operator grants, audited operator access, tenant directory, organization enable/disable, and an hourly operator-continuity workflow. (#158, #163, #167)
+- Self-service onboarding: email verification gate, durable verification delivery with a 5-minute reconciler job, unscheduled stale verification token cleanup script, workspace URL claim, and selectable starter folder structures. (#167 to #172, #179)
+- Per-tenant backup and restore scripts (`ops:backup-org`, `ops:restore-org`).
+- Admin-triggered password reset, admin user editing, and viewer-to-admin promotion confirmation. (#78, #83, #184)
+
+### Changed
+
+- Login, session, organization and password-reset flows run through constrained bootstrap database functions (Wave 1, #121 to #151).
+- Room lifecycle is enforced and closed rooms are read-only. (#161, #162)
+- Viewer invitations and room access are scoped to assigned rooms. (#152, #154)
+
+### Fixed
+
+- Corrected ACS verification-email operation IDs using deterministic UUIDs; remediated critical Next.js/tinypool advisories. (#188)
+- Return generic authentication 401 responses on admin preview, download, and thumbnail routes while preserving serving/permission/scan behavior. (#192, #193)
+- Added privacy-preserving invitation submission telemetry and initial email failure alerting; provider acceptance and alert creation are distinct from recipient receipt. (#192)
+- Updated DOMPurify, markdown-it, Sharp, and transitive source-map-js; added real renderer tests and remote Linux native-image build checks. (#193)
+
 ### Security
+
+- Rate-limited login and 2FA validation; sanitized search snippets; neutralized active content in SVG/XML previews; guarded local storage against path traversal; escaped user input in email HTML; hardened self-host Docker Compose. (#101 to #108)
+- MFA sessions are bound to one-time challenges and enrollment fails closed. (#159, #160)
+- Viewer shows a graceful "unavailable" state for non-servable documents. (#90)
 
 - Enforced one scan-gating policy (`isServable`: only `CLEAN` or `SKIPPED` are servable) at every path that serves original bytes or a derived asset — admin and viewer download / preview / thumbnail, version rollback, preview regeneration, room export, and the preview, text-extraction, and search-index workers (which re-check the persisted scan status independently and read the DB-authoritative blob key). `INFECTED` / still-scanning / errored versions and any preview, thumbnail, search snippet, or export derived from them can no longer be served or processed. (#88)
 - Serve the document's current version (`currentVersionId`), scoped by version id + document + organization, instead of the highest version number. A non-servable current version returns unavailable (admin `403` / viewer `404`, identical whether it is still scanning or blocked, with no scan-reason disclosure) and never silently downgrades to an older servable version; version rollback is now effective on the serve side. (#89)
