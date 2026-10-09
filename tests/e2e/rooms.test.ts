@@ -198,7 +198,9 @@ test.describe('Room contextual help', () => {
     const search = page.getByRole('textbox', { name: 'Search rooms' });
     await search.fill('Due Diligence Package');
     await expect(search).toHaveValue('Due Diligence Package');
-    await expect(page.getByRole('heading', { name: 'Active Rooms (1)', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Active Rooms (1)', exact: true })
+    ).toBeVisible();
     await help.hover();
     const tooltip = page.getByRole('tooltip');
     await expect(tooltip).toContainText('people with permission');
@@ -245,7 +247,9 @@ test.describe('Room contextual help', () => {
       const search = page.getByRole('textbox', { name: 'Search rooms' });
       await search.fill('Due Diligence Package');
       await expect(search).toHaveValue('Due Diligence Package');
-      await expect(page.getByRole('heading', { name: 'Active Rooms (1)', exact: true })).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: 'Active Rooms (1)', exact: true })
+      ).toBeVisible();
       await help.tap();
       const detail = page.getByRole('dialog', {
         name: 'About room status: Due Diligence Package',
