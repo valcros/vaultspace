@@ -1,5 +1,5 @@
 # === Build stage ===
-FROM node:20-slim AS builder
+FROM public.ecr.aws/docker/library/node:20-slim AS builder
 WORKDIR /app
 
 # Pass --build-arg DEPLOYMENT_MODE=standalone for self-hosted installs.
@@ -24,7 +24,7 @@ COPY . .
 RUN npm run build
 
 # === Runtime stage ===
-FROM node:20-slim AS runner
+FROM public.ecr.aws/docker/library/node:20-slim AS runner
 WORKDIR /app
 
 # Install dumb-init, OpenSSL for Prisma, fonts for Sharp SVG text rendering,
