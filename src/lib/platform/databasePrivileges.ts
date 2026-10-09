@@ -117,3 +117,32 @@ export async function revokeAndVerifyPlatformControlPlaneAccess(
     throw new PlatformControlPrivilegeError('PLATFORM_CONTROL_RUNTIME_PRIVILEGE_NOT_DENIED');
   }
 }
+
+/** Restore template-specific grants after generic repair scripts grant all tables. */
+export async function enforceSystemTemplatePrivileges(
+  client: PrismaClient,
+  applicationRole: string
+): Promise<void> {
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(applicationRole)) {
+    throw new PlatformControlPrivilegeError('SYSTEM_TEMPLATE_APPLICATION_ROLE_INVALID');
+  }
+  await client.$executeRawUnsafe(
+    `REVOKE ALL ON public.system_room_templates, public.system_room_template_revisions FROM ${applicationRole}, PUBLIC`
+  );
+  await client.$executeRawUnsafe(
+    `GRANT SELECT, INSERT, UPDATE ON public.system_room_templates TO ${applicationRole}`
+  );
+  await client.$executeRawUnsafe(
+    `GRANT SELECT, INSERT ON public.system_room_template_revisions TO ${applicationRole}`
+  );
+  const [check] = await client.$queryRawUnsafe<Array<{ safe: boolean }>>(`
+    SELECT NOT (
+      has_table_privilege('${applicationRole}', 'public.system_room_templates', 'DELETE,TRUNCATE')
+      OR has_table_privilege('${applicationRole}', 'public.system_room_template_revisions', 'UPDATE,DELETE,TRUNCATE')
+      OR has_any_column_privilege('${applicationRole}', 'public.system_room_template_revisions', 'UPDATE')
+    ) AS safe
+  `);
+  if (!check?.safe) {
+    throw new PlatformControlPrivilegeError('SYSTEM_TEMPLATE_PRIVILEGES_UNSAFE');
+  }
+}

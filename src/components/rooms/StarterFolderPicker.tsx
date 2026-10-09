@@ -17,12 +17,14 @@ export interface StarterFolderTemplate {
   name: string;
   description: string | null;
   category?: string;
+  revision: string;
   structure?: { folders?: StarterFolder[] };
   folderStructure?: { folders?: StarterFolder[] };
 }
 
 export interface StarterFolderSelection {
   templateId?: string;
+  templateRevision?: string;
   selectedFolderPaths: string[];
 }
 
@@ -98,6 +100,7 @@ export function StarterFolderPicker({
   const chooseTemplate = (template?: StarterFolderTemplate) => {
     onChange({
       templateId: template?.id,
+      templateRevision: template?.revision,
       selectedFolderPaths: template ? foldersFor(template).map((folder) => folder.path) : [],
     });
   };
@@ -121,7 +124,11 @@ export function StarterFolderPicker({
         ancestor = parentPath(ancestor);
       }
     }
-    onChange({ templateId: selectedTemplate.id, selectedFolderPaths: [...next] });
+    onChange({
+      templateId: selectedTemplate.id,
+      templateRevision: selectedTemplate.revision,
+      selectedFolderPaths: [...next],
+    });
   };
 
   return (
@@ -213,6 +220,7 @@ export function StarterFolderPicker({
                 onClick={() =>
                   onChange({
                     templateId: selectedTemplate.id,
+                    templateRevision: selectedTemplate.revision,
                     selectedFolderPaths: foldersFor(selectedTemplate).map((folder) => folder.path),
                   })
                 }
@@ -225,7 +233,11 @@ export function StarterFolderPicker({
                 variant="ghost"
                 disabled={disabled || selectedCount === 0}
                 onClick={() =>
-                  onChange({ templateId: selectedTemplate.id, selectedFolderPaths: [] })
+                  onChange({
+                    templateId: selectedTemplate.id,
+                    templateRevision: selectedTemplate.revision,
+                    selectedFolderPaths: [],
+                  })
                 }
               >
                 <Square className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Clear all

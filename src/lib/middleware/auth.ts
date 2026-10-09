@@ -198,7 +198,8 @@ export async function requirePlatformOperator(): Promise<SessionData> {
     if (error instanceof AuthorizationError) {
       throw error;
     }
-    // Fail open if headers context is unavailable in test harnesses
+    // Header, policy-store, or audit failures must never bypass the SysOp IP gate.
+    throw new AuthorizationError('Unable to verify platform access policy');
   }
 
   return session;

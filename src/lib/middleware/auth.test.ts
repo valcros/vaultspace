@@ -7,6 +7,15 @@ const mockResolveOrganizationByCustomDomain = vi.fn();
 const mockValidateSession = vi.fn();
 const mockCookieGet = vi.fn();
 const mockUserFindUnique = vi.fn();
+const mockPolicy = vi.fn();
+const mockHeaders = vi.fn();
+const mockSecurityAudit = vi.fn();
+vi.mock('../sysop/ipAllowlist', () => ({
+  SysopIpAllowlistService: { isClientIpAllowed: (...args: unknown[]) => mockPolicy(...args) },
+}));
+vi.mock('../audit/securityAudit', () => ({
+  captureSecurityAudit: (...args: unknown[]) => mockSecurityAudit(...args),
+}));
 
 vi.mock('../db', () => ({
   db: {
@@ -17,6 +26,7 @@ vi.mock('../db', () => ({
 }));
 
 vi.mock('next/headers', () => ({
+  headers: async () => mockHeaders(),
   cookies: async () => ({ get: (...args: unknown[]) => mockCookieGet(...args) }),
 }));
 
@@ -56,6 +66,9 @@ const organizationProjection = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPolicy.mockResolvedValue({ allowed: true });
+  mockHeaders.mockReturnValue(new Headers());
+  mockSecurityAudit.mockResolvedValue(undefined);
 });
 
 describe('requireAuthCredential', () => {
@@ -120,6 +133,41 @@ describe('requirePlatformOperator', () => {
     mockUserFindUnique.mockResolvedValue({ isActive: true, isPlatformOperator: true });
 
     await expect(requirePlatformOperator()).resolves.toEqual(session);
+  });
+});
+
+describe('platform IP policy failures', () => {
+  beforeEach(() => {
+    mockCookieGet.mockReturnValue({ value: 's'.repeat(43) });
+    mockValidateSession.mockResolvedValue({
+      userId: 'u',
+      organizationId: 'o',
+      organization: { role: 'VIEWER' },
+    });
+    mockUserFindUnique.mockResolvedValue({ isActive: true, isPlatformOperator: true });
+  });
+  it('allows an operator independently of organization role', async () => {
+    await expect(requirePlatformOperator()).resolves.toMatchObject({ userId: 'u' });
+  });
+  it.each(['policy', 'headers', 'audit'])('fails closed on %s failure', async (source) => {
+    if (source === 'policy') {
+      mockPolicy.mockRejectedValue(new Error('db unavailable'));
+    }
+    if (source === 'headers') {
+      mockHeaders.mockImplementation(() => {
+        throw new Error('no headers');
+      });
+    }
+    if (source === 'audit') {
+      mockPolicy.mockResolvedValue({ allowed: false });
+      mockSecurityAudit.mockRejectedValue(new Error('audit unavailable'));
+    }
+    await expect(requirePlatformOperator()).rejects.toMatchObject({ name: 'AuthorizationError' });
+  });
+  it('denies an IP rejected by policy', async () => {
+    mockPolicy.mockResolvedValue({ allowed: false });
+    await expect(requirePlatformOperator()).rejects.toMatchObject({ name: 'AuthorizationError' });
+    expect(mockSecurityAudit).toHaveBeenCalledOnce();
   });
 });
 

@@ -1472,6 +1472,36 @@ model PlatformAuditEvent {
   @@map("platform_audit_events")
 }
 
+// Global platform catalog, independent of tenant lifecycle and backups.
+model SystemRoomTemplate {
+  id          String   @id
+  name        String   @db.VarChar(255)
+  description String   @db.Text
+  category    String   @db.VarChar(100)
+  enabled     Boolean  @default(true)
+  revision    Int      @default(1)
+  folders     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_room_templates")
+}
+
+// Append-only snapshots. Deliberately no tenant or user cascade relations.
+model SystemRoomTemplateRevision {
+  id          String   @id @default(cuid())
+  templateId  String
+  revision    Int
+  snapshot    Json
+  actorUserId String
+  requestId   String
+  createdAt   DateTime @default(now())
+
+  @@unique([templateId, revision])
+  @@index([actorUserId, createdAt])
+  @@map("system_room_template_revisions")
+}
+
 // RoomTemplate (Room Templates - F109)
 model RoomTemplate {
   id        String   @id @default(cuid())
