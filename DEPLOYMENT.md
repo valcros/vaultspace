@@ -7,7 +7,7 @@ This public guide describes the supported deployment contract without exposing a
 - `standalone` supports self-hosted development and deployment.
 - `azure` supports managed cloud deployment through the repository’s parameterized workflow.
 
-Choose the deployment mode explicitly. Production-like deployments use a protected CI environment. Azure deployment authenticates with OIDC; the current CI image push still uses ACR admin username/password secrets. Moving registry pushes and runtime pulls to workload identity is pending separate approval.
+Choose the deployment mode explicitly. Production-like deployments use a protected CI environment. Azure deployment authenticates with OIDC. Registry push/pull migration prerequisites and live authentication posture are tracked in private operator notes; review CI, runtime, and event-source identities separately before changing them.
 
 ## Configuration
 

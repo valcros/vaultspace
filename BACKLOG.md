@@ -5,17 +5,18 @@
 
 ## P0: Security and Release Blockers
 
-- **Dependency advisories on `main`.** Fresh `npm audit --json` on 2026-10-08 reports 3 critical, 10 high, 6 moderate, and 1 low findings across runtime and development dependencies. Critical entries include `next` 16.3.5 (including the `next/og` ImageResponse advisory), `vitest`, and transitive `tinypool`. Remediate in a separately approved PR: Next.js 16.4.x with aligned tooling, sharp >=0.35.5, and the remaining critical development dependencies. Re-audit the final lockfile; upgrading only Next.js/sharp is not sufficient evidence that CI is clear. Application exploitability was not tested.
 - **Manual MVP QA pass** per `QA_TEST_PLAN.md` (auth, rooms, upload, scan, preview, public viewer, permissions, digest, export, trash/restore, audit trail).
 - **Accessibility QA:** manual per-resource, document viewer, public viewer, keyboard, focus-order and screen-reader review (automated axe scans already run in CI).
-- **Self-host smoke:** confirm Docker Compose starts cleanly end to end.
+- **Self-host smoke:** confirm Docker Compose starts cleanly end to end on an approved remote runner, not the owner's workstation.
 - **Production deployment path:** tag-based production deploy is still deferred; define and verify before public beta.
 
-## P1: Open Pull Requests and Issues
+## P1: Security Follow-up, Open Pull Requests and Issues
+
+- **Residual dependency advisories:** fresh audit of `e7ee77d` reports 0 critical, 15 high, 6 moderate, 0 low. CI Security Scan passes. The critical blocker was closed by #188; remaining findings need reachability review and bounded remediation. #193 applies the rendering dependency updates.
 
 - Draft PR #157: secure profiles, notification inbox, and release gates.
-- Dependabot PR #180: `vitest` 3.x to 5.x (major; also clears the dev-only `vitest`/`tinypool` critical advisory).
-- Dependabot PRs #185 (`markdown-it`) and #186 (`dompurify`): blocked only by the P0 audit failure above.
+- Dependabot PR #180: `vitest` 3.x to 5.x is a separate major migration with failing test/type checks; it is not required to clear the already-remediated critical audit findings.
+- Dependency PRs #185, #186, #190, and #191 were superseded by the tested updates in #193 and are closed.
 - Issue #93: viewer document Back action loses folder context.
 - Roadmap issues #175 (schedule stale email-verification token cleanup), #176 (validate tenant backup/restore before destructive lifecycle actions), #177 (purge stale org-less unverified registrations), #178 (evaluate privacy-preserving registration CAPTCHA).
 
@@ -30,14 +31,16 @@
   - Waker (`*/5 * * * *`) and lifecycle (`0 6 * * *`) cron values are documented but not enforced by deploy validation. Adding enforcement remains approval-gated.
   - **Maintenance scheduling:** no jobs exist for `worker:stale-token-cleanup` or `worker:send-pending-invites`; schedule or explicitly retire them after review. `JOB_SPECS.md` audit compaction, generic expiry/trash cleanup, and backup snapshot schedules are not implemented.
   - Live web readiness is deep and writes a Redis health key. Decide separately whether to use quick readiness; the regenerated example intentionally preserves live behavior.
-  - CI pushes to ACR with admin credentials; migrate both pushes and runtime image pulls before disabling the admin user.
-  - Four web/worker secret definitions lack Key Vault backing. The deploy env validator verifies `secretRef`, not `keyVaultUrl`; review credential-source policy and strengthen validation separately.
-  - Add endpoint-availability and scheduled-job failure alerting, and test notification delivery. Preserve the 14 existing app/PostgreSQL/Redis metric alerts.
-  - Review PostgreSQL and Redis HA, backup/recovery objectives, public network rules, and PostgreSQL autogrow before launch. No cloud settings changed in this review.
+  - Identity, credential-backing, resilience, network, recovery, and certificate-retention decisions are tracked privately. Review recommendations before any live change.
+  - #192 deployed initial email submission/reconciler failure coverage. Endpoint availability, missing execution/ingestion detection, and notification receipt remain separate work; preserve existing resource-pressure alerts.
 
 - **Standalone full-stack evidence:** the existing path-filtered workflow now runs on this review PR. Complete and review an approved full-stack smoke run before launch; that job is skipped on ordinary PR runs.
 
-### Closed by the 2026-10-08 Azure review
+### Closed by the 2026-10-08 releases and Azure review
+
+- #188 fixed verification-email provider operation IDs and closed the critical Next.js/tinypool audit blocker.
+- #192 added safe invitation telemetry, email failure monitoring, and preview authentication correction.
+- #193 added download/thumbnail authentication corrections, rendering dependency updates, and remote Linux native-image checks.
 
 - Corrected the claim that standalone validation lacked a trigger: it has path-filtered PR triggers and a manual full-stack path, and this review produced recorded runs.
 - Removed the hard-coded ACME email fallback after owner-approved staging secret creation; the monthly workflow now passes `ACME_EMAIL`. No renewal was triggered.

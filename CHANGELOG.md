@@ -4,12 +4,12 @@ All notable VaultSpace changes from the current stabilization sprint are recorde
 
 ## [Unreleased]
 
-Deployed to Azure staging through `814a6ec` (2026-09-17). Detail by PR is in `IMPLEMENTATION_STATUS.md` ("Shipped Since the July 21 Update").
+Verified Azure staging code release: `e7ee77d` (#193, 2026-10-08 Pacific). Detail by PR is in `IMPLEMENTATION_STATUS.md` ("Shipped Since the July 21 Update").
 
 ### Added
 
 - SysOp control plane (`/sysop`) with explicit platform-operator grants, audited operator access, tenant directory, organization enable/disable, and an hourly operator-continuity workflow. (#158, #163, #167)
-- Self-service onboarding: email verification gate, durable verification delivery with a 5-minute reconciler job, stale verification token cleanup, workspace URL claim, and selectable starter folder structures. (#167 to #172, #179)
+- Self-service onboarding: email verification gate, durable verification delivery with a 5-minute reconciler job, unscheduled stale verification token cleanup script, workspace URL claim, and selectable starter folder structures. (#167 to #172, #179)
 - Per-tenant backup and restore scripts (`ops:backup-org`, `ops:restore-org`).
 - Admin-triggered password reset, admin user editing, and viewer-to-admin promotion confirmation. (#78, #83, #184)
 
@@ -18,6 +18,13 @@ Deployed to Azure staging through `814a6ec` (2026-09-17). Detail by PR is in `IM
 - Login, session, organization and password-reset flows run through constrained bootstrap database functions (Wave 1, #121 to #151).
 - Room lifecycle is enforced and closed rooms are read-only. (#161, #162)
 - Viewer invitations and room access are scoped to assigned rooms. (#152, #154)
+
+### Fixed
+
+- Corrected ACS verification-email operation IDs using deterministic UUIDs; remediated critical Next.js/tinypool advisories. (#188)
+- Return generic authentication 401 responses on admin preview, download, and thumbnail routes while preserving serving/permission/scan behavior. (#192, #193)
+- Added privacy-preserving invitation submission telemetry and initial email failure alerting; provider acceptance and alert creation are distinct from recipient receipt. (#192)
+- Updated DOMPurify, markdown-it, Sharp, and transitive source-map-js; added real renderer tests and remote Linux native-image build checks. (#193)
 
 ### Security
 
