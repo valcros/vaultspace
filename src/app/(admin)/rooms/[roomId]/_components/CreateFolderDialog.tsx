@@ -64,38 +64,36 @@ export function CreateFolderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {mode === 'single' ? 'Create New Folder' : 'Add Starter Folders'}
+            {mode === 'single' ? 'Create New Folder' : 'Add Folders from a Template'}
           </DialogTitle>
           <DialogDescription>
             {mode === 'single'
-              ? 'Create a folder to organize documents in this data room.'
+              ? 'Create one folder, or choose a standard template to add several folders at once.'
               : 'Add selected folder structure at this room’s root. This does not copy documents or share another room’s content.'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="flex gap-2" role="tablist" aria-label="Folder creation method">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Folder creation method">
             <Button
               type="button"
               size="sm"
               variant={mode === 'single' ? 'default' : 'outline'}
               onClick={() => setMode('single')}
-              aria-selected={mode === 'single'}
-              role="tab"
+              aria-pressed={mode === 'single'}
             >
-              One folder
+              Create one folder
             </Button>
             <Button
               type="button"
               size="sm"
               variant={mode === 'starter' ? 'default' : 'outline'}
               onClick={() => setMode('starter')}
-              aria-selected={mode === 'starter'}
-              role="tab"
+              aria-pressed={mode === 'starter'}
             >
-              Starter structure
+              Use a standard folder template
             </Button>
           </div>
           {mode === 'single' ? (

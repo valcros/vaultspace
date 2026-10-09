@@ -130,11 +130,13 @@ export function StarterFolderPicker({
         <FolderTree className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" aria-hidden="true" />
         <div>
           <h3 id={`${idPrefix}-starter-heading`} className="text-sm font-medium text-neutral-900">
-            Starter folders <span className="font-normal text-neutral-500">(optional)</span>
+            Standard folder templates{' '}
+            <span className="font-normal text-neutral-500">(optional)</span>
           </h3>
           <p className="mt-0.5 text-xs text-neutral-500">
-            Choose only the folders this independent room needs. This creates folder structure only,
-            not shared documents or access to another room.
+            Creates empty folders at the top level of this room. Choose a template and review the
+            folder checklist before adding it. No documents or permissions are copied. Existing
+            folder paths cannot be added again.
           </p>
         </div>
       </div>

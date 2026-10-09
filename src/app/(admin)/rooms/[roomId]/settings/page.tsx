@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { ContextHelp } from '@/components/ui/context-help';
+import { ROOM_STATUS_HELP } from '@/lib/rooms/roomStatusHelp';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -444,6 +446,12 @@ export default function RoomSettingsPage() {
 
           {/* Expandable Settings Feed (Right 3 Columns) */}
           <div className="space-y-4 lg:col-span-3">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-medium">{ROOM_STATUS_HELP[room.status].label}</span>
+              <ContextHelp label="About room status">
+                {ROOM_STATUS_HELP[room.status].description}
+              </ContextHelp>
+            </div>
             {/* Section 1: General Info */}
             <AccordionItem
               id="general"
@@ -452,20 +460,6 @@ export default function RoomSettingsPage() {
               icon={Settings}
               isOpen={!!openSections['general']}
               onToggle={() => toggleSection('general')}
-              badge={
-                <Badge
-                  variant="outline"
-                  className="border-slate-300 text-[11px] text-slate-600 dark:border-slate-700 dark:text-slate-400"
-                >
-                  {room.status === 'DRAFT'
-                    ? 'Draft Room'
-                    : room.status === 'ACTIVE'
-                      ? 'Active Room'
-                      : room.status === 'ARCHIVED'
-                        ? 'Archived Room'
-                        : 'Closed Room'}
-                </Badge>
-              }
             >
               <div className="space-y-4">
                 <div className="space-y-2">

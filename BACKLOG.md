@@ -25,11 +25,14 @@
 
 ## P2: Technical Debt and Architecture
 
+- **Contextual help and tooltips:** expand consistent explanations of current state, benefits, restrictions, and available actions across sharing, permissions, room settings, and document controls. The room-guidance increment prepares visible draft/access labels, clearer publishing copy, standard-folder discovery, and reusable hover/focus help with click/tap access. Keep essential warnings visible, support Escape and focus return, and avoid nested interactive controls. Earlier room-navigation plans covered only the one-time list-mode hint, not this broader help pass. This increment awaits PR validation and release; wider coverage remains open.
+
 - **Unused application shell cleanup:** remove unused `src/components/layout/header.tsx` and `src/components/layout/app-shell.tsx` (`AppShell`) in a separate cleanup after rechecking references. `DockHeader` is the active header. No removal is included in #194.
 
 - **Service-layer bypass.** About 68 API route files under `src/app/api/` write to the database directly instead of going through `src/services/` (4 services today). Audit for tenant scoping and event emission, then migrate mutations into CoreServices.
 - **Scan pipeline residuals** from the July scan-gating pass: CLEAN/INFECTED scan-worker side-effect isolation, `/api/search` legacy-row snippets, `scanProcessor` payload-key binding, ClamAV throw-in-callback, deterministic preview job id from the scan worker (PR #91 closed unmerged).
 - **Next.js middleware deprecation:** migrate `src/middleware.ts` to `proxy.ts` (requires separate approval).
+- **Retention-date test portability:** `src/app/api/rooms/[roomId]/trash/route.test.ts` assumes calendar days equal 24-hour periods. Local America/Los_Angeles runs crossing daylight-saving boundaries can report 24 rather than 23 days remaining. Verify intended calendar-day semantics and make the test deterministic in a separate change.
 - **Test hygiene:** React `act(...)` warnings; PDF.js worker loaded from a CDN (blocks no-CDN deployments).
 - **CI runtime:** `actions/checkout@v4` and `actions/setup-node@v4` target the deprecated Node 20 runtime and are being forced to Node 24.
 - **Azure infrastructure drift** (read-only evidence in `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`):
