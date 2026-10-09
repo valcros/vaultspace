@@ -28,7 +28,7 @@ import { join } from 'node:path';
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Prisma, PrismaClient, UserRole } from '@prisma/client';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
-import { withOrgContext, db, setBootstrapContext } from '@/lib/db';
+import { withOrgContext, db, bootstrapDb, setBootstrapContext } from '@/lib/db';
 import { lockPasswordResetUser } from '@/lib/auth/passwordResetToken';
 import {
   revokeAndVerifyPasswordResetProviderCorrelationAccess,
@@ -138,25 +138,31 @@ async function issuePasswordResetWithReviewedLocks(input: {
   mode: 'self' | 'admin';
   onReadyToLock?: () => void;
 }): Promise<string | null> {
-  return db.$transaction(
+  // Match the production reset routes: no-context row locks require the
+  // dedicated bootstrap connection, not the ordinary RLS application role.
+  return bootstrapDb.$transaction(
     async (tx) => {
       await setBootstrapContext(tx);
 
       const userIds = [...new Set([input.targetUserId, input.actorUserId])].sort();
       await lockPasswordResetUser(tx, input.targetUserId);
-      await tx.$queryRaw`
+      const lockedUsers = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id
         FROM users
         WHERE id IN (${Prisma.join(userIds)})
-        ORDER BY id
+        ORDER BY id COLLATE "C"
         FOR UPDATE`;
+      expect(lockedUsers.map(({ id }) => id).sort()).toEqual(userIds);
       input.onReadyToLock?.();
-      await tx.$queryRaw`
-        SELECT id
-        FROM user_organizations
-        WHERE "userId" IN (${Prisma.join(userIds)})
-        ORDER BY id
-        FOR UPDATE`;
+      const lockedMemberships = await tx.$queryRaw<Array<{ userId: string }>>`
+        SELECT uo."userId"
+        FROM user_organizations uo
+        JOIN organizations o ON o.id = uo."organizationId"
+        WHERE uo."userId" IN (${Prisma.join(userIds)})
+        ORDER BY uo.id COLLATE "C"
+        FOR UPDATE OF uo, o`;
+
+      expect([...new Set(lockedMemberships.map(({ userId }) => userId))].sort()).toEqual(userIds);
 
       const actor = await tx.user.findUnique({
         where: { id: input.actorUserId },
@@ -363,6 +369,7 @@ describe('RLS Enforcement', () => {
   afterAll(async () => {
     await rawPrisma.$disconnect();
     await db.$disconnect();
+    await bootstrapDb.$disconnect();
   });
 
   describe('SEC-005: RLS database posture', () => {
@@ -1672,6 +1679,24 @@ describe('RLS Enforcement', () => {
       expect(rows.filter(({ deliveryStatus }) => deliveryStatus === 'SUPERSEDED')).toHaveLength(1);
     });
 
+    it('does not mistake bootstrap SELECT visibility for membership update-lock permission', async () => {
+      await db.$transaction(async (tx) => {
+        await setBootstrapContext(tx);
+        const visible = await tx.userOrganization.findMany({
+          where: { organizationId: org1Id, userId: user1Id },
+          select: { id: true },
+        });
+        expect(visible).toHaveLength(1);
+        const locked = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM user_organizations
+          WHERE "organizationId" = ${org1Id} AND "userId" = ${user1Id}
+          FOR UPDATE`;
+        // The ordinary role has bootstrap SELECT permission, but its UPDATE
+        // policy requires org context. A successful empty query locks nothing.
+        expect(locked).toEqual([]);
+      });
+    });
+
     it('denies admin issuance after a concurrent demotion commits ahead of authorization locks', async () => {
       const target = await rawPrisma.user.create({
         data: {
@@ -1694,14 +1719,20 @@ describe('RLS Enforcement', () => {
         mutationLocked = resolve;
       });
       const demotion = rawPrisma.$transaction(async (tx) => {
-        await tx.userOrganization.updateMany({
+        const updated = await tx.userOrganization.updateMany({
           where: { organizationId: org1Id, userId: user1Id },
           data: { role: UserRole.VIEWER },
         });
         mutationLocked();
+        expect(updated.count).toBe(1);
         await mutationHeld;
       });
-      await mutationHasLock;
+      await Promise.race([
+        mutationHasLock,
+        demotion.then(() => {
+          throw new Error('Membership mutation completed before acquiring its lock');
+        }),
+      ]);
       let issuanceAtMembershipLock!: () => void;
       const issuanceReady = new Promise<void>((resolve) => {
         issuanceAtMembershipLock = resolve;
@@ -1713,12 +1744,21 @@ describe('RLS Enforcement', () => {
         mode: 'admin',
         onReadyToLock: issuanceAtMembershipLock,
       });
-      await issuanceReady;
-      releaseMutation();
-
-      await demotion;
-      await expect(issuance).resolves.toBeNull();
-      expect(await rawPrisma.passwordResetToken.count({ where: { userId: target.id } })).toBe(0);
+      try {
+        await Promise.race([
+          issuanceReady,
+          issuance.then(() => {
+            throw new Error('Issuance completed before reaching membership locks');
+          }),
+        ]);
+        releaseMutation();
+        await demotion;
+        await expect(issuance).resolves.toBeNull();
+        expect(await rawPrisma.passwordResetToken.count({ where: { userId: target.id } })).toBe(0);
+      } finally {
+        releaseMutation();
+        await Promise.allSettled([demotion, issuance]);
+      }
     });
 
     it('denies admin issuance after concurrent target-membership deactivation commits', async () => {
@@ -1743,14 +1783,20 @@ describe('RLS Enforcement', () => {
         mutationLocked = resolve;
       });
       const deactivation = rawPrisma.$transaction(async (tx) => {
-        await tx.userOrganization.updateMany({
+        const updated = await tx.userOrganization.updateMany({
           where: { organizationId: org1Id, userId: target.id },
           data: { isActive: false },
         });
         mutationLocked();
+        expect(updated.count).toBe(1);
         await mutationHeld;
       });
-      await mutationHasLock;
+      await Promise.race([
+        mutationHasLock,
+        deactivation.then(() => {
+          throw new Error('Membership mutation completed before acquiring its lock');
+        }),
+      ]);
       let issuanceAtMembershipLock!: () => void;
       const issuanceReady = new Promise<void>((resolve) => {
         issuanceAtMembershipLock = resolve;
@@ -1762,12 +1808,21 @@ describe('RLS Enforcement', () => {
         mode: 'admin',
         onReadyToLock: issuanceAtMembershipLock,
       });
-      await issuanceReady;
-      releaseMutation();
-
-      await deactivation;
-      await expect(issuance).resolves.toBeNull();
-      expect(await rawPrisma.passwordResetToken.count({ where: { userId: target.id } })).toBe(0);
+      try {
+        await Promise.race([
+          issuanceReady,
+          issuance.then(() => {
+            throw new Error('Issuance completed before reaching membership locks');
+          }),
+        ]);
+        releaseMutation();
+        await deactivation;
+        await expect(issuance).resolves.toBeNull();
+        expect(await rawPrisma.passwordResetToken.count({ where: { userId: target.id } })).toBe(0);
+      } finally {
+        releaseMutation();
+        await Promise.allSettled([deactivation, issuance]);
+      }
     });
 
     it('returns aggregate-only password reset delivery contract diagnostics', async () => {
