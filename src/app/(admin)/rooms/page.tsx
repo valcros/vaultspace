@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { ContextHelp } from '@/components/ui/context-help';
+import { ROOM_STATUS_HELP, PUBLISH_ROOM_HELP } from '@/lib/rooms/roomStatusHelp';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -303,7 +305,8 @@ export default function RoomsPage() {
           <DialogHeader>
             <DialogTitle>Create Data Room</DialogTitle>
             <DialogDescription>
-              Create a new secure data room to share documents with stakeholders.
+              Create a draft room, then prepare folders and documents before publishing it for
+              people with access.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -376,8 +379,7 @@ function RoomCard({
           status: 'ACTIVE' as const,
           label: 'Publish room',
           title: 'Publish room?',
-          description:
-            'Publishing makes this room discoverable to authorized viewers and eligible for active-room workflows.',
+          description: PUBLISH_ROOM_HELP,
         }
       : room.status === 'ACTIVE'
         ? {
@@ -442,17 +444,10 @@ function RoomCard({
     }
   };
 
-  const statusLabel =
-    room.status === 'DRAFT'
-      ? 'Draft room'
-      : room.status === 'ACTIVE'
-        ? 'Live room'
-        : room.status === 'ARCHIVED'
-          ? 'Archived room'
-          : 'Closed room';
+  const statusLabel = ROOM_STATUS_HELP[room.status].label;
 
   return (
-    <>
+    <div>
       <Link href={`/rooms/${room.id}`}>
         <Card
           className={`group relative cursor-pointer overflow-hidden border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 ${isChangingStatus ? 'opacity-50' : ''}`}
@@ -472,7 +467,7 @@ function RoomCard({
             <div className="flex items-start justify-between">
               <div className="min-w-0 flex-1">
                 <div className="mb-3 flex items-center gap-2">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
                     <FolderOpen className="h-4 w-4" />
                   </span>
                   <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
@@ -575,6 +570,12 @@ function RoomCard({
           </CardContent>
         </Card>
       </Link>
+      <div className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300">
+        <ContextHelp label={`About room status: ${room.name}`}>
+          {ROOM_STATUS_HELP[room.status].description}
+        </ContextHelp>
+        <span>About this room’s status</span>
+      </div>
 
       {actionError && (
         <p className="mt-2 text-sm text-danger-600" role="alert">
@@ -602,6 +603,6 @@ function RoomCard({
         onConfirm={handleClose}
         loading={isChangingStatus}
       />
-    </>
+    </div>
   );
 }

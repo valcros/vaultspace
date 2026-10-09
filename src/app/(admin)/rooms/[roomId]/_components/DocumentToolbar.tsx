@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { PanelLeftClose, PanelLeftOpen, PanelLeft } from 'lucide-react';
 
+import { ContextHelp } from '@/components/ui/context-help';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -141,8 +142,12 @@ export function DocumentToolbar({
             </Button>
             <Button size="sm" variant="outline" onClick={onNewFolderClick}>
               <FolderPlus className="mr-2 h-4 w-4" />
-              New Folder
+              Add folders
             </Button>
+            <ContextHelp label="About adding folders">
+              Create one folder or use a standard folder template. Templates add selected empty
+              folders at the top level of this room. Publishing is not required.
+            </ContextHelp>
           </>
         )}
         {/* Visual separator between primary actions and secondary

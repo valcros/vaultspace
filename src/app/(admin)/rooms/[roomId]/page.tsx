@@ -77,6 +77,8 @@ const VersionHistoryDialog = dynamic(
 import { toast } from '@/components/ui/use-toast';
 import { CATEGORY_OPTIONS } from '@/lib/documentCategories';
 import { CreateFolderDialog } from './_components/CreateFolderDialog';
+import { ContextHelp } from '@/components/ui/context-help';
+import { ROOM_STATUS_HELP } from '@/lib/rooms/roomStatusHelp';
 import type { StarterFolderSelection } from '@/components/rooms/StarterFolderPicker';
 import { DeleteDocumentDialog } from './_components/DeleteDocumentDialog';
 import { DeleteFolderDialog } from './_components/DeleteFolderDialog';
@@ -851,9 +853,16 @@ export default function RoomDetailPage() {
             </div>
           }
         />
+        <div className="mt-2 flex items-center gap-2 text-sm">
+          <span className="font-medium">{ROOM_STATUS_HELP[room.status].label}</span>
+          <ContextHelp label="About room status">
+            {ROOM_STATUS_HELP[room.status].description}
+          </ContextHelp>
+        </div>
         {room.status === 'DRAFT' && (
-          <p className="text-muted-foreground mt-2 text-sm">
-            This is a private draft room. Add documents and invite people when you are ready.
+          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+            Prepare folders and documents while this room is in Draft. Publish it from the room
+            card’s Actions menu on Data Rooms when you are ready for people with access to view it.
           </p>
         )}
 
