@@ -70,12 +70,12 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
         {/* Theme toggle */}
         <ThemeToggle />
 
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          <span className="sr-only">Notifications</span>
-          {/* Notification badge */}
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger-500" />
+        {/* Notification preferences. An inbox/unread count is not implemented. */}
+        <Button variant="ghost" size="icon" className="relative" asChild>
+          <Link href="/settings/notifications" title="Notification preferences">
+            <Bell className="h-5 w-5" aria-hidden="true" />
+            <span className="sr-only">Notification preferences</span>
+          </Link>
         </Button>
 
         {/* User menu */}

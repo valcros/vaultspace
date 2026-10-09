@@ -105,11 +105,12 @@ export function DockHeader({ user, organization, onSearchClick }: DockHeaderProp
         {/* Theme toggle */}
         <ThemeToggle className={clsx('h-9 w-9', chromeButton)} />
 
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className={clsx('relative', chromeButton)}>
-          <Bell className="h-5 w-5" />
-          <span className="sr-only">Notifications</span>
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger-500" />
+        {/* Notification preferences. An inbox/unread count is not implemented. */}
+        <Button variant="ghost" size="icon" className={chromeButton} asChild>
+          <Link href="/settings/notifications" title="Notification preferences">
+            <Bell className="h-5 w-5" aria-hidden="true" />
+            <span className="sr-only">Notification preferences</span>
+          </Link>
         </Button>
 
         {/* User menu */}
