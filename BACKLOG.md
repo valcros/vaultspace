@@ -14,6 +14,9 @@
 
 - **Residual dependency advisories:** fresh audit of `e7ee77d` reports 0 critical, 15 high, 6 moderate, 0 low. CI Security Scan passes. The critical blocker was closed by #188; remaining findings need reachability review and bounded remediation. #193 applies the rendering dependency updates.
 
+- **Notification bell correction prepared (2026-10-08):** both header variants now link to the existing notification-preferences page with an accurate accessible label; the fabricated unread dot is removed. This is a preferences shortcut, not an implemented inbox. Browser regression coverage exercises pointer and keyboard navigation on desktop and mobile. Pending PR review and deployment.
+- **In-app notification inbox remains open:** draft #157 supplies a reader/menu but no production notification-record producer was found in current source or its notification changes. Before extraction, define the event source, recipient policy, deduplication and retry behavior; add appropriate database isolation and recipient-scoped reads/writes; prevent stale reads and mutations across organization switches; define older-unread pagination and mark-all semantics; and test error recovery, keyboard access, and cross-member/cross-organization isolation. Keep unrelated profile/NDA and infrastructure changes out of the bell fix.
+
 - Draft PR #157: secure profiles, notification inbox, and release gates.
 - Dependabot PR #180: `vitest` 3.x to 5.x is a separate major migration with failing test/type checks; it is not required to clear the already-remediated critical audit findings.
 - Dependency PRs #185, #186, #190, and #191 were superseded by the tested updates in #193 and are closed.
