@@ -66,3 +66,9 @@ The Azure-review corrections below merged in #187. Its post-merge deployment suc
 - Expanded document preview support (XLSX, PPTX, DOCX, CSV, Markdown, code syntax highlighting). See `DOCUMENT_PREVIEW_PLAN.md`.
 - BYO custom domains (`dataroom.client.com`) with per-tenant ingress and managed certificates.
 - Remaining V1+ features per `dataroom-feature-matrix-v6.md`.
+
+## Folder template management follow-ons
+
+- **Per-use additional folders:** allow organization admins to add room-specific folder rows alongside selected system-template folders during setup. Preview the combined tree, validate parents/depth/duplicates, and create atomically. These additions must not edit the shared template.
+- **Organization-owned reusable templates:** future admin workflow for organizations managing multiple rooms, with exact tenant ownership, validation, audit, and revision conflicts. Existing tenant records remain readable; authoring is disabled until this workflow is delivered.
+- **System template recovery UX:** immutable revisions are stored and included in platform JSONL exports. The generic restore preserves global state; approved full-database recovery covers platform recovery. A reviewed revision-restore action can be added separately.

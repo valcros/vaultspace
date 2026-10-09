@@ -1,138 +1,53 @@
-/**
- * Room Templates API (F109)
- *
- * GET  /api/rooms/templates - List available templates
- * POST /api/rooms/templates - Create custom template
- */
-
-import { NextRequest, NextResponse } from 'next/server';
-
+import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
+import { isAuthenticationError } from '@/lib/errors';
 import { withOrgContext } from '@/lib/db';
-import { BUILT_IN_ROOM_TEMPLATES } from '@/lib/rooms/starterFolderTemplates';
+import { systemRoomTemplateService } from '@/services/SystemRoomTemplateService';
+import { legacyTemplateProjection } from '@/lib/rooms/templateCatalog';
 
-// This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
 
-/**
- * GET /api/rooms/templates
- * List available room templates (built-in + custom)
- */
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const session = await requireAuth();
-
-    // Use RLS context for org-scoped queries
-    const customTemplates = await withOrgContext(session.organizationId, async (tx) => {
-      return tx.roomTemplate.findMany({
-        where: {
-          organizationId: session.organizationId,
-        },
+    const templates = await withOrgContext(session.organizationId, async (tx) => {
+      const catalog = await systemRoomTemplateService.list(true, tx);
+      const system = catalog.filter((t) => t.enabled);
+      const legacy = await tx.roomTemplate.findMany({
+        where: { organizationId: session.organizationId },
         orderBy: { name: 'asc' },
       });
+      // All system IDs, including disabled ones, are reserved by the global catalog.
+      const reserved = new Set(catalog.map((t) => t.id));
+      return [
+        ...system,
+        ...legacy.filter((t) => !reserved.has(t.id)).map(legacyTemplateProjection),
+      ];
     });
-
-    // Combine built-in and custom templates
-    const templates = [
-      ...BUILT_IN_ROOM_TEMPLATES.map((t) => ({
-        ...t,
-        isCustom: false,
-      })),
-      ...customTemplates.map((t) => ({
-        ...t,
-        isCustom: true,
-      })),
-    ];
-
-    return NextResponse.json({ templates });
+    return NextResponse.json({ templates }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
-    console.error('[TemplatesAPI] GET error:', error);
-    return NextResponse.json({ error: 'Failed to list templates' }, { status: 500 });
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    return NextResponse.json({ error: 'Failed to load folder templates' }, { status: 500 });
   }
 }
 
-/**
- * POST /api/rooms/templates
- * Create a custom template (optionally from existing room)
- */
-export async function POST(request: NextRequest) {
+/** Organization-owned template authoring is deferred. Global authoring lives under /api/sysop. */
+export async function POST() {
   try {
-    const session = await requireAuth();
-
-    // Check admin permission
-    if (session.organization.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
-    }
-
-    const body = await request.json();
-    const { name, description, fromRoomId, structure } = body;
-
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json({ error: 'Template name is required' }, { status: 400 });
-    }
-
-    // Use RLS context for org-scoped queries
-    const result = await withOrgContext(session.organizationId, async (tx) => {
-      let templateStructure = structure;
-
-      // If creating from existing room, copy its folder structure
-      if (fromRoomId) {
-        const room = await tx.room.findFirst({
-          where: {
-            id: fromRoomId,
-            organizationId: session.organizationId,
-          },
-          include: {
-            folders: {
-              select: {
-                name: true,
-                path: true,
-                parentId: true,
-              },
-              orderBy: { path: 'asc' },
-            },
-          },
-        });
-
-        if (!room) {
-          return { error: 'Source room not found', status: 404 };
-        }
-
-        templateStructure = {
-          folders: room.folders.map((f) => ({
-            name: f.name,
-            path: f.path,
-          })),
-        };
-      }
-
-      if (!templateStructure) {
-        return { error: 'Template structure is required (or provide fromRoomId)', status: 400 };
-      }
-
-      // Create template
-      const template = await tx.roomTemplate.create({
-        data: {
-          organizationId: session.organizationId,
-          name: name.trim(),
-          description: description?.trim(),
-          category: body.category ?? 'custom',
-          folderStructure: templateStructure,
-          isSystemTemplate: false,
-          isPublic: false,
-        },
-      });
-
-      return { template };
-    });
-
-    if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
-    }
-
-    return NextResponse.json({ template: result.template }, { status: 201 });
+    await requireAuth();
   } catch (error) {
-    console.error('[TemplatesAPI] POST error:', error);
-    return NextResponse.json({ error: 'Failed to create template' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Authentication required' },
+      { status: isAuthenticationError(error) ? 401 : 500 }
+    );
   }
+  return NextResponse.json(
+    {
+      error:
+        'Template authoring is available only in the SysOp control panel. Organization custom templates are not yet available.',
+    },
+    { status: 403 }
+  );
 }

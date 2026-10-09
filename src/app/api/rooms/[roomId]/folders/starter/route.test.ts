@@ -9,12 +9,23 @@ const mocks = vi.hoisted(() => ({
   folderCreateMany: vi.fn(),
   roomTemplateFindFirst: vi.fn(),
   eventCreate: vi.fn(),
+  systemTemplateFindUnique: vi.fn(),
 }));
 
 vi.mock('@/lib/middleware', () => ({ requireAuth: mocks.requireAuth }));
-vi.mock('@/lib/db', () => ({ withOrgContext: mocks.withOrgContext }));
+vi.mock('@/lib/db', () => ({ db: {}, withOrgContext: mocks.withOrgContext }));
 
 import { POST } from './route';
+import { getBuiltInRoomTemplate } from '@/lib/rooms/starterFolderTemplates';
+import { templateRevision } from '@/services/SystemRoomTemplateService';
+function revision(id: string) {
+  return templateRevision({
+    ...getBuiltInRoomTemplate(id),
+    isCustom: false,
+    enabled: true,
+    source: 'builtin',
+  });
+}
 
 const adminSession = {
   userId: 'user-1',
@@ -37,6 +48,7 @@ function request(body: unknown) {
 describe('POST /api/rooms/:roomId/folders/starter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.systemTemplateFindUnique.mockResolvedValue(null);
     mocks.requireAuth.mockResolvedValue(adminSession);
     mocks.roomFindFirst.mockResolvedValue({ id: 'room-1', name: 'Board Room', status: 'DRAFT' });
     mocks.folderFindMany.mockImplementation(
@@ -49,6 +61,7 @@ describe('POST /api/rooms/:roomId/folders/starter', () => {
       async (_organizationId: string, callback: (tx: unknown) => unknown) =>
         callback({
           room: { findFirst: mocks.roomFindFirst },
+          systemRoomTemplate: { findUnique: mocks.systemTemplateFindUnique },
           roomTemplate: { findFirst: mocks.roomTemplateFindFirst },
           folder: { findMany: mocks.folderFindMany, createMany: mocks.folderCreateMany },
           event: { create: mocks.eventCreate },
@@ -60,6 +73,7 @@ describe('POST /api/rooms/:roomId/folders/starter', () => {
     const response = await POST(
       request({
         templateId: 'board-portal',
+        templateRevision: revision('board-portal'),
         selectedFolderPaths: ['/board-meetings/agendas-minutes'],
       }),
       context()
@@ -72,7 +86,11 @@ describe('POST /api/rooms/:roomId/folders/starter', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           eventType: 'ROOM_UPDATED',
-          metadata: { templateId: 'board-portal', starterFolderCount: 2 },
+          metadata: {
+            templateId: 'board-portal',
+            templateRevision: revision('board-portal'),
+            starterFolderCount: 2,
+          },
         }),
       })
     );
@@ -82,7 +100,11 @@ describe('POST /api/rooms/:roomId/folders/starter', () => {
     mocks.folderFindMany.mockResolvedValueOnce([{ path: '/board-meetings' }]);
 
     const response = await POST(
-      request({ templateId: 'board-portal', selectedFolderPaths: ['/board-meetings'] }),
+      request({
+        templateId: 'board-portal',
+        templateRevision: revision('board-portal'),
+        selectedFolderPaths: ['/board-meetings'],
+      }),
       context()
     );
 
@@ -95,7 +117,11 @@ describe('POST /api/rooms/:roomId/folders/starter', () => {
     mocks.requireAuth.mockResolvedValue({ ...adminSession, organization: { role: 'VIEWER' } });
 
     const response = await POST(
-      request({ templateId: 'board-portal', selectedFolderPaths: ['/board-meetings'] }),
+      request({
+        templateId: 'board-portal',
+        templateRevision: revision('board-portal'),
+        selectedFolderPaths: ['/board-meetings'],
+      }),
       context()
     );
 
@@ -124,10 +150,52 @@ describe('POST /api/rooms/:roomId/folders/starter', () => {
     );
 
     const response = await POST(
-      request({ templateId: 'board-portal', selectedFolderPaths: ['/board-meetings'] }),
+      request({
+        templateId: 'board-portal',
+        templateRevision: revision('board-portal'),
+        selectedFolderPaths: ['/board-meetings'],
+      }),
       context()
     );
 
     expect(response.status).toBe(409);
+  });
+  it.each([undefined, 'stale'])(
+    'rejects revision %s before writing folders or audit',
+    async (templateRevision) => {
+      const response = await POST(
+        request({
+          templateId: 'board-portal',
+          templateRevision,
+          selectedFolderPaths: ['/board-meetings'],
+        }),
+        context()
+      );
+      expect(response.status).toBe(409);
+      expect(mocks.folderCreateMany).not.toHaveBeenCalled();
+      expect(mocks.eventCreate).not.toHaveBeenCalled();
+    }
+  );
+  it('rejects a disabled override without falling through to a legacy template', async () => {
+    mocks.systemTemplateFindUnique.mockResolvedValue({
+      id: 'board-portal',
+      name: 'Board',
+      description: '',
+      category: 'test',
+      enabled: false,
+      revision: 1,
+      folders: [{ name: 'Board Meetings', path: '/board-meetings' }],
+    });
+    const response = await POST(
+      request({
+        templateId: 'board-portal',
+        templateRevision: revision('board-portal'),
+        selectedFolderPaths: ['/board-meetings'],
+      }),
+      context()
+    );
+    expect(response.status).toBe(409);
+    expect(mocks.roomTemplateFindFirst).not.toHaveBeenCalled();
+    expect(mocks.folderCreateMany).not.toHaveBeenCalled();
   });
 });

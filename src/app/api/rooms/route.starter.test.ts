@@ -9,15 +9,26 @@ const mocks = vi.hoisted(() => ({
   folderCreateMany: vi.fn(),
   folderFindMany: vi.fn(),
   eventCreate: vi.fn(),
+  systemTemplateFindUnique: vi.fn(),
 }));
 
 vi.mock('@/lib/middleware', () => ({
   requireAuthFromRequest: mocks.requireAuthFromRequest,
   getRequestContext: vi.fn(),
 }));
-vi.mock('@/lib/db', () => ({ withOrgContext: mocks.withOrgContext }));
+vi.mock('@/lib/db', () => ({ db: {}, withOrgContext: mocks.withOrgContext }));
 
 import { POST } from './route';
+import { getBuiltInRoomTemplate } from '@/lib/rooms/starterFolderTemplates';
+import { templateRevision } from '@/services/SystemRoomTemplateService';
+function revision(id: string) {
+  return templateRevision({
+    ...getBuiltInRoomTemplate(id),
+    isCustom: false,
+    enabled: true,
+    source: 'builtin',
+  });
+}
 
 const session = {
   userId: 'user-1',
@@ -29,6 +40,7 @@ const session = {
 describe('POST /api/rooms starter folders', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.systemTemplateFindUnique.mockResolvedValue(null);
     mocks.requireAuthFromRequest.mockResolvedValue(session);
     mocks.roomCreate.mockResolvedValue({ id: 'room-1', name: 'Investor Room', status: 'DRAFT' });
     mocks.folderFindMany.mockImplementation(({ where }: { where: { path: { in: string[] } } }) =>
@@ -38,6 +50,7 @@ describe('POST /api/rooms starter folders', () => {
       async (_organizationId: string, callback: (tx: unknown) => unknown) =>
         callback({
           room: { create: mocks.roomCreate },
+          systemRoomTemplate: { findUnique: mocks.systemTemplateFindUnique },
           roomTemplate: { findFirst: mocks.roomTemplateFindFirst },
           folder: { createMany: mocks.folderCreateMany, findMany: mocks.folderFindMany },
           event: { create: mocks.eventCreate },
@@ -52,6 +65,7 @@ describe('POST /api/rooms starter folders', () => {
         body: JSON.stringify({
           name: 'Investor Room',
           templateId: 'investor-data-room',
+          templateRevision: revision('investor-data-room'),
           selectedFolderPaths: ['/financials/historical-financials'],
         }),
       })
@@ -72,7 +86,11 @@ describe('POST /api/rooms starter folders', () => {
     expect(mocks.eventCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          metadata: { templateId: 'investor-data-room', starterFolderCount: 2 },
+          metadata: {
+            templateId: 'investor-data-room',
+            templateRevision: revision('investor-data-room'),
+            starterFolderCount: 2,
+          },
         }),
       })
     );
@@ -85,6 +103,7 @@ describe('POST /api/rooms starter folders', () => {
         body: JSON.stringify({
           name: 'Investor Room',
           templateId: 'investor-data-room',
+          templateRevision: revision('investor-data-room'),
           selectedFolderPaths: ['/not-in-the-template'],
         }),
       })
@@ -121,4 +140,23 @@ describe('POST /api/rooms starter folders', () => {
     expect(await response.json()).toMatchObject({ code: 'MALFORMED_JSON' });
     expect(mocks.roomCreate).not.toHaveBeenCalled();
   });
+  it.each([undefined, 'stale'])(
+    'rejects revision %s before creating any room or folders',
+    async (templateRevision) => {
+      const response = await POST(
+        new NextRequest('http://localhost/api/rooms', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: 'Room',
+            templateId: 'investor-data-room',
+            templateRevision,
+            selectedFolderPaths: ['/financials'],
+          }),
+        })
+      );
+      expect(response.status).toBe(409);
+      expect(mocks.roomCreate).not.toHaveBeenCalled();
+      expect(mocks.folderCreateMany).not.toHaveBeenCalled();
+    }
+  );
 });

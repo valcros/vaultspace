@@ -387,6 +387,9 @@ async function main() {
   }
 
   console.log('Starting restore...\n');
+  console.warn(
+    'Global system folder templates and their immutable revisions are preserved by this restore. Use an approved full-database recovery to recover platform template state; JSONL exports are evidence, not automatically imported here.'
+  );
 
   // Restore database in dependency order
   console.log('Restoring database tables...');

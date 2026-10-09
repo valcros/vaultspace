@@ -25,6 +25,7 @@ import {
 import {
   PLATFORM_CONTROL_TABLES,
   revokeAndVerifyPlatformControlPlaneAccess,
+  enforceSystemTemplatePrivileges,
 } from '../src/lib/platform/databasePrivileges';
 
 const APP_ROLE = 'vaultspace_app';
@@ -157,6 +158,7 @@ async function main() {
   console.log(`  PROTECTED AND VERIFIED: password_reset_provider_correlations for ${APP_ROLE}`);
 
   await revokeAndVerifyPlatformControlPlaneAccess(prisma, APP_ROLE);
+  await enforceSystemTemplatePrivileges(prisma, APP_ROLE);
   console.log(`  REVOKED AND VERIFIED ALL: platform control-plane tables from ${APP_ROLE}`);
 
   console.log('\n=== Step 5: Verify ===');

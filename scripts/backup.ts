@@ -238,6 +238,21 @@ async function main() {
   manifest.database.tables['events'] = eventCount;
   console.log(`  - events: ${eventCount} records`);
 
+  // Global catalog and its immutable revision evidence belong in platform backups,
+  // never in organization export/restore. Read both in one consistent snapshot.
+  const [systemTemplates, systemTemplateRevisions] = await prisma.$transaction(
+    [prisma.systemRoomTemplate.findMany(), prisma.systemRoomTemplateRevision.findMany()],
+    { isolationLevel: 'RepeatableRead' }
+  );
+  manifest.database.tables['system_room_templates'] = await writeJsonl(
+    join(databaseDir, 'system_room_templates.jsonl'),
+    systemTemplates
+  );
+  manifest.database.tables['system_room_template_revisions'] = await writeJsonl(
+    join(databaseDir, 'system_room_template_revisions.jsonl'),
+    systemTemplateRevisions
+  );
+
   // Calculate total records
   manifest.database.totalRecords = Object.values(manifest.database.tables).reduce(
     (a, b) => a + b,

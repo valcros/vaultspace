@@ -1,7 +1,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Server, Activity, ArrowLeft, Shield } from 'lucide-react';
+import { Server, Activity, ArrowLeft, Shield, FolderTree } from 'lucide-react';
 import { requirePlatformOperator } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { isAuthenticationError } from '@/lib/errors';
@@ -46,8 +46,8 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 font-sans text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100">
       {/* Top SysOp Navigation Header */}
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-slate-200 bg-white/90 px-6 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
-        <div className="flex items-center space-x-6">
+      <header className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-6 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+        <div className="flex flex-wrap items-center gap-6">
           <div className="flex items-center space-x-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 font-bold text-white shadow-lg shadow-indigo-500/20">
               SO
@@ -63,7 +63,17 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
             </div>
           </div>
 
-          <nav className="flex items-center space-x-1 border-l border-slate-200 pl-4 dark:border-slate-800">
+          <nav
+            aria-label="SysOp navigation"
+            className="flex flex-wrap items-center gap-1 border-l border-slate-200 pl-4 dark:border-slate-800"
+          >
+            <Link
+              href="/sysop/folder-templates"
+              className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              <FolderTree className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              <span>Folder Templates</span>
+            </Link>
             <Link
               href="/sysop"
               className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
