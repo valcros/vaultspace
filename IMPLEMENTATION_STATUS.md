@@ -9,7 +9,7 @@
 | Item               | Value                                                                                                                                                          |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Live release       | `e7ee77d` (#193); fresh health, app digest, and four job image checks match the deployed code. Later documentation-only main commits are not implied deployed. |
-| Health             | `status=healthy`, `mode=azure`, `degraded=[]`; database, cache and storage checks healthy                                                                      |
+| Health             | Fresh quick check: healthy, Azure mode, no degraded capabilities. Database/cache/storage deep checks passed during #193 verification at 2026-10-09 01:10 UTC.  |
 | API route handlers | 114 (`src/app/api/**/route.ts`)                                                                                                                                |
 | Prisma migrations  | 67                                                                                                                                                             |
 | Source size        | ~119k lines of TypeScript across 587 files in `src/`                                                                                                           |
@@ -130,7 +130,7 @@ The application is **deployed and operational** on Azure Container Apps staging 
 
 | Check               | Status                                                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Unit tests          | 1,574 passing in 177 files (Vitest, 2026-10-08), with 7 skipped tests in one opt-in live-Postgres search file |
+| Unit tests          | 1,598 passing in 177 files (Vitest, 2026-10-08), with 7 skipped tests in one opt-in live-Postgres search file |
 | Type check          | Passing (tsc --noEmit)                                                                                        |
 | ESLint              | Passing (no errors)                                                                                           |
 | Prettier            | Passing (all files formatted)                                                                                 |
@@ -145,7 +145,7 @@ Current Azure review: `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`.
 | Area                              | Status                                                                                                                                                                                                    |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Live URL                          | `https://www.vaultspace.org`                                                                                                                                                                              |
-| Health endpoint                   | Deep health returned healthy with all listed capabilities available on 2026-06-30                                                                                                                         |
+| Health                            | Fresh quick check: healthy, Azure mode, no degraded capabilities. Database/cache/storage deep checks passed during #193 verification at 2026-10-09 01:10 UTC.                                             |
 | RLS                               | Enforced through `withOrgContext()` and covered by CI RLS integration tests. Application runtime uses the low-privilege app role, while migrations use admin credentials.                                 |
 | Audit table immutability          | PostgreSQL trigger prevents raw SQL `UPDATE` and `DELETE` on `events`; integration coverage exists in `tests/integration/event-immutability.test.ts`.                                                     |
 | Worker queues                     | Worker consumes BullMQ high, normal, and low queues. KEDA watches Redis wait lists for fresh jobs while the worker scales to zero when idle. Delayed retries are supplemented by a scheduled wake-up job. |
