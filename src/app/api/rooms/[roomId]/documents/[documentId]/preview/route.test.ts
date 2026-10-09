@@ -7,6 +7,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+import { withOrgContext } from '@/lib/db';
+import { AuthenticationError } from '@/lib/errors';
+import { getRequestContext, requireAuth } from '@/lib/middleware';
+
 const mockPermissionCan = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 
 // Mock auth
@@ -99,6 +103,9 @@ function makeVersion(mimeType: string, previewAssets: unknown[] = [], scanStatus
 describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(requireAuth).mockResolvedValue(
+      mockSession as Awaited<ReturnType<typeof requireAuth>>
+    );
     mockPermissionCan.mockResolvedValue(true);
     mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockTx.room.findFirst.mockResolvedValue(mockRoom);
@@ -107,6 +114,50 @@ describe('GET /api/rooms/:roomId/documents/:documentId/preview', () => {
     mockStorage.exists.mockResolvedValue(true);
     mockStorage.get.mockResolvedValue(Buffer.from('file content'));
     mockStorage.getSignedUrl.mockResolvedValue('https://storage.example.com/signed?sig=abc');
+  });
+
+  it.each([
+    new AuthenticationError(),
+    new AuthenticationError('Session expired'),
+    new Error('Authentication required'),
+  ])('returns 401 without accessing tenant data for %s', async (error) => {
+    vi.mocked(requireAuth).mockRejectedValueOnce(error);
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Authentication required' });
+    expect(res.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
+    expect(withOrgContext).not.toHaveBeenCalled();
+    expect(getRequestContext).not.toHaveBeenCalled();
+    expect(mockPermissionCan).not.toHaveBeenCalled();
+    expect(mockStorage.get).not.toHaveBeenCalled();
+    expect(mockStorage.getSignedUrl).not.toHaveBeenCalled();
+    expect(mockCaptureAccessAudit).not.toHaveBeenCalled();
+    expect(mockAddJob).not.toHaveBeenCalled();
+  });
+
+  it('keeps unexpected authentication infrastructure failures as sanitized 500s', async () => {
+    vi.mocked(requireAuth).mockRejectedValueOnce(new Error('private database failure detail'));
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to get preview' });
+    expect(res.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
+    expect(withOrgContext).not.toHaveBeenCalled();
+    expect(mockStorage.get).not.toHaveBeenCalled();
+  });
+
+  it('keeps downstream database failures as sanitized 500s', async () => {
+    mockTx.room.findFirst.mockRejectedValueOnce(new Error('private database failure detail'));
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to get preview' });
+    expect(res.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
+    expect(mockStorage.get).not.toHaveBeenCalled();
   });
 
   it('returns 400 before database access for malformed route identifiers', async () => {

@@ -9,6 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { isAuthenticationError } from '@/lib/errors';
+
 import { ACCESS_AUDIT_DEDUPE_MS, captureAccessAudit } from '@/lib/audit/accessAudit';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
@@ -199,6 +201,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       },
     });
   } catch (error) {
+    if (isAuthenticationError(error)) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     console.error('[AdminDownloadAPI] Error:', error);
     return NextResponse.json({ error: 'Failed to download document' }, { status: 500 });
   }

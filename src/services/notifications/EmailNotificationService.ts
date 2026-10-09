@@ -276,7 +276,7 @@ export class EmailNotificationService {
         }),
       });
     } catch (error) {
-      console.error('[EmailNotification] Invitation email error:', error);
+      console.error('[EmailNotification] Invitation email submission failed');
       throw error; // Re-throw so caller knows the email failed
     }
   }

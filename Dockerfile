@@ -86,6 +86,10 @@ RUN mkdir -p storage uploads && chown -R nextjs:nodejs storage uploads
 # Switch to non-root user
 USER nextjs
 
+# Validate native Sharp and fonts as the runtime user without shipping test tooling.
+RUN --mount=type=bind,source=scripts/check-sharp-runtime.cjs,target=/tmp/check-sharp-runtime.cjs \
+    node < /tmp/check-sharp-runtime.cjs
+
 # Expose port
 EXPOSE 3000
 
