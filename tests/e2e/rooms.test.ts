@@ -188,13 +188,17 @@ test.describe('Room contextual help', () => {
     page,
   }) => {
     await openRooms(page);
-    // Other lifecycle tests add rooms to this shared fixture. Search keeps the
-    // target in view without the development indicator covering its help control.
-    await page.getByRole('textbox', { name: 'Search rooms' }).fill('Due Diligence Package');
     const help = page.getByRole('button', {
       name: 'About room status: Due Diligence Package',
       exact: true,
     });
+    // Wait for the client-loaded room list before editing the search input.
+    // Filtering keeps rooms created by other lifecycle tests out of this fixture.
+    await expect(help).toBeVisible();
+    const search = page.getByRole('textbox', { name: 'Search rooms' });
+    await search.fill('Due Diligence Package');
+    await expect(search).toHaveValue('Due Diligence Package');
+    await expect(page.getByRole('heading', { name: 'Active Rooms (1)', exact: true })).toBeVisible();
     await help.hover();
     const tooltip = page.getByRole('tooltip');
     await expect(tooltip).toContainText('people with permission');
@@ -233,11 +237,15 @@ test.describe('Room contextual help', () => {
 
     test('tap opens help and standard-folder selection remains optional', async ({ page }) => {
       await openRooms(page);
-      await page.getByRole('textbox', { name: 'Search rooms' }).fill('Due Diligence Package');
       const help = page.getByRole('button', {
         name: 'About room status: Due Diligence Package',
         exact: true,
       });
+      await expect(help).toBeVisible();
+      const search = page.getByRole('textbox', { name: 'Search rooms' });
+      await search.fill('Due Diligence Package');
+      await expect(search).toHaveValue('Due Diligence Package');
+      await expect(page.getByRole('heading', { name: 'Active Rooms (1)', exact: true })).toBeVisible();
       await help.tap();
       const detail = page.getByRole('dialog', {
         name: 'About room status: Due Diligence Package',
