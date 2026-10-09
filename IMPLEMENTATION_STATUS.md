@@ -2,21 +2,36 @@
 
 > **Current Milestone:** MVP launch packaging and Azure staging stabilization
 > **Last Updated:** 2026-10-08
-> **MVP Status:** Staging operational on the current `main` commit; launch blockers open. Outstanding work is tracked in `BACKLOG.md`. Historical release package: `docs/RELEASE_NOTES_2026-07-01.md`, `docs/VAULTSPACE_ACTIVE_ITEMS_CLOSEOUT_2026-07-01.md`, `MASTER_PLAN.md`.
+> **MVP Status:** Staging operational on the verified code release; launch blockers open. Outstanding work is tracked in `BACKLOG.md`. Historical release package: `docs/RELEASE_NOTES_2026-07-01.md`, `docs/VAULTSPACE_ACTIVE_ITEMS_CLOSEOUT_2026-07-01.md`, `MASTER_PLAN.md`.
 
 ## Snapshot (2026-10-08)
 
-| Item               | Value                                                                                                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------- |
-| Live release       | `814a6ec` (PR #184, merged 2026-09-16), deployed 2026-09-17; matches `main` HEAD                          |
-| Health             | `status=healthy`, `mode=azure`, `degraded=[]`; database, cache and storage checks healthy                 |
-| API route handlers | 114 (`src/app/api/**/route.ts`)                                                                           |
-| Prisma migrations  | 67                                                                                                        |
-| Source size        | ~119k lines of TypeScript across 587 files in `src/`                                                      |
-| Open PRs / issues  | 4 PRs (3 dependabot, 1 draft) / 5 issues                                                                  |
-| Dependency audit   | **Failing:** 1 critical (`next`) plus high advisories; CI Security Scan red for all new PRs (see BACKLOG) |
+| Item               | Value                                                                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Live release       | `e7ee77d` (#193); fresh health, app digest, and four job image checks match the deployed code. Later documentation-only main commits are not implied deployed. |
+| Health             | `status=healthy`, `mode=azure`, `degraded=[]`; database, cache and storage checks healthy                                                                      |
+| API route handlers | 114 (`src/app/api/**/route.ts`)                                                                                                                                |
+| Prisma migrations  | 67                                                                                                                                                             |
+| Source size        | ~119k lines of TypeScript across 587 files in `src/`                                                                                                           |
+| Open PRs / issues  | See GitHub for the live inventory; #185/#186/#190/#191 are superseded by #193.                                                                                 |
+| Dependency audit   | 0 critical, 15 high, 6 moderate, 0 low on the `e7ee77d` lockfile; CI Security Scan passes; residual advisories tracked at P1.                                  |
+
+## Azure verification and configuration cleanup (2026-10-08)
+
+Read-only control-plane review completed: 11 checks Confirmed, 4 Corrected, 0
+Unverifiable, with bounded coverage and caveats in
+`docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`. Web/worker digests match the reviewed
+build; all four scheduled jobs use the same worker digest. Password-reset
+reconciliation is enabled on its scheduled job, even though the web health flag is
+false. Log Analytics, resource-pressure alerts, and an action group exist. #192 also deployed two email failure rules; notification receipt remains separate evidence.
+
+Follow-up #187 prepares corrected public web YAML, a non-deployable probe fragment, and alignment of environment, deployment, job, and agent documentation. Those cleanup changes await #187; this documentation PR does not apply them to Azure. Resource-specific posture and owner recommendations are tracked privately. Readiness, maintenance scheduling, remaining monitoring coverage, and residual dependency findings are separately reviewed work in `BACKLOG.md`.
 
 ## Shipped Since the July 21 Update
+
+- **Verification email and critical advisories (#188):** deterministic UUID operation IDs at the ACS provider boundary; Next.js 16.3.8 and tinypool remediation, with successful deployment and signup verification.
+- **Operational detection (#192):** generic preview authentication 401, safe invitation submission telemetry, and two deployed email failure rules with validated queries. Inbox and alert-notification receipt remain separate evidence.
+- **Document serving and dependencies (#193):** generic download/thumbnail authentication 401, DOMPurify/Markdown/Sharp/source-map updates, real renderer integration coverage, remote Linux native-image checks, and eleven passing scoped live checks.
 
 - **Scan gating (July):** #87 large files marked `SKIPPED` instead of quarantined; #88 one `isServable` gate on every serve/preview/export/index path; #89 serve the current version so rollback is effective; #90 viewer "unavailable" state (merged 2026-08-07).
 - **Security hardening (August):** login and 2FA rate limiting (#101), search-snippet XSS (#102), SVG/XML preview neutralization (#104), local storage path traversal guard (#105), email HTML escaping (#107), self-host Compose hardening (#108).
@@ -24,7 +39,7 @@
 - **MFA:** one-time challenge-bound MFA sessions (#159) and fail-closed enrollment (#160).
 - **SysOp control plane (`/sysop`):** explicit platform-operator grants, audited operator access, tenant directory, org enable/disable and bulk disable, hourly operator-continuity check (#158, #163, #167).
 - **User and room lifecycle:** scoped viewer invitations (#152), user lifecycle hardening (#153), room access editor (#154), enforced room lifecycle and closed-room immutability (#161, #162), viewer-to-admin promotion confirmation (#184).
-- **Self-service onboarding:** email verification gate, durable verification delivery with a 5-minute reconciler (#169, #179), stale verification token cleanup job (#168), workspace URL claim during setup (#171), selectable starter folder structures (#172).
+- **Self-service onboarding:** email verification gate, durable verification delivery with a 5-minute reconciler (#169, #179), unscheduled stale verification token cleanup script (#168), workspace URL claim during setup (#171), selectable starter folder structures (#172).
 - **Ops:** per-tenant backup/restore scripts, repository content sanitization and masked deploy metadata (#164, #165), monthly wildcard TLS renewal workflow.
 
 Remaining scan residuals and other open work are in `BACKLOG.md`.
@@ -36,10 +51,10 @@ The application is **deployed and operational** on Azure Container Apps staging 
 ### Live Site
 
 - **URL:** `https://www.vaultspace.org` (Azure staging on public VaultSpace domain)
-- **Health:** `status=healthy`, `mode=azure`, `degraded=[]` on 2026-10-08 (revision `ca-vaultspace-web--0000344`)
+- **Health:** `status=healthy`, `mode=azure`, `degraded=[]` on 2026-10-08
 - **Container Apps:** web runs warm for public responsiveness; worker scales to zero when idle
 - **Redis:** managed Redis on a BullMQ-supported version with encrypted protocol
-- **Auth:** Login, registration, password reset all functional
+- **Auth:** Scoped login/session and signup checks passed; password-reset provider acceptance was verified, while controlled-mailbox receipt remains unconfirmed
 - **Demo:** Seed data with "Due Diligence Package" room, 3 folders, sample documents
 
 ## What's Done
@@ -137,7 +152,7 @@ Current Azure review: `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`.
 | Redis                             | Redis 6.0.14 warning resolved by migration to Azure Managed Redis Enterprise 7.4.                                                                                                                         |
 | Email                             | Azure Communication Services email is wired for web and worker. Smoke scripts suppress repeated password reset, digest, and export emails unless explicitly enabled.                                      |
 | Container App env validation      | Pre-deploy script `scripts/validate-container-env.sh` blocks deploys with missing or plaintext-secret env vars.                                                                                           |
-| Production dependency audit       | **Regressed.** 0 vulnerabilities on 2026-06-30; on 2026-10-08 `npm audit` reports a critical `next` advisory plus high advisories (`sharp`, toolchain). See `BACKLOG.md` P0.                              |
+| Dependency audit                  | Critical P0 findings closed by #188. Fresh full audit: 0 critical, 15 high, 6 moderate, 0 low. CI Security Scan passes; remaining findings are tracked at P1.                                             |
 | SEC-001…016 (PERMISSION_MODEL.md) | `docs/SEC_AUDIT.md` reports 14 VERIFIED and 2 STRUCTURAL items, with 0 PARTIAL and 0 DEFERRED.                                                                                                            |
 | WCAG 2.1 AA                       | Automated public and authenticated scans are wired in CI. Manual per-resource, document viewer, public viewer, keyboard, focus-order, and screen-reader review remains before MVP launch.                 |
 
@@ -145,13 +160,13 @@ Current Azure review: `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`.
 
 The authoritative list is `BACKLOG.md`. Summary as of 2026-10-08:
 
-- Resolve the critical `next` dependency advisory (blocks all CI).
+- Critical dependency blocker closed by #188; remaining high/moderate findings are tracked at P1 with passing CI Security Scan.
 
 Active launch blockers:
 
 - Complete the manual MVP QA pass per `QA_TEST_PLAN.md`, including auth, room creation, upload, scan, preview, public viewer access, permissions, digest, export, trash/restore, and audit trail.
 - Complete cross-browser and per-resource accessibility QA, especially the document viewer and public viewer link flow.
-- Confirm Docker Compose self-hosting still starts cleanly.
+- Confirm Docker Compose self-hosting starts cleanly on an approved remote runner; no local Docker on the owner's workstation.
 - Confirm the production/tag-based deployment path before any public beta promotion.
 
 Passive monitoring and non-blocking follow-ups:
