@@ -65,6 +65,10 @@ ENV FC_CACHEDIR=/app/fontcache
 # Switch to non-root user
 USER worker
 
+# Validate native Sharp and fonts as the runtime user without shipping test tooling.
+RUN --mount=type=bind,source=scripts/check-sharp-runtime.cjs,target=/tmp/check-sharp-runtime.cjs \
+    node < /tmp/check-sharp-runtime.cjs
+
 # Set worker type via environment variable (general, preview, scan, report)
 ENV WORKER_TYPE=general
 

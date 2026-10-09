@@ -9,7 +9,7 @@
 | Item               | Value                                                                                                                                                          |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Live release       | `e7ee77d` (#193); fresh health, app digest, and four job image checks match the deployed code. Later documentation-only main commits are not implied deployed. |
-| Health             | `status=healthy`, `mode=azure`, `degraded=[]`; database, cache and storage checks healthy                                                                      |
+| Health             | Fresh quick check: healthy, Azure mode, no degraded capabilities. Database/cache/storage deep checks passed during #193 verification at 2026-10-09 01:10 UTC.  |
 | API route handlers | 114 (`src/app/api/**/route.ts`)                                                                                                                                |
 | Prisma migrations  | 67                                                                                                                                                             |
 | Source size        | ~119k lines of TypeScript across 587 files in `src/`                                                                                                           |
@@ -25,10 +25,7 @@ build; all four scheduled jobs use the same worker digest. Password-reset
 reconciliation is enabled on its scheduled job, even though the web health flag is
 false. Log Analytics, resource-pressure alerts, and an action group exist. #192 also deployed two email failure rules; notification receipt remains separate evidence.
 
-Public web YAML examples now reflect live settings with placeholders; the probe
-fragment is explicitly non-deployable. The environment catalog, deployment cadence,
-job implementation status, and AI-agent configuration pointers are aligned. These
-are repository corrections, not an Azure deployment. Resource-specific posture and owner recommendations are tracked privately. Readiness, maintenance scheduling, remaining monitoring coverage, and residual dependency findings are separately reviewed work in `BACKLOG.md`.
+Follow-up #187 prepares corrected public web YAML, a non-deployable probe fragment, and alignment of environment, deployment, job, and agent documentation. Those cleanup changes are included in #187 and await its merge; the repository examples do not apply them to Azure. Resource-specific posture and owner recommendations are tracked privately. Readiness, maintenance scheduling, remaining monitoring coverage, and residual dependency findings are separately reviewed work in `BACKLOG.md`.
 
 ## Shipped Since the July 21 Update
 
@@ -133,12 +130,12 @@ The application is **deployed and operational** on Azure Container Apps staging 
 
 | Check               | Status                                                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Unit tests          | 1,574 passing in 177 files (Vitest, 2026-10-08), with 7 skipped tests in one opt-in live-Postgres search file |
+| Unit tests          | 1,598 passing in 179 files (Vitest, 2026-10-08), with 7 skipped tests in one opt-in live-Postgres search file |
 | Type check          | Passing (tsc --noEmit)                                                                                        |
 | ESLint              | Passing (no errors)                                                                                           |
 | Prettier            | Passing (all files formatted)                                                                                 |
 | CI (GitHub Actions) | Workflow covers lint, test, type-check, build, security, deployment-mode, and Docker validation               |
-| Integration tests   | Scaffolded (requires Docker for local; staging DB integration tests in `tests/integration/`)                  |
+| Integration tests   | PostgreSQL integration suites pass in remote CI using disposable services                                     |
 | E2E tests           | 22 Playwright cases (`tests/e2e/`) plus accessibility scan (`tests/e2e/a11y.test.ts`)                         |
 
 ### Security & Operational State (2026-06-30, audit row updated 2026-10-08)
@@ -148,7 +145,7 @@ Current Azure review: `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`.
 | Area                              | Status                                                                                                                                                                                                    |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Live URL                          | `https://www.vaultspace.org`                                                                                                                                                                              |
-| Health endpoint                   | Deep health returned healthy with all listed capabilities available on 2026-06-30                                                                                                                         |
+| Health                            | Fresh quick check: healthy, Azure mode, no degraded capabilities. Database/cache/storage deep checks passed during #193 verification at 2026-10-09 01:10 UTC.                                             |
 | RLS                               | Enforced through `withOrgContext()` and covered by CI RLS integration tests. Application runtime uses the low-privilege app role, while migrations use admin credentials.                                 |
 | Audit table immutability          | PostgreSQL trigger prevents raw SQL `UPDATE` and `DELETE` on `events`; integration coverage exists in `tests/integration/event-immutability.test.ts`.                                                     |
 | Worker queues                     | Worker consumes BullMQ high, normal, and low queues. KEDA watches Redis wait lists for fresh jobs while the worker scales to zero when idle. Delayed retries are supplemented by a scheduled wake-up job. |

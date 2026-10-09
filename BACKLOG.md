@@ -32,17 +32,19 @@
 - **Azure infrastructure drift** (read-only evidence in `docs/AZURE_OPERATIONAL_STATUS_2026-10-08.md`):
   - Waker (`*/5 * * * *`) and lifecycle (`0 6 * * *`) cron values are documented but not enforced by deploy validation. Adding enforcement remains approval-gated.
   - **Maintenance scheduling:** no jobs exist for `worker:stale-token-cleanup` or `worker:send-pending-invites`; schedule or explicitly retire them after review. `JOB_SPECS.md` audit compaction, generic expiry/trash cleanup, and backup snapshot schedules are not implemented.
-  - Live web readiness is deep and writes a Redis health key. Decide separately whether to use quick readiness; the regenerated example intentionally preserves live behavior.
+  - Live web readiness is deep and writes a Redis health key. Design bounded, nonmutating dependency readiness separately; quick liveness alone does not prove dependency readiness. The example in #187 preserves the reviewed behavior pending that decision.
   - Identity, credential-backing, resilience, network, recovery, and certificate-retention decisions are tracked privately. Review recommendations before any live change.
   - #192 deployed initial email submission/reconciler failure coverage. Endpoint availability, missing execution/ingestion detection, and notification receipt remain separate work; preserve existing resource-pressure alerts.
 
 - **Standalone full-stack evidence:** the existing path-filtered workflow now runs on this review PR. Complete and review an approved full-stack smoke run before launch; that job is skipped on ordinary PR runs.
 
-### Closed by the 2026-10-08 releases and Azure review
+### Released fixes and corrections prepared in #187
 
 - #188 fixed verification-email provider operation IDs and closed the critical Next.js/tinypool audit blocker.
 - #192 added safe invitation telemetry, email failure monitoring, and preview authentication correction.
 - #193 added download/thumbnail authentication corrections, rendering dependency updates, and remote Linux native-image checks.
+
+The remaining Azure-review corrections below are included in #187 and await its review and merge.
 
 - Corrected the claim that standalone validation lacked a trigger: it has path-filtered PR triggers and a manual full-stack path, and this review produced recorded runs.
 - Removed the hard-coded ACME email fallback after owner-approved staging secret creation; the monthly workflow now passes `ACME_EMAIL`. No renewal was triggered.

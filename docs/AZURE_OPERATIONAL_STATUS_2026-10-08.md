@@ -70,7 +70,9 @@ as dated evidence; it is not presented as the latest 24-hour execution window.
 Job completion does not establish useful work or inbox delivery. The scheduled reset
 job should not be duplicated merely to change the web process's health flag.
 
-## Repository corrections in this PR
+## Repository corrections in #187
+
+These changes are included in #187 and await its review and merge.
 
 - Public web examples use placeholders and explicit prerequisites; the probe fragment
   is non-deployable. Examples are not authority for live resource posture.
@@ -107,7 +109,7 @@ would misclassify legitimate architecture examples and still miss paraphrases.
 ## Validation and limits
 
 The current release's CI, E2E, Linux runtime-image checks, deployment, and scoped live
-smoke passed. This PR's own checks must be rerun after the owner-specified #189-first
+smoke passed. PR #187's checks must be rerun after the owner-specified #189-first
 merge sequence. No Docker runs on the owner's workstation; container checks belong
 on remote CI. Full manual launch QA, accessibility review, recovery exercises, and
 standalone full-stack evidence remain distinct requirements.
