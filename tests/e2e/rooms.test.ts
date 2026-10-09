@@ -188,6 +188,9 @@ test.describe('Room contextual help', () => {
     page,
   }) => {
     await openRooms(page);
+    // Other lifecycle tests add rooms to this shared fixture. Search keeps the
+    // target in view without the development indicator covering its help control.
+    await page.getByRole('textbox', { name: 'Search rooms' }).fill('Due Diligence Package');
     const help = page.getByRole('button', {
       name: 'About room status: Due Diligence Package',
       exact: true,
@@ -230,6 +233,7 @@ test.describe('Room contextual help', () => {
 
     test('tap opens help and standard-folder selection remains optional', async ({ page }) => {
       await openRooms(page);
+      await page.getByRole('textbox', { name: 'Search rooms' }).fill('Due Diligence Package');
       const help = page.getByRole('button', {
         name: 'About room status: Due Diligence Package',
         exact: true,
