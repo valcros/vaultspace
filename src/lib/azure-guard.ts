@@ -7,10 +7,9 @@
  * - azure (default): Enforces Azure services. Blocks startup if misconfigured.
  * - standalone: Allows non-Azure services for self-hosted deployments.
  *
- * Staging uses Azure PostgreSQL Flexible Server 15 and Azure Managed Redis 7.4.
- * Azure Cache for Redis endpoints remain supported by the guard below.
- * Container Apps ingress is the staging edge; Front Door is not provisioned.
- * Monitoring uses Log Analytics and alerts, with no verified Application Insights deployment.
+ * Supported endpoint patterns describe provider compatibility, not the services
+ * provisioned in a particular environment. Keep live topology and monitoring
+ * posture in private operator evidence.
  * Set DEPLOYMENT_MODE=standalone to enable self-hosted operation.
  */
 
