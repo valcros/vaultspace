@@ -8,11 +8,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { requireAuthCredential } from '@/lib/middleware';
+import { getRequestContext, requireAuthCredential } from '@/lib/middleware';
 import { isAuthenticationError } from '@/lib/errors';
 import { withOrgContext } from '@/lib/db';
 import { clearSessionCache, revokeSelfOtherSessionsInTx } from '@/lib/auth';
 import { hashPassword, verifyPassword, validatePassword } from '@/lib/auth/password';
+import { revokeSysopSessionsForTenantSession } from '@/lib/sysop/platformSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     const newHash = await hashPassword(newPassword);
+    await revokeSysopSessionsForTenantSession(session, getRequestContext(request).requestId);
     const revokedSessionIds = await withOrgContext(session.organizationId, async (tx) => {
       await tx.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
 

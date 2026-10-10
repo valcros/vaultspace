@@ -146,7 +146,7 @@ export function DockHeader({ user, organization, onSearchClick }: DockHeaderProp
                   asChild
                   className="cursor-pointer font-semibold text-indigo-600 dark:text-indigo-400"
                 >
-                  <Link href="/sysop">SysOp Control Plane</Link>
+                  <Link href="/settings/sysop">Enter SysOp mode</Link>
                 </DropdownMenuItem>
               </>
             )}

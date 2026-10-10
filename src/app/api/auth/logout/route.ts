@@ -13,6 +13,10 @@ import { bootstrapRepository } from '@/lib/auth/bootstrapRepository';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { clearSessionCookie, getRequestContext } from '@/lib/middleware';
+import {
+  revokeSysopSessionsForTenantSession,
+  SYSOP_COOKIE_NAME,
+} from '@/lib/sysop/platformSession';
 
 export async function POST(request?: NextRequest) {
   try {
@@ -39,6 +43,15 @@ export async function POST(request?: NextRequest) {
             email: authSession.user.email,
             actorType: authSession.organization.role === 'ADMIN' ? 'ADMIN' : 'VIEWER',
           };
+          try {
+            await revokeSysopSessionsForTenantSession(
+              { userId: authSession.userId, sessionId: authSession.sessionId },
+              request ? getRequestContext(request).requestId : `logout_${randomUUID()}`
+            );
+          } catch {
+            // The tenant session invalidation below still makes any bound
+            // platform session unusable. Do not let an audit outage trap logout.
+          }
         }
       } catch {
         // Continue logout without audit context.
@@ -49,6 +62,7 @@ export async function POST(request?: NextRequest) {
 
     // Clear session cookie
     await clearSessionCookie();
+    cookieStore.delete?.(SYSOP_COOKIE_NAME);
 
     if (auditContext) {
       const reqContext = request ? getRequestContext(request) : null;
@@ -71,6 +85,7 @@ export async function POST(request?: NextRequest) {
     console.error('[LogoutAPI] Error:', error);
     // Still clear cookie even if database operation fails
     await clearSessionCookie();
+    (await cookies()).delete?.(SYSOP_COOKIE_NAME);
     return NextResponse.json({ success: true });
   }
 }

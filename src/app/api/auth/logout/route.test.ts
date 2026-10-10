@@ -3,12 +3,19 @@ import { NextRequest } from 'next/server';
 
 const mockCookieStore = {
   get: vi.fn(),
+  delete: vi.fn(),
 };
 
 const mockInvalidateSession = vi.fn();
 const mockClearSessionCookie = vi.fn();
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
 const mockResolveSession = vi.fn();
+const mockRevokeSysopSessions = vi.fn();
+
+vi.mock('@/lib/sysop/platformSession', () => ({
+  revokeSysopSessionsForTenantSession: (...args: unknown[]) => mockRevokeSysopSessions(...args),
+  SYSOP_COOKIE_NAME: 'vaultspace-sysop',
+}));
 
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => mockCookieStore),
@@ -55,6 +62,7 @@ describe('POST /api/auth/logout', () => {
       organization: { role: 'ADMIN' },
     });
     mockCaptureAccessAudit.mockResolvedValue('disabled');
+    mockRevokeSysopSessions.mockResolvedValue(undefined);
   });
 
   it('invalidates the session via the shared helper and clears the cookie', async () => {
@@ -65,6 +73,11 @@ describe('POST /api/auth/logout', () => {
     expect(body.success).toBe(true);
     expect(mockResolveSession).toHaveBeenCalledWith('session-token');
     expect(mockInvalidateSession).toHaveBeenCalledWith('session-token');
+    expect(mockRevokeSysopSessions).toHaveBeenCalledWith(
+      { userId: 'user-1', sessionId: 'auth-session-1' },
+      expect.stringMatching(/^logout_/)
+    );
+    expect(mockCookieStore.delete).toHaveBeenCalledWith('vaultspace-sysop');
     expect(mockClearSessionCookie).toHaveBeenCalledTimes(1);
     expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
       expect.objectContaining({

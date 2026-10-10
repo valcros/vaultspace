@@ -175,6 +175,8 @@ enum PlatformCapability {
 // and can never be the authoritative record of a platform-wide operation.
 enum PlatformAuditAction {
   SYSOP_SESSION_STARTED
+  SYSOP_SESSION_ENDED
+  SYSOP_SESSION_EXPIRED
   SYSOP_DIRECTORY_ACCESSED
   SYSOP_USER_VIEWED
   SYSOP_AUDIT_LOG_VIEWED
@@ -602,6 +604,7 @@ model PlatformSession {
   updatedAt DateTime @updatedAt
 
   userId          String
+  tenantSessionId String? @db.VarChar(255)
   // A platform bearer is never stored. The cookie token is HMAC-derived at
   // lookup time and only its fixed-length, versioned hash is persisted.
   tokenHash       String @unique @db.Char(64)
@@ -618,6 +621,7 @@ model PlatformSession {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isActive])
+  @@index([tenantSessionId, isActive])
   @@index([expiresAt])
   @@index([isActive])
   @@map("platform_sessions")

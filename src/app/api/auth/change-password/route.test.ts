@@ -10,9 +10,15 @@ const mockClearSessionCache = vi.fn();
 const mockHashPassword = vi.fn();
 const mockVerifyPassword = vi.fn();
 const mockValidatePassword = vi.fn();
+const mockRevokeSysopSessions = vi.fn();
 
 vi.mock('@/lib/middleware', () => ({
   requireAuthCredential: (...args: unknown[]) => mockRequireAuthCredential(...args),
+  getRequestContext: () => ({ requestId: 'req-change-password' }),
+}));
+
+vi.mock('@/lib/sysop/platformSession', () => ({
+  revokeSysopSessionsForTenantSession: (...args: unknown[]) => mockRevokeSysopSessions(...args),
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -50,6 +56,7 @@ describe('POST /api/auth/change-password', () => {
     mockVerifyPassword.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     mockValidatePassword.mockReturnValue({ valid: true, errors: [] });
     mockHashPassword.mockResolvedValue('new-hash');
+    mockRevokeSysopSessions.mockResolvedValue(undefined);
     mockWithOrgContext.mockImplementation(
       async (organizationId: string, operation: (tx: unknown) => Promise<unknown>) => {
         expect(organizationId).toBe('org-1');
@@ -79,6 +86,10 @@ describe('POST /api/auth/change-password', () => {
       's'.repeat(43)
     );
     expect(mockClearSessionCache).toHaveBeenCalledWith(['session-other']);
+    expect(mockRevokeSysopSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', sessionId: 'session-current' }),
+      'req-change-password'
+    );
   });
 
   it('does not modify a user hidden by the session organization context', async () => {

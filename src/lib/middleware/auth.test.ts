@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { AuthenticationError } from '../errors';
 
@@ -10,6 +10,11 @@ const mockUserFindUnique = vi.fn();
 const mockPolicy = vi.fn();
 const mockHeaders = vi.fn();
 const mockSecurityAudit = vi.fn();
+const originalEnforcementFlag = process.env['SYSOP_MODE_ENFORCEMENT_ENABLED'];
+const mockActiveSysopSession = vi.fn();
+vi.mock('../sysop/platformSession', () => ({
+  getActiveSysopSession: (...args: unknown[]) => mockActiveSysopSession(...args),
+}));
 vi.mock('../sysop/ipAllowlist', () => ({
   SysopIpAllowlistService: { isClientIpAllowed: (...args: unknown[]) => mockPolicy(...args) },
 }));
@@ -66,9 +71,19 @@ const organizationProjection = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env['SYSOP_MODE_ENFORCEMENT_ENABLED'] = 'true';
   mockPolicy.mockResolvedValue({ allowed: true });
   mockHeaders.mockReturnValue(new Headers());
   mockSecurityAudit.mockResolvedValue(undefined);
+  mockActiveSysopSession.mockResolvedValue({ id: 'platform-session-1' });
+});
+
+afterAll(() => {
+  if (originalEnforcementFlag === undefined) {
+    delete process.env['SYSOP_MODE_ENFORCEMENT_ENABLED'];
+  } else {
+    process.env['SYSOP_MODE_ENFORCEMENT_ENABLED'] = originalEnforcementFlag;
+  }
 });
 
 describe('requireAuthCredential', () => {
@@ -130,9 +145,30 @@ describe('requirePlatformOperator', () => {
     const session = { sessionId: 'session-1', userId: 'user-1', organizationId: 'org-1' };
     mockCookieGet.mockReturnValue({ value: 's'.repeat(43) });
     mockValidateSession.mockResolvedValue(session);
-    mockUserFindUnique.mockResolvedValue({ isActive: true, isPlatformOperator: true });
+    mockUserFindUnique.mockResolvedValue({
+      isActive: true,
+      isPlatformOperator: true,
+      twoFactorEnabled: true,
+    });
 
     await expect(requirePlatformOperator()).resolves.toEqual(session);
+  });
+
+  it('denies an eligible operator who has not entered SysOp mode', async () => {
+    const session = { sessionId: 'session-1', userId: 'user-1', organizationId: 'org-1' };
+    mockCookieGet.mockReturnValue({ value: 's'.repeat(43) });
+    mockValidateSession.mockResolvedValue(session);
+    mockUserFindUnique.mockResolvedValue({
+      isActive: true,
+      isPlatformOperator: true,
+      twoFactorEnabled: true,
+    });
+    mockActiveSysopSession.mockResolvedValue(null);
+
+    await expect(requirePlatformOperator()).rejects.toMatchObject({
+      name: 'AuthorizationError',
+      message: 'SysOp mode required',
+    });
   });
 });
 
@@ -144,7 +180,11 @@ describe('platform IP policy failures', () => {
       organizationId: 'o',
       organization: { role: 'VIEWER' },
     });
-    mockUserFindUnique.mockResolvedValue({ isActive: true, isPlatformOperator: true });
+    mockUserFindUnique.mockResolvedValue({
+      isActive: true,
+      isPlatformOperator: true,
+      twoFactorEnabled: true,
+    });
   });
   it('allows an operator independently of organization role', async () => {
     await expect(requirePlatformOperator()).resolves.toMatchObject({ userId: 'u' });

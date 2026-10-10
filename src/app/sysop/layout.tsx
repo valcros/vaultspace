@@ -1,12 +1,12 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Server, Activity, ArrowLeft, Shield, FolderTree } from 'lucide-react';
+import { Server, Activity, Shield, FolderTree } from 'lucide-react';
 import { requirePlatformOperator } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { isAuthenticationError } from '@/lib/errors';
-import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { ExitSysopModeButton } from '@/components/sysop/exit-sysop-mode-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +17,9 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
   } catch (error) {
     if (isAuthenticationError(error)) {
       redirect('/auth/login?redirect=/sysop');
+    }
+    if (error instanceof Error && error.message === 'SysOp mode required') {
+      redirect('/settings/sysop');
     }
     // Do not advertise a platform-only surface to authenticated people who
     // lack this capability or fail the IP allowlist.
@@ -108,17 +111,7 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
             <p className="text-[11px] text-slate-500 dark:text-slate-400">{user.email}</p>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            asChild
-            className="border-slate-300 bg-white text-xs text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-          >
-            <Link href="/rooms">
-              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-              Exit to App
-            </Link>
-          </Button>
+          <ExitSysopModeButton />
         </div>
       </header>
 
