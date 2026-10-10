@@ -43,6 +43,12 @@ export function assertSysopRolloutReadiness(
   },
   environment: Record<string, string | undefined>
 ): void {
+  if (
+    environment['SYSOP_CAPABILITY_ENFORCEMENT_ENABLED'] === 'true' &&
+    environment['SYSOP_MODE_ENFORCEMENT_ENABLED'] !== 'true'
+  ) {
+    throw new Error('Enable SysOp mode enforcement before capability enforcement.');
+  }
   if (environment['SYSOP_MODE_ENFORCEMENT_ENABLED'] === 'true' && counts.activeMfaOperators < 1) {
     throw new Error('SysOp mode enforcement requires an active MFA-enrolled operator.');
   }

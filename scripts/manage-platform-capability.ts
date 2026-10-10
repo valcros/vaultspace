@@ -83,13 +83,15 @@ async function mutate() {
   }
   const bootstrapManager = args.includes('--bootstrap-manager');
   const incidentRef = argument('--incident-ref');
+  if (incidentRef && !/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,127}$/.test(incidentRef)) {
+    throw new Error('Incident reference format is invalid');
+  }
   if (
     bootstrapManager &&
     (!grantRequested ||
       capability !== 'SYSOP_OPERATOR_MANAGE' ||
       actorEmail !== targetEmail ||
-      !incidentRef ||
-      !/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,127}$/.test(incidentRef))
+      !incidentRef)
   ) {
     throw new Error(
       'First-manager bootstrap requires a self-grant of SYSOP_OPERATOR_MANAGE and --incident-ref'
@@ -128,7 +130,11 @@ async function mutate() {
       });
       if (bootstrapManager) {
         const managerCount = await tx.platformCapabilityGrant.count({
-          where: { capability: 'SYSOP_OPERATOR_MANAGE', revokedAt: null },
+          where: {
+            capability: 'SYSOP_OPERATOR_MANAGE',
+            revokedAt: null,
+            user: { isActive: true, isPlatformOperator: true },
+          },
         });
         if (managerCount !== 0) {
           throw new Error('A capability manager already exists; use a manager account');
@@ -160,7 +166,12 @@ async function mutate() {
         return false;
       }
 
-      if (revokeRequested && capability === 'SYSOP_OPERATOR_MANAGE' && target.isActive) {
+      if (
+        revokeRequested &&
+        capability === 'SYSOP_OPERATOR_MANAGE' &&
+        target.isActive &&
+        target.isPlatformOperator
+      ) {
         const managers = await tx.platformCapabilityGrant.count({
           where: {
             capability: 'SYSOP_OPERATOR_MANAGE',
@@ -181,7 +192,7 @@ async function mutate() {
             capability,
             grantedByUserId: actor.id,
             grantReasonCode: reason,
-            incidentRef: bootstrapManager ? incidentRef : null,
+            incidentRef: incidentRef ?? null,
           },
         });
         changedGrantIds = [grant.id];
@@ -201,7 +212,7 @@ async function mutate() {
             requestId: `ops_capability_${randomUUID()}`,
             correlationId: grantId,
             reasonCode: reason,
-            incidentRef: bootstrapManager ? incidentRef : null,
+            incidentRef: incidentRef ?? null,
             breakGlass: bootstrapManager,
             changedFields: ['operator.capability'],
             previousState: grantRequested ? 'UNGRANTED' : 'GRANTED',

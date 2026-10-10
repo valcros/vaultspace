@@ -10,7 +10,7 @@
  * present.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 import {
   assertActivePlatformOperatorCount,
@@ -36,15 +36,19 @@ async function main(): Promise<void> {
   assertActivePlatformOperatorCount(activeOperatorCount);
   console.log(`Platform operator continuity verified: ${activeOperatorCount} active operator(s).`);
 
+  const loginReadyOperator: Prisma.UserWhereInput = {
+    isActive: true,
+    isPlatformOperator: true,
+    emailVerifiedAt: { not: null },
+    twoFactorEnabled: true,
+    twoFactorSecret: { not: null },
+    organizations: { some: { isActive: true, organization: { isActive: true } } },
+  };
   const [activeMfaOperators, consoleReadyOperators, capabilityManagers] = await Promise.all([
-    prisma.user.count({
-      where: { isActive: true, isPlatformOperator: true, twoFactorEnabled: true },
-    }),
+    prisma.user.count({ where: loginReadyOperator }),
     prisma.user.count({
       where: {
-        isActive: true,
-        isPlatformOperator: true,
-        twoFactorEnabled: true,
+        ...loginReadyOperator,
         platformCapabilityGrants: {
           some: { capability: 'SYSOP_CONSOLE_ACCESS', revokedAt: null },
         },
@@ -52,9 +56,7 @@ async function main(): Promise<void> {
     }),
     prisma.user.count({
       where: {
-        isActive: true,
-        isPlatformOperator: true,
-        twoFactorEnabled: true,
+        ...loginReadyOperator,
         platformCapabilityGrants: {
           some: { capability: 'SYSOP_OPERATOR_MANAGE', revokedAt: null },
         },

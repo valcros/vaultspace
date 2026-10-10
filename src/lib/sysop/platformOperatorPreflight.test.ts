@@ -54,9 +54,18 @@ describe('platform operator continuity guards', () => {
     expect(() =>
       assertSysopRolloutReadiness(
         { ...none, activeMfaOperators: 1 },
-        { SYSOP_CAPABILITY_ENFORCEMENT_ENABLED: 'true' }
+        {
+          SYSOP_MODE_ENFORCEMENT_ENABLED: 'true',
+          SYSOP_CAPABILITY_ENFORCEMENT_ENABLED: 'true',
+        }
       )
     ).toThrow('console operator and capability manager');
+    expect(() =>
+      assertSysopRolloutReadiness(
+        { activeMfaOperators: 1, consoleReadyOperators: 1, capabilityManagers: 1 },
+        { SYSOP_CAPABILITY_ENFORCEMENT_ENABLED: 'true' }
+      )
+    ).toThrow('mode enforcement before capability enforcement');
     expect(() =>
       assertSysopRolloutReadiness(
         { activeMfaOperators: 1, consoleReadyOperators: 1, capabilityManagers: 1 },
