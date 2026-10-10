@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { systemRoomTemplateService } from '../../src/services/SystemRoomTemplateService';
 
 const admin = new PrismaClient({
   datasources: { db: { url: process.env['DATABASE_URL_ADMIN'] || process.env['DATABASE_URL'] } },
@@ -177,5 +178,176 @@ describe('platform control-plane foundation', () => {
     await expect(
       admin.$transaction((tx) => tx.$executeRawUnsafe('TRUNCATE TABLE platform_audit_events'))
     ).rejects.toThrow();
+  });
+});
+
+// The global catalog uses the trusted service boundary rather than tenant RLS.
+// These SQL checks intentionally run as the ordinary runtime database role.
+describe('system room template catalog and immutable revision history', () => {
+  it('preserves narrowly scoped runtime grants after broad-grant repair', async () => {
+    const rows = await admin.$queryRawUnsafe<
+      Array<{
+        relname: string;
+        rowsecurity: boolean;
+        can_select: boolean;
+        can_insert: boolean;
+        can_update: boolean;
+        can_delete: boolean;
+        can_truncate: boolean;
+      }>
+    >(`
+      SELECT relname, relrowsecurity AS rowsecurity,
+        has_table_privilege('vaultspace_app', oid, 'SELECT') AS can_select,
+        has_table_privilege('vaultspace_app', oid, 'INSERT') AS can_insert,
+        has_table_privilege('vaultspace_app', oid, 'UPDATE') AS can_update,
+        has_table_privilege('vaultspace_app', oid, 'DELETE') AS can_delete,
+        has_table_privilege('vaultspace_app', oid, 'TRUNCATE') AS can_truncate
+      FROM pg_class WHERE relnamespace = 'public'::regnamespace
+        AND relname IN ('system_room_templates', 'system_room_template_revisions')
+    `);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.rowsecurity).toBe(false);
+      expect(row.can_select).toBe(true);
+      expect(row.can_insert).toBe(true);
+      expect(row.can_update).toBe(row.relname === 'system_room_templates');
+      expect(row.can_delete).toBe(false);
+      expect(row.can_truncate).toBe(false);
+    }
+  });
+
+  it('allows catalog writes and reads independently of tenant context, with append-only audit', async () => {
+    const templateId = `sys-test-${randomUUID()}`;
+    const template = await runtime.systemRoomTemplate.create({
+      data: {
+        id: templateId,
+        name: 'Release gate',
+        description: '',
+        category: 'test',
+        folders: [{ name: 'Evidence', path: '/evidence' }],
+      },
+    });
+    const updated = await runtime.systemRoomTemplate.update({
+      where: { id: templateId },
+      data: { enabled: false, revision: 2 },
+    });
+    expect(updated.enabled).toBe(false);
+    for (const organizationId of ['tenant-a', 'tenant-b']) {
+      const read = await runtime.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+        return tx.systemRoomTemplate.findUnique({ where: { id: templateId } });
+      });
+      expect(read?.id).toBe(template.id);
+      expect(read?.revision).toBe(2);
+    }
+    const audit = await runtime.systemRoomTemplateRevision.create({
+      data: {
+        templateId,
+        revision: 2,
+        actorUserId: 'test-operator',
+        requestId: randomUUID(),
+        snapshot: { name: updated.name, enabled: false },
+      },
+    });
+    // Runtime privileges deny these; privileged SQL additionally proves triggers.
+    for (const client of [runtime, admin]) {
+      await expect(
+        client.systemRoomTemplateRevision.update({
+          where: { id: audit.id },
+          data: { requestId: 'rewritten' },
+        })
+      ).rejects.toThrow();
+      await expect(
+        client.systemRoomTemplateRevision.delete({ where: { id: audit.id } })
+      ).rejects.toThrow();
+      await expect(
+        client.$transaction((tx) =>
+          tx.$executeRawUnsafe('TRUNCATE TABLE system_room_template_revisions')
+        )
+      ).rejects.toThrow();
+    }
+    expect(
+      await runtime.systemRoomTemplateRevision.findUnique({ where: { id: audit.id } })
+    ).toMatchObject({ requestId: audit.requestId });
+  });
+
+  it('rolls back catalog mutation when revision insertion fails in its transaction', async () => {
+    const id = `sys-rollback-${randomUUID()}`;
+    await runtime.systemRoomTemplateRevision.create({
+      data: {
+        templateId: id,
+        revision: 1,
+        snapshot: {},
+        actorUserId: 'test-operator',
+        requestId: randomUUID(),
+      },
+    });
+    await expect(
+      runtime.$transaction(async (tx) => {
+        await tx.systemRoomTemplate.create({
+          data: {
+            id,
+            name: 'Must roll back',
+            description: '',
+            category: 'test',
+            folders: [],
+          },
+        });
+        await tx.systemRoomTemplateRevision.create({
+          data: {
+            templateId: id,
+            revision: 1,
+            snapshot: {},
+            actorUserId: 'test-operator',
+            requestId: randomUUID(),
+          },
+        });
+      })
+    ).rejects.toThrow();
+    expect(await runtime.systemRoomTemplate.findUnique({ where: { id } })).toBeNull();
+  });
+  it('rechecks the operator and permits only one concurrent service edit per revision', async () => {
+    const operator = await admin.user.create({
+      data: {
+        email: `template-operator-${randomUUID()}@test.invalid`,
+        passwordHash: 'not-a-login',
+        firstName: 'Template',
+        lastName: 'Operator',
+        isActive: true,
+        isPlatformOperator: true,
+      },
+    });
+    const actor = { actorUserId: operator.id, requestId: randomUUID() };
+    const input = {
+      name: 'Concurrent template',
+      description: '',
+      category: 'test',
+      folders: [{ name: 'Legal', path: '/legal' }],
+    };
+    const created = await systemRoomTemplateService.create(input, actor);
+    const edits = await Promise.allSettled([
+      systemRoomTemplateService.update(
+        created.id,
+        { ...input, name: 'Edit A' },
+        created.revision,
+        actor
+      ),
+      systemRoomTemplateService.update(
+        created.id,
+        { ...input, name: 'Edit B' },
+        created.revision,
+        actor
+      ),
+    ]);
+    expect(edits.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const denied = edits.find((result) => result.status === 'rejected');
+    expect(denied?.status === 'rejected' && denied.reason.status).toBe(409);
+    expect(
+      await runtime.systemRoomTemplateRevision.count({ where: { templateId: created.id } })
+    ).toBe(2);
+    await admin.user.update({ where: { id: operator.id }, data: { isPlatformOperator: false } });
+    await expect(systemRoomTemplateService.create(input, actor)).rejects.toMatchObject({
+      status: 403,
+    });
   });
 });

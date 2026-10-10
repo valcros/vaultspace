@@ -94,6 +94,14 @@ export const MODEL_CLASSIFICATION: Record<string, ModelClassification> = {
     kind: 'EXCLUDE',
     reason: 'global SysOp authorization history; never included in a tenant backup or restore',
   },
+  SystemRoomTemplate: {
+    kind: 'EXCLUDE',
+    reason: 'global platform folder catalog; independent of tenant backup and restore',
+  },
+  SystemRoomTemplateRevision: {
+    kind: 'EXCLUDE',
+    reason: 'global append-only template revision history; independent of tenant lifecycle',
+  },
   PlatformAuditEvent: {
     kind: 'EXCLUDE',
     reason: 'global governance ledger; excluded from tenant backup/export/restore paths',

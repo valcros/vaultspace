@@ -60,6 +60,20 @@ Implement approved work in VaultSpace.
 - Do not commit, deploy, or perform destructive git actions unless explicitly asked
 - If the worktree contains unrelated changes, do not revert them
 
+### Review Before Major Work
+
+Before major implementation, dependency upgrades, infrastructure changes, or migrations,
+prepare a decision review using the owner's preferred framework:
+
+- **Strawman:** state a concrete minimal proposal, its assumptions, and what it leaves unresolved.
+- **Steelman:** present the strongest defensible approach and the strongest alternative, including costs and operational tradeoffs.
+- **Premortem:** assume the change failed; identify plausible failure modes, early warning signals, verification gates, and recovery options.
+
+End with a recommendation and identify any decisions requiring approval under the
+existing authorization rules. This framework does not add approval requirements to
+routine, already authorized work. Keep depth proportional to risk, and ground claims
+in repository or live operational evidence.
+
 ### Execution Standard
 
 1. Confirm objective

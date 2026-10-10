@@ -14,11 +14,12 @@ import { getRequestContext, requireAuthFromRequest } from '@/lib/middleware';
 import { createServiceContext, roomService } from '@/services';
 import { createStarterFolderTree } from '@/lib/rooms/createStarterFolderTree';
 import {
-  getBuiltInRoomTemplate,
-  readTemplateFolders,
   resolveStarterFolderSelection,
   type StarterFolderDefinition,
 } from '@/lib/rooms/starterFolderTemplates';
+
+import { resolveRoomTemplate } from '@/lib/rooms/templateCatalog';
+import { SystemRoomTemplateError } from '@/services/SystemRoomTemplateService';
 
 // This route uses cookies for auth, so it must be dynamic
 export const dynamic = 'force-dynamic';
@@ -57,6 +58,7 @@ const roomStarterFolderInputSchema = z
     name: z.unknown().optional(),
     description: z.string().optional(),
     templateId: z.string().trim().min(1).optional(),
+    templateRevision: z.string().max(100).optional(),
     selectedFolderPaths: z.array(z.string()).max(100).optional(),
     allowDownloads: z.boolean().optional(),
     defaultExpiryDays: z.number().int().optional(),
@@ -145,6 +147,7 @@ export async function POST(request: NextRequest) {
       allowDownloads,
       defaultExpiryDays,
       templateId,
+      templateRevision,
       selectedFolderPaths,
     } = starterFolderInput.data;
 
@@ -168,25 +171,13 @@ export async function POST(request: NextRequest) {
     // Use RLS context for all org-scoped operations
     const room = await withOrgContext(session.organizationId, async (tx) => {
       if (templateId) {
-        const builtInTemplate = getBuiltInRoomTemplate(templateId);
-        let availableFolders = builtInTemplate ? builtInTemplate.structure.folders : null;
-        if (!availableFolders) {
-          const template = await tx.roomTemplate.findFirst({
-            where: {
-              id: templateId,
-              OR: [
-                { organizationId: session.organizationId },
-                { isSystemTemplate: true },
-                { isPublic: true },
-              ],
-            },
-          });
-          availableFolders = template ? readTemplateFolders(template.folderStructure) : null;
-        }
-
-        if (!availableFolders) {
-          throw new Error('ROOM_TEMPLATE_NOT_FOUND');
-        }
+        const template = await resolveRoomTemplate(
+          tx,
+          session.organizationId,
+          templateId,
+          templateRevision
+        );
+        const availableFolders = template.structure.folders;
         const selection = resolveStarterFolderSelection(availableFolders, selectedFolderPaths);
         if (!selection.ok) {
           throw new Error(`ROOM_TEMPLATE_INVALID:${selection.error}`);
@@ -229,7 +220,7 @@ export async function POST(request: NextRequest) {
           roomId: newRoom.id,
           description: `Created room "${newRoom.name}"`,
           ...(templateId && {
-            metadata: { templateId, starterFolderCount: templateFolders.length },
+            metadata: { templateId, templateRevision, starterFolderCount: templateFolders.length },
           }),
         },
       });
@@ -242,8 +233,8 @@ export async function POST(request: NextRequest) {
     if (isAuthenticationError(error)) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
-    if (error instanceof Error && error.message === 'ROOM_TEMPLATE_NOT_FOUND') {
-      return NextResponse.json({ error: 'Selected template was not found' }, { status: 404 });
+    if (error instanceof SystemRoomTemplateError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
     if (error instanceof Error && error.message.startsWith('ROOM_TEMPLATE_INVALID:')) {
       return NextResponse.json(

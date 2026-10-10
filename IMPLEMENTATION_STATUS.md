@@ -25,7 +25,7 @@ build; all four scheduled jobs use the same worker digest. Password-reset
 reconciliation is enabled on its scheduled job, even though the web health flag is
 false. Log Analytics, resource-pressure alerts, and an action group exist. #192 also deployed two email failure rules; notification receipt remains separate evidence.
 
-Follow-up #187 prepares corrected public web YAML, a non-deployable probe fragment, and alignment of environment, deployment, job, and agent documentation. Those cleanup changes await #187; this documentation PR does not apply them to Azure. Resource-specific posture and owner recommendations are tracked privately. Readiness, maintenance scheduling, remaining monitoring coverage, and residual dependency findings are separately reviewed work in `BACKLOG.md`.
+Follow-up #187 prepares corrected public web YAML, a non-deployable probe fragment, and alignment of environment, deployment, job, and agent documentation. Those cleanup changes are included in #187 and await its merge; the repository examples do not apply them to Azure. Resource-specific posture and owner recommendations are tracked privately. Readiness, maintenance scheduling, remaining monitoring coverage, and residual dependency findings are separately reviewed work in `BACKLOG.md`.
 
 ## Shipped Since the July 21 Update
 

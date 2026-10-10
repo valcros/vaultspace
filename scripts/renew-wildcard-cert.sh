@@ -37,6 +37,7 @@
 # Required environment (provided by the workflow from GitHub variables/secrets):
 #   RESOURCE_GROUP        - resource group holding the Container Apps env + DNS zone
 #   WEB_CONTAINER_APP     - name of the web Container App (ingress host binding)
+#   ACME_EMAIL            - required ACME account email from protected configuration
 #   DOMAIN                - apex domain (default: vaultspace.org)
 #   FORCE_RENEW           - "true" to reissue regardless of remaining validity
 #   RENEW_THRESHOLD_DAYS  - renew only within this many days of expiry (default 30)
@@ -49,7 +50,7 @@ RG="${RESOURCE_GROUP:?RESOURCE_GROUP is required}"
 WEB="${WEB_CONTAINER_APP:?WEB_CONTAINER_APP is required}"
 DOMAIN="${DOMAIN:-vaultspace.org}"
 WILDCARD="*.${DOMAIN}"
-EMAIL="${ACME_EMAIL:-mmunger@vaultspace.org}"
+EMAIL="${ACME_EMAIL:?ACME_EMAIL is required}"
 FORCE_RENEW="${FORCE_RENEW:-false}"
 RENEW_THRESHOLD_DAYS="${RENEW_THRESHOLD_DAYS:-30}"
 # A throwaway subdomain: the wildcard cert + wildcard DNS make it resolve and be

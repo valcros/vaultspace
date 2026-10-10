@@ -1,25 +1,27 @@
+# Read-only excerpt of the live web probes, verified 2026-10-08.
+# NOT a deployable Container App template. Do not pass this fragment directly to
+# az containerapp update --yaml: replacing the containers array can drop env,
+# images, resources, and sidecars. Merge probes into a full reviewed template.
+# See ca-web-complete.yaml for the required web environment and worker validation.
+# Live readiness is deep; switching to quick readiness is a separate decision.
 properties:
   template:
     containers:
-      - name: vaultspace-web
-        image: example.azurecr.io/vaultspace-web:latest
-        resources:
-          cpu: 1.0
-          memory: 2Gi
+      - name: <web-container>
         probes:
-          - type: Liveness
+          - failureThreshold: 3
             httpGet:
               path: /api/health
               port: 3000
-            timeoutSeconds: 5
             initialDelaySeconds: 30
             periodSeconds: 30
-            failureThreshold: 3
-          - type: Readiness
-            httpGet:
-              path: /api/health
-              port: 3000
             timeoutSeconds: 5
-            initialDelaySeconds: 10
-            periodSeconds: 15
-            failureThreshold: 3
+            type: Liveness
+          - failureThreshold: 3
+            httpGet:
+              path: /api/health?deep=true
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            type: Readiness

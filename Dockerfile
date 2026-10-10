@@ -1,5 +1,5 @@
 # === Build stage ===
-FROM node:20-slim AS builder
+FROM public.ecr.aws/docker/library/node:20-slim AS builder
 WORKDIR /app
 
 # Pass --build-arg DEPLOYMENT_MODE=standalone for self-hosted installs.
@@ -30,7 +30,7 @@ ENV APP_RELEASE=${APP_RELEASE}
 RUN npm run build
 
 # === Runtime stage ===
-FROM node:20-slim AS runner
+FROM public.ecr.aws/docker/library/node:20-slim AS runner
 WORKDIR /app
 
 # Install dumb-init, curl, OpenSSL for Prisma, PostgreSQL client for RLS,

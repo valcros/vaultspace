@@ -70,9 +70,9 @@ as dated evidence; it is not presented as the latest 24-hour execution window.
 Job completion does not establish useful work or inbox delivery. The scheduled reset
 job should not be duplicated merely to change the web process's health flag.
 
-## Repository corrections prepared in follow-up #187
+## Repository corrections in #187
 
-These changes are under review in #187 and are not all merged by #189.
+These changes are included in #187 and await its review and merge.
 
 - Public web examples use placeholders and explicit prerequisites; the probe fragment
   is non-deployable. Examples are not authority for live resource posture.
