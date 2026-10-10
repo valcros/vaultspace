@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Shield, ShieldCheck, ShieldOff, Copy, Check, AlertTriangle } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -242,56 +243,64 @@ export default function SecuritySettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Setup Step: Show secret and URI */}
+          {/* Setup Step: Scan QR code or use the manual fallback */}
           {step === 'setup' && (
             <Card className={sectionCardClass}>
               <CardContent className="space-y-4 p-6">
                 <h3 className="font-medium text-neutral-900">Set up your authenticator app</h3>
                 <p className="text-sm text-neutral-500">
-                  Copy the URI below and paste it into your authenticator app (such as Google
-                  Authenticator, Authy, or 1Password). Alternatively, you can enter the secret key
-                  manually.
+                  In your authenticator app, add an account and scan this QR code. Then enter the
+                  six-digit code it shows below. Keep this QR code private.
                 </p>
 
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label>OTPAuth URI</Label>
-                    <div className="flex gap-2">
-                      <Input readOnly value={otpauthUri} className="font-mono text-xs" />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => copyToClipboard(otpauthUri, 'uri')}
-                        className="flex-shrink-0"
-                      >
-                        {copiedField === 'uri' ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Secret key (manual entry)</Label>
-                    <div className="flex gap-2">
-                      <Input readOnly value={secret} className="font-mono tracking-wider" />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => copyToClipboard(secret, 'secret')}
-                        className="flex-shrink-0"
-                      >
-                        {copiedField === 'secret' ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
+                <div className="w-fit max-w-full rounded-lg border border-neutral-200 bg-white p-2">
+                  <QRCodeSVG
+                    value={otpauthUri}
+                    title="VaultSpace authenticator setup QR code"
+                    role="img"
+                    size={224}
+                    level="M"
+                    marginSize={4}
+                    className="h-auto max-w-full"
+                  />
                 </div>
+
+                <details className="rounded-lg border border-neutral-200 p-4">
+                  <summary className="cursor-pointer font-medium">
+                    Can&apos;t scan? Enter a setup key instead
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <p className="text-sm text-neutral-500">
+                      Choose manual setup in your authenticator app. Use VaultSpace as the account
+                      name and select a time-based code.
+                    </p>
+                    <div className="space-y-2">
+                      <Label htmlFor="manual-2fa-secret">Setup key</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="manual-2fa-secret"
+                          readOnly
+                          value={secret}
+                          className="font-mono tracking-wider"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => copyToClipboard(secret, 'secret')}
+                          className="flex-shrink-0"
+                        >
+                          {copiedField === 'secret' ? (
+                            <Check className="mr-2 h-4 w-4" />
+                          ) : (
+                            <Copy className="mr-2 h-4 w-4" />
+                          )}
+                          {copiedField === 'secret' ? 'Copied' : 'Copy key'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </details>
 
                 <form onSubmit={handleVerify} className="space-y-4 border-t pt-4">
                   <div className="space-y-2">
@@ -308,7 +317,7 @@ export default function SecuritySettingsPage() {
                       maxLength={6}
                       required
                       autoComplete="one-time-code"
-                      autoFocus
+                      inputMode="numeric"
                       className="max-w-[200px] font-mono text-lg tracking-widest"
                     />
                   </div>
