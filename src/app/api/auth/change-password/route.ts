@@ -63,8 +63,9 @@ export async function POST(request: NextRequest) {
     }
 
     const newHash = await hashPassword(newPassword);
-    await revokeSysopSessionsForTenantSession(session, getRequestContext(request).requestId);
-    await revokeAccountSwitchSessionsForUser(session.userId, getRequestContext(request).requestId);
+    const { requestId } = getRequestContext(request);
+    await revokeSysopSessionsForTenantSession(session, requestId);
+    await revokeAccountSwitchSessionsForUser(session.userId, requestId);
     const revokedSessionIds = await withOrgContext(session.organizationId, async (tx) => {
       await tx.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
 

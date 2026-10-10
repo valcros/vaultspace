@@ -21,6 +21,8 @@ import {
 
 export async function POST(request?: NextRequest) {
   try {
+    const reqContext = request ? getRequestContext(request) : null;
+    const requestId = reqContext?.requestId ?? `logout_${randomUUID()}`;
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(SESSION_CONFIG.COOKIE_NAME)?.value;
     let auditContext: {
@@ -47,7 +49,7 @@ export async function POST(request?: NextRequest) {
           try {
             await revokeSysopSessionsForTenantSession(
               { userId: authSession.userId, sessionId: authSession.sessionId },
-              request ? getRequestContext(request).requestId : `logout_${randomUUID()}`
+              requestId
             );
           } catch {
             // The tenant session invalidation below still makes any bound
@@ -56,7 +58,7 @@ export async function POST(request?: NextRequest) {
           try {
             await stopAccountSwitching(
               { userId: authSession.userId, sessionId: authSession.sessionId },
-              request ? getRequestContext(request).requestId : `logout_${randomUUID()}`
+              requestId
             );
           } catch {
             // Invalidating the tenant session also invalidates its switch proof.
@@ -75,14 +77,13 @@ export async function POST(request?: NextRequest) {
     cookieStore.delete?.(SWITCH_COOKIE_NAME);
 
     if (auditContext) {
-      const reqContext = request ? getRequestContext(request) : null;
       await captureAccessAudit({
         organizationId: auditContext.organizationId,
         eventType: 'USER_LOGOUT',
         actorType: auditContext.actorType,
         actorId: auditContext.userId,
         actorEmail: auditContext.email,
-        requestId: reqContext?.requestId ?? `req_${randomUUID()}`,
+        requestId,
         description: 'User signed out',
         metadata: { authSessionId: auditContext.id },
         ipAddress: reqContext && reqContext.ipAddress !== 'unknown' ? reqContext.ipAddress : null,

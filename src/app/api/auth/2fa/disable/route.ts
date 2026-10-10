@@ -22,6 +22,7 @@ const disableSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const session = await requireAuth();
+    const { requestId } = getRequestContext(request);
     const body = await request.json();
     const { code } = disableSchema.parse(body);
 
@@ -55,11 +56,8 @@ export async function POST(request: NextRequest) {
         } as const;
       }
 
-      await revokeSysopSessionsForTenantSession(session, getRequestContext(request).requestId);
-      await revokeAccountSwitchSessionsForUser(
-        session.userId,
-        getRequestContext(request).requestId
-      );
+      await revokeSysopSessionsForTenantSession(session, requestId);
+      await revokeAccountSwitchSessionsForUser(session.userId, requestId);
 
       // Disable 2FA and clear secret + backup codes
       await tx.user.update({

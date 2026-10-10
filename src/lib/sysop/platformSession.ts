@@ -5,8 +5,8 @@ import { cookies, headers } from 'next/headers';
 import type { SessionData } from '@/lib/auth';
 import { bootstrapDb } from '@/lib/db';
 import { AuthorizationError } from '@/lib/errors';
-import { verifyTOTP } from '@/lib/totp';
-import { getClientIp, getIpSubnet, hashUserAgent } from '@/lib/utils/ip';
+import { matchTOTPCounter } from '@/lib/totp';
+import { getTrustedClientIp, getTrustedIpSubnet, hashUserAgent } from '@/lib/utils/ip';
 import { SysopIpAllowlistService } from './ipAllowlist';
 
 export const SYSOP_COOKIE_NAME = 'vaultspace-sysop';
@@ -37,13 +37,24 @@ function tokenHash(token: string): string {
   return createHmac('sha256', secret).update('vaultspace-sysop:v1:').update(token).digest('hex');
 }
 
+function mfaSecretHash(secretValue: string): string {
+  const sessionSecret = process.env['SESSION_SECRET'];
+  if (!sessionSecret) {
+    throw new Error('SESSION_SECRET is required for SysOp sessions');
+  }
+  return createHmac('sha256', sessionSecret)
+    .update('vaultspace-sysop-totp:v1:')
+    .update(secretValue)
+    .digest('hex');
+}
+
 async function networkContext() {
   const requestHeaders = await headers();
-  const ipAddress = getClientIp(requestHeaders);
+  const ipAddress = getTrustedClientIp(requestHeaders);
   const userAgentHash = hashUserAgent(requestHeaders.get('user-agent'));
   return {
     ipAddress,
-    ipSubnet: getIpSubnet(ipAddress),
+    ipSubnet: getTrustedIpSubnet(ipAddress),
     userAgentHash,
   };
 }
@@ -71,8 +82,8 @@ function matchesBinding(
   return (
     platform.userId === tenant.userId &&
     platform.tenantSessionId === tenant.sessionId &&
-    (!platform.ipSubnet || platform.ipSubnet === network.ipSubnet) &&
-    (!platform.userAgentHash || platform.userAgentHash === network.userAgentHash)
+    platform.ipSubnet === network.ipSubnet &&
+    platform.userAgentHash === network.userAgentHash
   );
 }
 
@@ -139,7 +150,8 @@ export async function enterSysopMode(
     await auditDenied(tenant.userId, requestId, 'MFA_REQUIRED');
     throw new AuthorizationError('Enroll in two-factor authentication before entering SysOp mode');
   }
-  if (!verifyTOTP(user.twoFactorSecret, code)) {
+  const acceptedCounter = matchTOTPCounter(user.twoFactorSecret, code);
+  if (acceptedCounter === null) {
     await auditDenied(tenant.userId, requestId, 'MFA_INVALID');
     throw new AuthorizationError('Invalid verification code');
   }
@@ -148,55 +160,88 @@ export async function enterSysopMode(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + MAX_AGE_MS);
   const network = await networkContext();
-  await bootstrapDb.$transaction(async (tx) => {
-    const priorSessions = await tx.platformSession.findMany({
-      where: { userId: tenant.userId, tenantSessionId: tenant.sessionId, isActive: true },
-      select: { id: true },
-    });
-    for (const prior of priorSessions) {
-      const ended = await tx.platformSession.updateMany({
-        where: { id: prior.id, isActive: true },
-        data: { isActive: false },
+  if (!network.ipSubnet) {
+    await auditDenied(tenant.userId, requestId, 'NETWORK_UNVERIFIED');
+    throw new AuthorizationError('A trusted network address is required for SysOp mode');
+  }
+  try {
+    await bootstrapDb.$transaction(async (tx) => {
+      // The conditional update consumes this TOTP step atomically across all
+      // browser sessions and concurrent requests for the same operator.
+      const secretHash = mfaSecretHash(user.twoFactorSecret!);
+      const consumed = await tx.user.updateMany({
+        where: {
+          id: tenant.userId,
+          isActive: true,
+          isPlatformOperator: true,
+          twoFactorEnabled: true,
+          twoFactorSecret: user.twoFactorSecret,
+          OR: [
+            { sysopTotpSecretHash: null },
+            { sysopTotpSecretHash: { not: secretHash } },
+            { sysopTotpCounter: null },
+            { sysopTotpCounter: { lt: acceptedCounter } },
+          ],
+        },
+        data: { sysopTotpSecretHash: secretHash, sysopTotpCounter: acceptedCounter },
       });
-      if (ended.count) {
-        await tx.platformAuditEvent.create({
-          data: {
-            action: 'SYSOP_SESSION_ENDED',
-            actorUserId: tenant.userId,
-            platformSessionId: prior.id,
-            requestId,
-            reasonCode: 'REPLACED',
-            previousState: 'ACTIVE',
-            nextState: 'ENDED',
-          },
-        });
+      if (consumed.count !== 1) {
+        throw new AuthorizationError('Verification code already used or account changed');
       }
+      const priorSessions = await tx.platformSession.findMany({
+        where: { userId: tenant.userId, tenantSessionId: tenant.sessionId, isActive: true },
+        select: { id: true },
+      });
+      for (const prior of priorSessions) {
+        const ended = await tx.platformSession.updateMany({
+          where: { id: prior.id, isActive: true },
+          data: { isActive: false },
+        });
+        if (ended.count) {
+          await tx.platformAuditEvent.create({
+            data: {
+              action: 'SYSOP_SESSION_ENDED',
+              actorUserId: tenant.userId,
+              platformSessionId: prior.id,
+              requestId,
+              reasonCode: 'REPLACED',
+              previousState: 'ACTIVE',
+              nextState: 'ENDED',
+            },
+          });
+        }
+      }
+      const platform = await tx.platformSession.create({
+        data: {
+          userId: tenant.userId,
+          tenantSessionId: tenant.sessionId,
+          tokenHash: tokenHash(token),
+          expiresAt,
+          mfaVerifiedAt: now,
+          ipAddress: network.ipAddress,
+          ipSubnet: network.ipSubnet,
+          userAgentHash: network.userAgentHash,
+        },
+      });
+      await tx.platformAuditEvent.create({
+        data: {
+          action: 'SYSOP_SESSION_STARTED',
+          actorUserId: tenant.userId,
+          platformSessionId: platform.id,
+          requestId,
+          reasonCode: reason,
+          nextState: 'ACTIVE',
+          authStrength: 'MFA',
+          userAgentHash: network.userAgentHash,
+        },
+      });
+    });
+  } catch (error) {
+    if (error instanceof AuthorizationError) {
+      await auditDenied(tenant.userId, requestId, 'MFA_REPLAY_OR_STALE');
     }
-    const platform = await tx.platformSession.create({
-      data: {
-        userId: tenant.userId,
-        tenantSessionId: tenant.sessionId,
-        tokenHash: tokenHash(token),
-        expiresAt,
-        mfaVerifiedAt: now,
-        ipAddress: network.ipAddress,
-        ipSubnet: network.ipSubnet,
-        userAgentHash: network.userAgentHash,
-      },
-    });
-    await tx.platformAuditEvent.create({
-      data: {
-        action: 'SYSOP_SESSION_STARTED',
-        actorUserId: tenant.userId,
-        platformSessionId: platform.id,
-        requestId,
-        reasonCode: reason,
-        nextState: 'ACTIVE',
-        authStrength: 'MFA',
-        userAgentHash: network.userAgentHash,
-      },
-    });
-  });
+    throw error;
+  }
   (await cookies()).set(SYSOP_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env['NODE_ENV'] === 'production',

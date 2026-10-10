@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionData } from '@/lib/auth';
 import { generateTOTP, generateTOTPSecret } from '@/lib/totp';
+import { hashUserAgent } from '@/lib/utils/ip';
 
 const {
   mockCookieGet,
   mockCookieSet,
   mockCookieDelete,
   mockUserFind,
+  mockUserUpdateMany,
   mockPlatformFind,
   mockPlatformFindMany,
   mockPlatformCreate,
@@ -19,6 +21,7 @@ const {
   const mockCookieSet = vi.fn();
   const mockCookieDelete = vi.fn();
   const mockUserFind = vi.fn();
+  const mockUserUpdateMany = vi.fn();
   const mockPlatformFind = vi.fn();
   const mockPlatformFindMany = vi.fn();
   const mockPlatformCreate = vi.fn();
@@ -26,7 +29,7 @@ const {
   const mockAuditCreate = vi.fn();
   const mockPolicy = vi.fn();
   const mockDb = {
-    user: { findUnique: mockUserFind },
+    user: { findUnique: mockUserFind, updateMany: mockUserUpdateMany },
     platformSession: {
       findUnique: mockPlatformFind,
       findMany: mockPlatformFindMany,
@@ -44,6 +47,7 @@ const {
     mockCookieSet,
     mockCookieDelete,
     mockUserFind,
+    mockUserUpdateMany,
     mockPlatformFind,
     mockPlatformFindMany,
     mockPlatformCreate,
@@ -78,6 +82,7 @@ describe('temporary SysOp sessions', () => {
     vi.clearAllMocks();
     process.env['SESSION_SECRET'] = 'test-secret-with-sufficient-entropy-for-hmac';
     mockPolicy.mockResolvedValue({ allowed: true });
+    mockUserUpdateMany.mockResolvedValue({ count: 1 });
     mockPlatformUpdateMany.mockResolvedValue({ count: 1 });
     mockAuditCreate.mockResolvedValue({ id: 'audit-1' });
     mockPlatformFindMany.mockResolvedValue([]);
@@ -141,6 +146,21 @@ describe('temporary SysOp sessions', () => {
     expect(mockCookieSet).not.toHaveBeenCalled();
   });
 
+  it('consumes a TOTP step once across repeated SysOp entries', async () => {
+    const user = await mockUserFind();
+    mockUserFind.mockResolvedValue(user);
+    mockUserUpdateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const code = generateTOTP(user.twoFactorSecret);
+    await enterSysopMode(tenant, code, 'SUPPORT', 'req-first');
+    await expect(enterSysopMode(tenant, code, 'SUPPORT', 'req-replay')).rejects.toMatchObject({
+      name: 'AuthorizationError',
+    });
+    expect(mockPlatformCreate).toHaveBeenCalledTimes(1);
+    expect(mockAuditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ reasonCode: 'MFA_REPLAY_OR_STALE' }),
+    });
+  });
+
   it('rejects an otherwise valid platform cookie after the tenant session changes', async () => {
     mockCookieGet.mockReturnValue({ value: 'x'.repeat(43) });
     mockPlatformFind.mockResolvedValue({
@@ -151,11 +171,26 @@ describe('temporary SysOp sessions', () => {
       expiresAt: new Date(Date.now() + 100_000),
       lastActiveAt: new Date(),
       ipSubnet: '203.0.113.0/24',
-      userAgentHash: null,
+      userAgentHash: hashUserAgent('VaultSpace test browser'),
     });
     expect(
       await getActiveSysopSession({ ...tenant, sessionId: 'another-tenant-session' })
     ).toBeNull();
+  });
+
+  it('does not allow a missing saved network binding to bypass the current network', async () => {
+    mockCookieGet.mockReturnValue({ value: 'x'.repeat(43) });
+    mockPlatformFind.mockResolvedValue({
+      id: 'platform-1',
+      userId: tenant.userId,
+      tenantSessionId: tenant.sessionId,
+      isActive: true,
+      expiresAt: new Date(Date.now() + 100_000),
+      lastActiveAt: new Date(),
+      ipSubnet: null,
+      userAgentHash: hashUserAgent('VaultSpace test browser'),
+    });
+    expect(await getActiveSysopSession(tenant)).toBeNull();
   });
 
   it('revokes and audits expiry before refusing access', async () => {
@@ -168,7 +203,7 @@ describe('temporary SysOp sessions', () => {
       expiresAt: new Date(Date.now() + 100_000),
       lastActiveAt: new Date(Date.now() - 11 * 60_000),
       ipSubnet: '203.0.113.0/24',
-      userAgentHash: null,
+      userAgentHash: hashUserAgent('VaultSpace test browser'),
     });
     expect(await getActiveSysopSession(tenant)).toBeNull();
     expect(mockPlatformUpdateMany).toHaveBeenCalledWith(

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
+import { hashUserAgent } from '@/lib/utils/ip';
 import type { SessionData } from '@/lib/auth';
 
 const mocks = vi.hoisted(() => {
@@ -141,7 +142,7 @@ function activeGrant() {
       .update(primaryRecord.twoFactorSecret)
       .digest('hex'),
     ipSubnet: '203.0.113.0/24',
-    userAgentHash: null,
+    userAgentHash: hashUserAgent('Test browser'),
   };
 }
 
@@ -233,6 +234,32 @@ describe('verified account linking and switching', () => {
         targetUserId: 'secondary-1',
       }),
     });
+  });
+
+  it('does not disclose whether secondary password proof passed when no active organization exists', async () => {
+    mocks.userFind.mockResolvedValueOnce(primaryRecord).mockResolvedValueOnce({
+      id: 'secondary-1',
+      email: 'secondary@example.test',
+      passwordHash: 'secondary-hash',
+      isActive: true,
+      emailVerifiedAt: new Date(),
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+    });
+    mocks.candidate.mockResolvedValue(null);
+    await expect(
+      createAccountLink(
+        primary,
+        {
+          primaryPassword: 'primary-password',
+          primaryCode: '123456',
+          secondaryEmail: 'secondary@example.test',
+          secondaryPassword: 'secondary-password',
+        },
+        'req-link-no-org'
+      )
+    ).rejects.toThrow('Could not verify the secondary account');
+    expect(mocks.linkCreate).not.toHaveBeenCalled();
   });
 
   it('rejects opening a switching window from a secondary login', async () => {

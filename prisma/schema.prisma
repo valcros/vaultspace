@@ -465,6 +465,9 @@ model User {
   twoFactorEnabled     Boolean  @default(false)
   twoFactorSecret      String?  @db.VarChar(255) // Encrypted TOTP secret
   twoFactorBackupCodes String[] @default([]) // Hashed backup codes
+  // Atomic one-time use guard for elevated SysOp TOTP entry.
+  sysopTotpCounter     Int?
+  sysopTotpSecretHash  String?  @db.Char(64)
 
   // Account status
   isActive Boolean @default(true)

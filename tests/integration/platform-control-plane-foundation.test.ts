@@ -184,6 +184,51 @@ describe('platform control-plane foundation', () => {
       admin.$transaction((tx) => tx.$executeRawUnsafe('TRUNCATE TABLE platform_audit_events'))
     ).rejects.toThrow();
   });
+
+  it('consumes a SysOp authenticator step once across concurrent requests and resets on re-enrollment', async () => {
+    const userId = `sysop-totp-${randomUUID()}`;
+    await admin.user.create({
+      data: {
+        id: userId,
+        email: `${userId}@test.invalid`,
+        passwordHash: 'not-a-secret',
+        firstName: 'SysOp',
+        lastName: 'Replay Test',
+        isPlatformOperator: true,
+        twoFactorEnabled: true,
+        twoFactorSecret: 'JBSWY3DPEHPK3PXP',
+      },
+    });
+    const consume = (secret: string, secretHash: string) =>
+      admin.user.updateMany({
+        where: {
+          id: userId,
+          isActive: true,
+          isPlatformOperator: true,
+          twoFactorEnabled: true,
+          twoFactorSecret: secret,
+          OR: [
+            { sysopTotpSecretHash: null },
+            { sysopTotpSecretHash: { not: secretHash } },
+            { sysopTotpCounter: null },
+            { sysopTotpCounter: { lt: 12345 } },
+          ],
+        },
+        data: { sysopTotpSecretHash: secretHash, sysopTotpCounter: 12345 },
+      });
+
+    const sameStep = await Promise.all([
+      consume('JBSWY3DPEHPK3PXP', 'a'.repeat(64)),
+      consume('JBSWY3DPEHPK3PXP', 'a'.repeat(64)),
+    ]);
+    expect(sameStep.map((result) => result.count).sort()).toEqual([0, 1]);
+
+    await admin.user.update({
+      where: { id: userId },
+      data: { twoFactorSecret: 'GEZDGNBVGY3TQOJQ' },
+    });
+    expect((await consume('GEZDGNBVGY3TQOJQ', 'b'.repeat(64))).count).toBe(1);
+  });
 });
 
 // The global catalog uses the trusted service boundary rather than tenant RLS.

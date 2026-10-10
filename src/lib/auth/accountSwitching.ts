@@ -9,7 +9,7 @@ import { SESSION_CONFIG } from '@/lib/constants';
 import { bootstrapDb } from '@/lib/db';
 import { AuthorizationError } from '@/lib/errors';
 import { verifyTOTP } from '@/lib/totp';
-import { getClientIp, getIpSubnet, hashUserAgent } from '@/lib/utils/ip';
+import { getTrustedClientIp, getTrustedIpSubnet, hashUserAgent } from '@/lib/utils/ip';
 import {
   revokeSysopSessionsForTenantSession,
   SYSOP_COOKIE_NAME,
@@ -54,10 +54,10 @@ function primaryMfaKeyHash(mfaSecret: string): string {
 
 async function networkContext() {
   const requestHeaders = await headers();
-  const ipAddress = getClientIp(requestHeaders);
+  const ipAddress = getTrustedClientIp(requestHeaders);
   return {
     ipAddress,
-    ipSubnet: getIpSubnet(ipAddress),
+    ipSubnet: getTrustedIpSubnet(ipAddress),
     userAgent: requestHeaders.get('user-agent'),
     userAgentHash: hashUserAgent(requestHeaders.get('user-agent')),
   };
@@ -123,7 +123,7 @@ async function verifySecondaryProof(email: string, password: string, code: strin
   }
   const candidate = await bootstrapRepository.findLoginCandidate(secondary.email);
   if (!candidate || candidate.userId !== secondary.id || !candidate.userIsActive) {
-    throw new AuthorizationError('Secondary account has no active organization');
+    throw new AuthorizationError('Could not verify the secondary account');
   }
   return secondary;
 }
@@ -268,10 +268,7 @@ export async function getActiveSwitchSession(
     return null;
   }
   const network = await networkContext();
-  if (
-    (grant.ipSubnet && grant.ipSubnet !== network.ipSubnet) ||
-    (grant.userAgentHash && grant.userAgentHash !== network.userAgentHash)
-  ) {
+  if (grant.ipSubnet !== network.ipSubnet || grant.userAgentHash !== network.userAgentHash) {
     return null;
   }
   const primary = await bootstrapDb.user.findUnique({
@@ -436,6 +433,10 @@ export async function startAccountSwitching(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + MAX_AGE_MS);
   const network = await networkContext();
+  if (!network.ipSubnet) {
+    await auditDenied(session.userId, requestId, 'NETWORK_UNVERIFIED');
+    throw new AuthorizationError('A trusted network address is required for account switching');
+  }
   await bootstrapDb.$transaction(async (tx) => {
     const prior = await tx.accountSwitchSession.findMany({
       where: { primaryUserId: session.userId, isActive: true },

@@ -70,7 +70,10 @@ async function mutate() {
   const actorEmail = normalizeEmail(argument('--actor-email'));
   const targetEmail = normalizeEmail(argument('--target-email'));
   const capabilityValue = argument('--capability');
-  if (!capabilityValue || !(capabilityValue in PlatformCapability)) {
+  if (
+    !capabilityValue ||
+    !(Object.values(PlatformCapability) as string[]).includes(capabilityValue)
+  ) {
     throw new Error('Specify a named PlatformCapability with --capability');
   }
   const capability = capabilityValue as PlatformCapability;

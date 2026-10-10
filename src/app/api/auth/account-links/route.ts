@@ -63,11 +63,12 @@ export async function POST(request: NextRequest) {
   try {
     const session = await requireAuth();
     const context = getRequestContext(request);
+    const input = linkSchema.parse(await request.json());
     await Promise.all([
       rateLimiters.loginByEmail(`link:${session.userId}`),
+      rateLimiters.loginByEmail(input.secondaryEmail.trim().toLowerCase()),
       rateLimiters.loginByIp(context.ipAddress),
     ]);
-    const input = linkSchema.parse(await request.json());
     const link = await createAccountLink(session, input, context.requestId);
     return NextResponse.json({ link }, { status: 201 });
   } catch (error) {

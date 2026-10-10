@@ -157,7 +157,7 @@ export async function requireAdmin(): Promise<SessionData> {
  * if signed in without an active operator grant.
  */
 import { SysopIpAllowlistService } from '@/lib/sysop/ipAllowlist';
-import { getClientIp } from '@/lib/utils/ip';
+import { getTrustedClientIp } from '@/lib/utils/ip';
 import { captureSecurityAudit } from '@/lib/audit/securityAudit';
 import { headers } from 'next/headers';
 import { getActiveSysopSession } from '@/lib/sysop/platformSession';
@@ -177,7 +177,7 @@ export async function requirePlatformOperator(): Promise<SessionData> {
   // SysOp In-App IP Allowlist Enforcement
   try {
     const headersList = await headers();
-    const clientIp = getClientIp(headersList);
+    const clientIp = getTrustedClientIp(headersList);
     const ipCheck = await SysopIpAllowlistService.isClientIpAllowed(clientIp);
 
     if (!ipCheck.allowed) {
