@@ -18,6 +18,8 @@ const protectedTables = [
   'platform_sessions',
   'platform_capability_grants',
   'platform_audit_events',
+  'account_links',
+  'account_switch_sessions',
 ];
 
 describe('platform control-plane foundation', () => {
@@ -50,7 +52,10 @@ describe('platform control-plane foundation', () => {
                AS runtime_column_privilege
       FROM pg_class class_meta
       WHERE class_meta.relnamespace = 'public'::regnamespace
-        AND class_meta.relname IN ('platform_sessions', 'platform_capability_grants', 'platform_audit_events')
+        AND class_meta.relname IN (
+          'platform_sessions', 'platform_capability_grants', 'platform_audit_events',
+          'account_links', 'account_switch_sessions'
+        )
       ORDER BY class_meta.relname
     `);
 

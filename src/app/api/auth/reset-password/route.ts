@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
 import { clearSessionCache } from '@/lib/auth';
+import { revokeAccountSwitchSessionsForUser } from '@/lib/auth/accountSwitching';
 import { createSecurityAuditEvent } from '@/lib/audit/securityAudit';
 import {
   PasswordResetCapabilityRepository,
@@ -137,6 +138,24 @@ export async function POST(request: NextRequest) {
 
     if (!redemption) {
       return invalidResetTokenResponse();
+    }
+
+    // The redemption already revoked tenant sessions. End associated browser
+    // switching windows too, with an identity audit record.
+    try {
+      await revokeAccountSwitchSessionsForUser(redemption.subjectUserId, reqContext.requestId);
+    } catch (error) {
+      // Every switch proof is bound to a tenant session revoked by redemption.
+      // Do not turn a completed reset into a confusing retryable error.
+      console.error(
+        JSON.stringify({
+          component: 'reset-password',
+          event: 'account_switch_revocation',
+          outcome: 'failed',
+          requestId: reqContext.requestId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        })
+      );
     }
 
     try {

@@ -121,11 +121,18 @@ describe('platform control-plane recovery boundary', () => {
     } catch (error) {
       restoreError = error;
     }
-    expect(restoreError).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-    expect((restoreError as Prisma.PrismaClientKnownRequestError).code).toBe('P2003');
-    expect(
-      String((restoreError as Prisma.PrismaClientKnownRequestError).meta?.['field_name'])
-    ).toContain('platform_capability_grants_userId_fkey');
+    // PostgreSQL 15 maps RESTRICT to Prisma P2003. PostgreSQL 18 returns
+    // SQLSTATE 23001 as an unknown Prisma error. Both prove the same FK gate.
+    if (restoreError instanceof Prisma.PrismaClientKnownRequestError) {
+      expect(restoreError.code).toBe('P2003');
+      expect(String(restoreError.meta?.['field_name'])).toContain(
+        'platform_capability_grants_userId_fkey'
+      );
+    } else {
+      expect(restoreError).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
+      expect(String(restoreError)).toContain('code: "23001"');
+      expect(String(restoreError)).toContain('platform_capability_grants_userId_fkey');
+    }
 
     await expect(
       isolated.event.findUnique({ where: { id: tenantEvent.id } })

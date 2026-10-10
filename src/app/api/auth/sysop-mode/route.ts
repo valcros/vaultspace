@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { isSameOriginRequest } from '@/lib/auth/sameOrigin';
 
 import { requireAuth } from '@/lib/middleware';
 import { AuthorizationError, RateLimitError } from '@/lib/errors';
@@ -18,18 +19,6 @@ const enterSchema = z.object({
   reason: z.enum(['PLATFORM_MAINTENANCE', 'SUPPORT', 'INCIDENT']),
 });
 
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get('origin');
-  if (!origin) {
-    return false;
-  }
-  try {
-    return new URL(origin).host === request.nextUrl.host;
-  } catch {
-    return false;
-  }
-}
-
 export async function GET() {
   try {
     const session = await requireAuth();
@@ -45,7 +34,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) {
+  if (!isSameOriginRequest(request)) {
     return NextResponse.json({ error: 'Request origin denied' }, { status: 403 });
   }
   try {
@@ -73,7 +62,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!sameOrigin(request)) {
+  if (!isSameOriginRequest(request)) {
     return NextResponse.json({ error: 'Request origin denied' }, { status: 403 });
   }
   try {

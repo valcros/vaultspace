@@ -5,6 +5,8 @@ export const PLATFORM_CONTROL_TABLES = [
   'platform_sessions',
   'platform_capability_grants',
   'platform_audit_events',
+  'account_links',
+  'account_switch_sessions',
 ] as const;
 
 /** Authentication control-plane state that has no direct runtime table path. */
@@ -60,6 +62,8 @@ export async function revokeAndVerifyPlatformControlPlaneAccess(
         ('platform_sessions'),
         ('platform_capability_grants'),
         ('platform_audit_events'),
+        ('account_links'),
+        ('account_switch_sessions'),
         ('two_factor_login_challenges')
     )
     SELECT
@@ -84,7 +88,10 @@ export async function revokeAndVerifyPlatformControlPlaneAccess(
         JOIN pg_roles application_role ON application_role.oid = protected_table.relowner
         WHERE application_role.rolname = '${applicationRole}'
           AND protected_table.relnamespace = 'public'::regnamespace
-          AND protected_table.relname IN ('platform_sessions', 'platform_capability_grants', 'platform_audit_events')
+          AND protected_table.relname IN (
+            'platform_sessions', 'platform_capability_grants', 'platform_audit_events',
+            'account_links', 'account_switch_sessions'
+          )
       ) AS application_role_is_owner,
       EXISTS (
         SELECT 1 FROM pg_roles inherited_role

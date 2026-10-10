@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 
 import { invalidateSession } from '@/lib/auth';
 import { bootstrapRepository } from '@/lib/auth/bootstrapRepository';
+import { stopAccountSwitching, SWITCH_COOKIE_NAME } from '@/lib/auth/accountSwitching';
 import { captureAccessAudit } from '@/lib/audit/accessAudit';
 import { SESSION_CONFIG } from '@/lib/constants';
 import { clearSessionCookie, getRequestContext } from '@/lib/middleware';
@@ -52,6 +53,14 @@ export async function POST(request?: NextRequest) {
             // The tenant session invalidation below still makes any bound
             // platform session unusable. Do not let an audit outage trap logout.
           }
+          try {
+            await stopAccountSwitching(
+              { userId: authSession.userId, sessionId: authSession.sessionId },
+              request ? getRequestContext(request).requestId : `logout_${randomUUID()}`
+            );
+          } catch {
+            // Invalidating the tenant session also invalidates its switch proof.
+          }
         }
       } catch {
         // Continue logout without audit context.
@@ -63,6 +72,7 @@ export async function POST(request?: NextRequest) {
     // Clear session cookie
     await clearSessionCookie();
     cookieStore.delete?.(SYSOP_COOKIE_NAME);
+    cookieStore.delete?.(SWITCH_COOKIE_NAME);
 
     if (auditContext) {
       const reqContext = request ? getRequestContext(request) : null;
@@ -86,6 +96,7 @@ export async function POST(request?: NextRequest) {
     // Still clear cookie even if database operation fails
     await clearSessionCookie();
     (await cookies()).delete?.(SYSOP_COOKIE_NAME);
+    (await cookies()).delete?.(SWITCH_COOKIE_NAME);
     return NextResponse.json({ success: true });
   }
 }

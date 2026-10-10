@@ -41,6 +41,8 @@ const DEFAULT_DENY_PLATFORM_TABLES = [
   'platform_sessions',
   'platform_capability_grants',
   'platform_audit_events',
+  'account_links',
+  'account_switch_sessions',
 ];
 
 async function main() {
@@ -124,7 +126,8 @@ async function main() {
     }>
   >(`
     WITH protected_tables(table_name) AS (
-      VALUES ('platform_sessions'), ('platform_capability_grants'), ('platform_audit_events')
+      VALUES ('platform_sessions'), ('platform_capability_grants'), ('platform_audit_events'),
+             ('account_links'), ('account_switch_sessions')
     )
     SELECT
       EXISTS (

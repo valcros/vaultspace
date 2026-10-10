@@ -11,6 +11,12 @@ const mockClearSessionCookie = vi.fn();
 const mockCaptureAccessAudit = vi.fn().mockResolvedValue('disabled');
 const mockResolveSession = vi.fn();
 const mockRevokeSysopSessions = vi.fn();
+const mockStopSwitching = vi.fn();
+
+vi.mock('@/lib/auth/accountSwitching', () => ({
+  stopAccountSwitching: (...args: unknown[]) => mockStopSwitching(...args),
+  SWITCH_COOKIE_NAME: 'vaultspace-account-switch',
+}));
 
 vi.mock('@/lib/sysop/platformSession', () => ({
   revokeSysopSessionsForTenantSession: (...args: unknown[]) => mockRevokeSysopSessions(...args),
@@ -63,6 +69,7 @@ describe('POST /api/auth/logout', () => {
     });
     mockCaptureAccessAudit.mockResolvedValue('disabled');
     mockRevokeSysopSessions.mockResolvedValue(undefined);
+    mockStopSwitching.mockResolvedValue(undefined);
   });
 
   it('invalidates the session via the shared helper and clears the cookie', async () => {
@@ -78,6 +85,11 @@ describe('POST /api/auth/logout', () => {
       expect.stringMatching(/^logout_/)
     );
     expect(mockCookieStore.delete).toHaveBeenCalledWith('vaultspace-sysop');
+    expect(mockCookieStore.delete).toHaveBeenCalledWith('vaultspace-account-switch');
+    expect(mockStopSwitching).toHaveBeenCalledWith(
+      { userId: 'user-1', sessionId: 'auth-session-1' },
+      expect.stringMatching(/^logout_/)
+    );
     expect(mockClearSessionCookie).toHaveBeenCalledTimes(1);
     expect(mockCaptureAccessAudit).toHaveBeenCalledWith(
       expect.objectContaining({

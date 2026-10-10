@@ -137,6 +137,9 @@ export function DockHeader({ user, organization, onSearchClick }: DockHeaderProp
               <Link href="/settings/security">Security</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
+              <Link href="/settings/accounts">Accounts</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
             {canAccessSysOp && (

@@ -13,6 +13,7 @@ import { isAuthenticationError } from '@/lib/errors';
 import { withOrgContext } from '@/lib/db';
 import { clearSessionCache, revokeSelfOtherSessionsInTx } from '@/lib/auth';
 import { hashPassword, verifyPassword, validatePassword } from '@/lib/auth/password';
+import { revokeAccountSwitchSessionsForUser } from '@/lib/auth/accountSwitching';
 import { revokeSysopSessionsForTenantSession } from '@/lib/sysop/platformSession';
 
 export const dynamic = 'force-dynamic';
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
 
     const newHash = await hashPassword(newPassword);
     await revokeSysopSessionsForTenantSession(session, getRequestContext(request).requestId);
+    await revokeAccountSwitchSessionsForUser(session.userId, getRequestContext(request).requestId);
     const revokedSessionIds = await withOrgContext(session.organizationId, async (tx) => {
       await tx.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
 

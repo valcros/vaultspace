@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { verifyTOTP, verifyBackupCode } from '@/lib/totp';
+import { revokeAccountSwitchSessionsForUser } from '@/lib/auth/accountSwitching';
 import { revokeSysopSessionsForTenantSession } from '@/lib/sysop/platformSession';
 import { getRequestContext } from '@/lib/middleware';
 
@@ -55,6 +56,10 @@ export async function POST(request: NextRequest) {
       }
 
       await revokeSysopSessionsForTenantSession(session, getRequestContext(request).requestId);
+      await revokeAccountSwitchSessionsForUser(
+        session.userId,
+        getRequestContext(request).requestId
+      );
 
       // Disable 2FA and clear secret + backup codes
       await tx.user.update({
