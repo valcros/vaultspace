@@ -5,6 +5,8 @@
  * for IP allowlist enforcement (F018).
  */
 
+import { isIP } from 'node:net';
+
 /**
  * Parse an IPv4 address into its numeric representation
  */
@@ -134,6 +136,40 @@ export function getClientIp(headers: Headers): string | null {
     return realIp;
   }
 
+  return null;
+}
+
+/**
+ * Resolve an IP only from a trusted ingress hop. Azure Container Apps appends
+ * the connecting peer as the rightmost X-Forwarded-For value. Standalone
+ * deployments must explicitly configure the number of trusted appending proxy
+ * hops and prevent direct access to the app before this header can be trusted.
+ */
+export function getTrustedClientIp(headers: Headers): string | null {
+  const configuredHops = process.env['TRUSTED_PROXY_XFF_HOPS'];
+  if (process.env['DEPLOYMENT_MODE'] === 'standalone' && !configuredHops) {
+    return null;
+  }
+  const hops = configuredHops ? Number(configuredHops) : 1;
+  if (!Number.isInteger(hops) || hops < 1 || hops > 5) {
+    return null;
+  }
+  const chain = headers
+    .get('x-forwarded-for')
+    ?.split(',')
+    .map((entry) => entry.trim());
+  const candidate = chain?.[chain.length - hops];
+  return candidate && isIP(candidate) !== 0 ? candidate : null;
+}
+
+export function getTrustedIpSubnet(ip: string | null): string | null {
+  if (ip && isIP(ip) === 4) {
+    return getIpSubnet(ip);
+  }
+  if (ip && isIP(ip) === 6) {
+    // Exact IPv6 binding avoids ambiguous shorthand and prefix parsing.
+    return `${ip.toLowerCase()}/128`;
+  }
   return null;
 }
 

@@ -4,15 +4,61 @@
  * Tests for IP validation and CIDR matching (F018).
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
   ipMatchesCidr,
   isIpAllowed,
   isValidIpOrCidr,
   getClientIp,
+  getTrustedClientIp,
+  getTrustedIpSubnet,
   getIpSubnet,
   hashUserAgent,
 } from './ip';
+
+const originalDeploymentMode = process.env['DEPLOYMENT_MODE'];
+const originalTrustedHops = process.env['TRUSTED_PROXY_XFF_HOPS'];
+afterEach(() => {
+  if (originalDeploymentMode === undefined) {
+    delete process.env['DEPLOYMENT_MODE'];
+  } else {
+    process.env['DEPLOYMENT_MODE'] = originalDeploymentMode;
+  }
+  if (originalTrustedHops === undefined) {
+    delete process.env['TRUSTED_PROXY_XFF_HOPS'];
+  } else {
+    process.env['TRUSTED_PROXY_XFF_HOPS'] = originalTrustedHops;
+  }
+});
+
+describe('trusted client network for privileged sessions', () => {
+  it('uses the Azure ingress appended rightmost hop, ignoring spoofed values', () => {
+    process.env['DEPLOYMENT_MODE'] = 'azure';
+    delete process.env['TRUSTED_PROXY_XFF_HOPS'];
+    const headers = new Headers({ 'x-forwarded-for': '198.51.100.4, 203.0.113.42' });
+    expect(getTrustedClientIp(headers)).toBe('203.0.113.42');
+    expect(getTrustedIpSubnet(getTrustedClientIp(headers))).toBe('203.0.113.0/24');
+  });
+
+  it('fails closed in standalone mode without an explicitly trusted proxy', () => {
+    process.env['DEPLOYMENT_MODE'] = 'standalone';
+    delete process.env['TRUSTED_PROXY_XFF_HOPS'];
+    const headers = new Headers({ 'x-forwarded-for': '198.51.100.4' });
+    expect(getTrustedClientIp(headers)).toBeNull();
+    process.env['TRUSTED_PROXY_XFF_HOPS'] = '1';
+    expect(getTrustedClientIp(headers)).toBe('198.51.100.4');
+  });
+
+  it('rejects malformed hop configuration and preserves exact IPv6 binding', () => {
+    process.env['DEPLOYMENT_MODE'] = 'azure';
+    process.env['TRUSTED_PROXY_XFF_HOPS'] = '0';
+    expect(getTrustedClientIp(new Headers({ 'x-forwarded-for': '203.0.113.42' }))).toBeNull();
+    process.env['TRUSTED_PROXY_XFF_HOPS'] = '1';
+    const ip = getTrustedClientIp(new Headers({ 'x-forwarded-for': '2001:db8::5' }));
+    expect(ip).toBe('2001:db8::5');
+    expect(getTrustedIpSubnet(ip)).toBe('2001:db8::5/128');
+  });
+});
 
 describe('getIpSubnet', () => {
   it('extracts /24 subnet for IPv4 address', () => {

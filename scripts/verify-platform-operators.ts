@@ -10,10 +10,11 @@
  * present.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 import {
   assertActivePlatformOperatorCount,
+  assertSysopRolloutReadiness,
   resolvePlatformOperatorDatabaseUrl,
 } from '../src/lib/sysop/platformOperatorPreflight';
 
@@ -34,6 +35,40 @@ async function main(): Promise<void> {
 
   assertActivePlatformOperatorCount(activeOperatorCount);
   console.log(`Platform operator continuity verified: ${activeOperatorCount} active operator(s).`);
+
+  const loginReadyOperator: Prisma.UserWhereInput = {
+    isActive: true,
+    isPlatformOperator: true,
+    emailVerifiedAt: { not: null },
+    twoFactorEnabled: true,
+    twoFactorSecret: { not: null },
+    organizations: { some: { isActive: true, organization: { isActive: true } } },
+  };
+  const [activeMfaOperators, consoleReadyOperators, capabilityManagers] = await Promise.all([
+    prisma.user.count({ where: loginReadyOperator }),
+    prisma.user.count({
+      where: {
+        ...loginReadyOperator,
+        platformCapabilityGrants: {
+          some: { capability: 'SYSOP_CONSOLE_ACCESS', revokedAt: null },
+        },
+      },
+    }),
+    prisma.user.count({
+      where: {
+        ...loginReadyOperator,
+        platformCapabilityGrants: {
+          some: { capability: 'SYSOP_OPERATOR_MANAGE', revokedAt: null },
+        },
+      },
+    }),
+  ]);
+  const readiness = { activeMfaOperators, consoleReadyOperators, capabilityManagers };
+  assertSysopRolloutReadiness(readiness, process.env);
+  console.log(
+    `SysOp rollout readiness: ${activeMfaOperators} MFA operator(s), ` +
+      `${consoleReadyOperators} console-ready operator(s), ${capabilityManagers} capability manager(s).`
+  );
 }
 
 main()

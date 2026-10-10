@@ -121,8 +121,18 @@ export function generateTOTP(secret: string, timeStep = 30): string {
  * Verify a TOTP code with +/-1 time window tolerance
  */
 export function verifyTOTP(secret: string, code: string, timeStep = 30, window = 1): boolean {
+  return matchTOTPCounter(secret, code, timeStep, window) !== null;
+}
+
+/** Return the actual accepted step so elevated uses can reject replay. */
+export function matchTOTPCounter(
+  secret: string,
+  code: string,
+  timeStep = 30,
+  window = 1
+): number | null {
   if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
-    return false;
+    return null;
   }
 
   const counter = Math.floor(Date.now() / 1000 / timeStep);
@@ -130,11 +140,11 @@ export function verifyTOTP(secret: string, code: string, timeStep = 30, window =
   for (let i = -window; i <= window; i++) {
     const expected = generateHOTP(secret, counter + i);
     if (timingSafeEqual(code, expected)) {
-      return true;
+      return counter + i;
     }
   }
 
-  return false;
+  return null;
 }
 
 /**

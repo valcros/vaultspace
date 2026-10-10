@@ -11,6 +11,9 @@ import { z } from 'zod';
 import { requireAuth } from '@/lib/middleware';
 import { withOrgContext } from '@/lib/db';
 import { verifyTOTP, verifyBackupCode } from '@/lib/totp';
+import { revokeAccountSwitchSessionsForUser } from '@/lib/auth/accountSwitching';
+import { revokeSysopSessionsForTenantSession } from '@/lib/sysop/platformSession';
+import { getRequestContext } from '@/lib/middleware';
 
 const disableSchema = z.object({
   code: z.string().min(1, 'Code is required'),
@@ -19,6 +22,7 @@ const disableSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const session = await requireAuth();
+    const { requestId } = getRequestContext(request);
     const body = await request.json();
     const { code } = disableSchema.parse(body);
 
@@ -51,6 +55,9 @@ export async function POST(request: NextRequest) {
           status: 400,
         } as const;
       }
+
+      await revokeSysopSessionsForTenantSession(session, requestId);
+      await revokeAccountSwitchSessionsForUser(session.userId, requestId);
 
       // Disable 2FA and clear secret + backup codes
       await tx.user.update({

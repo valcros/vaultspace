@@ -95,8 +95,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     // Calculate permanent deletion dates
     const documentsWithDeletionDates = result.deletedDocuments.map((doc) => {
       const deletedAt = doc.deletedAt!;
-      const permanentDeletionDate = new Date(deletedAt);
-      permanentDeletionDate.setDate(permanentDeletionDate.getDate() + result.retentionDays);
+      const permanentDeletionDate = new Date(
+        deletedAt.getTime() + result.retentionDays * 24 * 60 * 60 * 1000
+      );
 
       return {
         ...doc,

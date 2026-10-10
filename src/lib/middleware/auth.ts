@@ -157,16 +157,17 @@ export async function requireAdmin(): Promise<SessionData> {
  * if signed in without an active operator grant.
  */
 import { SysopIpAllowlistService } from '@/lib/sysop/ipAllowlist';
-import { getClientIp } from '@/lib/utils/ip';
+import { getTrustedClientIp } from '@/lib/utils/ip';
 import { captureSecurityAudit } from '@/lib/audit/securityAudit';
 import { headers } from 'next/headers';
+import { getActiveSysopSession } from '@/lib/sysop/platformSession';
 
 export async function requirePlatformOperator(): Promise<SessionData> {
   const session = await requireAuth();
 
   const user = await db.user.findUnique({
     where: { id: session.userId },
-    select: { isActive: true, isPlatformOperator: true },
+    select: { isActive: true, isPlatformOperator: true, twoFactorEnabled: true },
   });
 
   if (!user?.isActive || !user.isPlatformOperator) {
@@ -176,7 +177,7 @@ export async function requirePlatformOperator(): Promise<SessionData> {
   // SysOp In-App IP Allowlist Enforcement
   try {
     const headersList = await headers();
-    const clientIp = getClientIp(headersList);
+    const clientIp = getTrustedClientIp(headersList);
     const ipCheck = await SysopIpAllowlistService.isClientIpAllowed(clientIp);
 
     if (!ipCheck.allowed) {
@@ -200,6 +201,18 @@ export async function requirePlatformOperator(): Promise<SessionData> {
     }
     // Header, policy-store, or audit failures must never bypass the SysOp IP gate.
     throw new AuthorizationError('Unable to verify platform access policy');
+  }
+
+  // A permanent entitlement only makes the user eligible. Every cross-tenant
+  // request also needs an active, MFA-backed platform session bound to this
+  // exact tenant session, browser, and network.
+  // Roll out only after at least one real operator has completed MFA
+  // enrollment. Otherwise the first deploy would lock out every operator.
+  if (
+    process.env['SYSOP_MODE_ENFORCEMENT_ENABLED'] === 'true' &&
+    (!user.twoFactorEnabled || !(await getActiveSysopSession(session)))
+  ) {
+    throw new AuthorizationError('SysOp mode required');
   }
 
   return session;

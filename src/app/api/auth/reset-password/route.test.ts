@@ -10,6 +10,11 @@ const mockSetBootstrapContext = vi.fn();
 const mockSetTransactionOrganizationContext = vi.fn();
 const mockClearSessionCache = vi.fn();
 const mockCreateSecurityAuditEvent = vi.fn();
+const mockRevokeSwitchSessions = vi.fn();
+
+vi.mock('@/lib/auth/accountSwitching', () => ({
+  revokeAccountSwitchSessionsForUser: (...args: unknown[]) => mockRevokeSwitchSessions(...args),
+}));
 
 vi.mock('bcryptjs', () => ({
   default: {
@@ -104,6 +109,7 @@ describe('POST /api/auth/reset-password', () => {
     mockSetTransactionOrganizationContext.mockResolvedValue(undefined);
     mockCreateSecurityAuditEvent.mockResolvedValue('event-1');
     mockClearSessionCache.mockResolvedValue(undefined);
+    mockRevokeSwitchSessions.mockResolvedValue(undefined);
     mockTransaction.mockImplementation(async (callback) => callback(tx));
   });
 
@@ -111,6 +117,7 @@ describe('POST /api/auth/reset-password', () => {
     const response = await POST(resetRequest());
 
     expect(response.status).toBe(200);
+    expect(mockRevokeSwitchSessions).toHaveBeenCalledWith('user-1', 'req-reset');
     await expect(response.json()).resolves.toEqual({ success: true });
     expect(mockCandidateProven).toHaveBeenCalledWith(LEGACY_TOKEN);
     expect(mockCandidateProven.mock.invocationCallOrder[0]).toBeLessThan(

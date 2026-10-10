@@ -34,3 +34,30 @@ export function assertLastActivePlatformOperatorIsRetained(count: number): void 
     throw new Error(LAST_ACTIVE_PLATFORM_OPERATOR_ERROR);
   }
 }
+
+export function assertSysopRolloutReadiness(
+  counts: {
+    activeMfaOperators: number;
+    consoleReadyOperators: number;
+    capabilityManagers: number;
+  },
+  environment: Record<string, string | undefined>
+): void {
+  if (
+    environment['SYSOP_CAPABILITY_ENFORCEMENT_ENABLED'] === 'true' &&
+    environment['SYSOP_MODE_ENFORCEMENT_ENABLED'] !== 'true'
+  ) {
+    throw new Error('Enable SysOp mode enforcement before capability enforcement.');
+  }
+  if (environment['SYSOP_MODE_ENFORCEMENT_ENABLED'] === 'true' && counts.activeMfaOperators < 1) {
+    throw new Error('SysOp mode enforcement requires an active MFA-enrolled operator.');
+  }
+  if (
+    environment['SYSOP_CAPABILITY_ENFORCEMENT_ENABLED'] === 'true' &&
+    (counts.consoleReadyOperators < 1 || counts.capabilityManagers < 1)
+  ) {
+    throw new Error(
+      'Capability enforcement requires an MFA-enrolled console operator and capability manager.'
+    );
+  }
+}

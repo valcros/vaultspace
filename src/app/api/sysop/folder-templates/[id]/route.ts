@@ -5,10 +5,12 @@ import {
   systemRoomTemplateService,
 } from '@/services/SystemRoomTemplateService';
 import { readTemplateInput, templateHttpError } from '@/lib/rooms/templateManagementHttp';
+import { assertPlatformCapability } from '@/lib/sysop/capabilityGuard';
 export const dynamic = 'force-dynamic';
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_SYSTEM_TEMPLATE_MANAGE');
     const { id } = await context.params;
     const { input, expectedRevision } = await readTemplateInput(request);
     if (!expectedRevision) {

@@ -90,6 +90,14 @@ export const MODEL_CLASSIFICATION: Record<string, ModelClassification> = {
     kind: 'EXCLUDE',
     reason: 'global privileged platform session; never included in a tenant backup or restore',
   },
+  AccountLink: {
+    kind: 'EXCLUDE',
+    reason: 'global verified identity relationship; never included in tenant backup or restore',
+  },
+  AccountSwitchSession: {
+    kind: 'EXCLUDE',
+    reason: 'ephemeral cross-account switching proof; never included in tenant backup or restore',
+  },
   PlatformCapabilityGrant: {
     kind: 'EXCLUDE',
     reason: 'global SysOp authorization history; never included in a tenant backup or restore',

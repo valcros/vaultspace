@@ -3,6 +3,7 @@ import { requirePlatformOperator } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { bootstrapDb as db } from '@/lib/db';
 import { captureSecurityAudit } from '@/lib/audit/securityAudit';
+import { assertPlatformCapability } from '@/lib/sysop/capabilityGuard';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,7 @@ export async function GET() {
   try {
     // Cross-tenant read: platform-operator grant required (not org role).
     const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_OVERVIEW_READ');
 
     await captureSecurityAudit({
       organizationId: session.organizationId,

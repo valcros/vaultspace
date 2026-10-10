@@ -2,17 +2,19 @@ import { NextResponse } from 'next/server';
 import { requirePlatformOperator } from '@/lib/middleware';
 import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { SysopIpAllowlistService } from '@/lib/sysop/ipAllowlist';
-import { getClientIp } from '@/lib/utils/ip';
+import { getTrustedClientIp } from '@/lib/utils/ip';
 import { db } from '@/lib/db';
 import { headers } from 'next/headers';
+import { assertPlatformCapability } from '@/lib/sysop/capabilityGuard';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    await requirePlatformOperator();
+    const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_SECURITY_MANAGE');
     const headersList = await headers();
-    const currentClientIp = getClientIp(headersList);
+    const currentClientIp = getTrustedClientIp(headersList);
 
     const [entries, settings] = await Promise.all([
       db.sysopIpAllowlist.findMany({
@@ -50,6 +52,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_SECURITY_MANAGE');
     const { cidr, label } = await request.json();
 
     if (!cidr || typeof cidr !== 'string') {

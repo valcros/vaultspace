@@ -7,9 +7,20 @@ const mockUserFindUnique = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockVerifyTOTP = vi.fn();
 const mockVerifyBackupCode = vi.fn();
+const mockRevokeSysopSessions = vi.fn();
+const mockRevokeSwitchSessions = vi.fn();
+
+vi.mock('@/lib/auth/accountSwitching', () => ({
+  revokeAccountSwitchSessionsForUser: (...args: unknown[]) => mockRevokeSwitchSessions(...args),
+}));
 
 vi.mock('@/lib/middleware', () => ({
   requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
+  getRequestContext: () => ({ requestId: 'req-disable-2fa' }),
+}));
+
+vi.mock('@/lib/sysop/platformSession', () => ({
+  revokeSysopSessionsForTenantSession: (...args: unknown[]) => mockRevokeSysopSessions(...args),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -35,6 +46,8 @@ describe('POST /api/auth/2fa/disable', () => {
     mockUserUpdate.mockResolvedValue({ id: 'user-1' });
     mockVerifyTOTP.mockReturnValue(true);
     mockVerifyBackupCode.mockReturnValue(-1);
+    mockRevokeSysopSessions.mockResolvedValue(undefined);
+    mockRevokeSwitchSessions.mockResolvedValue(undefined);
     mockWithOrgContext.mockImplementation(
       async (organizationId: string, operation: (tx: unknown) => Promise<unknown>) => {
         expect(organizationId).toBe('org-1');
@@ -61,6 +74,11 @@ describe('POST /api/auth/2fa/disable', () => {
         twoFactorBackupCodes: [],
       },
     });
+    expect(mockRevokeSysopSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+      'req-disable-2fa'
+    );
+    expect(mockRevokeSwitchSessions).toHaveBeenCalledWith('user-1', 'req-disable-2fa');
   });
 
   it('does not disable 2FA for a user hidden by the organization context', async () => {

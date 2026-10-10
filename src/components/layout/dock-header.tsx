@@ -137,6 +137,9 @@ export function DockHeader({ user, organization, onSearchClick }: DockHeaderProp
               <Link href="/settings/security">Security</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
+              <Link href="/settings/accounts">Accounts</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
             {canAccessSysOp && (
@@ -146,7 +149,7 @@ export function DockHeader({ user, organization, onSearchClick }: DockHeaderProp
                   asChild
                   className="cursor-pointer font-semibold text-indigo-600 dark:text-indigo-400"
                 >
-                  <Link href="/sysop">SysOp Control Plane</Link>
+                  <Link href="/settings/sysop">Enter SysOp mode</Link>
                 </DropdownMenuItem>
               </>
             )}
