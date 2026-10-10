@@ -3,12 +3,6 @@
   --font-display: 'VaultSpace Bricolage';
 }
 
-@supports (font-size-adjust: from-font) {
-  body {
-    font-size-adjust: from-font;
-  }
-}
-
 /* inter: cyrillic-ext */
 @font-face {
   font-family: 'VaultSpace Inter';
