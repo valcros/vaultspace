@@ -82,8 +82,25 @@ const config: Config = {
         sm: '0.25rem',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        display: ['var(--font-display)', 'Inter', 'system-ui', 'sans-serif'],
+        sans: [
+          'VaultSpace Inter',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'Roboto',
+          'sans-serif',
+        ],
+        display: [
+          'var(--font-display)',
+          'VaultSpace Inter',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'Roboto',
+          'sans-serif',
+        ],
         mono: ['JetBrains Mono', 'Menlo', 'monospace'],
       },
       fontSize: {
