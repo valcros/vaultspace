@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRequestContext, requirePlatformOperator } from '@/lib/middleware';
 import { systemRoomTemplateService } from '@/services/SystemRoomTemplateService';
 import { readTemplateInput, templateHttpError } from '@/lib/rooms/templateManagementHttp';
+import { assertPlatformCapability } from '@/lib/sysop/capabilityGuard';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    await requirePlatformOperator();
+    const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_SYSTEM_TEMPLATE_MANAGE');
     return NextResponse.json(
       { templates: await systemRoomTemplateService.list(true) },
       { headers: { 'Cache-Control': 'private, no-store' } }
@@ -18,6 +20,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_SYSTEM_TEMPLATE_MANAGE');
     const { input } = await readTemplateInput(request);
     const template = await systemRoomTemplateService.create(input, {
       actorUserId: session.userId,

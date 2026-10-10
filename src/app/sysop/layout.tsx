@@ -7,6 +7,10 @@ import { db } from '@/lib/db';
 import { isAuthenticationError } from '@/lib/errors';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { ExitSysopModeButton } from '@/components/sysop/exit-sysop-mode-button';
+import {
+  assertPlatformCapability,
+  listUsablePlatformCapabilities,
+} from '@/lib/sysop/capabilityGuard';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +18,7 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
   let session;
   try {
     session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_CONSOLE_ACCESS');
   } catch (error) {
     if (isAuthenticationError(error)) {
       redirect('/auth/login?redirect=/sysop');
@@ -46,6 +51,8 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
     redirect('/dashboard');
   }
 
+  const capabilities = await listUsablePlatformCapabilities(session);
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 font-sans text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100">
       {/* Top SysOp Navigation Header */}
@@ -70,27 +77,33 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
             aria-label="SysOp navigation"
             className="flex flex-wrap items-center gap-1 border-l border-slate-200 pl-4 dark:border-slate-800"
           >
-            <Link
-              href="/sysop/folder-templates"
-              className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-            >
-              <FolderTree className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-              <span>Folder Templates</span>
-            </Link>
-            <Link
-              href="/sysop"
-              className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-            >
-              <Server className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-              <span>Platform Overview</span>
-            </Link>
-            <Link
-              href="/sysop/security"
-              className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-            >
-              <Shield className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-              <span>Security & IP Allowlist</span>
-            </Link>
+            {capabilities.has('SYSOP_SYSTEM_TEMPLATE_MANAGE') && (
+              <Link
+                href="/sysop/folder-templates"
+                className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              >
+                <FolderTree className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Folder Templates</span>
+              </Link>
+            )}
+            {capabilities.has('SYSOP_OVERVIEW_READ') && (
+              <Link
+                href="/sysop"
+                className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              >
+                <Server className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Platform Overview</span>
+              </Link>
+            )}
+            {capabilities.has('SYSOP_SECURITY_MANAGE') && (
+              <Link
+                href="/sysop/security"
+                className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              >
+                <Shield className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                <span>Security & IP Allowlist</span>
+              </Link>
+            )}
             <Link
               href="/sysop/runner"
               className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"

@@ -9,6 +9,7 @@ import {
   getProtectedOrganizationSlugs,
   ProtectedOrganizationConfigurationError,
 } from '@/lib/sysop/protectedOrgs';
+import { assertPlatformCapability } from '@/lib/sysop/capabilityGuard';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,7 @@ const bodySchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_ORGANIZATION_MANAGE');
     const { dryRun, confirmIds } = bodySchema.parse(await request.json().catch(() => ({})));
 
     // Resolve the keep-list to immutable IDs + the operator's own org IDs.

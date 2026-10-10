@@ -4,10 +4,12 @@ import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { SysopIpAllowlistService } from '@/lib/sysop/ipAllowlist';
 import { getClientIp } from '@/lib/utils/ip';
 import { headers } from 'next/headers';
+import { assertPlatformCapability } from '@/lib/sysop/capabilityGuard';
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_SECURITY_MANAGE');
     const headersList = await headers();
     const currentClientIp = getClientIp(headersList);
     const { id } = await context.params;

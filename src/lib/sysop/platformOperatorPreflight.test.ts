@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertActivePlatformOperatorCount,
   assertLastActivePlatformOperatorIsRetained,
+  assertSysopRolloutReadiness,
   LAST_ACTIVE_PLATFORM_OPERATOR_ERROR,
   NO_ACTIVE_PLATFORM_OPERATOR_ERROR,
   resolvePlatformOperatorDatabaseUrl,
@@ -42,5 +43,28 @@ describe('platform operator continuity guards', () => {
       LAST_ACTIVE_PLATFORM_OPERATOR_ERROR
     );
     expect(() => assertLastActivePlatformOperatorIsRetained(2)).not.toThrow();
+  });
+
+  it('blocks rollout flags until MFA and named access have a viable operator', () => {
+    const none = { activeMfaOperators: 0, consoleReadyOperators: 0, capabilityManagers: 0 };
+    expect(() => assertSysopRolloutReadiness(none, {})).not.toThrow();
+    expect(() =>
+      assertSysopRolloutReadiness(none, { SYSOP_MODE_ENFORCEMENT_ENABLED: 'true' })
+    ).toThrow('MFA-enrolled operator');
+    expect(() =>
+      assertSysopRolloutReadiness(
+        { ...none, activeMfaOperators: 1 },
+        { SYSOP_CAPABILITY_ENFORCEMENT_ENABLED: 'true' }
+      )
+    ).toThrow('console operator and capability manager');
+    expect(() =>
+      assertSysopRolloutReadiness(
+        { activeMfaOperators: 1, consoleReadyOperators: 1, capabilityManagers: 1 },
+        {
+          SYSOP_MODE_ENFORCEMENT_ENABLED: 'true',
+          SYSOP_CAPABILITY_ENFORCEMENT_ENABLED: 'true',
+        }
+      )
+    ).not.toThrow();
   });
 });

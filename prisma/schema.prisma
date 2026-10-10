@@ -169,6 +169,7 @@ enum PlatformCapability {
   SYSOP_OPERATOR_MANAGE
   SYSOP_AUDIT_READ
   SYSOP_SECURITY_MANAGE
+  SYSOP_SYSTEM_TEMPLATE_MANAGE
 }
 
 // Global, non-tenant audit taxonomy. Tenant Events belong to an Organization

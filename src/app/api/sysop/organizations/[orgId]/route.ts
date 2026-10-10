@@ -9,6 +9,7 @@ import {
   getProtectedOrganizationSlugs,
   ProtectedOrganizationConfigurationError,
 } from '@/lib/sysop/protectedOrgs';
+import { assertPlatformCapability } from '@/lib/sysop/capabilityGuard';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,7 @@ const patchSchema = z.object({ isActive: z.boolean() });
 export async function PATCH(request: NextRequest, context: { params: Promise<{ orgId: string }> }) {
   try {
     const session = await requirePlatformOperator();
+    await assertPlatformCapability(session, 'SYSOP_ORGANIZATION_MANAGE');
     const { orgId } = await context.params;
     const { isActive } = patchSchema.parse(await request.json());
 
