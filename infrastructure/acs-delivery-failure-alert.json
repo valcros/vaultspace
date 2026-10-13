@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "0.1.0.0",
+  "parameters": {
+    "location": { "type": "string" },
+    "workspaceResourceId": { "type": "string" },
+    "communicationResourceId": { "type": "string" },
+    "alertName": {
+      "type": "string",
+      "defaultValue": "vaultspace-email-provider-delivery-failed"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('alertName')]",
+      "location": "[parameters('location')]",
+      "kind": "LogAlert",
+      "properties": {
+        "description": "ACS reported that a receiving server rejected or suppressed mail. Inspect VaultSpace SysOp Email Delivery. No email action group is attached.",
+        "enabled": true,
+        "severity": 2,
+        "scopes": ["[parameters('workspaceResourceId')]"],
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT1H",
+        "autoMitigate": true,
+        "skipQueryValidation": false,
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[concat('ACSEmailStatusUpdateOperational\n| where TimeGenerated > ago(1h)\n| where tolower(_ResourceId) == tolower(\"', parameters('communicationResourceId'), '\")\n| where DeliveryStatus in (\"Failed\", \"Bounced\", \"Suppressed\", \"Quarantined\", \"FilteredSpam\")\n| project TimeGenerated, DeliveryStatus')]",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
+              }
+            }
+          ]
+        },
+        "actions": { "actionGroups": [] }
+      }
+    }
+  ]
+}
