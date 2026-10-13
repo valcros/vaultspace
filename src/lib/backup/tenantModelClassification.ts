@@ -135,6 +135,10 @@ export const MODEL_CLASSIFICATION: Record<string, ModelClassification> = {
     kind: 'EXCLUDE',
     reason: 'global provider webhook inbox; not org-scoped tenant data',
   },
+  EmailDeliveryIncident: {
+    kind: 'EXCLUDE',
+    reason: 'global delivery-operations incident ledger; not org-scoped tenant data',
+  },
   SysopIpAllowlist: {
     kind: 'EXCLUDE',
     reason: 'global SysOp platform allowlist; not single-tenant data',
