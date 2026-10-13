@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
+import { preflightIncidentRetention } from '@/lib/email/incidentRetentionPosture';
+
 const MAX_BATCHES = 20;
 const BATCH_SIZE = 500;
 
@@ -14,6 +16,7 @@ export async function runEmailIncidentRetention(): Promise<number> {
   }
   const client = new PrismaClient({ log: [], datasources: { db: { url } } });
   try {
+    await preflightIncidentRetention(client);
     let total = 0;
     for (let batch = 0; batch < MAX_BATCHES; batch++) {
       const [result] = await client.$queryRaw<Array<{ purged: number }>>`
