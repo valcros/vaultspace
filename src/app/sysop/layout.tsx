@@ -1,7 +1,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Server, Activity, Shield, FolderTree } from 'lucide-react';
+import { Server, Activity, Shield, FolderTree, MailWarning } from 'lucide-react';
 import { requirePlatformOperator } from '@/lib/middleware';
 import { db } from '@/lib/db';
 import { isAuthenticationError } from '@/lib/errors';
@@ -87,13 +87,22 @@ export default async function SysOpLayout({ children }: { children: React.ReactN
               </Link>
             )}
             {capabilities.has('SYSOP_OVERVIEW_READ') && (
-              <Link
-                href="/sysop"
-                className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-              >
-                <Server className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                <span>Platform Overview</span>
-              </Link>
+              <>
+                <Link
+                  href="/sysop"
+                  className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                >
+                  <Server className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Platform Overview</span>
+                </Link>
+                <Link
+                  href="/sysop/email-delivery"
+                  className="flex items-center space-x-2 rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                >
+                  <MailWarning className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span>Email Delivery</span>
+                </Link>
+              </>
             )}
             {capabilities.has('SYSOP_SECURITY_MANAGE') && (
               <Link
