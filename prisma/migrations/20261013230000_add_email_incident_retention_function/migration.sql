@@ -82,5 +82,23 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.purge_email_delivery_incidents_v1() FROM PUBLIC;
+DO $$
+DECLARE granted_role record;
+BEGIN
+  FOR granted_role IN
+    SELECT DISTINCT pg_get_userbyid(acl.grantee) AS role_name
+    FROM pg_proc fn,
+         LATERAL aclexplode(COALESCE(fn.proacl, acldefault('f', fn.proowner))) acl
+    WHERE fn.oid = 'public.purge_email_delivery_incidents_v1()'::regprocedure
+      AND acl.grantee <> 0
+      AND acl.grantee <> fn.proowner
+  LOOP
+    EXECUTE format(
+      'REVOKE ALL ON FUNCTION public.purge_email_delivery_incidents_v1() FROM %I',
+      granted_role.role_name
+    );
+  END LOOP;
+END;
+$$;
 
 COMMIT;

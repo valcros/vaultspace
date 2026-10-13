@@ -16,6 +16,7 @@ export interface RetentionRolePosture {
   can_execute: boolean;
   can_grant_execute: boolean;
   public_execute: boolean;
+  other_execute_grants: boolean;
   security_definer: boolean;
   public_table_access: boolean;
 }
@@ -45,6 +46,7 @@ export function assertRetentionRolePosture(
     !posture.can_execute ||
     posture.can_grant_execute ||
     posture.public_execute ||
+    posture.other_execute_grants ||
     !posture.security_definer ||
     posture.public_table_access
   ) {
@@ -77,6 +79,11 @@ export async function preflightIncidentRetention(client: PrismaClient): Promise<
              SELECT 1 FROM aclexplode(COALESCE(fn.proacl, acldefault('f', fn.proowner))) acl
              WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE'
            ) AS public_execute,
+           EXISTS (
+             SELECT 1 FROM aclexplode(COALESCE(fn.proacl, acldefault('f', fn.proowner))) acl
+             WHERE acl.privilege_type = 'EXECUTE'
+               AND acl.grantee NOT IN (0, fn.proowner, role.oid)
+           ) AS other_execute_grants,
            fn.prosecdef AS security_definer,
            EXISTS (
              SELECT 1 FROM pg_class candidate

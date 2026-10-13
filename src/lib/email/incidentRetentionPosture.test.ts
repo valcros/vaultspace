@@ -18,6 +18,7 @@ const valid: RetentionRolePosture = {
   can_execute: true,
   can_grant_execute: false,
   public_execute: false,
+  other_execute_grants: false,
   security_definer: true,
   public_table_access: false,
 };
@@ -33,6 +34,7 @@ describe('retention role posture', () => {
   it.each([
     { public_table_access: true },
     { public_execute: true },
+    { other_execute_grants: true },
     { can_grant_execute: true },
     { has_memberships: true },
     { bypasses_rls: true },
