@@ -30,14 +30,13 @@ const TERMINAL_FAILURES = new Set([
   'Quarantined',
   'FilteredSpam',
 ]);
+const KNOWN_ACS_FAILURE_REASONS = new Set([
+  'DeliveryNotAuthorizedMessageRefused',
+  'DnsDomainDoesNotExist',
+]);
 
 function bounded(value: unknown, length: number): string {
   return typeof value === 'string' ? value.slice(0, length) : '';
-}
-
-function categorical(value: unknown, length: number): string {
-  const text = bounded(value, length);
-  return /^[A-Za-z][A-Za-z0-9]{0,99}$/.test(text) ? text : '';
 }
 
 function dnsName(value: unknown): string {
@@ -71,11 +70,11 @@ export function diagnoseDelivery(
 }
 
 export function normalizeAcsDeliveryRow(row: AcsDeliveryRow): EmailDeliveryObservation | null {
-  const status = categorical(row.DeliveryStatus, 32);
+  const status = bounded(row.DeliveryStatus, 32);
   const providerMessageId = bounded(row.CorrelationId, 255);
   const observedAt = bounded(row.TimeGenerated, 48);
   if (
-    !status ||
+    !TERMINAL_FAILURES.has(status) ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providerMessageId) ||
     Number.isNaN(Date.parse(observedAt))
   ) {
@@ -87,7 +86,9 @@ export function normalizeAcsDeliveryRow(row: AcsDeliveryRow): EmailDeliveryObser
     providerMessageId,
     recipientDomain: dnsName(row.RecipientDomain),
     status,
-    failureReason: categorical(row.FailureReason, 100),
+    failureReason: KNOWN_ACS_FAILURE_REASONS.has(bounded(row.FailureReason, 100))
+      ? bounded(row.FailureReason, 100)
+      : '',
     smtpStatusCode: /^[0-9]{3}$/.test(bounded(row.SmtpStatusCode, 8))
       ? bounded(row.SmtpStatusCode, 8)
       : '',

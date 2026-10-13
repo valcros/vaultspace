@@ -33,4 +33,15 @@ describe('email delivery diagnostics', () => {
   it('does not turn malformed provider rows into incidents', () => {
     expect(normalizeAcsDeliveryRow({ DeliveryStatus: 'Failed' })).toBeNull();
   });
+
+  it('drops unexpected provider text from the operator observation', () => {
+    const result = normalizeAcsDeliveryRow({
+      TimeGenerated: '2026-10-13T19:06:58.786Z',
+      CorrelationId: '00000000-0000-4000-8000-000000000001',
+      DeliveryStatus: 'Failed',
+      FailureReason: 'UnknownPrivateDetail123',
+    });
+    expect(result?.failureReason).toBe('');
+    expect(JSON.stringify(result)).not.toContain('UnknownPrivateDetail123');
+  });
 });
