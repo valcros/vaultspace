@@ -394,24 +394,30 @@ export async function commitFolderImport(
     throw error;
   }
 
-  for (const document of committed) {
+  const firstDocument = committed[0];
+  if (firstDocument) {
     try {
       await withOrgContext(ctx.session.organizationId, (tx) =>
         notifyRoomAdministrators(tx, {
           organizationId: ctx.session.organizationId,
           roomId,
-          sourceEventId: document.sourceEventId,
+          sourceEventId: firstDocument.sourceEventId,
           actorUserId: ctx.session.userId,
           type: 'UPLOAD_COMPLETE',
-          title: 'New document in a room you manage',
-          message: 'Open the room to review the uploaded document.',
+          title:
+            committed.length === 1
+              ? 'New document in a room you manage'
+              : `${committed.length} new documents in a room you manage`,
+          message: 'Open the room to review the imported documents.',
           actionPath: `/rooms/${roomId}`,
-          documentId: document.id,
         })
       );
     } catch (error) {
       console.error('[FolderImport] Failed to create in-app upload notification:', error);
     }
+  }
+
+  for (const document of committed) {
     try {
       await ctx.providers.job.addJob(
         'high',
