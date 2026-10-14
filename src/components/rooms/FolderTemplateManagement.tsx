@@ -212,8 +212,7 @@ export function FolderTemplateManagement() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Organization folder templates</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600 dark:text-slate-300">
+          <p className="max-w-3xl text-sm text-slate-600 dark:text-slate-300">
             Organization administrators manage these templates for this organization. Select folders
             when creating a room; existing rooms keep their independent folders.
           </p>
