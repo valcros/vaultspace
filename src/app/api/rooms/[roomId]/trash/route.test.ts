@@ -81,7 +81,6 @@ describe('GET /api/rooms/:roomId/trash', () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
-        organization: { findUnique: vi.fn().mockResolvedValue({ trashRetentionDays: 30 }) },
         document: { findMany: vi.fn().mockResolvedValue([]) },
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
@@ -95,10 +94,10 @@ describe('GET /api/rooms/:roomId/trash', () => {
 
     const body = await response.json();
     expect(body.documents).toEqual([]);
-    expect(body.retentionDays).toBe(30);
+    expect(body).not.toHaveProperty('retentionDays');
   });
 
-  it('returns deleted documents with deletion dates', async () => {
+  it('returns deleted documents without unsupported permanent-deletion deadlines', async () => {
     const deletedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
 
     const mockDeletedDocs = [
@@ -120,7 +119,6 @@ describe('GET /api/rooms/:roomId/trash', () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
-        organization: { findUnique: vi.fn().mockResolvedValue({ trashRetentionDays: 30 }) },
         document: { findMany: vi.fn().mockResolvedValue(mockDeletedDocs) },
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
@@ -135,31 +133,12 @@ describe('GET /api/rooms/:roomId/trash', () => {
     const body = await response.json();
     expect(body.documents).toHaveLength(1);
     expect(body.documents[0].name).toBe('Deleted Contract.pdf');
-    expect(body.documents[0].daysUntilPermanentDeletion).toBe(23); // 30 - 7 = 23 days remaining
-    expect(body.retentionDays).toBe(30);
+    expect(body.documents[0].deletedAt).toBe(deletedAt.toISOString());
+    expect(body.documents[0]).not.toHaveProperty('daysUntilPermanentDeletion');
+    expect(body.documents[0]).not.toHaveProperty('permanentDeletionDate');
   });
 
-  it('uses default retention when org setting is null', async () => {
-    mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
-      const tx = {
-        room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
-        organization: { findUnique: vi.fn().mockResolvedValue({ trashRetentionDays: null }) },
-        document: { findMany: vi.fn().mockResolvedValue([]) },
-      };
-      return callback(tx as unknown as Parameters<typeof callback>[0]);
-    });
-
-    const request = new NextRequest('http://localhost/api/rooms/room-1/trash');
-    const context = { params: Promise.resolve({ roomId: 'room-1' }) };
-
-    const response = await GET(request, context);
-    expect(response.status).toBe(200);
-
-    const body = await response.json();
-    expect(body.retentionDays).toBe(30); // Default
-  });
-
-  it('shows 0 days remaining for documents past retention', async () => {
+  it('keeps documents past the configured retention period visible for restoration', async () => {
     const deletedAt = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000); // 60 days ago
 
     const mockDeletedDocs = [
@@ -176,7 +155,6 @@ describe('GET /api/rooms/:roomId/trash', () => {
     mockWithOrgContext.mockImplementation(async (_orgId, callback) => {
       const tx = {
         room: { findFirst: vi.fn().mockResolvedValue({ id: 'room-1' }) },
-        organization: { findUnique: vi.fn().mockResolvedValue({ trashRetentionDays: 30 }) },
         document: { findMany: vi.fn().mockResolvedValue(mockDeletedDocs) },
       };
       return callback(tx as unknown as Parameters<typeof callback>[0]);
@@ -189,6 +167,7 @@ describe('GET /api/rooms/:roomId/trash', () => {
     expect(response.status).toBe(200);
 
     const body = await response.json();
-    expect(body.documents[0].daysUntilPermanentDeletion).toBe(0); // Can't go negative
+    expect(body.documents[0].name).toBe('Old Document.pdf');
+    expect(body.documents[0]).not.toHaveProperty('daysUntilPermanentDeletion');
   });
 });

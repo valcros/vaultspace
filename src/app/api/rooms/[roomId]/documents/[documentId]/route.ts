@@ -154,6 +154,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       expiryAction,
     } = body;
 
+    if (
+      (expiresAt !== undefined && expiresAt !== null) ||
+      (expiryAction !== undefined && expiryAction !== null)
+    ) {
+      return NextResponse.json(
+        { error: 'Automatic document expiry is not available' },
+        { status: 422 }
+      );
+    }
+
     // Validate tags if provided
     if (tags !== undefined) {
       if (!Array.isArray(tags) || !tags.every((t) => typeof t === 'string')) {

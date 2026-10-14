@@ -27,9 +27,9 @@ export function DeleteLinkConfirmDialog({
           onCancel();
         }
       }}
-      title="Delete Share Link"
-      description={`Are you sure you want to delete the link "${linkName}"? External users will no longer be able to access this room via this link.`}
-      confirmLabel="Delete"
+      title="Revoke Share Link"
+      description={`Revoke the link "${linkName}"? External users will no longer be able to access this room through it.`}
+      confirmLabel="Revoke"
       variant="destructive"
       onConfirm={onConfirm}
       loading={loading}

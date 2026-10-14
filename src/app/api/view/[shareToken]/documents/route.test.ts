@@ -102,6 +102,64 @@ describe('GET /api/view/[shareToken]/documents', () => {
     expect(body.documents).toEqual([]);
   });
 
+  it('reports downloads disabled when a DOWNLOAD link belongs to a view-only room', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      link: { ...session.link, permission: 'DOWNLOAD' },
+      room: { ...session.room, allowDownloads: false },
+    });
+
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/view/share-token/documents'),
+      makeContext('share-token')
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.session.downloadEnabled).toBe(false);
+  });
+
+  it('reports a document as view only when its own download flag is disabled', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      link: { ...session.link, permission: 'DOWNLOAD' },
+    });
+    mockWithOrgContext.mockImplementation(async (_orgId, callback) =>
+      callback({
+        folder: { findMany: vi.fn().mockResolvedValue([]) },
+        document: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'doc-1',
+              name: 'Restricted.pdf',
+              accessionNumber: null,
+              totalVersions: 1,
+              withdrawnAt: null,
+              mimeType: 'application/pdf',
+              fileSize: BigInt(100),
+              folderId: null,
+              createdAt: new Date('2026-10-01T00:00:00Z'),
+              folder: null,
+              allowDownload: false,
+            },
+          ]),
+        },
+      } as unknown as Parameters<typeof callback>[0])
+    );
+
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/view/share-token/documents'),
+      makeContext('share-token')
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.session.downloadEnabled).toBe(true);
+    expect(body.documents[0].downloadEnabled).toBe(false);
+  });
+
   it('rejects revoked viewer sessions', async () => {
     mockViewSessionFindFirst.mockResolvedValue(null);
 

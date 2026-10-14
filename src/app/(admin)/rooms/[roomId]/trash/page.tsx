@@ -14,7 +14,6 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -23,8 +22,6 @@ interface DeletedDocument {
   name: string;
   mimeType: string;
   deletedAt: string;
-  permanentDeletionDate: string;
-  daysUntilPermanentDeletion: number;
   folder: {
     id: string;
     name: string;
@@ -41,7 +38,6 @@ interface DeletedDocument {
 
 interface TrashData {
   documents: DeletedDocument[];
-  retentionDays: number;
 }
 
 export default function RoomTrashPage() {
@@ -144,7 +140,7 @@ export default function RoomTrashPage() {
     <>
       <PageHeader
         title="Trash"
-        description={`Documents deleted within the last ${trashData?.retentionDays ?? 30} days`}
+        description="Deleted documents available for restoration"
         breadcrumbs={[
           { label: 'Rooms', href: '/rooms' },
           { label: roomName, href: `/rooms/${roomId}` },
@@ -166,11 +162,11 @@ export default function RoomTrashPage() {
               <AlertTriangle className="mt-0.5 h-5 w-5 text-warning-600" />
               <div>
                 <p className="text-sm font-medium text-warning-900">
-                  Documents are permanently deleted after {trashData?.retentionDays ?? 30} days
+                  Automatic permanent deletion is not currently active
                 </p>
                 <p className="mt-1 text-sm text-warning-700">
-                  Restore documents before they are permanently removed. This action cannot be
-                  undone.
+                  Documents in Trash remain here until a supported cleanup process is enabled. You
+                  can restore them now.
                 </p>
               </div>
             </div>
@@ -183,8 +179,7 @@ export default function RoomTrashPage() {
             <Trash2 className="mx-auto mb-4 h-12 w-12 text-neutral-400" />
             <h3 className="mb-2 text-lg font-semibold text-neutral-900">Trash is empty</h3>
             <p className="mx-auto max-w-sm text-neutral-500">
-              Deleted documents will appear here. They can be restored within{' '}
-              {trashData?.retentionDays ?? 30} days.
+              Deleted documents will appear here and can be restored.
             </p>
           </Card>
         ) : (
@@ -232,14 +227,6 @@ export default function RoomTrashPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Badge
-                        variant={doc.daysUntilPermanentDeletion <= 3 ? 'danger' : 'secondary'}
-                        className="whitespace-nowrap"
-                      >
-                        {doc.daysUntilPermanentDeletion === 0
-                          ? 'Deletes today'
-                          : `${doc.daysUntilPermanentDeletion} day${doc.daysUntilPermanentDeletion !== 1 ? 's' : ''} left`}
-                      </Badge>
                       <Button
                         variant="outline"
                         size="sm"

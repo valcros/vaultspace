@@ -581,7 +581,9 @@ export default function RoomSettingsPage() {
                       Allow Original Downloads
                     </Label>
                     <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                      Permit viewers to download raw files (PDFs, XLSX, DOCX).
+                      Caps downloads across all share links. Turning this off pauses existing
+                      download-enabled links; turning it on restores downloads only where the link
+                      and document also allow them.
                     </p>
                   </div>
                   <Switch

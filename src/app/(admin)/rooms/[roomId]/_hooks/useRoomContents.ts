@@ -13,7 +13,7 @@ export interface Room {
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED' | 'CLOSED';
   enableWatermark: boolean;
   watermarkTemplate: string | null;
-  downloadEnabled: boolean;
+  allowDownloads: boolean;
   allDocumentsConfidential: boolean;
   createdAt: string;
 }

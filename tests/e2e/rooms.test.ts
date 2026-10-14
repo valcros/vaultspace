@@ -164,6 +164,30 @@ test.describe('Room Management', () => {
     // The section must expose its primary action, not merely select the tab.
     await expect(page.getByRole('button', { name: 'Create Link' }).first()).toBeVisible();
   });
+
+  test('sharing and Trash guidance describe the current behavior', async ({ page }) => {
+    await page.click('text=Due Diligence Package');
+    await page.waitForURL('**/rooms/**', { timeout: 5000 });
+    const roomId = new URL(page.url()).pathname.split('/').pop();
+
+    await page.getByRole('button', { name: 'Manage' }).click();
+    await page.getByRole('tab', { name: 'Share Links' }).click();
+    await page.getByRole('button', { name: 'Create Link' }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Create Share Link' });
+    await expect(dialog.getByRole('combobox', { name: 'Permission Level' })).toBeVisible();
+    await expect(dialog.getByText(/Downloads require permission from this link/)).toBeVisible();
+    await expect(dialog.getByLabel('Expiration Date (optional)')).toHaveAttribute(
+      'aria-describedby',
+      'linkExpiryHelp'
+    );
+
+    await page.goto(`/rooms/${roomId}/trash`);
+    await expect(
+      page.getByText('Automatic permanent deletion is not currently active')
+    ).toBeVisible();
+    await expect(page.getByText(/Documents in Trash remain here/)).toBeVisible();
+    await expect(page.getByText(/Deletes today|days left/)).toHaveCount(0);
+  });
 });
 
 test('closed rooms start collapsed and remain discoverable by search', async ({ page }) => {
