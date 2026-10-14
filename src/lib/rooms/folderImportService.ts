@@ -236,6 +236,7 @@ export async function commitFolderImport(
     sourceEventId: string;
   }>;
   let newFolderCount = 0;
+  let transactionBodyCompleted = false;
 
   try {
     committed = await withOrgContext(
@@ -399,14 +400,19 @@ export async function commitFolderImport(
             actionPath: `/rooms/${roomId}`,
           });
         }
+        transactionBodyCompleted = true;
         return results;
       },
       { timeout: 180_000, maxWait: 10_000 }
     );
   } catch (error) {
-    await Promise.allSettled(
-      writtenKeys.map((key) => ctx.providers.storage.delete('documents', key))
-    );
+    if (!transactionBodyCompleted) {
+      await Promise.allSettled(
+        writtenKeys.map((key) => ctx.providers.storage.delete('documents', key))
+      );
+    } else {
+      console.error('[FolderImport] Import commit result is uncertain; storage objects retained');
+    }
     throw error;
   }
 

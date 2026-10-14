@@ -190,6 +190,23 @@ describe('folder import service', () => {
     expect(ctx.providers.job.addJob).not.toHaveBeenCalled();
   });
 
+  it('retains uploaded objects if the database commit result is uncertain', async () => {
+    const tx = makeTransaction();
+    mocks.withOrgContext.mockImplementation(
+      async (_org: string, callback: (tx: unknown) => unknown) => {
+        await callback(tx);
+        throw new Error('database connection lost during commit');
+      }
+    );
+    const ctx = makeContext();
+
+    await expect(
+      commitFolderImport(ctx, 'room-1', [{ file: firstFile, path: 'A/a.pdf' }], null)
+    ).rejects.toThrow('database connection lost during commit');
+    expect(ctx.providers.storage.delete).not.toHaveBeenCalled();
+    expect(ctx.providers.job.addJob).not.toHaveBeenCalled();
+  });
+
   it('creates one room notice for a multi-file import', async () => {
     const tx = makeTransaction();
     mocks.withOrgContext.mockImplementation(

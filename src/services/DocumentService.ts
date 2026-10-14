@@ -125,6 +125,7 @@ export class DocumentService {
 
     // Use RLS context for all org-scoped database operations
     let uploadedStorageKey: string | null = null;
+    let transactionBodyCompleted = false;
     let result: { document: Document; version: DocumentVersion };
     try {
       result = await withOrgContext(organizationId, async (tx) => {
@@ -269,15 +270,21 @@ export class DocumentService {
           documentId: document.id,
         });
 
+        transactionBodyCompleted = true;
         return { document, version };
       });
     } catch (error) {
-      if (uploadedStorageKey) {
+      if (uploadedStorageKey && !transactionBodyCompleted) {
         try {
           await providers.storage.delete('documents', uploadedStorageKey);
         } catch (cleanupError) {
           console.error('[DocumentService] Failed to clean up uncommitted upload:', cleanupError);
         }
+      } else if (uploadedStorageKey) {
+        console.error(
+          '[DocumentService] Upload commit result is uncertain; storage object retained for review',
+          error
+        );
       }
       throw error;
     }

@@ -14,10 +14,11 @@ const permissionMocks = vi.hoisted(() => ({
   can: vi.fn(),
   prepareDocumentViewAuthorization: vi.fn(),
 }));
+const dbMocks = vi.hoisted(() => ({ withOrgContext: vi.fn() }));
 
 // Mock dependencies
 vi.mock('@/lib/db', () => ({
-  withOrgContext: vi.fn((_orgId: string, fn: (tx: unknown) => unknown) => fn(mockTx)),
+  withOrgContext: dbMocks.withOrgContext,
 }));
 
 vi.mock('@/lib/permissions', () => ({
@@ -102,6 +103,9 @@ describe('DocumentService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    dbMocks.withOrgContext.mockImplementation((_orgId: string, fn: (tx: unknown) => unknown) =>
+      fn(mockTx)
+    );
     permissionMocks.can.mockResolvedValue(true);
     permissionMocks.prepareDocumentViewAuthorization.mockResolvedValue({
       unrestricted: true,
@@ -204,6 +208,28 @@ describe('DocumentService', () => {
         'documents',
         'org-1/documents/doc-1/versions/ver-1/original/test-document.pdf'
       );
+      expect(mockJob.addJob).not.toHaveBeenCalled();
+    });
+
+    it('retains the storage object when the database commit result is uncertain', async () => {
+      mockTx.room.findFirst.mockResolvedValue({ id: 'room-1', status: 'ACTIVE' });
+      mockTx.document.create.mockResolvedValue({ id: 'doc-1' });
+      mockTx.documentVersion.create.mockResolvedValue({
+        id: 'ver-1',
+        fileName: 'test-document.pdf',
+      });
+      mockTx.document.update.mockResolvedValue({});
+      dbMocks.withOrgContext.mockImplementationOnce(
+        async (_orgId: string, fn: (tx: unknown) => unknown) => {
+          await fn(mockTx);
+          throw new Error('database connection lost during commit');
+        }
+      );
+
+      await expect(service.upload(ctx, { roomId: 'room-1', file: validFile })).rejects.toThrow(
+        'database connection lost during commit'
+      );
+      expect(mockStorage.delete).not.toHaveBeenCalled();
       expect(mockJob.addJob).not.toHaveBeenCalled();
     });
 
