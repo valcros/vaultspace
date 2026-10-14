@@ -307,28 +307,28 @@ export default function ViewerDocumentsPage() {
               </h2>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {filteredFolders.map((folder) => (
-                  <Card
+                  <button
                     key={folder.id}
-                    className="cursor-pointer rounded-xl border border-neutral-200 bg-white shadow-sm transition-shadow hover:border-primary-200 hover:shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-primary-800"
+                    type="button"
+                    className="w-full rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm transition-shadow hover:border-primary-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-primary-800"
                     onClick={() => navigateToFolder({ id: folder.id, name: folder.name })}
+                    aria-label={`Open folder ${folder.name}`}
                   >
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 dark:bg-sky-950/30">
-                          <Folder className="h-5 w-5 text-sky-600 dark:text-sky-300" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-slate-950 dark:text-white">
-                            {folder.name}
-                          </p>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {folder.documentCount} items
-                          </p>
-                        </div>
-                        <ChevronRight className="h-5 w-5 text-slate-400 dark:text-slate-500" />
-                      </div>
-                    </CardContent>
-                  </Card>
+                    <span className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 dark:bg-sky-950/30">
+                        <Folder className="h-5 w-5 text-sky-600 dark:text-sky-300" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-slate-950 dark:text-white">
+                          {folder.name}
+                        </span>
+                        <span className="block text-sm text-slate-500 dark:text-slate-400">
+                          {folder.documentCount} items
+                        </span>
+                      </span>
+                      <ChevronRight className="h-5 w-5 text-slate-400 dark:text-slate-500" />
+                    </span>
+                  </button>
                 ))}
               </div>
             </div>
