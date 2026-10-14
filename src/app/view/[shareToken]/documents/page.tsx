@@ -39,6 +39,7 @@ interface Document {
   folderId: string | null;
   folderPath: string | null;
   createdAt: string;
+  downloadEnabled: boolean;
 }
 
 interface Folder {
@@ -392,7 +393,7 @@ export default function ViewerDocumentsPage() {
                               <Eye className="mr-1 h-4 w-4" />
                               View
                             </Button>
-                            {session?.downloadEnabled && (
+                            {doc.downloadEnabled && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -441,7 +442,7 @@ export default function ViewerDocumentsPage() {
                                       {new Date(v.createdAt).toLocaleDateString()} ·{' '}
                                       {formatFileSize(v.size)}
                                     </span>
-                                    {session?.downloadEnabled && (
+                                    {doc.downloadEnabled && (
                                       <button
                                         onClick={() => handleDownloadDocument(doc.id, v.id)}
                                         className="flex-shrink-0 rounded px-2 py-0.5 text-primary-600 hover:bg-primary-50 hover:underline dark:text-primary-400 dark:hover:bg-primary-950/30"

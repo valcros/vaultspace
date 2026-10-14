@@ -160,7 +160,7 @@ const formatDate = (dateString: string) => {
 export interface ManageDrawerProps {
   roomId: string;
   /** The loaded room; pane data fetching waits until it is non-null. */
-  room: { id: string } | null;
+  room: { id: string; allowDownloads: boolean } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   pane: ManagePane;
@@ -537,7 +537,9 @@ export function ManageDrawer({
             title: 'Updated',
             description:
               newPermission === 'DOWNLOAD'
-                ? 'Downloads enabled for this link'
+                ? room?.allowDownloads
+                  ? 'Download permission granted. Each document must also allow downloads.'
+                  : 'Download permission granted on this link, but room downloads are paused.'
                 : 'Link set to view-only',
             variant: 'success',
           });
@@ -556,7 +558,7 @@ export function ManageDrawer({
         setTogglingPermissionId(null);
       }
     },
-    [roomId, fetchLinks]
+    [roomId, fetchLinks, room?.allowDownloads]
   );
 
   // Handle delete link
@@ -1146,7 +1148,9 @@ export function ManageDrawer({
                                       }
                                     >
                                       {link.permission === 'DOWNLOAD'
-                                        ? 'View & Download'
+                                        ? room?.allowDownloads
+                                          ? 'View & Download'
+                                          : 'Downloads Paused'
                                         : 'View Only'}
                                     </Badge>
                                     {link.requiresPassword && (
@@ -1187,7 +1191,9 @@ export function ManageDrawer({
                                       )}
                                       {link.permission === 'DOWNLOAD'
                                         ? 'Make view-only'
-                                        : 'Enable downloads'}
+                                        : room?.allowDownloads
+                                          ? 'Grant download permission'
+                                          : 'Grant download permission (room paused)'}
                                     </DropdownMenuItem>
                                     {isInvite && link.isActive && (
                                       <DropdownMenuItem
@@ -1210,7 +1216,7 @@ export function ManageDrawer({
                                       className="text-danger-600"
                                     >
                                       <Trash2 className="mr-2 h-4 w-4" />
-                                      Delete
+                                      Revoke link
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -1254,6 +1260,11 @@ export function ManageDrawer({
                                 <div>Created {formatDate(link.createdAt)}</div>
                                 {link.expiresAt && <div>Expires {formatDate(link.expiresAt)}</div>}
                               </div>
+                              {link.permission === 'DOWNLOAD' && !room?.allowDownloads && (
+                                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                                  Room settings currently block downloads through this link.
+                                </p>
+                              )}
                             </CardContent>
                           </Card>
                         );
@@ -1335,6 +1346,7 @@ export function ManageDrawer({
         onOpenChange={setShowLinkDialog}
         onCreate={handleCreateLink}
         isCreating={isCreatingLink}
+        roomDownloadsAllowed={room?.allowDownloads ?? false}
       />
 
       <DeleteLinkConfirmDialog

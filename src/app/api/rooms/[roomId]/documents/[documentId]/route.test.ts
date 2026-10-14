@@ -26,7 +26,7 @@ vi.mock('@/lib/permissions', () => ({
   getPermissionEngine: () => ({ can: mockPermissionCan }),
 }));
 
-import { GET } from './route';
+import { GET, PATCH } from './route';
 
 function makeContext(roomId = 'room-1', documentId = 'doc-1') {
   return { params: Promise.resolve({ roomId, documentId }) };
@@ -103,4 +103,26 @@ describe('GET /api/rooms/:roomId/documents/:documentId', () => {
     expect(mockTx.room.findFirst).not.toHaveBeenCalled();
     expect(mockTx.document.findFirst).not.toHaveBeenCalled();
   });
+});
+
+describe('PATCH /api/rooms/:roomId/documents/:documentId', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([{ expiresAt: '2026-11-01T00:00:00.000Z' }, { expiryAction: 'DELETE' }])(
+    'rejects unsupported automatic expiry settings',
+    async (body) => {
+      const res = await PATCH(
+        new NextRequest('http://localhost:3000/api/rooms/room-1/documents/doc-1', {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+        }),
+        makeContext()
+      );
+
+      expect(res.status).toBe(422);
+      expect(mockTx.document.findFirst).not.toHaveBeenCalled();
+    }
+  );
 });

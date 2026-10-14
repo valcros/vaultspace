@@ -45,14 +45,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return { error: 'Room not found', status: 404 };
       }
 
-      // Get organization retention settings
-      const organization = await tx.organization.findUnique({
-        where: { id: session.organizationId },
-        select: { trashRetentionDays: true },
-      });
-
-      const retentionDays = organization?.trashRetentionDays ?? 30;
-
       // Get soft-deleted documents
       const deletedDocuments = await tx.document.findMany({
         where: {
@@ -85,33 +77,15 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         orderBy: { deletedAt: 'desc' },
       });
 
-      return { deletedDocuments, retentionDays };
+      return { deletedDocuments };
     });
 
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    // Calculate permanent deletion dates
-    const documentsWithDeletionDates = result.deletedDocuments.map((doc) => {
-      const deletedAt = doc.deletedAt!;
-      const permanentDeletionDate = new Date(
-        deletedAt.getTime() + result.retentionDays * 24 * 60 * 60 * 1000
-      );
-
-      return {
-        ...doc,
-        permanentDeletionDate,
-        daysUntilPermanentDeletion: Math.max(
-          0,
-          Math.ceil((permanentDeletionDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-        ),
-      };
-    });
-
     return NextResponse.json({
-      documents: documentsWithDeletionDates,
-      retentionDays: result.retentionDays,
+      documents: result.deletedDocuments,
     });
   } catch (error) {
     if (isAuthenticationError(error)) {

@@ -77,10 +77,15 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/versions — scan ga
         maxSessionMinutes: 30,
         room: { id: 'room-1', organizationId: 'org-1', status: 'ACTIVE' },
       },
-      room: { id: 'room-1', allowViewerVersionHistory: true },
+      room: { id: 'room-1', allowDownloads: true, allowViewerVersionHistory: true },
     });
 
-    mockDocFindFirst.mockResolvedValue({ id: 'doc-1', folderId: null, currentVersionId: 'ver-1' });
+    mockDocFindFirst.mockResolvedValue({
+      id: 'doc-1',
+      folderId: null,
+      currentVersionId: 'ver-1',
+      allowDownload: true,
+    });
     mockFolderFindFirst.mockResolvedValue(null);
 
     // The DB "stores" both a CLEAN and an INFECTED version; return only the rows
@@ -110,6 +115,21 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/versions — scan ga
     const ids = body.versions.map((v: { id: string }) => v.id);
     expect(ids).toEqual(['ver-1']);
     expect(ids).not.toContain('ver-2');
+  });
+
+  it('does not advertise historical downloads when the room blocks them', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      link: { ...session.link, permission: 'DOWNLOAD' },
+      room: { ...session.room, allowDownloads: false },
+    });
+
+    const res = await GET(makeRequest(), makeContext());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.downloadEnabled).toBe(false);
   });
 
   it('allows version history inside a room-bound folder-scoped link', async () => {

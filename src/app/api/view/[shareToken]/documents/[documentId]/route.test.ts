@@ -59,6 +59,7 @@ describe('GET /api/view/[shareToken]/documents/[documentId]', () => {
       },
       room: {
         id: 'room-1',
+        allowDownloads: true,
         enableWatermark: false,
         watermarkTemplate: null,
       },
@@ -105,6 +106,20 @@ describe('GET /api/view/[shareToken]/documents/[documentId]', () => {
         touchViewerActivity: true,
       })
     );
+  });
+
+  it('reports downloads disabled when the room blocks them', async () => {
+    const session = await mockGetViewerSession();
+    mockGetViewerSession.mockResolvedValue({
+      ...session,
+      room: { ...session.room, allowDownloads: false },
+    });
+
+    const response = await GET(makeRequest(), makeContext());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.document.downloadEnabled).toBe(false);
   });
 
   it('preserves the document response and view counter when audit capture reports failure', async () => {

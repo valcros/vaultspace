@@ -5,8 +5,8 @@
  *
  * Lists a document's prior versions to a viewer, but only when the room has
  * opted in via allowViewerVersionHistory. Downloading a specific version is
- * still gated by the link's permission (see the download route's versionId
- * support).
+ * still gated by the room, link, and document download permissions (see the
+ * download route's versionId support).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -34,6 +34,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       room: {
         select: {
           id: true,
+          allowDownloads: true,
           allowViewerVersionHistory: true,
         },
       },
@@ -59,7 +60,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           status: 'ACTIVE',
           withdrawnAt: null,
         },
-        select: { id: true, folderId: true, currentVersionId: true },
+        select: { id: true, folderId: true, currentVersionId: true, allowDownload: true },
       });
       if (!document) {
         return null;
@@ -101,7 +102,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     return NextResponse.json({
-      downloadEnabled: viewerSession.link.permission === 'DOWNLOAD',
+      downloadEnabled:
+        viewerSession.room.allowDownloads &&
+        viewerSession.link.permission === 'DOWNLOAD' &&
+        result.document.allowDownload,
       versions: result.versions.map((v) => ({
         id: v.id,
         versionNumber: v.versionNumber,

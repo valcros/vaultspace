@@ -68,6 +68,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       withdrawnAt: true,
       mimeType: true,
       fileSize: true,
+      allowDownload: true,
       folderId: true,
       createdAt: true,
       folder: { select: { path: true } },
@@ -187,8 +188,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
         organizationName: viewerSession.organization.name,
         organizationLogo: viewerSession.room.brandLogoUrl || viewerSession.organization.logoUrl,
         brandColor: viewerSession.room.brandColor || viewerSession.organization.primaryColor,
-        // Download availability follows the link's permission, not the room.
-        downloadEnabled: viewerSession.link.permission === 'DOWNLOAD',
+        downloadEnabled:
+          viewerSession.room.allowDownloads && viewerSession.link.permission === 'DOWNLOAD',
         versionHistoryEnabled: viewerSession.room.allowViewerVersionHistory,
         watermarkEnabled: viewerSession.room.enableWatermark,
         watermarkTemplate: viewerSession.room.watermarkTemplate,
@@ -210,6 +211,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         folderId: d.folderId,
         folderPath: d.folder?.path || null,
         createdAt: d.createdAt.toISOString(),
+        downloadEnabled:
+          viewerSession.room.allowDownloads &&
+          viewerSession.link.permission === 'DOWNLOAD' &&
+          d.allowDownload,
       })),
       trail,
       folderContextId,

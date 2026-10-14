@@ -35,6 +35,7 @@ export interface CreateLinkDialogProps {
   /** Calls the page-level create handler. Resolves true when the link was created. */
   onCreate: (values: CreateLinkValues) => Promise<boolean>;
   isCreating: boolean;
+  roomDownloadsAllowed: boolean;
 }
 
 export function CreateLinkDialog({
@@ -42,6 +43,7 @@ export function CreateLinkDialog({
   onOpenChange,
   onCreate,
   isCreating,
+  roomDownloadsAllowed,
 }: CreateLinkDialogProps) {
   const [newLinkName, setNewLinkName] = React.useState('');
   const [newLinkPermission, setNewLinkPermission] = React.useState<'VIEW' | 'DOWNLOAD'>('VIEW');
@@ -103,7 +105,7 @@ export function CreateLinkDialog({
               value={newLinkPermission}
               onValueChange={(value) => setNewLinkPermission(value as 'VIEW' | 'DOWNLOAD')}
             >
-              <SelectTrigger>
+              <SelectTrigger id="linkPermission" aria-describedby="linkPermissionHelp">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -111,6 +113,11 @@ export function CreateLinkDialog({
                 <SelectItem value="DOWNLOAD">View & Download</SelectItem>
               </SelectContent>
             </Select>
+            <p id="linkPermissionHelp" className="text-xs text-neutral-600">
+              {newLinkPermission === 'DOWNLOAD' && !roomDownloadsAllowed
+                ? 'Downloads are currently paused for this room. This link can download only after room downloads are enabled and the document permits it.'
+                : 'Downloads require permission from this link, the room, and each document.'}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="linkPassword">Password Protection (optional)</Label>
@@ -127,21 +134,27 @@ export function CreateLinkDialog({
             <Input
               id="linkExpiry"
               type="datetime-local"
+              aria-describedby="linkExpiryHelp"
               value={newLinkExpiry}
               onChange={(e) => setNewLinkExpiry(e.target.value)}
             />
+            <p id="linkExpiryHelp" className="text-xs text-neutral-600">
+              Viewers lose access through this link after this time, including active sessions.
+              Leave blank for no expiration.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="linkSessionLimit">Session Time Limit in Minutes (optional)</Label>
             <Input
               id="linkSessionLimit"
               type="number"
+              aria-describedby="linkSessionLimitHelp"
               min="1"
               placeholder="e.g. 60"
               value={newLinkSessionLimit}
               onChange={(e) => setNewLinkSessionLimit(e.target.value)}
             />
-            <p className="text-xs text-neutral-500">
+            <p id="linkSessionLimitHelp" className="text-xs text-neutral-500">
               Maximum viewing time per session. Leave blank for unlimited.
             </p>
           </div>

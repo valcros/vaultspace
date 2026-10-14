@@ -45,6 +45,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     const viewerSession = sessionResult.session;
 
+    // The room setting is a live cap on every share link, including links
+    // created while downloads were previously enabled.
+    if (!viewerSession.room.allowDownloads) {
+      return NextResponse.json({ error: 'Downloads are disabled for this room' }, { status: 403 });
+    }
+
     // Downloading a specific prior version is only allowed when the room exposes
     // version history to viewers; otherwise only the current version is served.
     const versionId = request.nextUrl.searchParams.get('versionId');

@@ -265,7 +265,7 @@ const DocumentListRow = React.memo(function DocumentListRow({
                 {doc.expiresAt && (
                   <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0 text-[10px] font-medium text-orange-600">
                     <Clock className="h-2.5 w-2.5" />
-                    Expires {new Date(doc.expiresAt).toLocaleDateString()}
+                    Expiry inactive: {new Date(doc.expiresAt).toLocaleDateString()}
                   </span>
                 )}
               </div>
@@ -464,7 +464,7 @@ const DocumentGridCard = React.memo(function DocumentGridCard({
         {doc.expiresAt && (
           <span className="inline-flex items-center gap-0.5 rounded-full border border-orange-200 bg-orange-50 px-1.5 text-[9px] font-medium text-orange-600">
             <Clock className="h-2.5 w-2.5" />
-            {new Date(doc.expiresAt).toLocaleDateString()}
+            Expiry inactive: {new Date(doc.expiresAt).toLocaleDateString()}
           </span>
         )}
       </div>

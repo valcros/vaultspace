@@ -182,6 +182,76 @@ describe('GET /api/view/[shareToken]/documents/[documentId]/download — current
     );
   });
 
+  it('denies downloads when the room disables them, before counters or storage access', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      room: { ...session.room, allowDownloads: false },
+    });
+    docWithCurrent('ver-2');
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(403);
+    expect(mockDocFindFirst).not.toHaveBeenCalled();
+    expect(mockDocUpdate).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
+    expect(mockCaptureAccessAudit).not.toHaveBeenCalled();
+  });
+
+  it('also denies a historical-version download when the room disables downloads', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      room: { ...session.room, allowDownloads: false },
+    });
+    docWithCurrent('ver-2');
+
+    const res = await GET(
+      new NextRequest(
+        'http://localhost:3000/api/view/share-token/documents/doc-1/download?versionId=ver-1'
+      ),
+      makeContext()
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockVersionFindFirst).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
+  });
+
+  it('denies downloads when the document blocks them', async () => {
+    docWithCurrent('ver-2');
+    mockDocFindFirst.mockResolvedValue({
+      id: 'doc-1',
+      name: 'file.pdf',
+      mimeType: 'application/pdf',
+      folderId: null,
+      allowDownload: false,
+      currentVersionId: 'ver-2',
+    });
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(403);
+    expect(mockDocUpdate).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
+  });
+
+  it('denies downloads when the link is view only', async () => {
+    const session = await mockViewSessionFindFirst();
+    mockViewSessionFindFirst.mockResolvedValue({
+      ...session,
+      link: { ...session.link, permission: 'VIEW' },
+    });
+    docWithCurrent('ver-2');
+
+    const res = await GET(makeRequest(), makeContext());
+
+    expect(res.status).toBe(403);
+    expect(mockDocFindFirst).not.toHaveBeenCalled();
+    expect(mockStorageGet).not.toHaveBeenCalled();
+  });
+
   it('keeps the download available when the bounded audit write fails', async () => {
     docWithCurrent('ver-2');
     mockCaptureAccessAudit.mockResolvedValue('failed');
