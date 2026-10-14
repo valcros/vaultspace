@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import * as React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { PreviewDialog } from './PreviewDialog';
 
@@ -53,8 +53,20 @@ describe('converted document preview', () => {
     const preview = await screen.findByRole('img', { name: 'Page 1 of 2: deck.pptx' });
     expect(preview.className).toContain('max-w-full');
     expect(screen.queryByTitle('deck.pptx')).toBeNull();
+    let resolveNext!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () => new Promise<Response>((resolve) => (resolveNext = resolve))
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('page=2')));
+    expect(screen.queryByRole('img')).toBeNull();
+    await act(async () => {
+      resolveNext(
+        new Response(new Blob(['next page'], { type: 'image/png' }), {
+          headers: { 'content-type': 'image/png', 'x-total-pages': '2' },
+        })
+      );
+    });
     expect(await screen.findByRole('img', { name: 'Page 2 of 2: deck.pptx' })).toBeTruthy();
   });
 
