@@ -45,6 +45,7 @@ describe('folder-preserving upload', () => {
     await waitFor(() =>
       expect(onComplete).toHaveBeenCalledWith([{ documentId: 'doc-1', name: 'a.pdf' }])
     );
+    expect(screen.queryByRole('button', { name: 'Import 1 files' })).toBeNull();
     const formData = fetchMock.mock.calls[1]![1].body as FormData;
     expect(formData.get('path')).toBe('Financials/a.pdf');
     expect((formData.get('file') as File).name).toBe('a.pdf');

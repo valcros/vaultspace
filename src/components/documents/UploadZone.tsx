@@ -366,8 +366,9 @@ export function UploadZone({
       setFiles((previous) =>
         previous.map((item) => ({ ...item, status: 'success', progress: 100 }))
       );
+      setImportPreview(null);
       onUploadComplete?.(
-        data.documents.map((document: { id: string; name: string }) => ({
+        (data.documents ?? []).map((document: { id: string; name: string }) => ({
           documentId: document.id,
           name: document.name,
         }))
@@ -575,8 +576,8 @@ export function UploadZone({
             </ul>
           )}
           <p className="mt-2">
-            If validation or upload fails, no documents or folders are added. Files will be scanned
-            before preview.
+            If validation or upload fails, no documents or folders are added. Files are scanned
+            after import before they can be previewed.
           </p>
           <button
             type="button"
