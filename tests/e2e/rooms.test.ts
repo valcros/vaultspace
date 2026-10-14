@@ -205,15 +205,19 @@ test('closed rooms start collapsed and remain discoverable by search', async ({ 
 
   await expect(page.getByRole('link', { name: /Demo Series A/ })).toBeVisible();
   await expect(closedRoomsToggle).toBeVisible();
+  await expect(page.getByText('Show closed rooms', { exact: true })).toBeVisible();
   await expect(closedRoom).toBeHidden();
 
   await closedRoomsToggle.click();
   await expect(closedRoom).toBeVisible();
+  await expect(page.getByText('Hide closed rooms', { exact: true })).toBeVisible();
 
   await closedRoomsToggle.click();
   await expect(closedRoom).toBeHidden();
+  await expect(page.getByText('Show closed rooms', { exact: true })).toBeVisible();
   await page.getByRole('textbox', { name: 'Search rooms' }).fill('Closed test room');
   await expect(closedRoom).toBeVisible();
+  await expect(page.getByText('Hide closed rooms', { exact: true })).toBeVisible();
 });
 
 test.describe('Room Settings', () => {
