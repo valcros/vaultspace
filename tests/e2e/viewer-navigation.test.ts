@@ -137,7 +137,10 @@ test.describe('Viewer folder navigation', () => {
 
     await expect(page.getByText('Financials', { exact: true })).toBeVisible();
     await expectNoA11yViolations(page);
-    await page.getByText('Financials', { exact: true }).click();
+    const folderButton = page.getByRole('button', { name: 'Open folder Financials' });
+    await folderButton.focus();
+    await expect(folderButton).toBeFocused();
+    await page.keyboard.press('Enter');
     await expect(page.getByText('Capitalization Table.xlsx', { exact: true })).toBeVisible();
     await expect
       .poll(() =>
@@ -149,6 +152,7 @@ test.describe('Viewer folder navigation', () => {
 
     await page.getByRole('button', { name: 'View Capitalization Table.xlsx' }).click();
     await expect(page.getByRole('button', { name: 'Go back' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download', exact: true })).toHaveCount(0);
     await expectNoA11yViolations(page);
     await page.getByRole('button', { name: 'Go back' }).click();
     await expect(page).toHaveURL(/\/documents\?folderId=/);
