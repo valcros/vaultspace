@@ -1,20 +1,76 @@
 /**
- * Folder-preserving import contract scaffolding (Path B).
- *
- * Phase 1 of room navigation explicitly defers folder-preserving import UI.
- * The current upload route still uploads each file into the active folderId
- * and ignores any captured folder paths. This module exposes the contract
- * shared validator + response shape so:
- *
- *   - any future Path-A wire-up can opt in without redesigning behavior
- *   - tests can assert that the validator and the documented response shape
- *     stay in lockstep
+ * Shared validation for folder-preserving imports.
  *
  * Authoritative source: docs/ROOM_NAVIGATION_AND_FOLDER_DEPTH_GUIDANCE_v3.md
  *                       API_SPEC.md "Folder-Preserving Import Contract"
  */
 
-import { FolderDepthExceededError, MAX_FOLDER_DEPTH, validateImportDepth } from './folderDepth';
+import {
+  FolderDepthExceededError,
+  MAX_FOLDER_DEPTH,
+  normalizeImportPath,
+  validateImportDepth,
+} from './folderDepth';
+
+export const MAX_IMPORT_FILES = 50;
+export const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
+
+export interface ImportPath {
+  sourcePath: string;
+  normalizedPath: string;
+  folderSegments: string[];
+  filename: string;
+}
+
+export interface ImportPathIssue {
+  sourcePath: string;
+  reason: string;
+}
+
+export function prepareImportPaths(
+  rawPaths: string[],
+  filenames: string[],
+  baseDepth = 0
+): { paths: ImportPath[]; issues: ImportPathIssue[]; depthError?: ImportDepthRejectionResponse } {
+  const depth = validateImportPaths(rawPaths, baseDepth);
+  const issues: ImportPathIssue[] = [];
+  const paths: ImportPath[] = [];
+  const seen = new Set<string>();
+
+  rawPaths.forEach((sourcePath, index) => {
+    let normalizedPath: string;
+    try {
+      normalizedPath = normalizeImportPath(sourcePath);
+    } catch {
+      issues.push({ sourcePath, reason: 'Path contains an invalid segment' });
+      return;
+    }
+    const segments = normalizedPath.split('/');
+    const filename = segments.pop() ?? '';
+    if (!filename || filename !== filenames[index] || filename.length > 255) {
+      issues.push({
+        sourcePath,
+        reason: 'Path must end with the selected file name (max 255 characters)',
+      });
+      return;
+    }
+    if (segments.some((segment) => segment.length > 255 || /[<>:"/\\|?*]/.test(segment))) {
+      issues.push({
+        sourcePath,
+        reason: 'A folder name is too long or contains invalid characters',
+      });
+      return;
+    }
+    if (seen.has(normalizedPath)) {
+      issues.push({ sourcePath, reason: 'The selection contains this path more than once' });
+      return;
+    }
+    seen.add(normalizedPath);
+    paths.push({ sourcePath, normalizedPath, folderSegments: segments, filename });
+  });
+
+  return { paths, issues, ...(!depth.ok ? { depthError: depth.response } : {}) };
+}
 
 export interface ImportRejection {
   sourcePath: string;
@@ -54,9 +110,9 @@ export type ImportValidationResult = ImportValidationOk | ImportValidationFail;
  * that want to bubble the documented error envelope can return `result.response`
  * directly.
  */
-export function validateImportPaths(rawPaths: string[]): ImportValidationResult {
+export function validateImportPaths(rawPaths: string[], baseDepth = 0): ImportValidationResult {
   try {
-    validateImportDepth(rawPaths);
+    validateImportDepth(rawPaths, MAX_FOLDER_DEPTH - baseDepth);
     return { ok: true };
   } catch (err) {
     if (err instanceof FolderDepthExceededError && err.rejections) {
@@ -65,12 +121,15 @@ export function validateImportPaths(rawPaths: string[]): ImportValidationResult 
         response: {
           error: {
             code: 'FOLDER_DEPTH_EXCEEDED',
-            message: err.message,
+            message: `One or more import paths exceed the maximum allowed depth of ${MAX_FOLDER_DEPTH}.`,
             status: 400,
             details: {
               operation: 'import',
               maxDepth: MAX_FOLDER_DEPTH,
-              rejections: err.rejections,
+              rejections: err.rejections.map((rejection) => ({
+                ...rejection,
+                attemptedDepth: rejection.attemptedDepth + baseDepth,
+              })),
             },
           },
         },
