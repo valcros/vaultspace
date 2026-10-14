@@ -41,7 +41,7 @@ describe('organization template consumption', () => {
     const data = await response.json();
     expect(data.templates.map((t: { id: string }) => t.id)).toEqual(['sys-enabled', 'own']);
     expect(mocks.legacy).toHaveBeenCalledWith({
-      where: { organizationId: 'org-a' },
+      where: { organizationId: 'org-a', enabled: true },
       orderBy: { name: 'asc' },
     });
     expect(response.headers.get('cache-control')).toContain('no-store');

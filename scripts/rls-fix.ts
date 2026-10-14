@@ -36,6 +36,7 @@ const FORCE_RLS_TABLES = [
   'users',
   'user_organizations',
   'rooms',
+  'room_templates',
   'folders',
   'documents',
   'document_versions',

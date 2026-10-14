@@ -114,6 +114,33 @@ describe('POST /api/rooms starter folders', () => {
     expect(mocks.folderCreateMany).not.toHaveBeenCalled();
   });
 
+  it('rejects a disabled organization template before creating a room', async () => {
+    mocks.roomTemplateFindFirst.mockResolvedValueOnce({
+      id: 'org-template',
+      organizationId: 'org-1',
+      name: 'Private template',
+      description: '',
+      category: 'custom',
+      folderStructure: { folders: [{ name: 'Legal', path: '/legal' }] },
+      enabled: false,
+      revision: 2,
+    });
+    const response = await POST(
+      new NextRequest('http://localhost/api/rooms', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'New room',
+          templateId: 'org-template',
+          templateRevision: 'old',
+          selectedFolderPaths: ['/legal'],
+        }),
+      })
+    );
+    expect(response.status).toBe(409);
+    expect(mocks.roomCreate).not.toHaveBeenCalled();
+    expect(mocks.folderCreateMany).not.toHaveBeenCalled();
+  });
+
   it('continues to create an empty room when no starter template is chosen', async () => {
     const response = await POST(
       new NextRequest('http://localhost/api/rooms', {

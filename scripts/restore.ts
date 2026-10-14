@@ -443,6 +443,16 @@ async function main() {
   }
   console.log(`  - rooms: ${rooms.length} records`);
 
+  // Older archives may not contain this file. Tenant backups already classify
+  // RoomTemplate separately; this restores it in the full JSONL path.
+  const roomTemplates = readJsonl<Record<string, unknown>>(
+    join(databaseDir, 'room_templates.jsonl')
+  );
+  if (!dryRun && roomTemplates.length > 0) {
+    await prisma.roomTemplate.createMany({ data: roomTemplates as never[] });
+  }
+  console.log(`  - room_templates: ${roomTemplates.length} records`);
+
   // Restore folders
   const folders = readJsonl<Record<string, unknown>>(join(databaseDir, 'folders.jsonl'));
   if (!dryRun && folders.length > 0) {

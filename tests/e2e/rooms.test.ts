@@ -315,7 +315,7 @@ test.describe('Room contextual help', () => {
   test.describe('touch help and folder discovery', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
-    test('tap opens help and standard-folder selection remains optional', async ({ page }) => {
+    test('tap opens help and folder-template selection remains optional', async ({ page }) => {
       await openRooms(page);
       const help = page.getByRole('button', {
         name: 'About room status: Due Diligence Package',
@@ -354,9 +354,7 @@ test.describe('Room contextual help', () => {
       await page.getByRole('button', { name: 'Add folders', exact: true }).tap();
       const folders = page.getByRole('dialog');
       await expect(folders.getByLabel('Folder Name')).toBeVisible();
-      await folders
-        .getByRole('button', { name: 'Use a standard folder template', exact: true })
-        .tap();
+      await folders.getByRole('button', { name: 'Use a folder template', exact: true }).tap();
       await expect(folders.getByRole('button', { name: 'Add Selected Folders' })).toBeDisabled();
       await folders.getByRole('radio', { name: /Investor Data Room/ }).tap();
       await expect(folders.getByText('14 of 14 folders selected')).toBeVisible();

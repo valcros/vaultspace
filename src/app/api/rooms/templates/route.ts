@@ -14,7 +14,7 @@ export async function GET() {
       const catalog = await systemRoomTemplateService.list(true, tx);
       const system = catalog.filter((t) => t.enabled);
       const legacy = await tx.roomTemplate.findMany({
-        where: { organizationId: session.organizationId },
+        where: { organizationId: session.organizationId, enabled: true },
         orderBy: { name: 'asc' },
       });
       // All system IDs, including disabled ones, are reserved by the global catalog.

@@ -92,6 +92,8 @@ enum EventType {
   ROOM_CLOSED
   ROOM_DUPLICATED
   ROOM_DELETED
+  ROOM_TEMPLATE_CREATED
+  ROOM_TEMPLATE_UPDATED
 
   // Documents
   DOCUMENT_UPLOADED
@@ -1584,6 +1586,8 @@ model RoomTemplate {
   category         String  @db.VarChar(100)
   isSystemTemplate Boolean @default(false)
   isPublic         Boolean @default(false)
+  enabled          Boolean @default(true)
+  revision         Int     @default(1)
 
   // Template structure
   folderStructure    Json

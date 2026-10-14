@@ -26,6 +26,7 @@ export interface StarterFolderTemplate {
   description: string | null;
   category?: string;
   revision: string;
+  isCustom?: boolean;
   structure?: { folders?: StarterFolder[] };
   folderStructure?: { folders?: StarterFolder[] };
 }
@@ -224,8 +225,7 @@ export function StarterFolderPicker({
         <FolderTree className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" aria-hidden="true" />
         <div>
           <h3 id={`${idPrefix}-starter-heading`} className="text-sm font-medium text-neutral-900">
-            Standard folder templates{' '}
-            <span className="font-normal text-neutral-500">(optional)</span>
+            Folder templates <span className="font-normal text-neutral-500">(optional)</span>
           </h3>
           <p className="mt-0.5 text-xs text-neutral-500">
             {allowAdditionalFolders
@@ -279,6 +279,9 @@ export function StarterFolderPicker({
                 }`}
               >
                 <span className="font-medium">{template.name}</span>
+                <span className="mt-1 block text-xs font-medium text-primary-700">
+                  {template.isCustom ? 'Organization template' : 'System template'}
+                </span>
                 <span className="mt-1 block text-xs text-neutral-500">{template.description}</span>
               </button>
             );

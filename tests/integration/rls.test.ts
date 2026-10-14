@@ -399,6 +399,7 @@ describe('RLS Enforcement', () => {
         WHERE n.nspname = 'public'
           AND c.relname IN (
             'rooms',
+            'room_templates',
             'documents',
             'events',
             'groups',
@@ -411,7 +412,7 @@ describe('RLS Enforcement', () => {
         ORDER BY c.relname
       `;
 
-      expect(protectedTables).toHaveLength(9);
+      expect(protectedTables).toHaveLength(10);
       expect(protectedTables.every((table) => table.rls_enabled && table.rls_forced)).toBe(true);
     });
 
@@ -854,6 +855,43 @@ describe('RLS Enforcement', () => {
   });
 
   describe('SEC-001: Cross-tenant isolation', () => {
+    it('isolates organization folder templates even without application query filters', async () => {
+      const template = await withOrgContext(org2Id, (tx) =>
+        tx.roomTemplate.create({
+          data: {
+            organizationId: org2Id,
+            name: 'Org 2 template',
+            category: 'test',
+            folderStructure: { folders: [{ name: 'Legal', path: '/legal' }] },
+          },
+        })
+      );
+
+      const visibleToOrg1 = await withOrgContext(org1Id, (tx) =>
+        tx.roomTemplate.findMany({ where: { id: template.id } })
+      );
+      expect(visibleToOrg1).toEqual([]);
+      const changedFromOrg1 = await withOrgContext(org1Id, (tx) =>
+        tx.roomTemplate.updateMany({
+          where: { id: template.id },
+          data: { name: 'Cross-tenant edit' },
+        })
+      );
+      expect(changedFromOrg1.count).toBe(0);
+      await expect(
+        withOrgContext(org1Id, (tx) =>
+          tx.roomTemplate.create({
+            data: {
+              organizationId: org2Id,
+              name: 'Cross-tenant insert',
+              category: 'test',
+              folderStructure: { folders: [{ name: 'Legal', path: '/legal' }] },
+            },
+          })
+        )
+      ).rejects.toThrow();
+    });
+
     it('should not allow org1 to access org2 data', async () => {
       // Try to query org2's room from org1's context
       const crossTenantRoom = await withOrgContext(org1Id, async (tx) => {

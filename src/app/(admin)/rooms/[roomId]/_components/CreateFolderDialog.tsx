@@ -93,7 +93,7 @@ export function CreateFolderDialog({
               onClick={() => setMode('starter')}
               aria-pressed={mode === 'starter'}
             >
-              Use a standard folder template
+              Use a folder template
             </Button>
           </div>
           {mode === 'single' ? (

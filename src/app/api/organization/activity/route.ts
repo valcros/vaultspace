@@ -37,6 +37,8 @@ const EVENT_TYPE_GROUPS: Record<string, EventType[]> = {
     'ROOM_CLOSED',
     'ROOM_DUPLICATED',
     'ROOM_DELETED',
+    'ROOM_TEMPLATE_CREATED',
+    'ROOM_TEMPLATE_UPDATED',
   ],
   member: [
     'USER_CREATED',
