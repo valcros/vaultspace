@@ -33,7 +33,7 @@ function makeContext() {
       organization: { role: 'ADMIN' },
       user: { email: 'admin@example.test' },
     },
-    eventBus: { emit: vi.fn() },
+    eventBus: { emit: vi.fn().mockResolvedValue('event-1') },
     providers: {
       storage: { put: vi.fn(), delete: vi.fn() },
       job: { addJob: vi.fn() },
@@ -71,6 +71,11 @@ function makeTransaction() {
         .mockResolvedValueOnce({ id: 'version-2' }),
     },
     fileBlob: { create: vi.fn() },
+    roleAssignment: { findMany: vi.fn().mockResolvedValue([]) },
+    userOrganization: {
+      findMany: vi.fn().mockResolvedValue([{ id: 'member-2', userId: 'other-admin' }]),
+    },
+    notification: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
 }
 
@@ -156,6 +161,10 @@ describe('folder import service', () => {
       expect.objectContaining({ documentId: 'document-1', organizationId: 'org-1' }),
       expect.any(Object)
     );
+    expect(tx.notification.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ userOrganizationId: 'member-2', sourceEventId: 'event-1' })],
+      skipDuplicates: true,
+    });
   });
 
   it('cleans up uploaded storage objects and skips jobs when a write fails', async () => {

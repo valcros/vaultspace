@@ -47,6 +47,9 @@ export function NotificationMenu({
   const generation = React.useRef(0);
 
   const load = React.useCallback(async (cursor: string | null = null) => {
+    if (!cursor) {
+      generation.current += 1;
+    }
     const requestGeneration = generation.current;
     setLoading(true);
     setError(null);
@@ -56,16 +59,24 @@ export function NotificationMenu({
         credentials: 'include',
       });
       const data = (await response.json()) as InboxPage & { error?: string };
-      if (!response.ok) throw new Error(data.error || 'Could not load notifications');
-      if (requestGeneration !== generation.current) return;
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not load notifications');
+      }
+      if (requestGeneration !== generation.current) {
+        return;
+      }
       setItems((current) => (cursor ? [...current, ...data.items] : data.items));
       setUnreadCount(data.unreadCount);
       setNextCursor(data.nextCursor);
     } catch (loadError) {
-      if (requestGeneration !== generation.current) return;
+      if (requestGeneration !== generation.current) {
+        return;
+      }
       setError(loadError instanceof Error ? loadError.message : 'Could not load notifications');
     } finally {
-      if (requestGeneration === generation.current) setLoading(false);
+      if (requestGeneration === generation.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -82,6 +93,15 @@ export function NotificationMenu({
     };
   }, [organizationId, load]);
 
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!open && document.visibilityState === 'visible') {
+        void load();
+      }
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [load, open]);
+
   const markRead = React.useCallback(async (notificationId?: string) => {
     const response = await fetch('/api/users/me/notification-inbox', {
       method: 'PATCH',
@@ -90,7 +110,9 @@ export function NotificationMenu({
       body: JSON.stringify(notificationId ? { notificationId } : { all: true }),
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Could not update notifications');
+    if (!response.ok) {
+      throw new Error(data.error || 'Could not update notifications');
+    }
     setUnreadCount(data.unreadCount);
     setItems((current) =>
       current.map((item) =>
@@ -120,7 +142,9 @@ export function NotificationMenu({
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
-        if (nextOpen) void load();
+        if (nextOpen) {
+          void load();
+        }
       }}
     >
       <DropdownMenuTrigger asChild>

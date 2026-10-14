@@ -223,8 +223,8 @@ export class QuestionService {
     const { session, eventBus } = ctx;
     const organizationId = session.organizationId;
 
-    const question = await withOrgContext(organizationId, async (tx) => {
-      return tx.question.create({
+    return withOrgContext(organizationId, async (tx) => {
+      const question = await tx.question.create({
         data: {
           organizationId,
           roomId,
@@ -238,37 +238,32 @@ export class QuestionService {
           askedByName: `${session.user.firstName} ${session.user.lastName}`,
         },
       });
-    });
-
-    const sourceEventId = await eventBus.emit('QUESTION_SUBMITTED', {
-      roomId,
-      documentId: options.documentId,
-      description: `Question submitted: ${question.subject}`,
-      metadata: {
-        questionId: question.id,
-        subject: question.subject,
-        documentId: options.documentId,
-      },
-    });
-
-    try {
-      await withOrgContext(organizationId, (tx) =>
-        notifyRoomAdministrators(tx, {
-          organizationId,
+      const sourceEventId = await eventBus.emit(
+        'QUESTION_SUBMITTED',
+        {
           roomId,
-          sourceEventId,
-          actorUserId: session.userId,
-          type: 'QUESTION_ACTIVITY',
-          title: 'New question in a room you manage',
-          message: 'Open the room Q&A to review the question.',
-          actionPath: `/rooms/${roomId}?manage=qa`,
-        })
+          documentId: options.documentId,
+          description: `Question submitted: ${question.subject}`,
+          metadata: {
+            questionId: question.id,
+            subject: question.subject,
+            documentId: options.documentId,
+          },
+        },
+        tx
       );
-    } catch (error) {
-      console.error('[QuestionService] Failed to create in-app question notification:', error);
-    }
-
-    return question;
+      await notifyRoomAdministrators(tx, {
+        organizationId,
+        roomId,
+        sourceEventId,
+        actorUserId: session.userId,
+        type: 'QUESTION_ACTIVITY',
+        title: 'New question in a room you manage',
+        message: 'Open the room Q&A to review the question.',
+        actionPath: `/rooms/${roomId}?manage=qa`,
+      });
+      return question;
+    });
   }
 
   /**
@@ -344,7 +339,7 @@ export class QuestionService {
     const { session, eventBus } = ctx;
     const organizationId = session.organizationId;
 
-    const { answer, askerUserId } = await withOrgContext(organizationId, async (tx) => {
+    return withOrgContext(organizationId, async (tx) => {
       const question = await tx.question.findFirst({
         where: {
           id: questionId,
@@ -374,33 +369,24 @@ export class QuestionService {
         });
       }
 
-      return { answer: created, askerUserId: question.askedByUserId };
-    });
-
-    const sourceEventId = await eventBus.emit('ANSWER_SUBMITTED', {
-      roomId,
-      description: `Answer submitted for question ${questionId}`,
-      metadata: {
-        answerId: answer.id,
-        questionId,
-      },
-    });
-
-    try {
-      await withOrgContext(organizationId, (tx) =>
-        notifyQuestionAsker(tx, {
-          organizationId,
+      const sourceEventId = await eventBus.emit(
+        'ANSWER_SUBMITTED',
+        {
           roomId,
-          sourceEventId,
-          askerUserId,
-          actorUserId: session.userId,
-        })
+          description: `Answer submitted for question ${questionId}`,
+          metadata: { answerId: created.id, questionId },
+        },
+        tx
       );
-    } catch (error) {
-      console.error('[QuestionService] Failed to create in-app answer notification:', error);
-    }
-
-    return answer;
+      await notifyQuestionAsker(tx, {
+        organizationId,
+        roomId,
+        sourceEventId,
+        askerUserId: question.askedByUserId,
+        actorUserId: session.userId,
+      });
+      return created;
+    });
   }
 
   /**

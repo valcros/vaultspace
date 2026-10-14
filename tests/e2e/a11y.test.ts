@@ -80,39 +80,35 @@ test.describe('WCAG 2.1 AA smoke tests — authenticated pages', () => {
   }
 });
 
-test.describe('Notification preferences navigation', () => {
+test.describe('Notification inbox navigation', () => {
   test.use({ storageState: 'tests/e2e/.auth/admin.json' });
 
   for (const viewport of [
     { name: 'desktop', width: 1280, height: 800 },
     { name: 'mobile', width: 390, height: 844 },
   ]) {
-    test(`header bell supports pointer and keyboard navigation on ${viewport.name}`, async ({
-      page,
-    }) => {
+    test(`header bell opens the inbox and preferences on ${viewport.name}`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/dashboard');
-      const bell = page.getByRole('link', { name: 'Notification preferences', exact: true });
+      const bell = page.getByRole('button', { name: /^Notifications(?:, \d+ unread)?$/ });
       await expect(bell).toBeVisible();
       await bell.click();
+      await expect(page.getByRole('menuitem', { name: 'Notification preferences' })).toBeVisible();
+      await page.getByRole('menuitem', { name: 'Notification preferences' }).click();
       await expect(page).toHaveURL(/\/settings\/notifications$/);
       await expect(
         page.getByRole('heading', { name: 'Notification Settings', exact: true })
       ).toBeVisible();
 
       await page.goto('/dashboard');
-      // Tab from the adjacent header control, rather than activating with a
-      // synthetic click, to exercise the native link's keyboard behavior.
+      // Tab from the adjacent header control and activate with the keyboard.
       await bell.focus();
       await page.keyboard.press('Shift+Tab');
       await expect(bell).not.toBeFocused();
       await page.keyboard.press('Tab');
       await expect(bell).toBeFocused();
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/settings\/notifications$/);
-      await expect(
-        page.getByRole('heading', { name: 'Notification Settings', exact: true })
-      ).toBeVisible();
+      await expect(page.getByRole('menuitem', { name: 'Notification preferences' })).toBeVisible();
     });
   }
 });

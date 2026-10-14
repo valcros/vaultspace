@@ -404,13 +404,72 @@ describe('RLS Enforcement', () => {
             'groups',
             'group_memberships',
             'links',
-            'view_sessions'
+            'view_sessions',
+            'notifications',
+            'notification_preferences'
           )
         ORDER BY c.relname
       `;
 
-      expect(protectedTables).toHaveLength(7);
+      expect(protectedTables).toHaveLength(9);
       expect(protectedTables.every((table) => table.rls_enabled && table.rls_forced)).toBe(true);
+    });
+
+    it('isolates notifications and rejects a recipient from another organization', async () => {
+      const member1 = await rawPrisma.userOrganization.findFirstOrThrow({
+        where: { organizationId: org1Id, userId: user1Id },
+        select: { id: true },
+      });
+      const user2 = await rawPrisma.user.create({
+        data: {
+          email: `rls-notification-${randomUUID()}@example.com`,
+          passwordHash: 'test-hash',
+          firstName: 'Other',
+          lastName: 'Member',
+          isActive: true,
+          organizations: { create: { organizationId: org2Id, role: 'ADMIN', isActive: true } },
+        },
+      });
+      const member2 = await rawPrisma.userOrganization.findFirstOrThrow({
+        where: { organizationId: org2Id, userId: user2.id },
+        select: { id: true },
+      });
+      const first = await rawPrisma.notification.create({
+        data: {
+          organizationId: org1Id,
+          userOrganizationId: member1.id,
+          type: 'ADMIN_ACTION',
+          title: 'Org one notice',
+          message: 'Visible only in org one',
+        },
+      });
+      const second = await rawPrisma.notification.create({
+        data: {
+          organizationId: org2Id,
+          userOrganizationId: member2.id,
+          type: 'ADMIN_ACTION',
+          title: 'Org two notice',
+          message: 'Visible only in org two',
+        },
+      });
+
+      const rows = await withOrgContext(org1Id, (tx) =>
+        tx.notification.findMany({ where: { id: { in: [first.id, second.id] } } })
+      );
+      expect(rows.map((row) => row.id)).toEqual([first.id]);
+      await expect(
+        withOrgContext(org1Id, (tx) =>
+          tx.notification.create({
+            data: {
+              organizationId: org1Id,
+              userOrganizationId: member2.id,
+              type: 'ADMIN_ACTION',
+              title: 'Invalid recipient',
+              message: 'Must be rejected',
+            },
+          })
+        )
+      ).rejects.toThrow();
     });
 
     it('blocks direct cross-tenant SQL without relying on application filters', async () => {

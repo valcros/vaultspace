@@ -1,5 +1,7 @@
 import type { NotificationType, Prisma } from '@prisma/client';
 
+import { getPermissionEngine } from '@/lib/permissions';
+
 interface RoomNotificationInput {
   organizationId: string;
   roomId: string;
@@ -42,7 +44,9 @@ export async function notifyRoomAdministrators(
     select: { id: true, userId: true },
   });
   const recipients = memberships.filter((member) => member.userId !== input.actorUserId);
-  if (recipients.length === 0) return 0;
+  if (recipients.length === 0) {
+    return 0;
+  }
 
   const created = await tx.notification.createMany({
     data: recipients.map((member) => ({
@@ -72,7 +76,9 @@ export async function notifyQuestionAsker(
     actorUserId: string;
   }
 ): Promise<number> {
-  if (!input.askerUserId || input.askerUserId === input.actorUserId) return 0;
+  if (!input.askerUserId || input.askerUserId === input.actorUserId) {
+    return 0;
+  }
   const membership = await tx.userOrganization.findFirst({
     where: {
       organizationId: input.organizationId,
@@ -81,9 +87,20 @@ export async function notifyQuestionAsker(
       archivedAt: null,
       user: { isActive: true },
     },
-    select: { id: true },
+    select: { id: true, role: true },
   });
-  if (!membership) return 0;
+  if (!membership) {
+    return 0;
+  }
+  const canViewRoom = await getPermissionEngine().can(
+    { userId: input.askerUserId, role: membership.role },
+    'view',
+    { type: 'ROOM', organizationId: input.organizationId, roomId: input.roomId },
+    tx
+  );
+  if (!canViewRoom) {
+    return 0;
+  }
   const created = await tx.notification.createMany({
     data: [
       {

@@ -40,10 +40,15 @@ const mockTx = {
   },
   documentVersion: { create: vi.fn(), findFirst: vi.fn() },
   fileBlob: { create: vi.fn() },
+  roleAssignment: { findMany: vi.fn().mockResolvedValue([]) },
+  userOrganization: {
+    findMany: vi.fn().mockResolvedValue([{ id: 'member-2', userId: 'other-admin' }]),
+  },
+  notification: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
 };
 
 const mockEventBus = {
-  emit: vi.fn().mockResolvedValue(undefined),
+  emit: vi.fn().mockResolvedValue('event-upload-1'),
 };
 
 const mockStorage = {
@@ -161,6 +166,16 @@ describe('DocumentService', () => {
         'DOCUMENT_UPLOADED',
         expect.objectContaining({ documentId: 'doc-1' })
       );
+      expect(mockTx.notification.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            userOrganizationId: 'member-2',
+            sourceEventId: 'event-upload-1',
+            documentId: 'doc-1',
+          }),
+        ],
+        skipDuplicates: true,
+      });
     });
 
     it('accepts any file type, even one the app cannot preview (e.g. video)', async () => {
