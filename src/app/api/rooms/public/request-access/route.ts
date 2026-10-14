@@ -7,7 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
+import { notifyRoomAdministrators } from '@/services/notifications/InAppNotificationService';
 
 // This route is public, no auth cookie needed but must be dynamic
 export const dynamic = 'force-dynamic';
@@ -95,14 +96,37 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the access request
-    const accessRequest = await db.accessRequest.create({
-      data: {
+    const accessRequest = await withOrgContext(organization.id, async (tx) => {
+      const created = await tx.accessRequest.create({
+        data: {
+          organizationId: organization.id,
+          roomId: room.id,
+          requesterEmail: email.toLowerCase().trim(),
+          requesterName: name?.trim() || null,
+          reason: reason?.trim() || null,
+        },
+      });
+      const event = await tx.event.create({
+        data: {
+          organizationId: organization.id,
+          roomId: room.id,
+          eventType: 'ACCESS_REQUEST_SUBMITTED',
+          actorType: 'VIEWER',
+          actorEmail: email.toLowerCase().trim(),
+          description: 'Access request submitted',
+          metadata: { accessRequestId: created.id },
+        },
+      });
+      await notifyRoomAdministrators(tx, {
         organizationId: organization.id,
         roomId: room.id,
-        requesterEmail: email.toLowerCase().trim(),
-        requesterName: name?.trim() || null,
-        reason: reason?.trim() || null,
-      },
+        sourceEventId: event.id,
+        type: 'ACCESS_REQUEST',
+        title: 'New access request',
+        message: 'Open room access management to review the request.',
+        actionPath: `/rooms/${room.id}?manage=members`,
+      });
+      return created;
     });
 
     return NextResponse.json(

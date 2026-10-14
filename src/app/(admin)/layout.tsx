@@ -33,6 +33,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   ).catch(() => null);
 
   const organization = {
+    id: session.organizationId,
     name: org?.name ?? session.organization.name,
     logoUrl: org?.logoUrl ?? null,
   };

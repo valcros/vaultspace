@@ -15,6 +15,7 @@ import { NotFoundError, UploadError, ValidationError } from '@/lib/errors';
 import { getPermissionEngine } from '@/lib/permissions';
 import { UPLOAD_CONFIG } from '@/lib/constants';
 import { DOCUMENT_SCAN_JOB_OPTIONS } from '@/workers/types';
+import { notifyRoomAdministrators } from '@/services/notifications/InAppNotificationService';
 
 import type { PaginatedResult, PaginationOptions, ServiceContext } from './types';
 
@@ -241,7 +242,7 @@ export class DocumentService {
     });
 
     // Emit upload event
-    await eventBus.emit('DOCUMENT_UPLOADED', {
+    const sourceEventId = await eventBus.emit('DOCUMENT_UPLOADED', {
       roomId,
       documentId: result.document.id,
       description: `Uploaded document: ${file.filename}`,
@@ -252,6 +253,24 @@ export class DocumentService {
         mimeType: file.mimeType,
       },
     });
+
+    try {
+      await withOrgContext(organizationId, (tx) =>
+        notifyRoomAdministrators(tx, {
+          organizationId,
+          roomId,
+          sourceEventId,
+          actorUserId: session.userId,
+          type: 'UPLOAD_COMPLETE',
+          title: 'New document in a room you manage',
+          message: 'Open the room to review the uploaded document.',
+          actionPath: `/rooms/${roomId}`,
+          documentId: result.document.id,
+        })
+      );
+    } catch (error) {
+      console.error('[DocumentService] Failed to create in-app upload notification:', error);
+    }
 
     // Queue virus scan job - preview generation is queued by scan processor after clean scan
     // This ensures malware gating before any preview processing

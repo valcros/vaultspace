@@ -6,6 +6,7 @@ import { Header } from './header';
 
 interface AppShellProps {
   children: React.ReactNode;
+  organizationId: string;
   user: {
     name: string;
     email: string;
@@ -13,7 +14,7 @@ interface AppShellProps {
   };
 }
 
-export function AppShell({ children, user }: AppShellProps) {
+export function AppShell({ children, user, organizationId }: AppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
@@ -39,7 +40,11 @@ export function AppShell({ children, user }: AppShellProps) {
 
       {/* Main Content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Header user={user} onMenuClick={() => setMobileMenuOpen(true)} />
+        <Header
+          user={user}
+          organizationId={organizationId}
+          onMenuClick={() => setMobileMenuOpen(true)}
+        />
         <main
           tabIndex={0}
           aria-label="Main content"

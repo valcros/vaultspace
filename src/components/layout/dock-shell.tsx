@@ -52,7 +52,8 @@ interface DockShellProps {
     email: string;
     imageUrl?: string | null;
   };
-  organization?: {
+  organization: {
+    id: string;
     name: string;
     logoUrl?: string | null;
   };
