@@ -61,7 +61,10 @@ export async function resolveRoomTemplate(
   }
   const template = legacyTemplateProjection(legacy);
   if (!template.enabled) {
-    throw new SystemRoomTemplateError(409, 'This template is disabled. Reload the folder templates.');
+    throw new SystemRoomTemplateError(
+      409,
+      'This template is disabled. Reload the folder templates.'
+    );
   }
   assertTemplateRevision(template, revision);
   return template;
