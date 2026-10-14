@@ -71,6 +71,7 @@ export default function RoomsPage() {
   const [starterFolderSelection, setStarterFolderSelection] =
     React.useState<StarterFolderSelection>({
       selectedFolderPaths: [],
+      additionalFolders: [],
     });
   const [createError, setCreateError] = React.useState<string | null>(null);
 
@@ -107,9 +108,15 @@ export default function RoomsPage() {
       const response = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          starterFolderSelection.templateId ? { ...newRoom, ...starterFolderSelection } : newRoom
-        ),
+        body: JSON.stringify({
+          ...newRoom,
+          ...(starterFolderSelection.templateId && {
+            templateId: starterFolderSelection.templateId,
+            templateRevision: starterFolderSelection.templateRevision,
+            selectedFolderPaths: starterFolderSelection.selectedFolderPaths,
+          }),
+          additionalFolders: starterFolderSelection.additionalFolders,
+        }),
         credentials: 'include',
       });
 
@@ -120,7 +127,7 @@ export default function RoomsPage() {
       }
       setShowCreateDialog(false);
       setNewRoom({ name: '', description: '' });
-      setStarterFolderSelection({ selectedFolderPaths: [] });
+      setStarterFolderSelection({ selectedFolderPaths: [], additionalFolders: [] });
       router.push(`/rooms/${data.room.id}`);
     } catch (error) {
       console.error('Failed to create room:', error);
@@ -343,6 +350,7 @@ export default function RoomsPage() {
               value={starterFolderSelection}
               onChange={setStarterFolderSelection}
               disabled={isCreating}
+              allowAdditionalFolders
             />
           </div>
           <DialogFooter>

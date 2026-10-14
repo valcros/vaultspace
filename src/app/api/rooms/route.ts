@@ -13,6 +13,7 @@ import { isAuthenticationError } from '@/lib/errors';
 import { getRequestContext, requireAuthFromRequest } from '@/lib/middleware';
 import { createServiceContext, roomService } from '@/services';
 import { createStarterFolderTree } from '@/lib/rooms/createStarterFolderTree';
+import { resolveAdditionalRoomFolders } from '@/lib/rooms/additionalRoomFolders';
 import {
   resolveStarterFolderSelection,
   type StarterFolderDefinition,
@@ -60,6 +61,10 @@ const roomStarterFolderInputSchema = z
     templateId: z.string().trim().min(1).optional(),
     templateRevision: z.string().max(100).optional(),
     selectedFolderPaths: z.array(z.string()).max(100).optional(),
+    additionalFolders: z
+      .array(z.object({ name: z.string(), parentPath: z.string().nullable() }).strict())
+      .max(100)
+      .optional(),
     allowDownloads: z.boolean().optional(),
     defaultExpiryDays: z.number().int().optional(),
   })
@@ -149,6 +154,7 @@ export async function POST(request: NextRequest) {
       templateId,
       templateRevision,
       selectedFolderPaths,
+      additionalFolders,
     } = starterFolderInput.data;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -167,6 +173,7 @@ export async function POST(request: NextRequest) {
 
     // If templateId provided, copy structure from template
     let templateFolders: StarterFolderDefinition[] = [];
+    let initialFolders: StarterFolderDefinition[] = [];
 
     // Use RLS context for all org-scoped operations
     const room = await withOrgContext(session.organizationId, async (tx) => {
@@ -184,6 +191,11 @@ export async function POST(request: NextRequest) {
         }
         templateFolders = selection.folders;
       }
+      const combined = resolveAdditionalRoomFolders(templateFolders, additionalFolders ?? []);
+      if (!combined.ok) {
+        throw new Error(`ROOM_TEMPLATE_INVALID:${combined.error}`);
+      }
+      initialFolders = combined.folders;
 
       // Create room
       const newRoom = await tx.room.create({
@@ -202,11 +214,11 @@ export async function POST(request: NextRequest) {
 
       // Starter templates only create selected, independent room-owned folders.
       // They do not copy documents or share material with another room.
-      if (templateFolders.length > 0) {
+      if (initialFolders.length > 0) {
         await createStarterFolderTree(tx, {
           organizationId: session.organizationId,
           roomId: newRoom.id,
-          folders: templateFolders,
+          folders: initialFolders,
         });
       }
 
@@ -219,8 +231,12 @@ export async function POST(request: NextRequest) {
           actorEmail: session.user.email,
           roomId: newRoom.id,
           description: `Created room "${newRoom.name}"`,
-          ...(templateId && {
-            metadata: { templateId, templateRevision, starterFolderCount: templateFolders.length },
+          ...((templateId || additionalFolders?.length) && {
+            metadata: {
+              ...(templateId && { templateId, templateRevision }),
+              starterFolderCount: templateFolders.length,
+              ...(additionalFolders?.length && { additionalFolderCount: additionalFolders.length }),
+            },
           }),
         },
       });

@@ -127,6 +127,87 @@ describe('POST /api/rooms starter folders', () => {
     expect(mocks.folderCreateMany).not.toHaveBeenCalled();
   });
 
+  it('creates template and room-specific folders together with parent references', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/rooms', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Investor Room',
+          templateId: 'investor-data-room',
+          templateRevision: revision('investor-data-room'),
+          selectedFolderPaths: ['/financials'],
+          additionalFolders: [
+            { name: '2026 Plans', parentPath: '/financials' },
+            { name: 'Board Drafts', parentPath: '/financials/2026 Plans' },
+          ],
+        }),
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.folderCreateMany).toHaveBeenCalledTimes(3);
+    expect(mocks.folderCreateMany.mock.calls[1]![0].data).toEqual([
+      expect.objectContaining({
+        name: '2026 Plans',
+        path: '/financials/2026 Plans',
+        parentId: 'id-/financials',
+      }),
+    ]);
+    expect(mocks.folderCreateMany.mock.calls[2]![0].data).toEqual([
+      expect.objectContaining({
+        name: 'Board Drafts',
+        parentId: 'id-/financials/2026 Plans',
+      }),
+    ]);
+    expect(mocks.eventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ starterFolderCount: 1, additionalFolderCount: 2 }),
+        }),
+      })
+    );
+  });
+
+  it('creates custom folders when no template is selected', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/rooms', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Private Room',
+          additionalFolders: [{ name: 'Private Notes', parentPath: null }],
+        }),
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.folderCreateMany.mock.calls[0]![0].data).toEqual([
+      expect.objectContaining({ name: 'Private Notes', path: '/Private Notes', parentId: null }),
+    ]);
+  });
+
+  it.each([
+    [{ name: 'Child', parentPath: '/missing' }],
+    [{ name: 'FINANCIALS', parentPath: null }],
+    [{ name: 'Bad/Name', parentPath: null }],
+  ])('rejects an invalid combined tree before creating a room', async (additionalFolders) => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/rooms', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Investor Room',
+          templateId: 'investor-data-room',
+          templateRevision: revision('investor-data-room'),
+          selectedFolderPaths: ['/financials'],
+          additionalFolders,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.roomCreate).not.toHaveBeenCalled();
+    expect(mocks.folderCreateMany).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed JSON before attempting to create a room', async () => {
     const response = await POST(
       new NextRequest('http://localhost/api/rooms', {
