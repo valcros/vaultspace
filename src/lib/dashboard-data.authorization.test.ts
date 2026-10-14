@@ -155,4 +155,38 @@ describe('dashboard room-scoped authorization', () => {
     expect(result.continueReading).toEqual([]);
     expect(mocks.can).toHaveBeenCalledTimes(2);
   });
+
+  it('limits admin action items to live rooms', async () => {
+    mocks.getViewableRoomIds.mockResolvedValue(null);
+    mockTx.userOrganization.findUnique.mockResolvedValue({
+      role: 'ADMIN',
+      isActive: true,
+      user: {
+        id: 'admin-1',
+        firstName: 'Synthetic',
+        lastName: 'Admin',
+        email: 'admin@example.test',
+        lastLoginAt: null,
+      },
+    });
+    mockTx.accessRequest.count.mockResolvedValue(0);
+    mockTx.accessRequest.findFirst.mockResolvedValue(null);
+
+    const result = await getDashboardData({ organizationId: 'org-1', userId: 'admin-1' });
+
+    expect(result.actionRequired?.totalCount).toBe(0);
+    expect(mockTx.question.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organizationId: 'org-1', status: 'OPEN', room: { status: 'ACTIVE' } },
+      })
+    );
+    expect(mockTx.accessRequest.count).toHaveBeenCalledWith({
+      where: { organizationId: 'org-1', status: 'PENDING', room: { status: 'ACTIVE' } },
+    });
+    expect(mockTx.accessRequest.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organizationId: 'org-1', status: 'PENDING', room: { status: 'ACTIVE' } },
+      })
+    );
+  });
 });

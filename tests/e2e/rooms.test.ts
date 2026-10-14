@@ -166,6 +166,56 @@ test.describe('Room Management', () => {
   });
 });
 
+test('closed rooms start collapsed and remain discoverable by search', async ({ page }) => {
+  const now = new Date('2026-10-14T00:00:00Z').toISOString();
+  await page.route('**/api/rooms', async (route) => {
+    await route.fulfill({
+      json: {
+        rooms: [
+          {
+            id: 'active-demo-room',
+            name: 'Demo Series A',
+            description: null,
+            status: 'ACTIVE',
+            documentCount: 4,
+            memberCount: 1,
+            linkCount: 0,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: 'closed-test-room',
+            name: 'Closed test room',
+            description: null,
+            status: 'CLOSED',
+            documentCount: 0,
+            memberCount: 0,
+            linkCount: 0,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      },
+    });
+  });
+
+  await openRooms(page);
+  const closedRoom = page.getByRole('link', { name: /Closed test room/ });
+  const closedRoomsToggle = page.getByText('Closed Rooms (1)', { exact: true });
+
+  await expect(page.getByRole('link', { name: /Demo Series A/ })).toBeVisible();
+  await expect(closedRoomsToggle).toBeVisible();
+  await expect(closedRoom).toBeHidden();
+
+  await closedRoomsToggle.click();
+  await expect(closedRoom).toBeVisible();
+
+  await closedRoomsToggle.click();
+  await expect(closedRoom).toBeHidden();
+  await page.getByRole('textbox', { name: 'Search rooms' }).fill('Closed test room');
+  await expect(closedRoom).toBeVisible();
+});
+
 test.describe('Room Settings', () => {
   test.beforeEach(async ({ page }) => {
     await openRooms(page);
