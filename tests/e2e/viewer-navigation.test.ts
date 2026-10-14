@@ -125,6 +125,7 @@ test.describe('Viewer folder navigation', () => {
     await expect(page.getByText('Capitalization Table.xlsx', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'View Capitalization Table.xlsx' }).click();
     await expect(page.getByRole('button', { name: 'Go back' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download', exact: true })).toHaveCount(0);
     await expectNoA11yViolations(page);
   });
 
