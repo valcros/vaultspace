@@ -757,7 +757,7 @@ jobs:
             local job_name="$1"
             local expected_script="$2"
             local required_url="$3"
-            local job_json image command args trigger env
+            local job_json image command args trigger env secret_ref secret_url secret_identity
             job_json=$(az containerapp job show \
               --name "$job_name" \
               --resource-group "$RESOURCE_GROUP" \
@@ -774,8 +774,14 @@ jobs:
               echo "ERROR: optional email incident job image, command, or trigger mismatch"
               return 1
             fi
-            if ! echo "$env" | jq -e --arg key "$required_url" \
-              '.[] | select(.name == $key and (.secretRef // "") != "")' >/dev/null || \
+            secret_ref=$(echo "$env" | jq -r --arg key "$required_url" \
+              '[.[] | select(.name == $key) | .secretRef // empty] | if length == 1 then .[0] else empty end')
+            secret_url=$(echo "$job_json" | jq -r --arg ref "$secret_ref" \
+              '[.properties.configuration.secrets[]? | select(.name == $ref) | .keyVaultUrl // empty] | if length == 1 then .[0] else empty end')
+            secret_identity=$(echo "$job_json" | jq -r --arg ref "$secret_ref" \
+              '[.properties.configuration.secrets[]? | select(.name == $ref) | .identity // empty] | if length == 1 then .[0] else empty end')
+            if [ -z "$secret_ref" ] || [[ ! "$secret_url" =~ ^https://[^/]+/secrets/[^/]+ ]] || \
+               [ "$secret_identity" != "system" ] || \
                echo "$env" | jq -e '.[] | select(.name == "DATABASE_URL_ADMIN" or .name == "DATABASE_URL")' >/dev/null; then
               echo "ERROR: optional email incident job database secret posture mismatch"
               return 1
