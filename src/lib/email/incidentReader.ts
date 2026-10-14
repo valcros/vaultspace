@@ -4,7 +4,7 @@ import { bootstrapDb } from '@/lib/db';
 export async function listRecentEmailIncidents() {
   const [incidents, openCount] = await Promise.all([
     bootstrapDb.emailDeliveryIncident.findMany({
-      orderBy: [{ acknowledgedAt: { sort: 'asc', nulls: 'first' } }, { eventAt: 'desc' }],
+      orderBy: [{ acknowledgedAt: { sort: 'desc', nulls: 'first' } }, { eventAt: 'desc' }],
       take: 100,
       select: {
         id: true,

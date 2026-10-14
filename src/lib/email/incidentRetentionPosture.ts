@@ -89,7 +89,7 @@ export async function preflightIncidentRetention(client: PrismaClient): Promise<
              SELECT 1 FROM pg_class candidate
              JOIN pg_namespace namespace ON namespace.oid = candidate.relnamespace
              WHERE namespace.nspname = 'public'
-               AND candidate.relkind IN ('r', 'p')
+               AND candidate.relkind IN ('r', 'p', 'v', 'm', 'f')
                AND (
                  has_table_privilege(current_user, candidate.oid, 'SELECT')
                  OR has_table_privilege(current_user, candidate.oid, 'INSERT')

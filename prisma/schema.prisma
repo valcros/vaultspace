@@ -1890,7 +1890,7 @@ model ProviderEventInbox {
 // ordinary tenant runtime has no direct table access. Acknowledgement is a
 // separate, audited platform-operator transition.
 model EmailDeliveryIncident {
-  id                        String    @id @default(cuid())
+  id                        String    @id @default(uuid())
   createdAt                 DateTime  @default(now())
   provider                  String    @db.VarChar(32)
   providerMessageId         String    @db.VarChar(255)

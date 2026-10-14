@@ -13,11 +13,16 @@ interface LogsQueryResponse {
 
 const MAX_ROWS = 1001;
 
+export interface AcsIncidentBatch {
+  evidence: IncidentEvidence[];
+  invalidRows: number;
+}
+
 /** Query raw recipient IDs only inside this collector, so they can be keyed before persistence. */
 export async function listAcsIncidentEvidence(
   fingerprintKey: RecipientFingerprintKey,
   lookbackHours = 72
-): Promise<IncidentEvidence[]> {
+): Promise<AcsIncidentBatch> {
   const resourceId = process.env['ACS_COMMUNICATION_RESOURCE_ID'];
   if (
     !resourceId ||
@@ -60,10 +65,26 @@ export async function listAcsIncidentEvidence(
   if (table.rows.length >= MAX_ROWS) {
     throw new Error('EMAIL_INCIDENT_SOURCE_WINDOW_OVERFLOW');
   }
-  return table.rows.map((values) => {
+  const evidence: IncidentEvidence[] = [];
+  let invalidRows = 0;
+  for (const values of table.rows) {
     const row = Object.fromEntries(
       table.columns.map((column, index) => [column.name, values[index]])
     );
-    return normalizeAcsIncidentEvidence(row, fingerprintKey);
-  });
+    try {
+      evidence.push(normalizeAcsIncidentEvidence(row, fingerprintKey));
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /^EMAIL_INCIDENT_(PROVIDER_ROW_INVALID|RECIPIENT_OR_KEY_INVALID|RECIPIENT_DOMAIN_MISMATCH)$/.test(
+          error.message
+        )
+      ) {
+        invalidRows++;
+        continue;
+      }
+      throw error;
+    }
+  }
+  return { evidence, invalidRows };
 }

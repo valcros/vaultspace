@@ -99,7 +99,7 @@ export async function preflightEmailIncidentCollector(): Promise<void> {
                SELECT 1 FROM pg_class other_table
                JOIN pg_namespace namespace ON namespace.oid = other_table.relnamespace
                WHERE namespace.nspname = 'public'
-                 AND other_table.relkind IN ('r', 'p')
+                 AND other_table.relkind IN ('r', 'p', 'v', 'm', 'f')
                  AND other_table.oid <> target.oid
                  AND (
                    has_table_privilege(current_user, other_table.oid, 'SELECT')
