@@ -65,6 +65,7 @@ export default function RoomsPage() {
   const [rooms, setRooms] = React.useState<Room[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [closedRoomsOpen, setClosedRoomsOpen] = React.useState(false);
   const closedRoomsDetailsRef = React.useRef<HTMLDetailsElement>(null);
   const [showCreateDialog, setShowCreateDialog] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
@@ -283,11 +284,13 @@ export default function RoomsPage() {
             {closedRooms.length > 0 && isAdmin && (
               <div>
                 <h2 className="sr-only">Closed rooms</h2>
-                <details ref={closedRoomsDetailsRef} className="group">
+                <details
+                  ref={closedRoomsDetailsRef}
+                  onToggle={(event) => setClosedRoomsOpen(event.currentTarget.open)}
+                >
                   <summary className="focus-visible:ring-primary flex cursor-pointer list-none items-center justify-between rounded-md py-2 text-xs font-medium uppercase tracking-wide text-neutral-500 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:text-neutral-400 [&::-webkit-details-marker]:hidden">
                     <span>Closed Rooms ({closedRooms.length})</span>
-                    <span className="group-open:hidden">Show closed rooms</span>
-                    <span className="group-open:inline hidden">Hide closed rooms</span>
+                    <span>{closedRoomsOpen ? 'Hide closed rooms' : 'Show closed rooms'}</span>
                   </summary>
                   <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {closedRooms.map((room) => (
