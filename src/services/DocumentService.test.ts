@@ -164,7 +164,8 @@ describe('DocumentService', () => {
       );
       expect(mockEventBus.emit).toHaveBeenCalledWith(
         'DOCUMENT_UPLOADED',
-        expect.objectContaining({ documentId: 'doc-1' })
+        expect.objectContaining({ documentId: 'doc-1' }),
+        mockTx
       );
       expect(mockTx.notification.createMany).toHaveBeenCalledWith({
         data: [
@@ -176,6 +177,34 @@ describe('DocumentService', () => {
         ],
         skipDuplicates: true,
       });
+      expect(mockEventBus.emit.mock.invocationCallOrder[0]).toBeLessThan(
+        mockTx.notification.createMany.mock.invocationCallOrder[0]!
+      );
+      expect(mockTx.notification.createMany.mock.invocationCallOrder[0]).toBeLessThan(
+        mockJob.addJob.mock.invocationCallOrder[0]!
+      );
+    });
+
+    it('fails the upload and cleans up its storage object when the durable notice cannot be written', async () => {
+      mockTx.room.findFirst.mockResolvedValue({ id: 'room-1', status: 'ACTIVE' });
+      mockTx.document.create.mockResolvedValue({ id: 'doc-1' });
+      mockTx.documentVersion.create.mockResolvedValue({
+        id: 'ver-1',
+        fileName: 'test-document.pdf',
+      });
+      mockTx.document.update.mockResolvedValue({});
+      mockTx.notification.createMany.mockRejectedValueOnce(
+        new Error('notification database unavailable')
+      );
+
+      await expect(service.upload(ctx, { roomId: 'room-1', file: validFile })).rejects.toThrow(
+        'notification database unavailable'
+      );
+      expect(mockStorage.delete).toHaveBeenCalledWith(
+        'documents',
+        'org-1/documents/doc-1/versions/ver-1/original/test-document.pdf'
+      );
+      expect(mockJob.addJob).not.toHaveBeenCalled();
     });
 
     it('accepts any file type, even one the app cannot preview (e.g. video)', async () => {

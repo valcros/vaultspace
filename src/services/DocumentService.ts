@@ -124,139 +124,140 @@ export class DocumentService {
     const versionHash = calculateVersionHash(fileSha256, null, 1);
 
     // Use RLS context for all org-scoped database operations
-    const result = await withOrgContext(organizationId, async (tx) => {
-      // Check permissions (inside RLS context)
-      const permissionEngine = getPermissionEngine();
-      const canUpload = await permissionEngine.can(
-        { userId: session.userId, role: session.organization.role },
-        'admin',
-        { type: 'ROOM', organizationId, roomId },
-        tx
-      );
-
-      if (!canUpload) {
-        throw new UploadError('You do not have permission to upload to this room');
-      }
-
-      // Validate room exists and is active
-      const room = await tx.room.findFirst({
-        where: { id: roomId, organizationId, status: 'ACTIVE' },
-      });
-
-      if (!room) {
-        throw new NotFoundError('Room not found or not active');
-      }
-
-      // Validate folder if provided
-      if (folderId) {
-        const folder = await tx.folder.findFirst({
-          where: { id: folderId, organizationId, roomId },
-        });
-
-        if (!folder) {
-          throw new NotFoundError('Folder not found');
-        }
-      }
-
-      // Assign an immutable accession number when the room opts in. Incrementing
-      // lastAccessionSeq holds a row lock for the rest of this transaction, which
-      // serializes concurrent uploads so numbers are unique and never reused.
-      let accessionNumber: string | null = null;
-      let accessionSeq: number | null = null;
-      if (room.accessionNumberingEnabled) {
-        const counter = await tx.room.update({
-          where: { id: roomId },
-          data: { lastAccessionSeq: { increment: 1 } },
-          select: { lastAccessionSeq: true, accessionPrefix: true },
-        });
-        accessionSeq = counter.lastAccessionSeq;
-        const prefix = counter.accessionPrefix?.trim() || 'DOC';
-        accessionNumber = `${prefix}-${String(accessionSeq).padStart(4, '0')}`;
-      }
-
-      // Create the document
-      const document = await tx.document.create({
-        data: {
-          organizationId,
-          roomId,
-          folderId,
-          name: file.filename,
-          mimeType: file.mimeType,
-          fileSize: BigInt(file.size),
-          originalFileName: file.filename,
-          status: 'ACTIVE',
-          tags: tags ?? [],
-          totalVersions: 1,
-          accessionNumber,
-          accessionSeq,
-        },
-      });
-
-      // Create the first version
-      const version = await tx.documentVersion.create({
-        data: {
-          organizationId,
-          documentId: document.id,
-          versionNumber: 1,
-          fileName: sanitizedFilename,
-          mimeType: file.mimeType,
-          fileSize: BigInt(file.size),
-          fileSha256,
-          versionHash,
-          scanStatus: 'PENDING',
-          previewStatus: 'PENDING',
-          uploadedByUserId: session.userId,
-          uploadedByEmail: session.user.email,
-        },
-      });
-
-      // Generate storage key
-      const storageKey = generateStorageKey(
-        organizationId,
-        document.id,
-        version.id,
-        sanitizedFilename
-      );
-
-      // Upload to storage
-      await providers.storage.put('documents', storageKey, file.data);
-
-      // Create FileBlob record
-      await tx.fileBlob.create({
-        data: {
-          organizationId,
-          versionId: version.id,
-          storageKey,
-          storageBucket: 'documents',
-          isEncrypted: false,
-        },
-      });
-
-      // Update document with current version
-      await tx.document.update({
-        where: { id: document.id },
-        data: { currentVersionId: version.id },
-      });
-
-      return { document, version };
-    });
-
-    // Emit upload event
-    const sourceEventId = await eventBus.emit('DOCUMENT_UPLOADED', {
-      roomId,
-      documentId: result.document.id,
-      description: `Uploaded document: ${file.filename}`,
-      metadata: {
-        versionId: result.version.id,
-        fileName: file.filename,
-        fileSize: file.size,
-        mimeType: file.mimeType,
-      },
-    });
-
+    let uploadedStorageKey: string | null = null;
+    let result: { document: Document; version: DocumentVersion };
     try {
-      await withOrgContext(organizationId, (tx) =>
-        notifyRoomAdministrators(tx, {
+      result = await withOrgContext(organizationId, async (tx) => {
+        // Check permissions (inside RLS context)
+        const permissionEngine = getPermissionEngine();
+        const canUpload = await permissionEngine.can(
+          { userId: session.userId, role: session.organization.role },
+          'admin',
+          { type: 'ROOM', organizationId, roomId },
+          tx
+        );
+
+        if (!canUpload) {
+          throw new UploadError('You do not have permission to upload to this room');
+        }
+
+        // Validate room exists and is active
+        const room = await tx.room.findFirst({
+          where: { id: roomId, organizationId, status: 'ACTIVE' },
+        });
+
+        if (!room) {
+          throw new NotFoundError('Room not found or not active');
+        }
+
+        // Validate folder if provided
+        if (folderId) {
+          const folder = await tx.folder.findFirst({
+            where: { id: folderId, organizationId, roomId },
+          });
+
+          if (!folder) {
+            throw new NotFoundError('Folder not found');
+          }
+        }
+
+        // Assign an immutable accession number when the room opts in. Incrementing
+        // lastAccessionSeq holds a row lock for the rest of this transaction, which
+        // serializes concurrent uploads so numbers are unique and never reused.
+        let accessionNumber: string | null = null;
+        let accessionSeq: number | null = null;
+        if (room.accessionNumberingEnabled) {
+          const counter = await tx.room.update({
+            where: { id: roomId },
+            data: { lastAccessionSeq: { increment: 1 } },
+            select: { lastAccessionSeq: true, accessionPrefix: true },
+          });
+          accessionSeq = counter.lastAccessionSeq;
+          const prefix = counter.accessionPrefix?.trim() || 'DOC';
+          accessionNumber = `${prefix}-${String(accessionSeq).padStart(4, '0')}`;
+        }
+
+        // Create the document
+        const document = await tx.document.create({
+          data: {
+            organizationId,
+            roomId,
+            folderId,
+            name: file.filename,
+            mimeType: file.mimeType,
+            fileSize: BigInt(file.size),
+            originalFileName: file.filename,
+            status: 'ACTIVE',
+            tags: tags ?? [],
+            totalVersions: 1,
+            accessionNumber,
+            accessionSeq,
+          },
+        });
+
+        // Create the first version
+        const version = await tx.documentVersion.create({
+          data: {
+            organizationId,
+            documentId: document.id,
+            versionNumber: 1,
+            fileName: sanitizedFilename,
+            mimeType: file.mimeType,
+            fileSize: BigInt(file.size),
+            fileSha256,
+            versionHash,
+            scanStatus: 'PENDING',
+            previewStatus: 'PENDING',
+            uploadedByUserId: session.userId,
+            uploadedByEmail: session.user.email,
+          },
+        });
+
+        // Generate storage key
+        const storageKey = generateStorageKey(
+          organizationId,
+          document.id,
+          version.id,
+          sanitizedFilename
+        );
+        uploadedStorageKey = storageKey;
+
+        // Upload to storage
+        await providers.storage.put('documents', storageKey, file.data);
+
+        // Create FileBlob record
+        await tx.fileBlob.create({
+          data: {
+            organizationId,
+            versionId: version.id,
+            storageKey,
+            storageBucket: 'documents',
+            isEncrypted: false,
+          },
+        });
+
+        // Update document with current version
+        await tx.document.update({
+          where: { id: document.id },
+          data: { currentVersionId: version.id },
+        });
+
+        const sourceEventId = await eventBus.emit(
+          'DOCUMENT_UPLOADED',
+          {
+            roomId,
+            documentId: document.id,
+            description: `Uploaded document: ${file.filename}`,
+            metadata: {
+              versionId: version.id,
+              fileName: file.filename,
+              fileSize: file.size,
+              mimeType: file.mimeType,
+            },
+          },
+          tx
+        );
+        await notifyRoomAdministrators(tx, {
           organizationId,
           roomId,
           sourceEventId,
@@ -265,11 +266,20 @@ export class DocumentService {
           title: 'New document in a room you manage',
           message: 'Open the room to review the uploaded document.',
           actionPath: `/rooms/${roomId}`,
-          documentId: result.document.id,
-        })
-      );
+          documentId: document.id,
+        });
+
+        return { document, version };
+      });
     } catch (error) {
-      console.error('[DocumentService] Failed to create in-app upload notification:', error);
+      if (uploadedStorageKey) {
+        try {
+          await providers.storage.delete('documents', uploadedStorageKey);
+        } catch (cleanupError) {
+          console.error('[DocumentService] Failed to clean up uncommitted upload:', cleanupError);
+        }
+      }
+      throw error;
     }
 
     // Queue virus scan job - preview generation is queued by scan processor after clean scan

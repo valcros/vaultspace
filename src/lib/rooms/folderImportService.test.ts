@@ -165,6 +165,29 @@ describe('folder import service', () => {
       data: [expect.objectContaining({ userOrganizationId: 'member-2', sourceEventId: 'event-1' })],
       skipDuplicates: true,
     });
+    expect(tx.notification.createMany.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(ctx.providers.job.addJob).mock.invocationCallOrder[0]!
+    );
+  });
+
+  it('rolls back the import and cleans up uploaded objects if its notice write fails', async () => {
+    const tx = makeTransaction();
+    mocks.withOrgContext.mockImplementation(
+      async (_org: string, callback: (tx: unknown) => unknown) => callback(tx)
+    );
+    tx.notification.createMany.mockRejectedValueOnce(
+      new Error('notification database unavailable')
+    );
+    const ctx = makeContext();
+
+    await expect(
+      commitFolderImport(ctx, 'room-1', [{ file: firstFile, path: 'A/a.pdf' }], null)
+    ).rejects.toThrow('notification database unavailable');
+    expect(ctx.providers.storage.delete).toHaveBeenCalledWith(
+      'documents',
+      'org-1/documents/document-1/versions/version-1/original/a.pdf'
+    );
+    expect(ctx.providers.job.addJob).not.toHaveBeenCalled();
   });
 
   it('creates one room notice for a multi-file import', async () => {

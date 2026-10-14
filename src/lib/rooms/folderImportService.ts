@@ -383,6 +383,22 @@ export async function commitFolderImport(
             sourceEventId,
           });
         }
+        const firstDocument = results[0];
+        if (firstDocument) {
+          await notifyRoomAdministrators(tx, {
+            organizationId: ctx.session.organizationId,
+            roomId,
+            sourceEventId: firstDocument.sourceEventId,
+            actorUserId: ctx.session.userId,
+            type: 'UPLOAD_COMPLETE',
+            title:
+              results.length === 1
+                ? 'New document in a room you manage'
+                : `${results.length} new documents in a room you manage`,
+            message: 'Open the room to review the imported documents.',
+            actionPath: `/rooms/${roomId}`,
+          });
+        }
         return results;
       },
       { timeout: 180_000, maxWait: 10_000 }
@@ -392,29 +408,6 @@ export async function commitFolderImport(
       writtenKeys.map((key) => ctx.providers.storage.delete('documents', key))
     );
     throw error;
-  }
-
-  const firstDocument = committed[0];
-  if (firstDocument) {
-    try {
-      await withOrgContext(ctx.session.organizationId, (tx) =>
-        notifyRoomAdministrators(tx, {
-          organizationId: ctx.session.organizationId,
-          roomId,
-          sourceEventId: firstDocument.sourceEventId,
-          actorUserId: ctx.session.userId,
-          type: 'UPLOAD_COMPLETE',
-          title:
-            committed.length === 1
-              ? 'New document in a room you manage'
-              : `${committed.length} new documents in a room you manage`,
-          message: 'Open the room to review the imported documents.',
-          actionPath: `/rooms/${roomId}`,
-        })
-      );
-    } catch (error) {
-      console.error('[FolderImport] Failed to create in-app upload notification:', error);
-    }
   }
 
   for (const document of committed) {
