@@ -8,6 +8,7 @@ import { getPermissionEngine } from '@/lib/permissions';
 import { resolveMimeType } from '@/lib/fileTypes';
 import { DOCUMENT_SCAN_JOB_OPTIONS } from '@/workers/types';
 import type { ServiceContext } from '@/services/types';
+import { notifyRoomAdministrators } from '@/services/notifications/InAppNotificationService';
 
 import {
   MAX_IMPORT_BYTES,
@@ -232,6 +233,7 @@ export async function commitFolderImport(
     storageKey: string;
     mimeType: string;
     fileSize: number;
+    sourceEventId: string;
   }>;
   let newFolderCount = 0;
 
@@ -356,7 +358,7 @@ export async function commitFolderImport(
             where: { id: document.id },
             data: { currentVersionId: version.id },
           });
-          await ctx.eventBus.emit(
+          const sourceEventId = await ctx.eventBus.emit(
             'DOCUMENT_UPLOADED',
             {
               roomId,
@@ -378,6 +380,7 @@ export async function commitFolderImport(
             storageKey,
             mimeType,
             fileSize: file.size,
+            sourceEventId,
           });
         }
         return results;
@@ -389,6 +392,29 @@ export async function commitFolderImport(
       writtenKeys.map((key) => ctx.providers.storage.delete('documents', key))
     );
     throw error;
+  }
+
+  const firstDocument = committed[0];
+  if (firstDocument) {
+    try {
+      await withOrgContext(ctx.session.organizationId, (tx) =>
+        notifyRoomAdministrators(tx, {
+          organizationId: ctx.session.organizationId,
+          roomId,
+          sourceEventId: firstDocument.sourceEventId,
+          actorUserId: ctx.session.userId,
+          type: 'UPLOAD_COMPLETE',
+          title:
+            committed.length === 1
+              ? 'New document in a room you manage'
+              : `${committed.length} new documents in a room you manage`,
+          message: 'Open the room to review the imported documents.',
+          actionPath: `/rooms/${roomId}`,
+        })
+      );
+    } catch (error) {
+      console.error('[FolderImport] Failed to create in-app upload notification:', error);
+    }
   }
 
   for (const document of committed) {

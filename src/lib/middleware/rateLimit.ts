@@ -125,6 +125,20 @@ export const rateLimiters = {
       prefix: 'email-verification-resend:ip',
     }),
 
+  accessRequestByIp: (ip: string) =>
+    assertRateLimit(ip, {
+      limit: RATE_LIMIT_CONFIG.ACCESS_REQUESTS_PER_IP_PER_HOUR,
+      windowSeconds: 60 * 60,
+      prefix: 'access-request:ip',
+    }),
+
+  accessRequestByEmailRoom: (fingerprint: string) =>
+    assertRateLimit(fingerprint, {
+      limit: RATE_LIMIT_CONFIG.ACCESS_REQUESTS_PER_EMAIL_ROOM_PER_HOUR,
+      windowSeconds: 60 * 60,
+      prefix: 'access-request:email-room',
+    }),
+
   clientDiagnosticsByUser: (userId: string) =>
     assertRateLimit(userId, {
       limit: RATE_LIMIT_CONFIG.CLIENT_DIAGNOSTICS_PER_USER_PER_MINUTE,

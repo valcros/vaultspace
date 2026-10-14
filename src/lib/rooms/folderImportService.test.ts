@@ -33,7 +33,7 @@ function makeContext() {
       organization: { role: 'ADMIN' },
       user: { email: 'admin@example.test' },
     },
-    eventBus: { emit: vi.fn() },
+    eventBus: { emit: vi.fn().mockResolvedValue('event-1') },
     providers: {
       storage: { put: vi.fn(), delete: vi.fn() },
       job: { addJob: vi.fn() },
@@ -71,6 +71,11 @@ function makeTransaction() {
         .mockResolvedValueOnce({ id: 'version-2' }),
     },
     fileBlob: { create: vi.fn() },
+    roleAssignment: { findMany: vi.fn().mockResolvedValue([]) },
+    userOrganization: {
+      findMany: vi.fn().mockResolvedValue([{ id: 'member-2', userId: 'other-admin' }]),
+    },
+    notification: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
 }
 
@@ -156,6 +161,47 @@ describe('folder import service', () => {
       expect.objectContaining({ documentId: 'document-1', organizationId: 'org-1' }),
       expect.any(Object)
     );
+    expect(tx.notification.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ userOrganizationId: 'member-2', sourceEventId: 'event-1' })],
+      skipDuplicates: true,
+    });
+  });
+
+  it('creates one room notice for a multi-file import', async () => {
+    const tx = makeTransaction();
+    mocks.withOrgContext.mockImplementation(
+      async (_org: string, callback: (tx: unknown) => unknown) => callback(tx)
+    );
+    const ctx = makeContext();
+    vi.mocked(ctx.eventBus.emit)
+      .mockResolvedValueOnce('folder-event')
+      .mockResolvedValueOnce('event-1')
+      .mockResolvedValueOnce('event-2');
+
+    const result = await commitFolderImport(
+      ctx,
+      'room-1',
+      [
+        { file: firstFile, path: 'A/a.pdf' },
+        { file: secondFile, path: 'A/b.pdf' },
+      ],
+      null
+    );
+
+    expect(result.documents).toHaveLength(2);
+    expect(ctx.eventBus.emit).toHaveBeenCalledTimes(3);
+    expect(ctx.providers.job.addJob).toHaveBeenCalledTimes(4);
+    expect(tx.notification.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.notification.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          sourceEventId: 'event-1',
+          title: '2 new documents in a room you manage',
+          documentId: null,
+        }),
+      ],
+      skipDuplicates: true,
+    });
   });
 
   it('cleans up uploaded storage objects and skips jobs when a write fails', async () => {

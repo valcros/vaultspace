@@ -12,7 +12,8 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Bell, Search, Command } from 'lucide-react';
+import { Search, Command } from 'lucide-react';
+import { NotificationMenu } from './notification-menu';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -33,7 +34,8 @@ interface DockHeaderProps {
     email: string;
     imageUrl?: string | null;
   };
-  organization?: {
+  organization: {
+    id: string;
     name: string;
     logoUrl?: string | null;
   };
@@ -105,13 +107,11 @@ export function DockHeader({ user, organization, onSearchClick }: DockHeaderProp
         {/* Theme toggle */}
         <ThemeToggle className={clsx('h-9 w-9', chromeButton)} />
 
-        {/* Notification preferences. An inbox/unread count is not implemented. */}
-        <Button variant="ghost" size="icon" className={chromeButton} asChild>
-          <Link href="/settings/notifications" title="Notification preferences">
-            <Bell className="h-5 w-5" aria-hidden="true" />
-            <span className="sr-only">Notification preferences</span>
-          </Link>
-        </Button>
+        <NotificationMenu
+          key={organization.id}
+          organizationId={organization.id}
+          className={chromeButton}
+        />
 
         {/* User menu */}
         <DropdownMenu>

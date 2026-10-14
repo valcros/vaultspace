@@ -47,6 +47,8 @@ ALTER TABLE extracted_texts ENABLE ROW LEVEL SECURITY;
 -- table is added, restore: ALTER TABLE watermark_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitation_room_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_preferences ENABLE ROW LEVEL SECURITY;
 
 -- Platform-control tables are global governance state, not tenant data. They
 -- receive FORCE RLS with no tenant policy, which is intentionally default-deny.
@@ -150,6 +152,33 @@ CREATE POLICY user_org_mapping_isolation ON user_organizations
   FOR ALL
   USING (
     "organizationId" = current_setting('app.current_org_id', true)
+  );
+
+-- Notification records and preferences are scoped to the active organization.
+DROP POLICY IF EXISTS notification_org_isolation ON notifications;
+CREATE POLICY notification_org_isolation ON notifications
+  FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK (
+    "organizationId" = current_setting('app.current_org_id', true)
+    AND EXISTS (
+      SELECT 1 FROM user_organizations recipient
+      WHERE recipient.id = "userOrganizationId"
+        AND recipient."organizationId" = notifications."organizationId"
+    )
+  );
+
+DROP POLICY IF EXISTS notification_preference_org_isolation ON notification_preferences;
+CREATE POLICY notification_preference_org_isolation ON notification_preferences
+  FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK (
+    "organizationId" = current_setting('app.current_org_id', true)
+    AND EXISTS (
+      SELECT 1 FROM user_organizations recipient
+      WHERE recipient.id = "userOrganizationId"
+        AND recipient."organizationId" = notification_preferences."organizationId"
+    )
   );
 
 -- Rooms policy
@@ -355,6 +384,8 @@ ALTER TABLE search_indexes FORCE ROW LEVEL SECURITY;
 ALTER TABLE extracted_texts FORCE ROW LEVEL SECURITY;
 ALTER TABLE invitations FORCE ROW LEVEL SECURITY;
 ALTER TABLE invitation_room_assignments FORCE ROW LEVEL SECURITY;
+ALTER TABLE notifications FORCE ROW LEVEL SECURITY;
+ALTER TABLE notification_preferences FORCE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- STEP 3b: Revoke UPDATE/DELETE on immutable audit tables

@@ -114,6 +114,7 @@ enum EventType {
   LINK_ACCESSED
   LINK_ACCESS_DENIED
   LINK_PASSWORD_VERIFIED
+  ACCESS_REQUEST_SUBMITTED
 
   // Analytics
   DOCUMENT_VIEWED
@@ -328,6 +329,8 @@ enum NotificationType {
   LINK_ACCESSED
   ADMIN_ACTION
   DIGEST
+  QUESTION_ACTIVITY
+  ACCESS_REQUEST
 }
 
 // Notification frequency
@@ -1610,9 +1613,11 @@ model Notification {
   message String           @db.Text
 
   // Resource reference
-  roomId     String?
-  documentId String?
-  linkId     String?
+  roomId        String?
+  documentId    String?
+  linkId        String?
+  actionPath    String? @db.VarChar(500)
+  sourceEventId String? @db.VarChar(100)
 
   // Status
   isRead Boolean @default(false)
@@ -1621,10 +1626,12 @@ model Notification {
   organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userOrganization UserOrganization @relation(fields: [userOrganizationId], references: [id], onDelete: Cascade)
 
+  @@unique([userOrganizationId, sourceEventId])
   @@index([organizationId])
   @@index([userOrganizationId])
   @@index([isRead])
   @@index([createdAt])
+  @@index([userOrganizationId, isRead, createdAt, id])
   @@map("notifications")
 }
 

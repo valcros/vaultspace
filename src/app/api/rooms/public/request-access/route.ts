@@ -4,10 +4,15 @@
  * POST /api/rooms/public/request-access - Submit an access request (no auth required)
  */
 
+import { createHmac } from 'node:crypto';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { db } from '@/lib/db';
+import { db, withOrgContext } from '@/lib/db';
+import { RateLimitError } from '@/lib/errors';
+import { getRequestContext, rateLimiters } from '@/lib/middleware';
+import { notifyRoomAdministrators } from '@/services/notifications/InAppNotificationService';
 
 // This route is public, no auth cookie needed but must be dynamic
 export const dynamic = 'force-dynamic';
@@ -41,6 +46,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { roomSlug, organizationSlug, email, name, reason } = parsed.data;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Limit unauthenticated request volume before any organization lookup.
+    await rateLimiters.accessRequestByIp(getRequestContext(request).ipAddress);
 
     // PRE-RLS BOOTSTRAP: Look up org by slug (no org context yet)
     const organization = await db.organization.findFirst({
@@ -77,12 +86,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const emailRoomFingerprint = createHmac('sha256', process.env['SESSION_SECRET'] || '')
+      .update(
+        `vaultspace/access-request\0${organization.id}\0${room.id}\0${normalizedEmail}`,
+        'utf8'
+      )
+      .digest('hex');
+    await rateLimiters.accessRequestByEmailRoom(emailRoomFingerprint);
+
     // Check for existing pending request from the same email for this room
     const existingRequest = await db.accessRequest.findFirst({
       where: {
         roomId: room.id,
         organizationId: organization.id,
-        requesterEmail: email.toLowerCase().trim(),
+        requesterEmail: normalizedEmail,
         status: 'PENDING',
       },
     });
@@ -95,14 +112,37 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the access request
-    const accessRequest = await db.accessRequest.create({
-      data: {
+    const accessRequest = await withOrgContext(organization.id, async (tx) => {
+      const created = await tx.accessRequest.create({
+        data: {
+          organizationId: organization.id,
+          roomId: room.id,
+          requesterEmail: normalizedEmail,
+          requesterName: name?.trim() || null,
+          reason: reason?.trim() || null,
+        },
+      });
+      const event = await tx.event.create({
+        data: {
+          organizationId: organization.id,
+          roomId: room.id,
+          eventType: 'ACCESS_REQUEST_SUBMITTED',
+          actorType: 'VIEWER',
+          actorEmail: normalizedEmail,
+          description: 'Access request submitted',
+          metadata: { accessRequestId: created.id },
+        },
+      });
+      await notifyRoomAdministrators(tx, {
         organizationId: organization.id,
         roomId: room.id,
-        requesterEmail: email.toLowerCase().trim(),
-        requesterName: name?.trim() || null,
-        reason: reason?.trim() || null,
-      },
+        sourceEventId: event.id,
+        type: 'ACCESS_REQUEST',
+        title: 'New access request',
+        message: 'Open room access management to review the request.',
+        actionPath: `/rooms/${room.id}?manage=members`,
+      });
+      return created;
     });
 
     return NextResponse.json(
@@ -113,6 +153,12 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof RateLimitError) {
+      return NextResponse.json(
+        { error: 'Too many access requests. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(error.retryAfter) } }
+      );
+    }
     console.error('[AccessRequestPublicAPI] POST error:', error);
     return NextResponse.json({ error: 'Failed to submit access request' }, { status: 500 });
   }

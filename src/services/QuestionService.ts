@@ -9,6 +9,10 @@
 import type { Prisma, Question, Answer, QuestionStatus, QuestionPriority } from '@prisma/client';
 
 import { withOrgContext } from '@/lib/db';
+import {
+  notifyQuestionAsker,
+  notifyRoomAdministrators,
+} from '@/services/notifications/InAppNotificationService';
 import { NotFoundError } from '@/lib/errors';
 
 import type { PaginatedResult, ServiceContext } from './types';
@@ -219,8 +223,8 @@ export class QuestionService {
     const { session, eventBus } = ctx;
     const organizationId = session.organizationId;
 
-    const question = await withOrgContext(organizationId, async (tx) => {
-      return tx.question.create({
+    return withOrgContext(organizationId, async (tx) => {
+      const question = await tx.question.create({
         data: {
           organizationId,
           roomId,
@@ -234,20 +238,32 @@ export class QuestionService {
           askedByName: `${session.user.firstName} ${session.user.lastName}`,
         },
       });
+      const sourceEventId = await eventBus.emit(
+        'QUESTION_SUBMITTED',
+        {
+          roomId,
+          documentId: options.documentId,
+          description: `Question submitted: ${question.subject}`,
+          metadata: {
+            questionId: question.id,
+            subject: question.subject,
+            documentId: options.documentId,
+          },
+        },
+        tx
+      );
+      await notifyRoomAdministrators(tx, {
+        organizationId,
+        roomId,
+        sourceEventId,
+        actorUserId: session.userId,
+        type: 'QUESTION_ACTIVITY',
+        title: 'New question in a room you manage',
+        message: 'Open the room Q&A to review the question.',
+        actionPath: `/rooms/${roomId}?manage=qa`,
+      });
+      return question;
     });
-
-    await eventBus.emit('QUESTION_SUBMITTED', {
-      roomId,
-      documentId: options.documentId,
-      description: `Question submitted: ${question.subject}`,
-      metadata: {
-        questionId: question.id,
-        subject: question.subject,
-        documentId: options.documentId,
-      },
-    });
-
-    return question;
   }
 
   /**
@@ -323,7 +339,7 @@ export class QuestionService {
     const { session, eventBus } = ctx;
     const organizationId = session.organizationId;
 
-    const answer = await withOrgContext(organizationId, async (tx) => {
+    return withOrgContext(organizationId, async (tx) => {
       const question = await tx.question.findFirst({
         where: {
           id: questionId,
@@ -353,19 +369,24 @@ export class QuestionService {
         });
       }
 
+      const sourceEventId = await eventBus.emit(
+        'ANSWER_SUBMITTED',
+        {
+          roomId,
+          description: `Answer submitted for question ${questionId}`,
+          metadata: { answerId: created.id, questionId },
+        },
+        tx
+      );
+      await notifyQuestionAsker(tx, {
+        organizationId,
+        roomId,
+        sourceEventId,
+        askerUserId: question.askedByUserId,
+        actorUserId: session.userId,
+      });
       return created;
     });
-
-    await eventBus.emit('ANSWER_SUBMITTED', {
-      roomId,
-      description: `Answer submitted for question ${questionId}`,
-      metadata: {
-        answerId: answer.id,
-        questionId,
-      },
-    });
-
-    return answer;
   }
 
   /**
@@ -377,8 +398,8 @@ export class QuestionService {
     roomId: string,
     options: CreateViewerQuestionOptions
   ): Promise<Question> {
-    const question = await withOrgContext(organizationId, async (tx) => {
-      return tx.question.create({
+    return withOrgContext(organizationId, async (tx) => {
+      const question = await tx.question.create({
         data: {
           organizationId,
           roomId,
@@ -393,11 +414,10 @@ export class QuestionService {
           status: 'OPEN',
         },
       });
-    });
 
-    // Emit event without EventBus (no session context available)
-    await withOrgContext(organizationId, async (tx) => {
-      await tx.event.create({
+      // External viewers have no member session, so the audit event and
+      // administrator notifications share the question's transaction.
+      const event = await tx.event.create({
         data: {
           organizationId,
           roomId,
@@ -413,9 +433,17 @@ export class QuestionService {
           },
         },
       });
+      await notifyRoomAdministrators(tx, {
+        organizationId,
+        roomId,
+        sourceEventId: event.id,
+        type: 'QUESTION_ACTIVITY',
+        title: 'New question in a room you manage',
+        message: 'Open the room Q&A to review the question.',
+        actionPath: `/rooms/${roomId}?manage=qa`,
+      });
+      return question;
     });
-
-    return question;
   }
 
   /**

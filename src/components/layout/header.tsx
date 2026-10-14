@@ -3,11 +3,12 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Menu, Bell, Search } from 'lucide-react';
+import { Menu, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { NotificationMenu } from './notification-menu';
 import { useCapabilities } from './role-provider';
 import {
   DropdownMenu,
@@ -19,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 interface HeaderProps {
+  organizationId: string;
   user: {
     name: string;
     email: string;
@@ -28,7 +30,7 @@ interface HeaderProps {
   showSearch?: boolean;
 }
 
-export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
+export function Header({ user, organizationId, onMenuClick, showSearch = true }: HeaderProps) {
   const router = useRouter();
   const { canAccessSysOp } = useCapabilities();
 
@@ -70,13 +72,7 @@ export function Header({ user, onMenuClick, showSearch = true }: HeaderProps) {
         {/* Theme toggle */}
         <ThemeToggle />
 
-        {/* Notification preferences. An inbox/unread count is not implemented. */}
-        <Button variant="ghost" size="icon" className="relative" asChild>
-          <Link href="/settings/notifications" title="Notification preferences">
-            <Bell className="h-5 w-5" aria-hidden="true" />
-            <span className="sr-only">Notification preferences</span>
-          </Link>
-        </Button>
+        <NotificationMenu key={organizationId} organizationId={organizationId} />
 
         {/* User menu */}
         <DropdownMenu>
