@@ -145,6 +145,7 @@ export function PreviewDialog({
               />
             ) : (
               <ConvertedPreview
+                key={previewUrl}
                 url={previewUrl}
                 name={doc?.name ?? 'file'}
                 onDownload={onDownload}
@@ -186,15 +187,22 @@ function ConvertedPreview({
   name: string;
   onDownload: () => void;
 }) {
-  const [blobUrl, setBlobUrl] = React.useState<string | null>(null);
+  const [asset, setAsset] = React.useState<{
+    blobUrl: string;
+    mimeType: string;
+    page: number;
+    retryKey: number;
+  } | null>(null);
   const [error, setError] = React.useState(false);
   const [page, setPage] = React.useState(1);
   const [totalPages, setTotalPages] = React.useState(1);
+  const [retryKey, setRetryKey] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
-    setBlobUrl(null);
+    setAsset(null);
+    setError(false);
     const sep = url.includes('?') ? '&' : '?';
     fetch(`${url}${sep}page=${page}`)
       .then(async (res) => {
@@ -213,7 +221,12 @@ function ConvertedPreview({
         const blob = await res.blob();
         if (!cancelled) {
           objectUrl = URL.createObjectURL(blob);
-          setBlobUrl(objectUrl);
+          setAsset({
+            blobUrl: objectUrl,
+            mimeType: blob.type || ct.split(';')[0]?.trim() || '',
+            page,
+            retryKey,
+          });
         }
       })
       .catch(() => {
@@ -227,26 +240,47 @@ function ConvertedPreview({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [url, page]);
+  }, [url, page, retryKey]);
+
+  // A page change renders before the fetch effect clears the prior asset.
+  // Associate each blob with its request so the old page is hidden immediately.
+  const currentAsset = asset?.page === page && asset.retryKey === retryKey ? asset : null;
 
   if (error) {
     return (
       <div className="flex h-full flex-col items-center justify-center text-center">
         <FileText className="mb-4 h-16 w-16 text-neutral-300" />
-        <p className="mb-4 text-neutral-500">Preview not available for this file type</p>
-        <Button onClick={onDownload}>
-          <Download className="mr-2 h-4 w-4" />
-          Download Instead
-        </Button>
+        <p className="mb-4 text-neutral-500">
+          Preview could not be loaded. Try again or download the file.
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button variant="outline" onClick={() => setRetryKey((key) => key + 1)}>
+            Retry preview
+          </Button>
+          <Button onClick={onDownload}>
+            <Download className="mr-2 h-4 w-4" />
+            Download Instead
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col">
-      <div className="min-h-0 flex-1">
-        {blobUrl ? (
-          <iframe src={blobUrl} className="h-full w-full border-0" title={name} />
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+        {currentAsset ? (
+          currentAsset.mimeType.startsWith('image/') ? (
+            // Blob URLs are generated from authorized preview assets and cannot use next/image.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={currentAsset.blobUrl}
+              alt={`Page ${page} of ${totalPages}: ${name}`}
+              className="mx-auto block h-auto max-w-full"
+            />
+          ) : (
+            <iframe src={currentAsset.blobUrl} className="h-full w-full border-0" title={name} />
+          )
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
