@@ -125,6 +125,38 @@ test.describe('Viewer folder navigation', () => {
     await expect(page.getByText('Capitalization Table.xlsx', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'View Capitalization Table.xlsx' }).click();
     await expect(page.getByRole('button', { name: 'Go back' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download', exact: true })).toHaveCount(0);
     await expectNoA11yViolations(page);
+  });
+
+  test('mobile viewer can enter a nested folder, preview, and return without page overflow', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await accessViewer(page, linkSlug, `viewer-navigation-mobile-${Date.now()}@test.local`);
+
+    await expect(page.getByText('Financials', { exact: true })).toBeVisible();
+    await expectNoA11yViolations(page);
+    const folderButton = page.getByRole('button', { name: 'Open folder Financials' });
+    await page.getByPlaceholder('Search files...').focus();
+    await page.keyboard.press('Tab');
+    await expect(folderButton).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('Capitalization Table.xlsx', { exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+        )
+      )
+      .toBeLessThanOrEqual(1);
+
+    await page.getByRole('button', { name: 'View Capitalization Table.xlsx' }).click();
+    await expect(page.getByRole('button', { name: 'Go back' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download', exact: true })).toHaveCount(0);
+    await expectNoA11yViolations(page);
+    await page.getByRole('button', { name: 'Go back' }).click();
+    await expect(page).toHaveURL(/\/documents\?folderId=/);
+    await expect(page.getByText('Capitalization Table.xlsx', { exact: true })).toBeVisible();
   });
 });
