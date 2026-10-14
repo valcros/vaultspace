@@ -138,7 +138,8 @@ test.describe('Viewer folder navigation', () => {
     await expect(page.getByText('Financials', { exact: true })).toBeVisible();
     await expectNoA11yViolations(page);
     const folderButton = page.getByRole('button', { name: 'Open folder Financials' });
-    await folderButton.focus();
+    await page.getByPlaceholder('Search files...').focus();
+    await page.keyboard.press('Tab');
     await expect(folderButton).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByText('Capitalization Table.xlsx', { exact: true })).toBeVisible();
