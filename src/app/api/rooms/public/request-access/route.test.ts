@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   eventCreate: vi.fn(),
   withOrgContext: vi.fn(),
   notifyRoomAdministrators: vi.fn(),
+  accessRequestByIp: vi.fn(),
+  accessRequestByEmailRoom: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -22,7 +24,15 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/services/notifications/InAppNotificationService', () => ({
   notifyRoomAdministrators: mocks.notifyRoomAdministrators,
 }));
+vi.mock('@/lib/middleware', () => ({
+  getRequestContext: () => ({ ipAddress: '127.0.0.1' }),
+  rateLimiters: {
+    accessRequestByIp: mocks.accessRequestByIp,
+    accessRequestByEmailRoom: mocks.accessRequestByEmailRoom,
+  },
+}));
 
+import { RateLimitError } from '@/lib/errors';
 import { POST } from './route';
 
 function request() {
@@ -76,6 +86,10 @@ describe('public access request notifications', () => {
         actionPath: '/rooms/room-1?manage=members',
       })
     );
+    expect(mocks.accessRequestByIp).toHaveBeenCalledWith('127.0.0.1');
+    expect(mocks.accessRequestByEmailRoom).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/)
+    );
   });
 
   it('does not publish another notice for an already pending request', async () => {
@@ -84,5 +98,23 @@ describe('public access request notifications', () => {
     expect(response.status).toBe(409);
     expect(mocks.withOrgContext).not.toHaveBeenCalled();
     expect(mocks.notifyRoomAdministrators).not.toHaveBeenCalled();
+  });
+
+  it('rejects a throttled IP before looking up a room', async () => {
+    mocks.accessRequestByIp.mockRejectedValueOnce(new RateLimitError(60));
+    const response = await POST(request());
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toBe('60');
+    expect(mocks.organizationFindFirst).not.toHaveBeenCalled();
+    expect(mocks.notifyRoomAdministrators).not.toHaveBeenCalled();
+  });
+
+  it('rejects a throttled email and room before writing a request', async () => {
+    mocks.accessRequestByEmailRoom.mockRejectedValueOnce(new RateLimitError(45));
+    const response = await POST(request());
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toBe('45');
+    expect(mocks.accessRequestFindFirst).not.toHaveBeenCalled();
+    expect(mocks.withOrgContext).not.toHaveBeenCalled();
   });
 });
