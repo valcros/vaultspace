@@ -236,6 +236,7 @@ export async function commitFolderImport(
     sourceEventId: string;
   }>;
   let newFolderCount = 0;
+  let transactionBodyCompleted = false;
 
   try {
     committed = await withOrgContext(
@@ -383,38 +384,36 @@ export async function commitFolderImport(
             sourceEventId,
           });
         }
+        const firstDocument = results[0];
+        if (firstDocument) {
+          await notifyRoomAdministrators(tx, {
+            organizationId: ctx.session.organizationId,
+            roomId,
+            sourceEventId: firstDocument.sourceEventId,
+            actorUserId: ctx.session.userId,
+            type: 'UPLOAD_COMPLETE',
+            title:
+              results.length === 1
+                ? 'New document in a room you manage'
+                : `${results.length} new documents in a room you manage`,
+            message: 'Open the room to review the imported documents.',
+            actionPath: `/rooms/${roomId}`,
+          });
+        }
+        transactionBodyCompleted = true;
         return results;
       },
       { timeout: 180_000, maxWait: 10_000 }
     );
   } catch (error) {
-    await Promise.allSettled(
-      writtenKeys.map((key) => ctx.providers.storage.delete('documents', key))
-    );
-    throw error;
-  }
-
-  const firstDocument = committed[0];
-  if (firstDocument) {
-    try {
-      await withOrgContext(ctx.session.organizationId, (tx) =>
-        notifyRoomAdministrators(tx, {
-          organizationId: ctx.session.organizationId,
-          roomId,
-          sourceEventId: firstDocument.sourceEventId,
-          actorUserId: ctx.session.userId,
-          type: 'UPLOAD_COMPLETE',
-          title:
-            committed.length === 1
-              ? 'New document in a room you manage'
-              : `${committed.length} new documents in a room you manage`,
-          message: 'Open the room to review the imported documents.',
-          actionPath: `/rooms/${roomId}`,
-        })
+    if (!transactionBodyCompleted) {
+      await Promise.allSettled(
+        writtenKeys.map((key) => ctx.providers.storage.delete('documents', key))
       );
-    } catch (error) {
-      console.error('[FolderImport] Failed to create in-app upload notification:', error);
+    } else {
+      console.error('[FolderImport] Import commit result is uncertain; storage objects retained');
     }
+    throw error;
   }
 
   for (const document of committed) {

@@ -66,6 +66,52 @@ describe('in-app notification producers', () => {
     });
   });
 
+  it('keeps a replayed event from creating a second notice for the same member', async () => {
+    const tx = transaction();
+    tx.notification.createMany.mockResolvedValue({ count: 0 });
+    const input = {
+      organizationId: 'org-1',
+      roomId: 'room-1',
+      sourceEventId: 'event-1',
+      actorUserId: 'actor',
+      type: 'UPLOAD_COMPLETE' as const,
+      title: 'New document',
+      message: 'Open the room.',
+      actionPath: '/rooms/room-1',
+    };
+
+    expect(await notifyRoomAdministrators(tx as unknown as Prisma.TransactionClient, input)).toBe(
+      0
+    );
+    expect(tx.notification.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          userOrganizationId: 'membership-org-admin',
+          sourceEventId: 'event-1',
+        }),
+      ]),
+      skipDuplicates: true,
+    });
+  });
+
+  it('does not write a notice when the actor is the only active administrator', async () => {
+    const tx = transaction();
+    tx.userOrganization.findMany.mockResolvedValue([{ id: 'membership-actor', userId: 'actor' }]);
+
+    const count = await notifyRoomAdministrators(tx as unknown as Prisma.TransactionClient, {
+      organizationId: 'org-1',
+      roomId: 'room-1',
+      sourceEventId: 'event-1',
+      actorUserId: 'actor',
+      type: 'UPLOAD_COMPLETE',
+      title: 'New document',
+      message: 'Open the room.',
+      actionPath: '/rooms/room-1',
+    });
+    expect(count).toBe(0);
+    expect(tx.notification.createMany).not.toHaveBeenCalled();
+  });
+
   it('does not notify a question asker without an active member account', async () => {
     const tx = transaction();
     tx.userOrganization.findFirst.mockResolvedValue(null);
