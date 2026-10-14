@@ -181,6 +181,16 @@ async function main() {
   manifest.database.tables['rooms'] = roomCount;
   console.log(`  - rooms: ${roomCount} records`);
 
+  // Organization-owned folder templates are tenant data. Their revision state
+  // and enabled flag must survive a full JSONL recovery.
+  const roomTemplates = await prisma.roomTemplate.findMany();
+  const roomTemplateCount = await writeJsonl(
+    join(databaseDir, 'room_templates.jsonl'),
+    roomTemplates
+  );
+  manifest.database.tables['room_templates'] = roomTemplateCount;
+  console.log(`  - room_templates: ${roomTemplateCount} records`);
+
   // Folders
   const folders = await prisma.folder.findMany();
   const folderCount = await writeJsonl(join(databaseDir, 'folders.jsonl'), folders);

@@ -24,6 +24,7 @@ ALTER TABLE user_organizations ENABLE ROW LEVEL SECURITY;
 
 -- Rooms and content
 ALTER TABLE rooms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE room_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE folders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_versions ENABLE ROW LEVEL SECURITY;
@@ -188,6 +189,13 @@ CREATE POLICY room_org_isolation ON rooms
   USING (
     "organizationId" = current_setting('app.current_org_id', true)
   );
+
+-- Organization-owned room templates never use legacy public/system flags for access.
+DROP POLICY IF EXISTS room_template_org_isolation ON room_templates;
+CREATE POLICY room_template_org_isolation ON room_templates
+  FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
 
 -- Folders policy
 DROP POLICY IF EXISTS folder_org_isolation ON folders;
@@ -369,6 +377,7 @@ ALTER TABLE organizations FORCE ROW LEVEL SECURITY;
 ALTER TABLE users FORCE ROW LEVEL SECURITY;
 ALTER TABLE user_organizations FORCE ROW LEVEL SECURITY;
 ALTER TABLE rooms FORCE ROW LEVEL SECURITY;
+ALTER TABLE room_templates FORCE ROW LEVEL SECURITY;
 ALTER TABLE folders FORCE ROW LEVEL SECURITY;
 ALTER TABLE documents FORCE ROW LEVEL SECURITY;
 ALTER TABLE document_versions FORCE ROW LEVEL SECURITY;
