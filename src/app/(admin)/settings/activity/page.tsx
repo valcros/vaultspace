@@ -95,6 +95,8 @@ const eventIcons: Record<string, React.ElementType> = {
   DOCUMENT_VIEWED: FileText,
   DOCUMENT_DOWNLOADED: FileText,
   DOCUMENT_DELETED: FileText,
+  ROOM_TEMPLATE_CREATED: Settings,
+  ROOM_TEMPLATE_UPDATED: Settings,
   LINK_CREATED: Link2,
   LINK_ACCESSED: Link2,
   LINK_ACCESS_DENIED: AlertTriangle,
@@ -117,6 +119,8 @@ const eventLabels: Record<string, string> = {
   DOCUMENT_VIEWED: 'viewed document',
   DOCUMENT_DOWNLOADED: 'downloaded document',
   DOCUMENT_DELETED: 'deleted document',
+  ROOM_TEMPLATE_CREATED: 'created a folder template',
+  ROOM_TEMPLATE_UPDATED: 'updated a folder template',
   LINK_CREATED: 'created link',
   LINK_ACCESSED: 'accessed link',
   LINK_ACCESS_DENIED: 'was denied link access',
@@ -303,6 +307,8 @@ export default function SettingsActivityPage() {
                 <SelectItem value="USER_PASSWORD_RESET">Password Reset</SelectItem>
                 <SelectItem value="USER_INVITED">User Invited</SelectItem>
                 <SelectItem value="SETTINGS_UPDATED">Settings Updated</SelectItem>
+                <SelectItem value="ROOM_TEMPLATE_CREATED">Folder Template Created</SelectItem>
+                <SelectItem value="ROOM_TEMPLATE_UPDATED">Folder Template Updated</SelectItem>
                 <SelectItem value="PERMISSION_GRANTED">Permission Granted</SelectItem>
                 <SelectItem value="PERMISSION_REVOKED">Permission Revoked</SelectItem>
                 <SelectItem value="DOCUMENT_UPLOADED">Document Uploaded</SelectItem>

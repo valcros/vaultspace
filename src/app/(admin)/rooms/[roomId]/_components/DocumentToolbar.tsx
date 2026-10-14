@@ -145,7 +145,7 @@ export function DocumentToolbar({
               Add folders
             </Button>
             <ContextHelp label="About adding folders">
-              Create one folder or use a standard folder template. Templates add selected empty
+              Create one folder or use a folder template. Templates add selected empty
               folders at the top level of this room. Publishing is not required.
             </ContextHelp>
           </>

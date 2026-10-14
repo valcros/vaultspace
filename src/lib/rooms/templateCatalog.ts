@@ -14,6 +14,8 @@ export function legacyTemplateProjection(template: {
   description: string | null;
   category: string;
   folderStructure: unknown;
+  enabled?: boolean;
+  revision?: number;
 }) {
   const folders = readTemplateFolders(template.folderStructure);
   if (!folders) {
@@ -26,7 +28,13 @@ export function legacyTemplateProjection(template: {
     category: template.category,
     structure: { folders },
   };
-  return { ...value, isCustom: true, enabled: true, revision: templateRevision(value) };
+  const enabled = template.enabled ?? true;
+  return {
+    ...value,
+    isCustom: true,
+    enabled,
+    revision: templateRevision({ ...value, enabled, rowRevision: template.revision ?? 1 }),
+  };
 }
 
 /** Selection is validated against one catalog snapshot within the room mutation transaction. */
@@ -52,6 +60,9 @@ export async function resolveRoomTemplate(
     throw new SystemRoomTemplateError(404, 'Selected template was not found');
   }
   const template = legacyTemplateProjection(legacy);
+  if (!template.enabled) {
+    throw new SystemRoomTemplateError(409, 'This template is disabled. Reload the folder templates.');
+  }
   assertTemplateRevision(template, revision);
   return template;
 }

@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Building2,
+  FolderTree,
   Users,
   Bell,
   Activity,
@@ -36,6 +37,14 @@ const settingsSections: SettingsSection[] = [
     description: 'Manage organization name, logo, and branding settings',
     icon: Building2,
     href: '/settings/organization',
+    adminOnly: true,
+  },
+  {
+    id: 'folder-templates',
+    title: 'Folder Templates',
+    description: 'Save folder structures for future rooms in this organization',
+    icon: FolderTree,
+    href: '/settings/folder-templates',
     adminOnly: true,
   },
   {

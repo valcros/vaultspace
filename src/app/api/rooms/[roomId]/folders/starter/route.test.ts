@@ -113,6 +113,30 @@ describe('POST /api/rooms/:roomId/folders/starter', () => {
     expect(mocks.eventCreate).not.toHaveBeenCalled();
   });
 
+  it('rejects a disabled organization template before adding folders', async () => {
+    mocks.roomTemplateFindFirst.mockResolvedValueOnce({
+      id: 'org-template',
+      organizationId: 'org-1',
+      name: 'Private template',
+      description: '',
+      category: 'custom',
+      folderStructure: { folders: [{ name: 'Legal', path: '/legal' }] },
+      enabled: false,
+      revision: 2,
+    });
+    const response = await POST(
+      request({
+        templateId: 'org-template',
+        templateRevision: 'old',
+        selectedFolderPaths: ['/legal'],
+      }),
+      context()
+    );
+    expect(response.status).toBe(409);
+    expect(mocks.folderCreateMany).not.toHaveBeenCalled();
+    expect(mocks.eventCreate).not.toHaveBeenCalled();
+  });
+
   it('keeps the endpoint admin-only even when called directly', async () => {
     mocks.requireAuth.mockResolvedValue({ ...adminSession, organization: { role: 'VIEWER' } });
 
