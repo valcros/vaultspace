@@ -77,6 +77,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
 
     if (request.headers.get('content-type')?.includes('application/json')) {
+      await rateLimiters.adminRequests(session.userId);
       const body: unknown = await request.json();
       if (!body || typeof body !== 'object') {
         throw new FolderImportError('IMPORT_VALIDATION_FAILED', 'Invalid preview request', 400);
