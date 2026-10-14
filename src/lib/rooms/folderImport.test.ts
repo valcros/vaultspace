@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateImportPaths } from './folderImport';
+import { prepareImportPaths, validateImportPaths } from './folderImport';
 
 describe('validateImportPaths (Path B contract scaffold)', () => {
   it('returns ok for a batch of valid paths', () => {
@@ -34,5 +34,42 @@ describe('validateImportPaths (Path B contract scaffold)', () => {
       throw new Error('expected validation to fail');
     }
     expect(result.response.error.details.rejections).toHaveLength(2);
+  });
+});
+
+describe('folder import manifest', () => {
+  it('counts the destination folder depth and reports the original source path', () => {
+    const result = validateImportPaths(['Q3/Reports/cash.pdf'], 2);
+    if (result.ok) {
+      throw new Error('expected validation to fail');
+    }
+    expect(result.response.error.details.rejections).toEqual([
+      {
+        sourcePath: 'Q3/Reports/cash.pdf',
+        attemptedDepth: 4,
+        reason: 'Folder path exceeds maximum depth',
+      },
+    ]);
+    expect(result.response.error.message).toContain('depth of 3');
+  });
+
+  it('rejects duplicate and mismatched file paths before writing anything', () => {
+    const result = prepareImportPaths(
+      ['Financials/a.pdf', 'Financials/a.pdf', 'Legal/other.pdf'],
+      ['a.pdf', 'a.pdf', 'wrong.pdf']
+    );
+    expect(result.issues).toEqual([
+      { sourcePath: 'Financials/a.pdf', reason: 'The selection contains this path more than once' },
+      {
+        sourcePath: 'Legal/other.pdf',
+        reason: 'Path must end with the selected file name (max 255 characters)',
+      },
+    ]);
+  });
+
+  it('rejects traversal and invalid folder characters', () => {
+    const result = prepareImportPaths(['../private/a.pdf', 'Bad?Name/b.pdf'], ['a.pdf', 'b.pdf']);
+    expect(result.depthError?.error.code).toBe('FOLDER_DEPTH_EXCEEDED');
+    expect(result.issues).toHaveLength(2);
   });
 });

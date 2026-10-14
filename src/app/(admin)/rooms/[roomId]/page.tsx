@@ -410,8 +410,10 @@ export default function RoomDetailPage() {
     (_results: Array<{ documentId: string; name: string }>) => {
       setShowUploadDialog(false);
       fetchDocuments();
+      fetchFolders();
+      fetchFolderTree();
     },
-    [fetchDocuments]
+    [fetchDocuments, fetchFolders, fetchFolderTree]
   );
 
   // Handle folder creation

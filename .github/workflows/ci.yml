@@ -78,8 +78,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Docker Official Images mirror avoids shared-runner Docker Hub pull limits.
-        image: public.ecr.aws/docker/library/postgres:15-alpine
+        # Google Artifact Registry mirror avoids shared-runner registry pull limits.
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -93,7 +93,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: public.ecr.aws/docker/library/redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -143,7 +143,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:15-alpine
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -201,7 +201,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:15-alpine
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -315,7 +315,7 @@ jobs:
         mode: [azure, standalone]
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:15-alpine
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -329,7 +329,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: public.ecr.aws/docker/library/redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -497,7 +497,7 @@ jobs:
     needs: [lint, typecheck, test]
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:15-alpine
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -511,7 +511,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: public.ecr.aws/docker/library/redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-

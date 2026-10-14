@@ -9,6 +9,8 @@
 
 import React, { useCallback, useState, useRef } from 'react';
 
+import { MAX_IMPORT_BYTES, MAX_IMPORT_FILES } from '@/lib/rooms/folderImport';
+
 interface UploadFile {
   file: File;
   path: string;
@@ -61,7 +63,18 @@ export function UploadZone({
   const [isDragging, setIsDragging] = useState(false);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [importPreview, setImportPreview] = useState<{
+    fileCount: number;
+    newFolders: string[];
+    existingFolderCount: number;
+  } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importRejections, setImportRejections] = useState<
+    Array<{ sourcePath: string; reason: string }>
+  >([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -142,7 +155,7 @@ export function UploadZone({
             const error = validateFile(file);
             uploadFiles.push({
               file,
-              path: path || '/',
+              path: path ? `${path}/${file.name}` : file.name,
               progress: 0,
               status: error ? 'error' : 'pending',
               error: error || undefined,
@@ -150,17 +163,38 @@ export function UploadZone({
           } else if (entry.isDirectory) {
             const dirEntry = entry as FileSystemDirectoryEntry;
             const reader = dirEntry.createReader();
-            const subEntries = await new Promise<FileSystemEntry[]>((resolve, reject) => {
-              reader.readEntries(resolve, reject);
-            });
-            for (const subEntry of subEntries) {
-              await processEntry(subEntry, `${path}/${entry.name}`);
+            while (true) {
+              const subEntries = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+                reader.readEntries(resolve, reject);
+              });
+              if (subEntries.length === 0) {
+                break;
+              }
+              for (const subEntry of subEntries) {
+                await processEntry(subEntry, path ? `${path}/${entry.name}` : entry.name);
+              }
             }
           }
         };
 
         for (const entry of entries) {
           await processEntry(entry, '');
+        }
+        if (entries.length === 0) {
+          for (let i = 0; i < items.length; i++) {
+            const file = (items[i] as DataTransferItem | undefined)?.getAsFile();
+            if (!file) {
+              continue;
+            }
+            const error = validateFile(file);
+            uploadFiles.push({
+              file,
+              path: file.name,
+              progress: 0,
+              status: error ? 'error' : 'pending',
+              error: error || undefined,
+            });
+          }
         }
       } else {
         // Handle FileList (from input)
@@ -173,7 +207,7 @@ export function UploadZone({
           const error = validateFile(file);
           uploadFiles.push({
             file,
-            path: '/',
+            path: file.webkitRelativePath || file.name,
             progress: 0,
             status: error ? 'error' : 'pending',
             error: error || undefined,
@@ -209,9 +243,6 @@ export function UploadZone({
           if (folderId) {
             formData.append('folderId', folderId);
           }
-          // Note: uploadFile.path is available from drag-dropped folder structures
-          // but backend folder auto-creation is not yet implemented for MVP.
-          // Files are uploaded to the current folderId instead.
 
           const response = await fetch(`/api/rooms/${roomId}/documents`, {
             method: 'POST',
@@ -256,6 +287,119 @@ export function UploadZone({
     [roomId, folderId, onUploadComplete, onUploadError]
   );
 
+  const reviewFolderImport = useCallback(
+    async (uploadList: UploadFile[]) => {
+      setImportPreview(null);
+      setImportError(null);
+      setImportRejections([]);
+      if (
+        uploadList.length > MAX_IMPORT_FILES ||
+        uploadList.reduce((sum, item) => sum + item.file.size, 0) > MAX_IMPORT_BYTES
+      ) {
+        setImportError(
+          `Folder imports are limited to ${MAX_IMPORT_FILES} files and ${MAX_IMPORT_BYTES / 1024 / 1024} MB per batch.`
+        );
+        return;
+      }
+      if (uploadList.some((item) => item.status === 'error')) {
+        setImportError('Remove files with errors before importing the folder.');
+        return;
+      }
+      setIsReviewing(true);
+      try {
+        const response = await fetch(`/api/rooms/${roomId}/documents/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parentFolderId: folderId ?? null,
+            files: uploadList.map((item) => ({
+              name: item.file.name,
+              size: item.file.size,
+              path: item.path,
+            })),
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          setImportError(data.error?.message ?? 'Folder import cannot proceed.');
+          setImportRejections(data.error?.details?.rejections ?? []);
+          return;
+        }
+        setImportPreview(data.preview);
+      } catch (error) {
+        setImportError('Could not review this folder import. Try again.');
+        onUploadError?.(error as Error);
+      } finally {
+        setIsReviewing(false);
+      }
+    },
+    [roomId, folderId, onUploadError]
+  );
+
+  const importFolder = useCallback(async () => {
+    if (!importPreview || isUploading) {
+      return;
+    }
+    setIsUploading(true);
+    setImportError(null);
+    setImportRejections([]);
+    try {
+      const formData = new FormData();
+      if (folderId) {
+        formData.append('parentFolderId', folderId);
+      }
+      for (const item of files) {
+        formData.append('file', item.file);
+        formData.append('path', item.path);
+      }
+      const response = await fetch(`/api/rooms/${roomId}/documents/import`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setImportError(data.error?.message ?? 'Folder import failed. Nothing was added.');
+        setImportRejections(data.error?.details?.rejections ?? []);
+        setImportPreview(null);
+        return;
+      }
+      setFiles((previous) =>
+        previous.map((item) => ({ ...item, status: 'success', progress: 100 }))
+      );
+      setImportPreview(null);
+      onUploadComplete?.(
+        (data.documents ?? []).map((document: { id: string; name: string }) => ({
+          documentId: document.id,
+          name: document.name,
+        }))
+      );
+    } catch (error) {
+      setImportError('Folder import failed. Check the room before retrying.');
+      onUploadError?.(error as Error);
+    } finally {
+      setIsUploading(false);
+    }
+  }, [files, folderId, importPreview, isUploading, onUploadComplete, onUploadError, roomId]);
+
+  const handleSelection = useCallback(
+    async (uploadList: UploadFile[]) => {
+      setFiles(uploadList);
+      setImportError(null);
+      setImportRejections([]);
+      if (uploadList.length === 0) {
+        setImportError('No files were found in this selection.');
+        return;
+      }
+      if (uploadList.some((item) => item.path.includes('/'))) {
+        await reviewFolderImport(uploadList);
+      } else {
+        setImportPreview(null);
+        await uploadFiles(uploadList);
+      }
+    },
+    [reviewFolderImport, uploadFiles]
+  );
+
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault();
@@ -263,22 +407,30 @@ export function UploadZone({
       setIsDragging(false);
       dragCounterRef.current = 0;
 
-      const uploadList = await processFileList(e.dataTransfer.items);
-      setFiles(uploadList);
-      await uploadFiles(uploadList);
+      try {
+        const uploadList = await processFileList(e.dataTransfer.items);
+        await handleSelection(uploadList);
+      } catch (error) {
+        setImportError('Could not read the dropped files. Try choosing the folder instead.');
+        onUploadError?.(error as Error);
+      }
     },
-    [processFileList, uploadFiles]
+    [processFileList, handleSelection, onUploadError]
   );
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
-        const uploadList = await processFileList(e.target.files);
-        setFiles(uploadList);
-        await uploadFiles(uploadList);
+        try {
+          const uploadList = await processFileList(e.target.files);
+          await handleSelection(uploadList);
+        } catch (error) {
+          setImportError('Could not read the selected files. Try again.');
+          onUploadError?.(error as Error);
+        }
       }
     },
-    [processFileList, uploadFiles]
+    [processFileList, handleSelection, onUploadError]
   );
 
   const handleClick = useCallback(() => {
@@ -287,23 +439,25 @@ export function UploadZone({
 
   const clearFiles = useCallback(() => {
     setFiles([]);
+    setImportPreview(null);
+    setImportError(null);
+    setImportRejections([]);
     if (inputRef.current) {
       inputRef.current.value = '';
+    }
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
     }
   }, []);
 
   return (
     <div className={className}>
       <div
-        role="button"
-        tabIndex={0}
-        className={`relative cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors duration-200 ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'} ${isUploading ? 'pointer-events-none opacity-50' : ''} `}
+        className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors duration-200 ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'} ${isUploading ? 'opacity-50' : ''} `}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        onClick={handleClick}
-        onKeyDown={(e) => e.key === 'Enter' && handleClick()}
       >
         <input
           ref={inputRef}
@@ -318,6 +472,18 @@ export function UploadZone({
           }
           onChange={handleFileSelect}
           className="hidden"
+          aria-label="Choose files to upload"
+        />
+        <input
+          ref={(element) => {
+            folderInputRef.current = element;
+            element?.setAttribute('webkitdirectory', '');
+          }}
+          type="file"
+          multiple
+          onChange={handleFileSelect}
+          className="hidden"
+          aria-label="Choose a folder to import"
         />
 
         <div className="space-y-2">
@@ -335,19 +501,94 @@ export function UploadZone({
               strokeLinejoin="round"
             />
           </svg>
-          <div className="text-sm text-gray-600">
-            <span className="font-medium text-blue-600 hover:text-blue-500">Click to upload</span>{' '}
-            or drag and drop
+          <div className="flex flex-wrap justify-center gap-3 text-sm">
+            <button
+              type="button"
+              onClick={handleClick}
+              disabled={isUploading || isReviewing}
+              className="font-medium text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
+            >
+              Choose files
+            </button>
+            {multiple && (
+              <button
+                type="button"
+                onClick={() => folderInputRef.current?.click()}
+                disabled={isUploading || isReviewing}
+                className="font-medium text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
+              >
+                Choose folder
+              </button>
+            )}
+            <span className="text-gray-600">or drag files or folders here</span>
           </div>
           <p className="text-xs text-gray-500">
             Up to {Math.round(maxFileSize / 1024 / 1024)}MB per file
           </p>
           <p className="mt-1 text-xs text-gray-400">
-            PDF, Word, Excel, PowerPoint, Visio, OpenDocument, RTF, images, SVG, Markdown, CSV,
-            JSON, XML, YAML, plain text
+            Most file types are accepted. Preview availability depends on the format.
           </p>
+          {multiple && (
+            <p className="text-xs text-gray-500">
+              Folder imports: up to {MAX_IMPORT_FILES} files and {MAX_IMPORT_BYTES / 1024 / 1024} MB
+              per batch.
+            </p>
+          )}
         </div>
       </div>
+
+      {isReviewing && (
+        <p role="status" className="mt-3 text-sm text-gray-600">
+          Reviewing folder structure...
+        </p>
+      )}
+      {importError && (
+        <div
+          role="alert"
+          className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+        >
+          <p>{importError}</p>
+          {importRejections.length > 0 && (
+            <ul className="mt-2 list-disc pl-5">
+              {importRejections.map((item, index) => (
+                <li key={`${item.sourcePath}-${index}`}>
+                  {item.sourcePath}: {item.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {importPreview && (
+        <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-gray-800">
+          <p className="font-medium">
+            Import preview: {importPreview.fileCount} files, {importPreview.newFolders.length} new
+            folders
+          </p>
+          {importPreview.existingFolderCount > 0 && (
+            <p>{importPreview.existingFolderCount} existing folders will be reused.</p>
+          )}
+          {importPreview.newFolders.length > 0 && (
+            <ul className="mt-2 max-h-32 list-disc overflow-y-auto pl-5">
+              {importPreview.newFolders.map((path) => (
+                <li key={path}>{path}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2">
+            If validation or upload fails, no documents or folders are added. Files are scanned
+            after import before they can be previewed.
+          </p>
+          <button
+            type="button"
+            onClick={importFolder}
+            disabled={isUploading}
+            className="mt-3 rounded-md bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isUploading ? 'Importing...' : `Import ${importPreview.fileCount} files`}
+          </button>
+        </div>
+      )}
 
       {/* File list with progress */}
       {files.length > 0 && (
@@ -375,7 +616,7 @@ export function UploadZone({
                     <p className="truncate text-sm font-medium text-gray-900">{file.file.name}</p>
                     <p className="text-xs text-gray-500">
                       {(file.file.size / 1024).toFixed(1)} KB
-                      {file.path !== '/' && ` • ${file.path}`}
+                      {file.path !== file.file.name && ` • ${file.path}`}
                     </p>
                   </div>
                   <div className="ml-4">
