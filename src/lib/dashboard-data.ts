@@ -279,6 +279,7 @@ export async function getDashboardData({
             where: {
               organizationId: orgId,
               status: 'OPEN',
+              room: { status: 'ACTIVE' },
             },
             include: {
               room: { select: { id: true, name: true } },
@@ -292,14 +293,14 @@ export async function getDashboardData({
       // Pending access requests
       isAdmin
         ? tx.accessRequest.count({
-            where: { organizationId: orgId, status: 'PENDING' },
+            where: { organizationId: orgId, status: 'PENDING', room: { status: 'ACTIVE' } },
           })
         : Promise.resolve(0),
 
       // Most recent pending access request (destination for review actions)
       isAdmin
         ? tx.accessRequest.findFirst({
-            where: { organizationId: orgId, status: 'PENDING' },
+            where: { organizationId: orgId, status: 'PENDING', room: { status: 'ACTIVE' } },
             select: { roomId: true },
             orderBy: { createdAt: 'desc' },
           })
