@@ -10,8 +10,11 @@ export class ProviderInboxPrivilegeError extends Error {
 async function revokeAndVerifyProtectedTableAccess(
   client: PrismaClient,
   applicationRole: string,
-  tableName: 'provider_event_inbox' | 'password_reset_provider_correlations',
-  errorPrefix: 'PROVIDER_INBOX' | 'PASSWORD_RESET_PROVIDER_CORRELATION'
+  tableName:
+    | 'provider_event_inbox'
+    | 'password_reset_provider_correlations'
+    | 'email_delivery_incidents',
+  errorPrefix: 'PROVIDER_INBOX' | 'PASSWORD_RESET_PROVIDER_CORRELATION' | 'EMAIL_DELIVERY_INCIDENT'
 ): Promise<void> {
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(applicationRole)) {
     throw new ProviderInboxPrivilegeError(`${errorPrefix}_APPLICATION_ROLE_INVALID`);
@@ -83,6 +86,19 @@ export async function revokeAndVerifyProviderInboxAccess(
     applicationRole,
     'provider_event_inbox',
     'PROVIDER_INBOX'
+  );
+}
+
+/** The tenant runtime cannot reach the platform-wide delivery incident ledger. */
+export async function revokeAndVerifyEmailIncidentAccess(
+  client: PrismaClient,
+  applicationRole: string
+): Promise<void> {
+  await revokeAndVerifyProtectedTableAccess(
+    client,
+    applicationRole,
+    'email_delivery_incidents',
+    'EMAIL_DELIVERY_INCIDENT'
   );
 }
 

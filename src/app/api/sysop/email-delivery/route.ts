@@ -4,6 +4,7 @@ import { AuthenticationError, AuthorizationError } from '@/lib/errors';
 import { assertPlatformCapability } from '@/lib/sysop/capabilityGuard';
 import { captureSecurityAudit } from '@/lib/audit/securityAudit';
 import { listAcsDeliveryFailures } from '@/lib/email/azureDeliveryLogSource';
+import { listRecentEmailIncidents } from '@/lib/email/incidentReader';
 import { isAzureMode } from '@/lib/deployment-mode';
 
 export const dynamic = 'force-dynamic';
@@ -23,12 +24,18 @@ export async function GET() {
       metadata: { route: '/api/sysop/email-delivery' },
     });
     const observations = isAzureMode() ? await listAcsDeliveryFailures() : [];
+    const incidentQueueEnabled = process.env['EMAIL_INCIDENT_VIEW_ENABLED'] === 'true';
+    const incidentQueue = incidentQueueEnabled
+      ? await listRecentEmailIncidents()
+      : { incidents: [], openCount: 0 };
     return NextResponse.json(
       {
         source: isAzureMode() ? 'azure-monitor' : 'not-configured',
         retentionDays: isAzureMode() ? 30 : 0,
         observedAt: new Date().toISOString(),
         observations,
+        incidentQueueEnabled,
+        ...incidentQueue,
       },
       { headers: { 'Cache-Control': 'no-store' } }
     );

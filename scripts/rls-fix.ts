@@ -21,6 +21,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   revokeAndVerifyPasswordResetProviderCorrelationAccess,
   revokeAndVerifyProviderInboxAccess,
+  revokeAndVerifyEmailIncidentAccess,
 } from '../src/lib/integrations/providerInboxDatabasePrivileges';
 import {
   PLATFORM_CONTROL_TABLES,
@@ -154,6 +155,8 @@ async function main() {
   // be able to read, create, modify, or delete its rows.
   await revokeAndVerifyProviderInboxAccess(prisma, APP_ROLE);
   console.log(`  REVOKED AND VERIFIED ALL: provider_event_inbox from ${APP_ROLE}`);
+  await revokeAndVerifyEmailIncidentAccess(prisma, APP_ROLE);
+  console.log(`  REVOKED AND VERIFIED ALL: email_delivery_incidents from ${APP_ROLE}`);
   await revokeAndVerifyPasswordResetProviderCorrelationAccess(prisma, APP_ROLE);
   console.log(`  PROTECTED AND VERIFIED: password_reset_provider_correlations for ${APP_ROLE}`);
 

@@ -207,6 +207,8 @@ enum PlatformAuditAction {
   SYSOP_CAPABILITY_REVOKED
   SYSOP_ACTION_DENIED
   SYSOP_ACTION_FAILED
+  EMAIL_DELIVERY_INCIDENT_ACKNOWLEDGED
+  EMAIL_DELIVERY_INCIDENT_RETENTION_RUN
 }
 
 enum PlatformAuditOutcome {
@@ -1881,6 +1883,33 @@ model ProviderEventInbox {
   @@index([provider, providerMessageId])
   @@index([receivedAt])
   @@map("provider_event_inbox")
+}
+
+// Platform-wide, redacted final-delivery evidence. The dedicated collector
+// gets INSERT and SELECT only after an operational privilege preflight. The
+// ordinary tenant runtime has no direct table access. Acknowledgement is a
+// separate, audited platform-operator transition.
+model EmailDeliveryIncident {
+  id                        String    @id @default(uuid())
+  createdAt                 DateTime  @default(now())
+  provider                  String    @db.VarChar(32)
+  providerMessageId         String    @db.VarChar(255)
+  recipientFingerprint      String    @db.VarChar(64)
+  recipientFingerprintKeyId String    @db.VarChar(64)
+  recipientDomain           String    @db.VarChar(253)
+  status                    String    @db.VarChar(32)
+  failureReason             String    @default("") @db.VarChar(100)
+  smtpStatusCode            String    @default("") @db.VarChar(8)
+  enhancedSmtpStatusCode    String    @default("") @db.VarChar(16)
+  recipientMailServer       String    @default("") @db.VarChar(253)
+  eventAt                   DateTime
+  acknowledgedAt            DateTime?
+  acknowledgedByUserId      String?   @db.VarChar(100)
+
+  @@unique([provider, providerMessageId, recipientFingerprint])
+  @@index([acknowledgedAt, eventAt])
+  @@index([eventAt])
+  @@map("email_delivery_incidents")
 }
 
 // EmailVerificationToken (Email Verification)

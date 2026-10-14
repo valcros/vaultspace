@@ -59,6 +59,8 @@ jobs:
       LIFECYCLE_JOB_APP: ${{ vars.LIFECYCLE_JOB_APP }}
       RESET_RECONCILER_JOB_APP: ${{ vars.RESET_RECONCILER_JOB_APP }}
       EMAIL_VERIFICATION_RECONCILER_JOB_APP: ${{ vars.EMAIL_VERIFICATION_RECONCILER_JOB_APP }}
+      EMAIL_INCIDENT_COLLECTOR_JOB_APP: ${{ vars.EMAIL_INCIDENT_COLLECTOR_JOB_APP }}
+      EMAIL_INCIDENT_RETENTION_JOB_APP: ${{ vars.EMAIL_INCIDENT_RETENTION_JOB_APP }}
       DESIRED_RESET_WRITE_MODE: ${{ vars.PASSWORD_RESET_TOKEN_WRITE_MODE }}
       PLATFORM_PROTECTED_ORG_SLUGS: ${{ secrets.PLATFORM_PROTECTED_ORG_SLUGS }}
       ALLOW_RESET_MODE_DOWNGRADE: ${{ inputs.allow_reset_mode_downgrade || 'false' }}
@@ -125,6 +127,8 @@ jobs:
             "$LIFECYCLE_JOB_APP"
             "$RESET_RECONCILER_JOB_APP"
             "$EMAIL_VERIFICATION_RECONCILER_JOB_APP"
+            "$EMAIL_INCIDENT_COLLECTOR_JOB_APP"
+            "$EMAIL_INCIDENT_RETENTION_JOB_APP"
           )
 
           for metadata_value in "${metadata_values[@]}"; do
@@ -246,6 +250,30 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --query properties.template.containers[0].image \
             --output tsv)
+          PREVIOUS_EMAIL_INCIDENT_COLLECTOR_IMAGE=""
+          if [ -n "$EMAIL_INCIDENT_COLLECTOR_JOB_APP" ]; then
+            PREVIOUS_EMAIL_INCIDENT_COLLECTOR_IMAGE=$(az containerapp job show \
+              --name "$EMAIL_INCIDENT_COLLECTOR_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.template.containers[0].image \
+              --output tsv)
+            if [[ ! "$PREVIOUS_EMAIL_INCIDENT_COLLECTOR_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
+              echo "ERROR: incident collector job requires a pinned before-state image"
+              exit 1
+            fi
+          fi
+          PREVIOUS_EMAIL_INCIDENT_RETENTION_IMAGE=""
+          if [ -n "$EMAIL_INCIDENT_RETENTION_JOB_APP" ]; then
+            PREVIOUS_EMAIL_INCIDENT_RETENTION_IMAGE=$(az containerapp job show \
+              --name "$EMAIL_INCIDENT_RETENTION_JOB_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.template.containers[0].image \
+              --output tsv)
+            if [[ ! "$PREVIOUS_EMAIL_INCIDENT_RETENTION_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
+              echo "ERROR: incident retention job requires a pinned before-state image"
+              exit 1
+            fi
+          fi
           PREVIOUS_EMAIL_VERIFICATION_RECONCILER_CRON=$(az containerapp job show \
             --name "$EMAIL_VERIFICATION_RECONCILER_JOB_APP" \
             --resource-group "$RESOURCE_GROUP" \
@@ -292,6 +320,8 @@ jobs:
             echo "PREVIOUS_LIFECYCLE_IMAGE=$PREVIOUS_LIFECYCLE_IMAGE"
             echo "PREVIOUS_RESET_RECONCILER_IMAGE=$PREVIOUS_RESET_RECONCILER_IMAGE"
             echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_IMAGE=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_IMAGE"
+            echo "PREVIOUS_EMAIL_INCIDENT_COLLECTOR_IMAGE=$PREVIOUS_EMAIL_INCIDENT_COLLECTOR_IMAGE"
+            echo "PREVIOUS_EMAIL_INCIDENT_RETENTION_IMAGE=$PREVIOUS_EMAIL_INCIDENT_RETENTION_IMAGE"
             echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_CRON=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_CRON"
             echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_COMPLETIONS=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_COMPLETIONS"
             echo "PREVIOUS_EMAIL_VERIFICATION_RECONCILER_PARALLELISM=$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_PARALLELISM"
@@ -701,6 +731,70 @@ jobs:
             --replica-completion-count 1 \
             --parallelism 1 \
             --replica-timeout 300
+
+      - name: Update Container App Job - Email Incident Collector
+        if: env.EMAIL_INCIDENT_COLLECTOR_JOB_APP != ''
+        run: |
+          echo "JOBS_MUTATED=true" >> "$GITHUB_ENV"
+          az containerapp job update \
+            --name "$EMAIL_INCIDENT_COLLECTOR_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$TARGET_WORKER_IMAGE_PINNED"
+
+      - name: Update Container App Job - Email Incident Retention
+        if: env.EMAIL_INCIDENT_RETENTION_JOB_APP != ''
+        run: |
+          echo "JOBS_MUTATED=true" >> "$GITHUB_ENV"
+          az containerapp job update \
+            --name "$EMAIL_INCIDENT_RETENTION_JOB_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$TARGET_WORKER_IMAGE_PINNED"
+
+      - name: Validate optional email incident jobs before Web cutover
+        if: env.EMAIL_INCIDENT_COLLECTOR_JOB_APP != '' || env.EMAIL_INCIDENT_RETENTION_JOB_APP != ''
+        run: |
+          validate_job() {
+            local job_name="$1"
+            local expected_script="$2"
+            local required_url="$3"
+            local job_json image command args trigger env secret_ref secret_url secret_identity
+            job_json=$(az containerapp job show \
+              --name "$job_name" \
+              --resource-group "$RESOURCE_GROUP" \
+              --output json)
+            image=$(echo "$job_json" | jq -r '.properties.template.containers[0].image')
+            command=$(echo "$job_json" | jq -r '(.properties.template.containers[0].command // []) | join(" ")')
+            args=$(echo "$job_json" | jq -r '(.properties.template.containers[0].args // []) | join(" ")')
+            trigger=$(echo "$job_json" | jq -r '.properties.configuration.triggerType')
+            env=$(echo "$job_json" | jq -c '.properties.template.containers[0].env // []')
+            if [ "$image" != "$TARGET_WORKER_IMAGE_PINNED" ] || \
+               [ "$command" != "npm" ] || \
+               [ "$args" != "run $expected_script" ] || \
+               { [ "$trigger" != "Manual" ] && [ "$trigger" != "Schedule" ]; }; then
+              echo "ERROR: optional email incident job image, command, or trigger mismatch"
+              return 1
+            fi
+            secret_ref=$(echo "$env" | jq -r --arg key "$required_url" \
+              '[.[] | select(.name == $key) | .secretRef // empty] | if length == 1 then .[0] else empty end')
+            secret_url=$(echo "$job_json" | jq -r --arg ref "$secret_ref" \
+              '[.properties.configuration.secrets[]? | select(.name == $ref) | .keyVaultUrl // empty] | if length == 1 then .[0] else empty end')
+            secret_identity=$(echo "$job_json" | jq -r --arg ref "$secret_ref" \
+              '[.properties.configuration.secrets[]? | select(.name == $ref) | .identity // empty] | if length == 1 then .[0] else empty end')
+            if [ -z "$secret_ref" ] || [[ ! "$secret_url" =~ ^https://[^/]+/secrets/[^/]+ ]] || \
+               [ "$secret_identity" != "system" ] || \
+               echo "$env" | jq -e '.[] | select(.name == "DATABASE_URL_ADMIN" or .name == "DATABASE_URL")' >/dev/null; then
+              echo "ERROR: optional email incident job database secret posture mismatch"
+              return 1
+            fi
+          }
+          if [ -n "$EMAIL_INCIDENT_COLLECTOR_JOB_APP" ]; then
+            validate_job "$EMAIL_INCIDENT_COLLECTOR_JOB_APP" \
+              worker:email-delivery-incidents EMAIL_INCIDENT_DATABASE_URL
+          fi
+          if [ -n "$EMAIL_INCIDENT_RETENTION_JOB_APP" ]; then
+            validate_job "$EMAIL_INCIDENT_RETENTION_JOB_APP" \
+              worker:email-delivery-retention EMAIL_INCIDENT_RETENTION_DATABASE_URL
+          fi
 
       - name: Validate email verification reconciler before Web cutover
         run: |
@@ -1553,6 +1647,18 @@ jobs:
               --replica-completion-count "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_COMPLETIONS" \
               --parallelism "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_PARALLELISM" \
               --replica-timeout "$PREVIOUS_EMAIL_VERIFICATION_RECONCILER_TIMEOUT" || ROLLBACK_FAILED=1
+            if [ -n "$EMAIL_INCIDENT_COLLECTOR_JOB_APP" ]; then
+              az containerapp job update \
+                --name "$EMAIL_INCIDENT_COLLECTOR_JOB_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "$PREVIOUS_EMAIL_INCIDENT_COLLECTOR_IMAGE" || ROLLBACK_FAILED=1
+            fi
+            if [ -n "$EMAIL_INCIDENT_RETENTION_JOB_APP" ]; then
+              az containerapp job update \
+                --name "$EMAIL_INCIDENT_RETENTION_JOB_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "$PREVIOUS_EMAIL_INCIDENT_RETENTION_IMAGE" || ROLLBACK_FAILED=1
+            fi
           fi
 
           # A verified forward worker is backward-compatible with the restored

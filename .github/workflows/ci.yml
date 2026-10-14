@@ -122,6 +122,15 @@ jobs:
         env:
           MIGRATION_DATABASE_URL: postgresql://test:test@localhost:5432/test
 
+      - name: Verify email incident retention contract
+        run: psql -v ON_ERROR_STOP=1 -f scripts/test-email-incident-retention.sql
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: test
+          PGPASSWORD: test
+          PGDATABASE: test
+
       - name: Run tests
         run: npm run test
         env:

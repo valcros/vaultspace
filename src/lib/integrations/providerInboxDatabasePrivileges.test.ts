@@ -1,7 +1,10 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
-import { revokeAndVerifyProviderInboxAccess } from './providerInboxDatabasePrivileges';
+import {
+  revokeAndVerifyEmailIncidentAccess,
+  revokeAndVerifyProviderInboxAccess,
+} from './providerInboxDatabasePrivileges';
 
 function clientWith(access: Record<string, boolean>): PrismaClient {
   return {
@@ -71,5 +74,21 @@ describe('provider inbox application-role revocation', () => {
     await expect(revokeAndVerifyProviderInboxAccess(client, 'vaultspace_app')).rejects.toThrow(
       /permission denied/
     );
+  });
+});
+
+describe('email incident application-role revocation', () => {
+  it('revokes the ordinary runtime and verifies the protected table', async () => {
+    const client = clientWith({});
+    await revokeAndVerifyEmailIncidentAccess(client, 'vaultspace_app');
+    expect(client.$executeRawUnsafe).toHaveBeenCalledWith(
+      'REVOKE ALL PRIVILEGES ON public.email_delivery_incidents FROM vaultspace_app'
+    );
+  });
+
+  it('fails when a direct or inherited privilege remains', async () => {
+    await expect(
+      revokeAndVerifyEmailIncidentAccess(clientWith({ can_select: true }), 'vaultspace_app')
+    ).rejects.toMatchObject({ code: 'EMAIL_DELIVERY_INCIDENT_APPLICATION_ROLE_ACCESS_REMAINS' });
   });
 });
