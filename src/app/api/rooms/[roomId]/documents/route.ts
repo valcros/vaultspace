@@ -187,6 +187,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
           })
           .catch((err) => console.error('[DocumentAPI] Failed to queue notification:', err));
       } catch (error) {
+        if (!(error instanceof AppError)) {
+          console.error('[DocumentAPI] Upload failed before completion:', error);
+        }
         errors.push({
           filename: file.name,
           error: error instanceof AppError ? error.message : 'Upload failed',
