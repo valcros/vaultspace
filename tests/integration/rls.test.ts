@@ -926,6 +926,18 @@ describe('RLS Enforcement', () => {
           status: 'PUBLISHED',
         },
       });
+      await withOrgContext(org2Id, (tx) =>
+        tx.roomViewDocument.update({
+          where: { id: binding.id },
+          data: { status: 'UNPUBLISHED', unpublishedAt: new Date() },
+        })
+      );
+      await withOrgContext(org2Id, (tx) =>
+        tx.roomViewDocument.update({
+          where: { id: binding.id },
+          data: { status: 'PUBLISHED', publishedAt: new Date() },
+        })
+      );
       const ids = [folder.id, document.id, version.id, blob.id, viewFolder.id, binding.id];
       for (let i = 0; i < tables.length; i++) {
         const table = tables[i]!;
