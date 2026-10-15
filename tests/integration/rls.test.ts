@@ -1044,6 +1044,26 @@ describe('RLS Enforcement', () => {
       ).rejects.toThrow();
       const binding = await rawPrisma.roomViewDocument.create({ data: base });
       expect(binding.publishedVersionId).toBe(version.id);
+      await expect(
+        rawPrisma.libraryDocument.update({
+          where: { id: doc1.id },
+          data: { archivedAt: new Date() },
+        })
+      ).rejects.toThrow();
+      await rawPrisma.roomViewDocument.update({
+        where: { id: binding.id },
+        data: { status: 'UNPUBLISHED', unpublishedAt: new Date() },
+      });
+      await rawPrisma.libraryDocument.update({
+        where: { id: doc1.id },
+        data: { archivedAt: new Date() },
+      });
+      await expect(
+        rawPrisma.roomViewDocument.update({
+          where: { id: binding.id },
+          data: { status: 'PUBLISHED' },
+        })
+      ).rejects.toThrow();
     });
 
     it('isolates organization folder templates even without application query filters', async () => {

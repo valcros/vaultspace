@@ -184,15 +184,31 @@ CREATE TRIGGER room_view_document_mode_guard BEFORE INSERT OR UPDATE ON "room_vi
 
 CREATE FUNCTION enforce_clean_library_publication() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  -- Serialize a new or reactivated binding with an archive of its canonical
+  -- document. The archive update waits for this row lock and then sees the
+  -- binding; a binding waits for an archive and then sees archivedAt.
+  IF NEW."status" IN ('DRAFT', 'PUBLISHED') THEN
+    PERFORM 1 FROM "library_documents" document
+    WHERE document."organizationId" = NEW."organizationId"
+      AND document."id" = NEW."libraryDocumentId"
+      AND document."archivedAt" IS NULL
+    FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'active room binding requires an unarchived library document' USING ERRCODE = '23514';
+    END IF;
+  END IF;
   IF NEW."status" = 'PUBLISHED' AND NOT EXISTS (
     SELECT 1
     FROM "library_document_versions" version
+    JOIN "library_documents" document
+      ON document."organizationId" = version."organizationId" AND document."id" = version."documentId"
     JOIN "library_file_blobs" blob
       ON blob."organizationId" = version."organizationId" AND blob."versionId" = version."id"
     WHERE version."organizationId" = NEW."organizationId"
       AND version."documentId" = NEW."libraryDocumentId"
       AND version."id" = NEW."publishedVersionId"
       AND version."scanStatus" = 'CLEAN'
+      AND document."archivedAt" IS NULL
   ) THEN
     RAISE EXCEPTION 'published library version must be clean and have a file blob' USING ERRCODE = '23514';
   END IF;
@@ -202,6 +218,23 @@ $$;
 
 CREATE TRIGGER room_view_document_clean_publication BEFORE INSERT OR UPDATE ON "room_view_documents"
   FOR EACH ROW EXECUTE FUNCTION enforce_clean_library_publication();
+
+CREATE FUNCTION block_bound_library_document_archive() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD."archivedAt" IS NULL AND NEW."archivedAt" IS NOT NULL AND EXISTS (
+    SELECT 1 FROM "room_view_documents" binding
+    WHERE binding."organizationId" = OLD."organizationId"
+      AND binding."libraryDocumentId" = OLD."id"
+      AND binding."status" IN ('DRAFT', 'PUBLISHED')
+  ) THEN
+    RAISE EXCEPTION 'unpublish room bindings before archiving a library document' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER library_document_archive_guard BEFORE UPDATE OF "archivedAt" ON "library_documents"
+  FOR EACH ROW EXECUTE FUNCTION block_bound_library_document_archive();
 
 ALTER TABLE "library_folders" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "library_folders" FORCE ROW LEVEL SECURITY;
