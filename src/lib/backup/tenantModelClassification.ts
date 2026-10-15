@@ -43,6 +43,12 @@ export const MODEL_CLASSIFICATION: Record<string, ModelClassification> = {
   // Org-scoped tenant data (has organizationId)
   UserOrganization: { kind: 'TENANT' },
   Room: { kind: 'TENANT' },
+  LibraryFolder: { kind: 'TENANT' },
+  LibraryDocument: { kind: 'TENANT' },
+  LibraryDocumentVersion: { kind: 'TENANT' },
+  LibraryFileBlob: { kind: 'TENANT' },
+  RoomViewFolder: { kind: 'TENANT' },
+  RoomViewDocument: { kind: 'TENANT' },
   Folder: { kind: 'TENANT' },
   Document: { kind: 'TENANT' },
   DocumentVersion: { kind: 'TENANT' },
@@ -163,6 +169,12 @@ export const RESTORE_ORDER: string[] = [
   'GroupMembership',
   'RoomTemplate',
   'Room',
+  'LibraryFolder', // self-referential — depth-order within the table at restore
+  'LibraryDocument',
+  'LibraryDocumentVersion',
+  'LibraryFileBlob',
+  'RoomViewFolder', // self-referential — depth-order within the table at restore
+  'RoomViewDocument',
   'Folder', // self-referential — depth-order within the table at restore
   'Document',
   'DocumentVersion',

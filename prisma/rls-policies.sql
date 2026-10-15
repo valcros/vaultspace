@@ -25,6 +25,12 @@ ALTER TABLE user_organizations ENABLE ROW LEVEL SECURITY;
 -- Rooms and content
 ALTER TABLE rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE room_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE library_folders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE library_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE library_document_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE library_file_blobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE room_view_folders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE room_view_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE folders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_versions ENABLE ROW LEVEL SECURITY;
@@ -194,6 +200,33 @@ CREATE POLICY room_org_isolation ON rooms
 DROP POLICY IF EXISTS room_template_org_isolation ON room_templates;
 CREATE POLICY room_template_org_isolation ON room_templates
   FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
+
+-- Canonical library and room-view bindings require the same transaction-local
+-- organization context as existing room content.
+DROP POLICY IF EXISTS library_folders_org_isolation ON library_folders;
+CREATE POLICY library_folders_org_isolation ON library_folders FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
+DROP POLICY IF EXISTS library_documents_org_isolation ON library_documents;
+CREATE POLICY library_documents_org_isolation ON library_documents FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
+DROP POLICY IF EXISTS library_document_versions_org_isolation ON library_document_versions;
+CREATE POLICY library_document_versions_org_isolation ON library_document_versions FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
+DROP POLICY IF EXISTS library_file_blobs_org_isolation ON library_file_blobs;
+CREATE POLICY library_file_blobs_org_isolation ON library_file_blobs FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
+DROP POLICY IF EXISTS room_view_folders_org_isolation ON room_view_folders;
+CREATE POLICY room_view_folders_org_isolation ON room_view_folders FOR ALL
+  USING ("organizationId" = current_setting('app.current_org_id', true))
+  WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
+DROP POLICY IF EXISTS room_view_documents_org_isolation ON room_view_documents;
+CREATE POLICY room_view_documents_org_isolation ON room_view_documents FOR ALL
   USING ("organizationId" = current_setting('app.current_org_id', true))
   WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
 
@@ -378,6 +411,12 @@ ALTER TABLE users FORCE ROW LEVEL SECURITY;
 ALTER TABLE user_organizations FORCE ROW LEVEL SECURITY;
 ALTER TABLE rooms FORCE ROW LEVEL SECURITY;
 ALTER TABLE room_templates FORCE ROW LEVEL SECURITY;
+ALTER TABLE library_folders FORCE ROW LEVEL SECURITY;
+ALTER TABLE library_documents FORCE ROW LEVEL SECURITY;
+ALTER TABLE library_document_versions FORCE ROW LEVEL SECURITY;
+ALTER TABLE library_file_blobs FORCE ROW LEVEL SECURITY;
+ALTER TABLE room_view_folders FORCE ROW LEVEL SECURITY;
+ALTER TABLE room_view_documents FORCE ROW LEVEL SECURITY;
 ALTER TABLE folders FORCE ROW LEVEL SECURITY;
 ALTER TABLE documents FORCE ROW LEVEL SECURITY;
 ALTER TABLE document_versions FORCE ROW LEVEL SECURITY;
