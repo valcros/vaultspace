@@ -181,6 +181,22 @@ async function main() {
   manifest.database.tables['rooms'] = roomCount;
   console.log(`  - rooms: ${roomCount} records`);
 
+  // Company Content Library canonical rows and room placements. These are
+  // included even while the feature flag is off, so dormant data is recoverable.
+  const companyLibraryTables: Array<[string, object[]]> = [
+    ['library_folders', await prisma.libraryFolder.findMany()],
+    ['library_documents', await prisma.libraryDocument.findMany()],
+    ['library_document_versions', await prisma.libraryDocumentVersion.findMany()],
+    ['library_file_blobs', await prisma.libraryFileBlob.findMany()],
+    ['room_view_folders', await prisma.roomViewFolder.findMany()],
+    ['room_view_documents', await prisma.roomViewDocument.findMany()],
+  ];
+  for (const [table, rows] of companyLibraryTables) {
+    const count = await writeJsonl(join(databaseDir, `${table}.jsonl`), rows);
+    manifest.database.tables[table] = count;
+    console.log(`  - ${table}: ${count} records`);
+  }
+
   // Organization-owned folder templates are tenant data. Their revision state
   // and enabled flag must survive a full JSONL recovery.
   const roomTemplates = await prisma.roomTemplate.findMany();

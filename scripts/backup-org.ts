@@ -195,6 +195,11 @@ async function main(): Promise<void> {
       bucket: String(r['storageBucket'] ?? 'documents'),
       key: String(r['storageKey']),
     });
+  for (const r of exported['LibraryFileBlob'] ?? [])
+    blobRefs.push({
+      bucket: String(r['storageBucket'] ?? 'library'),
+      key: String(r['storageKey']),
+    });
   for (const r of exported['PreviewAsset'] ?? [])
     if (r['storageKey'])
       blobRefs.push({

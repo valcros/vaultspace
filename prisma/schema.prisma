@@ -39,6 +39,18 @@ enum RoomStatus {
   CLOSED // Deny all viewer access
 }
 
+// Existing rooms remain independent. Company views are created explicitly.
+enum RoomMode {
+  INDEPENDENT
+  COMPANY_VIEW
+}
+
+enum LibraryPublicationStatus {
+  DRAFT
+  PUBLISHED
+  UNPUBLISHED
+}
+
 // Document categories for structured taxonomy
 enum DocumentCategory {
   FINANCIAL_STATEMENTS
@@ -94,6 +106,13 @@ enum EventType {
   ROOM_DELETED
   ROOM_TEMPLATE_CREATED
   ROOM_TEMPLATE_UPDATED
+  LIBRARY_DOCUMENT_CREATED
+  LIBRARY_VERSION_CREATED
+  LIBRARY_VIEW_DRAFTED
+  LIBRARY_VIEW_PUBLISHED
+  LIBRARY_VIEW_UNPUBLISHED
+  LIBRARY_VERSION_PINNED
+  LIBRARY_ARCHIVE_BLOCKED
 
   // Documents
   DOCUMENT_UPLOADED
@@ -400,6 +419,7 @@ model Organization {
   isActive         Boolean          @default(true)
   allowSelfSignup  Boolean          @default(false)
   auditCaptureMode AuditCaptureMode @default(OFF)
+  companyLibraryEnabled Boolean     @default(false)
 
   // Custom Domain (F001)
   customDomain String? @unique @db.VarChar(255)
@@ -413,6 +433,12 @@ model Organization {
   users                 UserOrganization[]
   rooms                 Room[]
   roomTemplates         RoomTemplate[]
+  libraryFolders        LibraryFolder[]
+  libraryDocuments      LibraryDocument[]
+  libraryVersions       LibraryDocumentVersion[]
+  libraryFileBlobs      LibraryFileBlob[]
+  roomViewFolders       RoomViewFolder[]
+  roomViewDocuments     RoomViewDocument[]
   documents             Document[]
   documentVersions      DocumentVersion[]
   events                Event[]
@@ -736,6 +762,7 @@ model Room {
 
   // Lifecycle - F108
   status RoomStatus @default(DRAFT)
+  mode   RoomMode   @default(INDEPENDENT)
 
   // Access control
   requiresPassword          Boolean @default(false)
@@ -794,6 +821,8 @@ model Room {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   folders               Folder[]
+  roomViewFolders       RoomViewFolder[]
+  roomViewDocuments     RoomViewDocument[]
   documents             Document[]
   links                 Link[]
   permissions           Permission[]
@@ -812,6 +841,7 @@ model Room {
   invitationAssignments InvitationRoomAssignment[]
 
   @@unique([organizationId, slug])
+  @@unique([organizationId, id])
   @@index([organizationId])
   @@index([status])
   @@index([createdAt])
@@ -1601,6 +1631,150 @@ model RoomTemplate {
   @@index([category])
   @@index([isSystemTemplate])
   @@map("room_templates")
+}
+
+// Organization-owned canonical content. No customer-facing library route is
+// enabled in the foundation increment.
+model LibraryFolder {
+  id             String   @id @default(cuid())
+  organizationId String
+  parentId       String?
+  name           String   @db.VarChar(255)
+  path           String   @db.VarChar(1000)
+  archivedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       LibraryFolder?   @relation("LibraryFolderHierarchy", fields: [organizationId, parentId], references: [organizationId, id], onDelete: Restrict)
+  children     LibraryFolder[]  @relation("LibraryFolderHierarchy")
+  documents    LibraryDocument[]
+  roomViews    RoomViewFolder[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, path])
+  @@index([organizationId, parentId])
+  @@map("library_folders")
+}
+
+model LibraryDocument {
+  id             String   @id @default(cuid())
+  organizationId String
+  folderId       String?
+  name           String   @db.VarChar(500)
+  archivedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folder       LibraryFolder?           @relation(fields: [organizationId, folderId], references: [organizationId, id], onDelete: Restrict)
+  versions     LibraryDocumentVersion[]
+  roomViews    RoomViewDocument[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, folderId])
+  @@index([organizationId, archivedAt])
+  @@map("library_documents")
+}
+
+model LibraryDocumentVersion {
+  id             String        @id @default(cuid())
+  organizationId String
+  documentId     String
+  versionNumber  Int
+  fileName       String        @db.VarChar(500)
+  mimeType       String        @db.VarChar(100)
+  fileSize       BigInt
+  fileSha256     String        @db.VarChar(64)
+  scanStatus     ScanStatus    @default(PENDING)
+  previewStatus  PreviewStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     LibraryDocument      @relation(fields: [organizationId, documentId], references: [organizationId, id], onDelete: Restrict)
+  fileBlob     LibraryFileBlob?
+  roomViews    RoomViewDocument[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, documentId, id])
+  @@unique([organizationId, documentId, versionNumber])
+  @@index([organizationId, scanStatus])
+  @@map("library_document_versions")
+}
+
+model LibraryFileBlob {
+  id             String   @id @default(cuid())
+  organizationId String
+  versionId      String   @unique
+  storageKey     String   @db.VarChar(500)
+  storageBucket  String   @default("library") @db.VarChar(100)
+  createdAt      DateTime @default(now())
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  version      LibraryDocumentVersion @relation(fields: [organizationId, versionId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, versionId])
+  @@unique([storageBucket, storageKey])
+  @@index([organizationId])
+  @@map("library_file_blobs")
+}
+
+// Room-local placement of a canonical folder. Parent and child placements
+// cannot cross an organization or room due to the composite foreign key.
+model RoomViewFolder {
+  id              String   @id @default(cuid())
+  organizationId  String
+  roomId          String
+  libraryFolderId String
+  parentId        String?
+  path            String   @db.VarChar(1000)
+  displayOrder    Int      @default(0)
+  hiddenAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room          Room               @relation(fields: [organizationId, roomId], references: [organizationId, id], onDelete: Restrict)
+  libraryFolder LibraryFolder      @relation(fields: [organizationId, libraryFolderId], references: [organizationId, id], onDelete: Restrict)
+  parent        RoomViewFolder?    @relation("RoomViewFolderHierarchy", fields: [organizationId, roomId, parentId], references: [organizationId, roomId, id], onDelete: Restrict)
+  children      RoomViewFolder[]   @relation("RoomViewFolderHierarchy")
+  documents     RoomViewDocument[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, roomId, id])
+  @@unique([roomId, libraryFolderId])
+  @@unique([roomId, path])
+  @@index([organizationId, roomId, parentId])
+  @@map("room_view_folders")
+}
+
+// One binding per canonical document and room. The published version relation
+// includes the document ID so a binding cannot point at another document's
+// version even when all rows belong to the same organization.
+model RoomViewDocument {
+  id                  String                   @id @default(cuid())
+  organizationId      String
+  roomId              String
+  libraryDocumentId   String
+  folderId            String?
+  publishedVersionId  String?
+  status              LibraryPublicationStatus @default(DRAFT)
+  publishedAt         DateTime?
+  unpublishedAt       DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room             Room                    @relation(fields: [organizationId, roomId], references: [organizationId, id], onDelete: Restrict)
+  libraryDocument  LibraryDocument         @relation(fields: [organizationId, libraryDocumentId], references: [organizationId, id], onDelete: Restrict)
+  publishedVersion LibraryDocumentVersion? @relation(fields: [organizationId, libraryDocumentId, publishedVersionId], references: [organizationId, documentId, id], onDelete: Restrict)
+  folder           RoomViewFolder?         @relation(fields: [organizationId, roomId, folderId], references: [organizationId, roomId, id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@unique([roomId, libraryDocumentId])
+  @@index([organizationId, roomId, status])
+  @@index([organizationId, libraryDocumentId])
+  @@map("room_view_documents")
 }
 
 // Notification (User Notifications)

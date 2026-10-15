@@ -196,6 +196,23 @@ function readJsonl<T>(filePath: string): T[] {
   });
 }
 
+function depthOrderFolders(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const byId = new Map(rows.map((row) => [String(row['id']), row]));
+  const depths = new Map<string, number>();
+  const depth = (row: Record<string, unknown>, seen: Set<string>): number => {
+    const id = String(row['id']);
+    if (seen.has(id)) throw new Error(`Cycle in folder archive at ${id}`);
+    const cached = depths.get(id);
+    if (cached !== undefined) return cached;
+    const parentId = row['parentId'];
+    const parent = parentId ? byId.get(String(parentId)) : undefined;
+    const result = parent ? depth(parent, new Set([...seen, id])) + 1 : 0;
+    depths.set(id, result);
+    return result;
+  };
+  return [...rows].sort((a, b) => depth(a, new Set()) - depth(b, new Set()));
+}
+
 // Copy directory recursively
 function copyDirRecursive(src: string, dest: string): { files: number; bytes: number } {
   let files = 0;
@@ -306,6 +323,12 @@ export async function clearExistingDataForRestore(
     }
     await tx.permission.deleteMany();
     await tx.link.deleteMany();
+    await tx.roomViewDocument.deleteMany();
+    await tx.roomViewFolder.deleteMany();
+    await tx.libraryFileBlob.deleteMany();
+    await tx.libraryDocumentVersion.deleteMany();
+    await tx.libraryDocument.deleteMany();
+    await tx.libraryFolder.deleteMany();
     await tx.groupMembership.deleteMany();
     await tx.group.deleteMany();
     await tx.fileBlob.deleteMany();
@@ -442,6 +465,33 @@ async function main() {
     await prisma.room.createMany({ data: rooms as never[] });
   }
   console.log(`  - rooms: ${rooms.length} records`);
+
+  // Older archives have no Company Content Library files. Parent rows are
+  // restored before the room placements that reference them.
+  const libraryTables = [
+    ['library_folders', 'libraryFolder'],
+    ['library_documents', 'libraryDocument'],
+    ['library_document_versions', 'libraryDocumentVersion'],
+    ['library_file_blobs', 'libraryFileBlob'],
+    ['room_view_folders', 'roomViewFolder'],
+    ['room_view_documents', 'roomViewDocument'],
+  ] as const;
+  for (const [file, delegateName] of libraryTables) {
+    let rows = readJsonl<Record<string, unknown>>(join(databaseDir, `${file}.jsonl`));
+    if (delegateName === 'libraryFolder' || delegateName === 'roomViewFolder') {
+      rows = depthOrderFolders(rows);
+    }
+    if (delegateName === 'libraryDocumentVersion') {
+      rows = rows.map((row) => ({ ...row, fileSize: BigInt(row['fileSize'] as string | number) }));
+    }
+    if (!dryRun && rows.length > 0) {
+      const delegate = prisma[delegateName] as unknown as {
+        create: (args: { data: never }) => Promise<unknown>;
+      };
+      for (const row of rows) await delegate.create({ data: row as never });
+    }
+    console.log(`  - ${file}: ${rows.length} records`);
+  }
 
   // Older archives may not contain this file. Tenant backups already classify
   // RoomTemplate separately; this restores it in the full JSONL path.

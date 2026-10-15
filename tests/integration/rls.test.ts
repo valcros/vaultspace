@@ -855,6 +855,197 @@ describe('RLS Enforcement', () => {
   });
 
   describe('SEC-001: Cross-tenant isolation', () => {
+    it('forces RLS on all six Company Library tables and rejects cross-tenant reads and writes', async () => {
+      const tables = [
+        'library_folders',
+        'library_documents',
+        'library_document_versions',
+        'library_file_blobs',
+        'room_view_folders',
+        'room_view_documents',
+      ];
+      const posture = await rawPrisma.$queryRaw<
+        Array<{ tablename: string; rowsecurity: boolean; forcerowsecurity: boolean }>
+      >`
+        SELECT c.relname AS tablename, c.relrowsecurity AS rowsecurity,
+               c.relforcerowsecurity AS forcerowsecurity
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname IN (${Prisma.join(tables)})`;
+      expect(posture).toHaveLength(tables.length);
+      expect(posture.every((row) => row.rowsecurity && row.forcerowsecurity)).toBe(true);
+
+      await rawPrisma.organization.update({
+        where: { id: org2Id },
+        data: { companyLibraryEnabled: true },
+      });
+      const room = await rawPrisma.room.create({
+        data: {
+          organizationId: org2Id,
+          name: 'Company View',
+          slug: `company-view-${randomUUID()}`,
+          mode: 'COMPANY_VIEW',
+          status: 'ACTIVE',
+        },
+      });
+      const folder = await rawPrisma.libraryFolder.create({
+        data: { organizationId: org2Id, name: 'Legal', path: `/legal-${randomUUID()}` },
+      });
+      const document = await rawPrisma.libraryDocument.create({
+        data: { organizationId: org2Id, folderId: folder.id, name: 'cap-table.pdf' },
+      });
+      const version = await rawPrisma.libraryDocumentVersion.create({
+        data: {
+          organizationId: org2Id,
+          documentId: document.id,
+          versionNumber: 1,
+          fileName: 'cap-table.pdf',
+          mimeType: 'application/pdf',
+          fileSize: BigInt(10),
+          fileSha256: 'a'.repeat(64),
+          scanStatus: 'CLEAN',
+        },
+      });
+      const blob = await rawPrisma.libraryFileBlob.create({
+        data: { organizationId: org2Id, versionId: version.id, storageKey: `org2/${version.id}` },
+      });
+      const viewFolder = await rawPrisma.roomViewFolder.create({
+        data: {
+          organizationId: org2Id,
+          roomId: room.id,
+          libraryFolderId: folder.id,
+          path: '/legal',
+        },
+      });
+      const binding = await rawPrisma.roomViewDocument.create({
+        data: {
+          organizationId: org2Id,
+          roomId: room.id,
+          libraryDocumentId: document.id,
+          folderId: viewFolder.id,
+          publishedVersionId: version.id,
+          status: 'PUBLISHED',
+        },
+      });
+      const ids = [folder.id, document.id, version.id, blob.id, viewFolder.id, binding.id];
+      for (let i = 0; i < tables.length; i++) {
+        const table = tables[i]!;
+        const id = ids[i]!;
+        const visible = await withOrgContext(org1Id, (tx) =>
+          tx.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM ${table} WHERE id = $1`, id)
+        );
+        expect(visible).toEqual([]);
+        const changed = await withOrgContext(org1Id, (tx) =>
+          tx.$executeRawUnsafe(
+            `UPDATE ${table} SET "organizationId" = $1 WHERE id = $2`,
+            org1Id,
+            id
+          )
+        );
+        expect(changed).toBe(0);
+      }
+      await expect(
+        withOrgContext(org1Id, (tx) =>
+          tx.libraryFolder.create({
+            data: { organizationId: org2Id, name: 'Foreign', path: `/foreign-${randomUUID()}` },
+          })
+        )
+      ).rejects.toThrow();
+      await expect(
+        rawPrisma.libraryDocument.create({
+          data: { organizationId: org1Id, folderId: folder.id, name: 'Wrong organization folder' },
+        })
+      ).rejects.toThrow();
+    });
+
+    it('keeps bindings in a Company View and pins a clean version of their own canonical document', async () => {
+      await rawPrisma.organization.update({
+        where: { id: org1Id },
+        data: { companyLibraryEnabled: true },
+      });
+      const companyRoom = await rawPrisma.room.create({
+        data: {
+          organizationId: org1Id,
+          name: 'Company View',
+          slug: `company-view-${randomUUID()}`,
+          mode: 'COMPANY_VIEW',
+          status: 'ACTIVE',
+        },
+      });
+      const doc1 = await rawPrisma.libraryDocument.create({
+        data: { organizationId: org1Id, name: 'Document 1' },
+      });
+      const doc2 = await rawPrisma.libraryDocument.create({
+        data: { organizationId: org1Id, name: 'Document 2' },
+      });
+      const version = await rawPrisma.libraryDocumentVersion.create({
+        data: {
+          organizationId: org1Id,
+          documentId: doc1.id,
+          versionNumber: 1,
+          fileName: 'file.pdf',
+          mimeType: 'application/pdf',
+          fileSize: BigInt(10),
+          fileSha256: 'b'.repeat(64),
+          scanStatus: 'PENDING',
+        },
+      });
+      const base = {
+        organizationId: org1Id,
+        roomId: companyRoom.id,
+        libraryDocumentId: doc1.id,
+        publishedVersionId: version.id,
+        status: 'PUBLISHED' as const,
+      };
+      await expect(rawPrisma.roomViewDocument.create({ data: base })).rejects.toThrow();
+      await rawPrisma.libraryFileBlob.create({
+        data: { organizationId: org1Id, versionId: version.id, storageKey: `org1/${version.id}` },
+      });
+      await expect(rawPrisma.roomViewDocument.create({ data: base })).rejects.toThrow();
+      await rawPrisma.libraryDocumentVersion.update({
+        where: { id: version.id },
+        data: { scanStatus: 'CLEAN' },
+      });
+      const secondVersion = await rawPrisma.libraryDocumentVersion.create({
+        data: {
+          organizationId: org1Id,
+          documentId: doc2.id,
+          versionNumber: 1,
+          fileName: 'other.pdf',
+          mimeType: 'application/pdf',
+          fileSize: BigInt(10),
+          fileSha256: 'c'.repeat(64),
+          scanStatus: 'CLEAN',
+        },
+      });
+      await expect(
+        rawPrisma.libraryFileBlob.create({
+          data: {
+            organizationId: org1Id,
+            versionId: secondVersion.id,
+            storageKey: `org1/${version.id}`,
+          },
+        })
+      ).rejects.toThrow();
+      await expect(
+        rawPrisma.roomViewDocument.create({
+          data: { ...base, libraryDocumentId: doc2.id },
+        })
+      ).rejects.toThrow();
+      await expect(
+        rawPrisma.roomViewDocument.create({
+          data: { ...base, roomId: room1Id },
+        })
+      ).rejects.toThrow();
+      await expect(
+        rawPrisma.room.update({
+          where: { id: companyRoom.id },
+          data: { mode: 'INDEPENDENT' },
+        })
+      ).rejects.toThrow();
+      const binding = await rawPrisma.roomViewDocument.create({ data: base });
+      expect(binding.publishedVersionId).toBe(version.id);
+    });
+
     it('isolates organization folder templates even without application query filters', async () => {
       const template = await withOrgContext(org2Id, (tx) =>
         tx.roomTemplate.create({

@@ -187,7 +187,13 @@ async function main(): Promise<void> {
       for (const modelName of RESTORE_ORDER) {
         let rows = readTable(dbDir, modelName);
         if (rows.length === 0) continue;
-        if (modelName === 'Folder') rows = depthOrderFolders(rows);
+        if (
+          modelName === 'Folder' ||
+          modelName === 'LibraryFolder' ||
+          modelName === 'RoomViewFolder'
+        ) {
+          rows = depthOrderFolders(rows);
+        }
         const bigints = bigIntFields(modelName);
         const delegate = (tx as unknown as Record<string, Delegate>)[
           modelName.charAt(0).toLowerCase() + modelName.slice(1)
