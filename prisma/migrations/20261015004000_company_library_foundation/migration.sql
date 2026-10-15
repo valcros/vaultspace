@@ -239,3 +239,20 @@ CREATE POLICY "room_view_documents_org_isolation" ON "room_view_documents" FOR A
   USING ("organizationId" = current_setting('app.current_org_id', true))
   WITH CHECK ("organizationId" = current_setting('app.current_org_id', true));
 
+-- The staging migrator may differ from the role that set default privileges.
+-- Grant the runtime role table DML explicitly when it already exists.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vaultspace_app') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+      public.library_folders,
+      public.library_documents,
+      public.library_document_versions,
+      public.library_file_blobs,
+      public.room_view_folders,
+      public.room_view_documents
+    TO vaultspace_app;
+  END IF;
+END;
+$$;
+
