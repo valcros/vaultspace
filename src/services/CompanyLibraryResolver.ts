@@ -119,6 +119,10 @@ export async function resolvePublishedLibraryDocument(
 
     // A room placement or canonical ancestor can be hidden or archived after
     // publication. Check both trees at serve time and fail closed on cycles.
+    const canonicalFolderRoots = new Set<string>();
+    if (document.folderId) {
+      canonicalFolderRoots.add(document.folderId);
+    }
     const seenViewFolders = new Set<string>();
     let viewFolderId = binding.folderId;
     while (viewFolderId) {
@@ -133,29 +137,36 @@ export async function resolvePublishedLibraryDocument(
           roomId: input.roomId,
           hiddenAt: null,
         },
-        select: { parentId: true },
+        select: { parentId: true, libraryFolderId: true },
       });
       if (!folder) {
         return null;
       }
+      canonicalFolderRoots.add(folder.libraryFolderId);
       viewFolderId = folder.parentId;
     }
 
-    const seenLibraryFolders = new Set<string>();
-    let libraryFolderId = document.folderId;
-    while (libraryFolderId) {
-      if (seenLibraryFolders.has(libraryFolderId) || seenLibraryFolders.size >= 100) {
-        return null;
+    const verifiedLibraryFolders = new Set<string>();
+    for (const rootId of canonicalFolderRoots) {
+      const pathFolders = new Set<string>();
+      let libraryFolderId: string | null = rootId;
+      while (libraryFolderId && !verifiedLibraryFolders.has(libraryFolderId)) {
+        if (pathFolders.has(libraryFolderId) || pathFolders.size >= 100) {
+          return null;
+        }
+        pathFolders.add(libraryFolderId);
+        const folder: { parentId: string | null } | null = await tx.libraryFolder.findFirst({
+          where: { id: libraryFolderId, organizationId: input.organizationId, archivedAt: null },
+          select: { parentId: true },
+        });
+        if (!folder) {
+          return null;
+        }
+        libraryFolderId = folder.parentId;
       }
-      seenLibraryFolders.add(libraryFolderId);
-      const folder = await tx.libraryFolder.findFirst({
-        where: { id: libraryFolderId, organizationId: input.organizationId, archivedAt: null },
-        select: { parentId: true },
-      });
-      if (!folder) {
-        return null;
+      for (const id of pathFolders) {
+        verifiedLibraryFolders.add(id);
       }
-      libraryFolderId = folder.parentId;
     }
 
     const version = await tx.libraryDocumentVersion.findFirst({

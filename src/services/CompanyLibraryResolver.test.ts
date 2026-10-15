@@ -51,7 +51,10 @@ beforeEach(() => {
     id: 'doc-a',
     folderId: 'library-folder-a',
   });
-  mocks.tx.roomViewFolder.findFirst.mockResolvedValue({ parentId: null });
+  mocks.tx.roomViewFolder.findFirst.mockResolvedValue({
+    parentId: null,
+    libraryFolderId: 'library-folder-a',
+  });
   mocks.tx.libraryFolder.findFirst.mockResolvedValue({ parentId: null });
   mocks.tx.libraryDocumentVersion.findFirst.mockResolvedValue({
     id: 'version-a',
@@ -117,6 +120,15 @@ describe('Company Library document resolver', () => {
   it('denies hidden placement ancestors, archived canonical ancestors, and cycles', async () => {
     mocks.tx.roomViewFolder.findFirst.mockResolvedValueOnce(null);
     expect(await resolvePublishedLibraryDocument(request)).toBeNull();
+    mocks.tx.libraryFolder.findFirst.mockResolvedValueOnce(null);
+    expect(await resolvePublishedLibraryDocument(request)).toBeNull();
+    mocks.tx.roomViewFolder.findFirst.mockResolvedValueOnce({
+      parentId: null,
+      libraryFolderId: 'mapped-folder-a',
+    });
+    mocks.tx.libraryFolder.findFirst.mockImplementationOnce(({ where }) =>
+      Promise.resolve(where.id === 'mapped-folder-a' ? null : { parentId: null })
+    );
     mocks.tx.libraryFolder.findFirst.mockResolvedValueOnce(null);
     expect(await resolvePublishedLibraryDocument(request)).toBeNull();
     mocks.tx.roomViewFolder.findFirst.mockResolvedValue({ parentId: 'view-folder-a' });
