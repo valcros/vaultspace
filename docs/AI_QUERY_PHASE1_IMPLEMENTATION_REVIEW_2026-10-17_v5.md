@@ -32,7 +32,9 @@ Sources bind a document, current version, checksum, model identity, pipeline rev
 | Lock-order and purge drill  | A deterministic two-transaction drill emulated the indexer's lock order, then disabled the policy. The disable waited 7,282 ms, after which policy/source/chunk/document counts were 0/0/0/1. Re-enabling and reconciling restored coverage. This did not run the worker concurrently.                                             |
 | Backup and restore          | A clean CLI run backed up only the exact synthetic isolation organization: 48 tenant tables, two users, three blobs, and 23,106 blob bytes. Restore to a new empty local PostgreSQL database reproduced one AI source and one chunk with matching digest. All three blobs matched SHA-256 and byte size.                           |
 | Provider and logging        | Azure Monitor showed 24 model requests and 469 token transactions in the observed two-hour window. A sample of 20 recent worker log lines contained no known fixture text, vector pattern, or credential pattern. The log sample is limited evidence, not a comprehensive retention audit.                                         |
-| Focused local regression    | A new disposable local PostgreSQL database received all 81 migrations and RLS setup. Nine AI corpus integration tests and two worker retry tests passed. Reconciliation suppresses a permanent failure for unchanged inputs, then requeues after metadata repair or explicit retry.                                                |
+| Focused local regression    | A new disposable local PostgreSQL database received all 81 migrations and RLS setup. Ten AI corpus integration tests, seven indexer boundary tests, and two worker retry tests passed. Reconciliation suppresses a permanent failure for unchanged inputs, then requeues after metadata repair or explicit retry.                  |
+
+The local concurrent integration test ran `indexAiVersion` through an embedding barrier, disabled the policy before its final source recheck, and observed `SKIPPED` with zero source and chunk rows. This tests the actual indexer path for that ordering. The SQL lock-order drill tests the opposite transaction ordering at the database level.
 
 The broader RLS suite on this local PostgreSQL 18.6 instance passed 130 of 135 tests. Five bootstrap password-reset and session tests failed. Those files were not changed in this follow-up, but the cause has not been established. The repository's PostgreSQL 15 CI run remains the required merge gate; this local result is not recorded as a full-suite pass.
 
@@ -51,7 +53,7 @@ The temporary one-IP staging database firewall rule used for QA was removed. The
 ## Open Phase 1 exit gates
 
 1. Run representative-volume full hybrid retrieval with real authorization joins and RLS, measure p95 under concurrent load, and verify zero unauthorized rows. The 5,000-vector microbenchmark and eight-document staging run do not close this gate.
-2. Run the actual worker concurrently with policy disable to cover the insert-after-purge interleaving. The completed SQL drill covers lock ordering and trigger purge, but not the full worker path.
+2. Run an actual worker/indexer transaction against a concurrent policy disable at the final write lock, covering the insert-after-purge interleaving. The completed SQL drill covers lock ordering and trigger purge, while the local indexer integration test covers disable-before-final-recheck.
 3. Complete independent code, security, and QA review of the follow-up reconciliation and QA change, followed by exact-head CI and staging deployment. The Phase 1 foundation itself was independently approved and deployed.
 4. Record an operator acceptance decision for Phase 1 after the remaining evidence is in place. Do not enable a customer query route before Phase 2's actor authorization, citation, and response gates are complete.
 

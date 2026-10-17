@@ -1,16 +1,25 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
 import { readAiRoomCoverage } from '@/lib/ai/coverage';
 import { aiIndexInputFingerprint } from '@/lib/ai/indexFingerprint';
+import { indexAiVersion } from '@/lib/ai/indexer';
 import { reconcileAiRoom } from '@/lib/ai/reconciliation';
 import { withOrgContext, db } from '@/lib/db';
 
 import { prisma } from '../../vitest.integration.setup';
 
-const { addJobMock } = vi.hoisted(() => ({ addJobMock: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('@/providers', () => ({ getProviders: () => ({ job: { addJob: addJobMock } }) }));
+const { addJobMock, storageGetMock } = vi.hoisted(() => ({
+  addJobMock: vi.fn().mockResolvedValue(undefined),
+  storageGetMock: vi.fn(),
+}));
+vi.mock('@/providers', () => ({
+  getProviders: () => ({ job: { addJob: addJobMock }, storage: { get: storageGetMock } }),
+}));
+
+const fixtureBytes = Buffer.from('Synthetic note');
+const fixtureSha = createHash('sha256').update(fixtureBytes).digest('hex');
 
 async function seed() {
   const suffix = randomUUID();
@@ -51,7 +60,7 @@ async function seed() {
       name: 'Synthetic note',
       originalFileName: 'note.txt',
       mimeType: 'text/plain',
-      fileSize: BigInt(12),
+      fileSize: BigInt(fixtureBytes.length),
     },
   });
   const version = await prisma.documentVersion.create({
@@ -61,8 +70,8 @@ async function seed() {
       versionNumber: 1,
       fileName: 'note.txt',
       mimeType: 'text/plain',
-      fileSize: BigInt(12),
-      fileSha256: 'a'.repeat(64),
+      fileSize: BigInt(fixtureBytes.length),
+      fileSha256: fixtureSha,
       versionHash: 'b'.repeat(64),
       scanStatus: 'CLEAN',
     },
@@ -316,6 +325,40 @@ describe('AI corpus database boundary', () => {
       })
     ).toMatchObject({ state: 'PENDING', lastErrorCode: null, failureFingerprint: null });
     expect(addJobMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not commit indexing after a concurrent policy disable during embedding', async () => {
+    const { orgA, roomA, doc, version, source } = await seed();
+    await prisma.aiSource.delete({ where: { id: source.id } });
+    storageGetMock.mockResolvedValueOnce(fixtureBytes);
+    let markEmbeddingStarted!: () => void;
+    let releaseEmbedding!: () => void;
+    const embeddingStarted = new Promise<void>((resolve) => {
+      markEmbeddingStarted = resolve;
+    });
+    const embeddingBarrier = new Promise<void>((resolve) => {
+      releaseEmbedding = resolve;
+    });
+    const provider = {
+      modelId: 'synthetic-test-model',
+      dimensions: 1536,
+      embed: vi.fn(async () => {
+        markEmbeddingStarted();
+        await embeddingBarrier;
+        return [[1, ...Array(1535).fill(0)]];
+      }),
+    };
+    const indexing = indexAiVersion(orgA.id, doc.id, version.id, provider);
+    await embeddingStarted;
+    try {
+      await prisma.aiPolicy.update({ where: { roomId: roomA.id }, data: { enabled: false } });
+    } finally {
+      releaseEmbedding();
+    }
+    expect(await indexing).toBe('SKIPPED');
+    expect(await prisma.aiSource.count({ where: { organizationId: orgA.id } })).toBe(0);
+    expect(await prisma.aiChunk.count({ where: { organizationId: orgA.id } })).toBe(0);
+    expect(await prisma.document.count({ where: { id: doc.id } })).toBe(1);
   });
 
   it('purges sources on version change, withdrawal, and policy disable', async () => {
