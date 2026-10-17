@@ -19,6 +19,7 @@ const SERVABLE_VERSION_ROW = {
 const mockDocumentVersionFindFirst = vi.fn().mockResolvedValue(SERVABLE_VERSION_ROW);
 const mockSearchIndexUpsert = vi.fn().mockResolvedValue({});
 const mockSearchIndexDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
+const mockAiPolicyFindFirst = vi.fn().mockResolvedValue(null);
 
 vi.mock('@/lib/db', () => {
   const mockDb = {
@@ -32,6 +33,7 @@ vi.mock('@/lib/db', () => {
       upsert: (...args: unknown[]) => mockSearchIndexUpsert(...args),
       deleteMany: (...args: unknown[]) => mockSearchIndexDeleteMany(...args),
     },
+    aiPolicy: { findFirst: (...args: unknown[]) => mockAiPolicyFindFirst(...args) },
   };
 
   return {
@@ -103,6 +105,7 @@ function makeIndexJob(overrides: Record<string, unknown> = {}) {
 // a non-servable status set by one test leak into the next.
 beforeEach(() => {
   mockDocumentVersionFindFirst.mockResolvedValue(SERVABLE_VERSION_ROW);
+  mockAiPolicyFindFirst.mockResolvedValue(null);
 });
 
 // Worker-side scan gate: never extract/index a non-servable original -- indexed

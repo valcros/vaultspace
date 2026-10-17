@@ -18,3 +18,4 @@ export { processRoomExportJob } from './exportProcessor';
 export { processPreviewJob, processThumbnailJob } from './previewProcessor';
 export { processScanJob } from './scanProcessor';
 export { processSearchIndexJob, processTextExtractJob } from './textProcessor';
+export { processAiIndexJob } from './aiIndexProcessor';
