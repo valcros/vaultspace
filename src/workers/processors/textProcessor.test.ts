@@ -177,6 +177,29 @@ describe('processTextExtractJob — plain text', () => {
       expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1', roomId: 'room-1' })
     );
   });
+
+  it('queues ID-only AI indexing only for a CLEAN version and enabled policy', async () => {
+    mockAiPolicyFindFirst.mockResolvedValue({ id: 'policy-1' });
+    await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
+    expect(mockJobAddJob).toHaveBeenCalledWith(
+      'low',
+      'ai.index',
+      { organizationId: 'org-1', documentId: 'doc-1', versionId: 'ver-1' },
+      expect.objectContaining({ attempts: 4, removeOnFail: true })
+    );
+    mockJobAddJob.mockClear();
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      ...SERVABLE_VERSION_ROW,
+      scanStatus: 'SKIPPED',
+    });
+    await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
+    expect(mockJobAddJob).not.toHaveBeenCalledWith(
+      'low',
+      'ai.index',
+      expect.anything(),
+      expect.anything()
+    );
+  });
 });
 
 describe('processTextExtractJob — PDF with extractable text', () => {
