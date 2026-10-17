@@ -24,14 +24,18 @@ async function extractPages(bytes: Buffer, mimeType: string): Promise<TextPage[]
     return [{ pageNumber: null, text: bytes.toString('utf8') }];
   }
   if (mimeType === 'application/pdf') {
-    const parser = new PDFParse({ data: new Uint8Array(bytes) });
+    let parser: PDFParse | undefined;
     try {
+      parser = new PDFParse({ data: new Uint8Array(bytes) });
       const result = await parser.getText();
       if (result.pages.some((page) => page.text.trim())) {
         return result.pages.map((page) => ({ pageNumber: page.num, text: page.text }));
       }
+    } catch {
+      // A malformed but CLEAN PDF may still be OCR-readable. Do not log parser
+      // errors because some libraries include fragments of document content.
     } finally {
-      await parser.destroy();
+      await parser?.destroy().catch(() => undefined);
     }
   }
   if (mimeType === 'application/pdf' || mimeType.startsWith('image/')) {

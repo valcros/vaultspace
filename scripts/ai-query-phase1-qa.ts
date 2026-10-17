@@ -6,18 +6,18 @@ import { readAiRoomCoverage } from '../src/lib/ai/coverage';
 import { withOrgContext } from '../src/lib/db';
 import { reconcileAiRoom } from '../src/lib/ai/reconciliation';
 
-type Mode = '--status' | '--enable' | '--reconcile' | '--disable';
+type Mode = '--status' | '--enable' | '--reconcile' | '--disable' | '--disable-org';
 
 async function main() {
   const [mode, organizationId, roomId] = process.argv.slice(2) as [Mode?, string?, string?];
   if (
     !mode ||
-    !new Set(['--status', '--enable', '--reconcile', '--disable']).has(mode) ||
+    !new Set(['--status', '--enable', '--reconcile', '--disable', '--disable-org']).has(mode) ||
     !organizationId ||
     !roomId
   ) {
     throw new Error(
-      'Usage: ai-query-phase1-qa.ts --status|--enable|--reconcile|--disable <organizationId> <roomId>'
+      'Usage: ai-query-phase1-qa.ts --status|--enable|--reconcile|--disable|--disable-org <organizationId> <roomId>'
     );
   }
   const databaseUrl = process.env['DATABASE_URL'];
@@ -83,12 +83,20 @@ async function main() {
   });
   if (mode === '--enable' || mode === '--disable') {
     await withOrgContext(organizationId, async (tx) => {
+      if (mode === '--enable') {
+        await tx.organization.update({ where: { id: organizationId }, data: { aiEnabled: true } });
+      }
       await tx.aiPolicy.upsert({
         where: { roomId },
         create: { organizationId, roomId, enabled: mode === '--enable' },
         update: { enabled: mode === '--enable' },
       });
     });
+  }
+  if (mode === '--disable-org') {
+    await withOrgContext(organizationId, (tx) =>
+      tx.organization.update({ where: { id: organizationId }, data: { aiEnabled: false } })
+    );
   }
   const result =
     mode === '--reconcile'

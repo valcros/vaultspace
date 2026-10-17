@@ -32,10 +32,14 @@ export async function reconcileAiRoom(
       });
       const organization = await tx.organization.findFirst({
         where: { id: organizationId },
-        select: { isActive: true },
+        select: { isActive: true, aiEnabled: true },
       });
       const active = Boolean(
-        policy && organization?.isActive && room?.status === 'ACTIVE' && room.mode === 'INDEPENDENT'
+        policy &&
+        organization?.isActive &&
+        organization.aiEnabled &&
+        room?.status === 'ACTIVE' &&
+        room.mode === 'INDEPENDENT'
       );
       if (active && !expectedModelId) {
         throw new Error('AI_EMBEDDING_NOT_CONFIGURED');

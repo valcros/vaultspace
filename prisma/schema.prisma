@@ -420,6 +420,7 @@ model Organization {
   allowSelfSignup  Boolean          @default(false)
   auditCaptureMode AuditCaptureMode @default(OFF)
   companyLibraryEnabled Boolean     @default(false)
+  aiEnabled             Boolean     @default(false)
 
   // Custom Domain (F001)
   customDomain String? @unique @db.VarChar(255)

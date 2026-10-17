@@ -154,7 +154,12 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
       // carries IDs only and the AI worker rechecks every source gate.
       const aiEnabled = await withOrgContext(organizationId, (tx) =>
         tx.aiPolicy.findFirst({
-          where: { organizationId, roomId: document.roomId, enabled: true },
+          where: {
+            organizationId,
+            roomId: document.roomId,
+            enabled: true,
+            organization: { aiEnabled: true, isActive: true },
+          },
           select: { id: true },
         })
       );

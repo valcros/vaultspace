@@ -10,10 +10,10 @@ import { prisma } from '../../vitest.integration.setup';
 async function seed() {
   const suffix = randomUUID();
   const orgA = await prisma.organization.create({
-    data: { name: 'AI QA A', slug: `ai-a-${suffix}` },
+    data: { name: 'AI QA A', slug: `ai-a-${suffix}`, aiEnabled: true },
   });
   const orgB = await prisma.organization.create({
-    data: { name: 'AI QA B', slug: `ai-b-${suffix}` },
+    data: { name: 'AI QA B', slug: `ai-b-${suffix}`, aiEnabled: true },
   });
   const roomA = await prisma.room.create({
     data: {
@@ -166,5 +166,8 @@ describe('AI corpus database boundary', () => {
     const fifth = await seed();
     await prisma.organization.update({ where: { id: fifth.orgA.id }, data: { isActive: false } });
     expect(await prisma.aiSource.count({ where: { id: fifth.source.id } })).toBe(0);
+    const sixth = await seed();
+    await prisma.organization.update({ where: { id: sixth.orgA.id }, data: { aiEnabled: false } });
+    expect(await prisma.aiSource.count({ where: { id: sixth.source.id } })).toBe(0);
   });
 });

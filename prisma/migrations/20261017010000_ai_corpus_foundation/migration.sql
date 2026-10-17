@@ -1,6 +1,7 @@
 -- AI corpus is private to an organization and remains off until a room policy
 -- is enabled. Embeddings use a PostgreSQL array so baseline migrations work on
 -- installations without pgvector. An optional staged HNSW index is separate.
+ALTER TABLE "organizations" ADD COLUMN "aiEnabled" BOOLEAN NOT NULL DEFAULT false;
 CREATE TABLE "ai_policies" (
   "id" TEXT PRIMARY KEY,
   "organizationId" TEXT NOT NULL,
@@ -172,13 +173,13 @@ CREATE TRIGGER ai_policy_delete AFTER DELETE ON ai_policies
 
 CREATE FUNCTION invalidate_ai_organization_sources() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW."isActive" = false THEN
+  IF NEW."isActive" = false OR NEW."aiEnabled" = false THEN
     DELETE FROM ai_sources WHERE "organizationId" = NEW.id;
   END IF;
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER ai_organization_invalidate AFTER UPDATE OF "isActive" ON organizations
+CREATE TRIGGER ai_organization_invalidate AFTER UPDATE OF "isActive", "aiEnabled" ON organizations
   FOR EACH ROW EXECUTE FUNCTION invalidate_ai_organization_sources();
 
 DO $$

@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockResolveEligibleSource = vi.fn();
 const mockStorageGet = vi.fn();
+const mockPdfGetText = vi.fn();
+const mockPdfDestroy = vi.fn().mockResolvedValue(undefined);
+const mockOcrIsAvailable = vi.fn().mockResolvedValue(false);
+const mockOcrExtractText = vi.fn();
 const tx = {
   aiSource: { findFirst: vi.fn(), delete: vi.fn(), upsert: vi.fn() },
   aiChunk: { count: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
@@ -16,7 +20,18 @@ vi.mock('@/lib/db', () => ({
   withOrgContext: async (_org: string, operation: (db: typeof tx) => Promise<unknown>) =>
     operation(tx),
 }));
-vi.mock('@/providers', () => ({ getProviders: () => ({ storage: { get: mockStorageGet } }) }));
+vi.mock('@/providers', () => ({
+  getProviders: () => ({
+    storage: { get: mockStorageGet },
+    ocr: { isAvailable: mockOcrIsAvailable, extractText: mockOcrExtractText },
+  }),
+}));
+vi.mock('pdf-parse', () => ({
+  PDFParse: vi.fn().mockImplementation(() => ({
+    getText: mockPdfGetText,
+    destroy: mockPdfDestroy,
+  })),
+}));
 vi.mock('./sourceEligibility', () => ({
   resolveEligibleSource: (...args: unknown[]) => mockResolveEligibleSource(...args),
 }));
@@ -44,6 +59,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockResolveEligibleSource.mockResolvedValue(source);
   mockStorageGet.mockResolvedValue(bytes);
+  mockOcrIsAvailable.mockResolvedValue(false);
   tx.aiSource.findFirst.mockResolvedValue(null);
   tx.aiIndexJob.upsert.mockResolvedValue({});
   tx.aiIndexJob.updateMany.mockResolvedValue({ count: 1 });
@@ -92,6 +108,20 @@ describe('AI index worker trust boundary', () => {
     expect(tx.aiIndexAudit.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ outcome: 'SKIPPED', detailCode: 'AI_SOURCE_CHANGED' }),
+      })
+    );
+  });
+
+  it('uses OCR for an unreadable PDF without logging parser content', async () => {
+    mockResolveEligibleSource.mockResolvedValue({ ...source, mimeType: 'application/pdf' });
+    mockPdfGetText.mockRejectedValue(new Error('parser saw source fragment'));
+    mockOcrIsAvailable.mockResolvedValue(true);
+    mockOcrExtractText.mockResolvedValue({ text: 'Synthetic OCR result' });
+    expect(await indexAiVersion('org-a', 'doc-a', 'version-a', provider)).toBe('READY');
+    expect(mockOcrExtractText).toHaveBeenCalledWith(bytes, 'application/pdf');
+    expect(tx.aiChunk.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ pageNumber: null, content: 'Synthetic OCR result' })],
       })
     );
   });

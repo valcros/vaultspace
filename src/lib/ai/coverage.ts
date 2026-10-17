@@ -5,6 +5,7 @@ import { configuredEmbeddingIdentity } from './embeddingProvider';
 
 export interface AiRoomCoverage {
   roomId: string;
+  organizationEnabled: boolean;
   enabled: boolean;
   activeDocuments: number;
   cleanCurrentVersions: number;
@@ -31,7 +32,7 @@ export async function readAiRoomCoverage(
     }
     const organization = await tx.organization.findFirst({
       where: { id: organizationId },
-      select: { isActive: true },
+      select: { isActive: true, aiEnabled: true },
     });
     const policy = await tx.aiPolicy.findFirst({
       where: { organizationId, roomId },
@@ -98,6 +99,7 @@ export async function readAiRoomCoverage(
     const enabled = Boolean(policy?.enabled);
     return {
       roomId,
+      organizationEnabled: Boolean(organization?.aiEnabled),
       enabled,
       activeDocuments: docs.length,
       cleanCurrentVersions: clean.length,
@@ -108,6 +110,7 @@ export async function readAiRoomCoverage(
       ready:
         enabled &&
         Boolean(organization?.isActive) &&
+        Boolean(organization?.aiEnabled) &&
         room.status === 'ACTIVE' &&
         room.mode === 'INDEPENDENT' &&
         docs.length > 0 &&

@@ -78,7 +78,7 @@ export class PostgresRetrievalProvider implements RetrievalProvider {
         AND d."deletedAt" IS NULL AND d."withdrawnAt" IS NULL
         AND (d."expiresAt" IS NULL OR d."expiresAt" > now())
         AND d."roomId" = r.id AND r.status = 'ACTIVE' AND r.mode = 'INDEPENDENT'
-        AND o."isActive" = true
+        AND o."isActive" = true AND o."aiEnabled" = true
         AND p.enabled = true`;
     const columns = Prisma.sql`c.id, c."documentId", c."versionId", c."pageNumber", c.content, c."contentSha256"`;
     return withOrgContext(organizationId, async (tx) => {
