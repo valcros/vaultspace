@@ -21,6 +21,22 @@ vi.mock('@/providers', () => ({
 const fixtureBytes = Buffer.from('Synthetic note');
 const fixtureSha = createHash('sha256').update(fixtureBytes).digest('hex');
 
+async function waitForPostgresActivity(
+  queryFragment: string,
+  waitEventType: string
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const [row] = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT count(*) AS count FROM pg_stat_activity
+      WHERE pid <> pg_backend_pid() AND query ILIKE ${`%${queryFragment}%`}
+        AND wait_event_type = ${waitEventType}`;
+    if (row && row.count > BigInt(0)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`AI_QA_POSTGRES_ACTIVITY_MISSING_${waitEventType}`);
+}
+
 async function seed() {
   const suffix = randomUUID();
   const orgA = await prisma.organization.create({
@@ -359,6 +375,47 @@ describe('AI corpus database boundary', () => {
     expect(await prisma.aiSource.count({ where: { organizationId: orgA.id } })).toBe(0);
     expect(await prisma.aiChunk.count({ where: { organizationId: orgA.id } })).toBe(0);
     expect(await prisma.document.count({ where: { id: doc.id } })).toBe(1);
+  });
+
+  it('purges a completed index when policy disable waits behind the final index write', async () => {
+    const { orgA, roomA, doc, version, source } = await seed();
+    await prisma.aiSource.delete({ where: { id: source.id } });
+    storageGetMock.mockResolvedValueOnce(fixtureBytes);
+    await prisma.$executeRawUnsafe(`
+      CREATE FUNCTION public.aiqa_pause_source_insert() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(6); RETURN NEW; END $$`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER aiqa_pause_source_insert BEFORE INSERT ON ai_sources
+      FOR EACH ROW EXECUTE FUNCTION public.aiqa_pause_source_insert()`);
+    const provider = {
+      modelId: 'synthetic-test-model',
+      dimensions: 1536,
+      embed: vi.fn().mockResolvedValue([[1, ...Array(1535).fill(0)]]),
+    };
+    let indexing: Promise<unknown> | undefined;
+    let disabling: Promise<unknown> | undefined;
+    try {
+      indexing = indexAiVersion(orgA.id, doc.id, version.id, provider);
+      await waitForPostgresActivity('ai_sources', 'Timeout');
+      disabling = prisma.aiPolicy
+        .update({
+          where: { roomId: roomA.id },
+          data: { enabled: false },
+        })
+        .then((result) => result);
+      await waitForPostgresActivity('ai_policies', 'Lock');
+      expect(await indexing).toBe('READY');
+      await disabling;
+      expect(await prisma.aiSource.count({ where: { organizationId: orgA.id } })).toBe(0);
+      expect(await prisma.aiChunk.count({ where: { organizationId: orgA.id } })).toBe(0);
+      expect(await prisma.document.count({ where: { id: doc.id } })).toBe(1);
+    } finally {
+      await Promise.allSettled([indexing, disabling].filter(Boolean) as Promise<unknown>[]);
+      await prisma.$executeRawUnsafe(
+        'DROP TRIGGER IF EXISTS aiqa_pause_source_insert ON ai_sources'
+      );
+      await prisma.$executeRawUnsafe('DROP FUNCTION IF EXISTS public.aiqa_pause_source_insert()');
+    }
   });
 
   it('purges sources on version change, withdrawal, and policy disable', async () => {
