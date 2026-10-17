@@ -1,6 +1,8 @@
 /** Guarded synthetic staging fixture for full hybrid retrieval at 5,000 chunks. */
 import { randomUUID } from 'node:crypto';
 
+import { Prisma } from '@prisma/client';
+
 import { AI_PIPELINE_REVISION, chunkPages, sha256 } from '../src/lib/ai/chunking';
 import { readAiRoomCoverage } from '../src/lib/ai/coverage';
 import { PostgresRetrievalProvider } from '../src/lib/ai/retrieval';
@@ -49,7 +51,9 @@ function guard(mode: string) {
       'AI_VOLUME_APPLY_CONFIRM_REQUIRED'
     );
     assert(
-      process.env['AZURE_STORAGE_ACCOUNT_NAME'] && process.env['AZURE_STORAGE_ACCOUNT_KEY'],
+      process.env['AZURE_STORAGE_ACCOUNT_NAME']?.includes('vaultspace') &&
+        process.env['AZURE_STORAGE_ACCOUNT_NAME']?.includes('staging') &&
+        process.env['AZURE_STORAGE_ACCOUNT_KEY'],
       'AI_VOLUME_STORAGE_CONFIG_REQUIRED'
     );
   }
@@ -290,14 +294,24 @@ async function measure(organizationId: string, otherOrganizationId: string) {
   assert(policy?.enabled && policy.organizationId === organizationId, 'AI_VOLUME_POLICY_DISABLED');
   const sources = await bootstrapDb.aiSource.findMany({
     where: { organizationId, roomId: room.id, state: 'READY' },
-    select: { versionId: true, documentId: true, chunkCount: true, embeddingModelId: true },
+    select: {
+      id: true,
+      versionId: true,
+      documentId: true,
+      chunkCount: true,
+      embeddingModelId: true,
+    },
     orderBy: { documentId: 'asc' },
   });
   assert(
     sources.length === DOCUMENTS &&
       sources.every(
-        (source) =>
-          source.chunkCount === CHUNKS_PER_DOCUMENT && source.embeddingModelId === MODEL_ID
+        (source, index) =>
+          source.id === `aiqa-volume-source-${String(index).padStart(2, '0')}` &&
+          source.documentId === `aiqa-volume-doc-${String(index).padStart(2, '0')}` &&
+          source.versionId === `aiqa-volume-version-${String(index).padStart(2, '0')}` &&
+          source.chunkCount === CHUNKS_PER_DOCUMENT &&
+          source.embeddingModelId === MODEL_ID
       ),
     'AI_VOLUME_SOURCE_SET_INVALID'
   );
@@ -313,6 +327,72 @@ async function measure(organizationId: string, otherOrganizationId: string) {
     'AI_VOLUME_COVERAGE_INCOMPLETE'
   );
   const versionIds = sources.map((source) => source.versionId);
+  type EligibleChunk = {
+    organizationId: string;
+    roomId: string;
+    sourceId: string;
+    documentId: string;
+    versionId: string;
+    ordinal: number;
+    content: string;
+    contentSha256: string;
+    dimensions: number | null;
+  };
+  const eligible = await withOrgContext(
+    organizationId,
+    (tx) =>
+      tx.$queryRaw<EligibleChunk[]>(Prisma.sql`
+        SELECT c."organizationId", c."roomId", c."sourceId", c."documentId", c."versionId",
+          c.ordinal, c.content, c."contentSha256", array_length(c.embedding, 1) AS dimensions
+        FROM ai_chunks c
+        JOIN ai_sources s ON s.id = c."sourceId" AND s."organizationId" = c."organizationId"
+        JOIN document_versions v ON v.id = c."versionId" AND v."organizationId" = c."organizationId"
+        JOIN file_blobs b ON b."versionId" = v.id AND b."organizationId" = c."organizationId"
+        JOIN documents d ON d.id = c."documentId" AND d."organizationId" = c."organizationId"
+        JOIN rooms r ON r.id = c."roomId" AND r."organizationId" = c."organizationId"
+        JOIN organizations o ON o.id = c."organizationId"
+        JOIN ai_policies p ON p."roomId" = r.id AND p."organizationId" = c."organizationId"
+        WHERE c."organizationId" = ${organizationId} AND c."roomId" = ${room.id}
+          AND c."versionId" IN (${Prisma.join(versionIds)})
+          AND s.state = 'READY' AND s."versionId" = c."versionId"
+          AND s."embeddingModelId" = ${MODEL_ID}
+          AND s."pipelineRevision" = ${AI_PIPELINE_REVISION}
+          AND s."documentId" = c."documentId" AND s."roomId" = c."roomId"
+          AND s."fileSha256" = v."fileSha256"
+          AND v."documentId" = d.id AND v."scanStatus" = 'CLEAN'
+          AND v."mimeType" = 'text/plain'
+          AND d."currentVersionId" = v.id AND d.status = 'ACTIVE'
+          AND d."deletedAt" IS NULL AND d."withdrawnAt" IS NULL
+          AND (d."expiresAt" IS NULL OR d."expiresAt" > now())
+          AND d."roomId" = r.id AND r.status = 'ACTIVE' AND r.mode = 'INDEPENDENT'
+          AND o."isActive" = true AND o."aiEnabled" = true AND p.enabled = true`),
+    { timeout: 120_000 }
+  );
+  assert(eligible.length === TOTAL_CHUNKS, 'AI_VOLUME_ELIGIBLE_CORPUS_INCOMPLETE');
+  const expectedChunks = Array.from(
+    { length: DOCUMENTS },
+    (_, index) => syntheticText(index).chunks
+  );
+  const seen = new Set<string>();
+  for (const row of eligible) {
+    const documentIndex = Number(row.documentId.slice('aiqa-volume-doc-'.length));
+    const suffix = String(documentIndex).padStart(2, '0');
+    const expected = expectedChunks[documentIndex]?.[row.ordinal];
+    const key = `${row.documentId}:${row.ordinal}`;
+    assert(
+      row.organizationId === organizationId &&
+        row.roomId === room.id &&
+        row.sourceId === `aiqa-volume-source-${suffix}` &&
+        row.documentId === `aiqa-volume-doc-${suffix}` &&
+        row.versionId === `aiqa-volume-version-${suffix}` &&
+        row.dimensions === 1536 &&
+        expected?.contentSha256 === row.contentSha256 &&
+        sha256(row.content) === row.contentSha256 &&
+        !seen.has(key),
+      'AI_VOLUME_ELIGIBLE_CHUNK_INVALID'
+    );
+    seen.add(key);
+  }
   const retrieval = new PostgresRetrievalProvider();
   const request = {
     organizationId,
@@ -356,7 +436,7 @@ async function measure(organizationId: string, otherOrganizationId: string) {
     .flat()
     .sort((a, b) => a - b);
   process.stdout.write(
-    `${JSON.stringify({ mode: 'measure', syntheticRoom: ROOM_SLUG, documents: DOCUMENTS, chunks: chunkCount, modelId: MODEL_ID, scopedRows: scoped.length, crossTenantRows: crossTenant, directNoContextRows: directNoContext, requests: samples.length, concurrency: 5, p50ClientMs: samples[9], p95ClientMs: samples[18], maxClientMs: samples[19] })}\n`
+    `${JSON.stringify({ mode: 'measure', retrievalMode: 'internal-caller-supplied-allowlist', syntheticRoom: ROOM_SLUG, documents: DOCUMENTS, chunks: chunkCount, eligibleChunks: eligible.length, modelId: MODEL_ID, scopedRows: scoped.length, crossTenantRows: crossTenant, directNoContextRows: directNoContext, requests: samples.length, concurrency: 5, p50ClientMs: samples[9], p95ClientMs: samples[18], maxClientMs: samples[19] })}\n`
   );
 }
 
