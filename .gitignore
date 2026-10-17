@@ -61,6 +61,10 @@ test-results/
 # TypeScript
 *.tsbuildinfo
 
+# Python build artifacts
+__pycache__/
+*.pyc
+
 # Private configuration (not committed to public repo)
 .private/
 .dev-notes/

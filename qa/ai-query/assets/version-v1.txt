@@ -1,0 +1,3 @@
+VaultSpace AI QA synthetic version 1.
+
+The old release label was Amber. This version must not be used after version 2 becomes current.
