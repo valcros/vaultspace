@@ -46,6 +46,7 @@ const source = {
   versionId: 'version-a',
   fileSha256: createHash('sha256').update(bytes).digest('hex'),
   mimeType: 'text/plain',
+  blobId: 'blob-a',
   storageBucket: 'documents',
   storageKey: 'org-a/source.txt',
 };
@@ -116,6 +117,22 @@ describe('AI index worker trust boundary', () => {
     mockResolveEligibleSource
       .mockResolvedValueOnce(source)
       .mockResolvedValueOnce({ ...source, roomId: 'room-b' });
+    expect(await indexAiVersion('org-a', 'doc-a', 'version-a', provider)).toBe('SKIPPED');
+    expect(tx.aiChunk.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a replacement blob with the same key while embedding was running', async () => {
+    mockResolveEligibleSource
+      .mockResolvedValueOnce(source)
+      .mockResolvedValueOnce({ ...source, blobId: 'blob-replacement' });
+    expect(await indexAiVersion('org-a', 'doc-a', 'version-a', provider)).toBe('SKIPPED');
+    expect(tx.aiChunk.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a MIME change while embedding was running', async () => {
+    mockResolveEligibleSource
+      .mockResolvedValueOnce(source)
+      .mockResolvedValueOnce({ ...source, mimeType: 'application/pdf' });
     expect(await indexAiVersion('org-a', 'doc-a', 'version-a', provider)).toBe('SKIPPED');
     expect(tx.aiChunk.createMany).not.toHaveBeenCalled();
   });

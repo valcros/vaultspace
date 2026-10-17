@@ -6,18 +6,31 @@ import { readAiRoomCoverage } from '../src/lib/ai/coverage';
 import { withOrgContext } from '../src/lib/db';
 import { reconcileAiRoom } from '../src/lib/ai/reconciliation';
 
-type Mode = '--status' | '--enable' | '--reconcile' | '--disable' | '--disable-org';
+type Mode =
+  | '--status'
+  | '--enable'
+  | '--reconcile'
+  | '--retry-failed'
+  | '--disable'
+  | '--disable-org';
 
 async function main() {
   const [mode, organizationId, roomId] = process.argv.slice(2) as [Mode?, string?, string?];
   if (
     !mode ||
-    !new Set(['--status', '--enable', '--reconcile', '--disable', '--disable-org']).has(mode) ||
+    !new Set([
+      '--status',
+      '--enable',
+      '--reconcile',
+      '--retry-failed',
+      '--disable',
+      '--disable-org',
+    ]).has(mode) ||
     !organizationId ||
     !roomId
   ) {
     throw new Error(
-      'Usage: ai-query-phase1-qa.ts --status|--enable|--reconcile|--disable|--disable-org <organizationId> <roomId>'
+      'Usage: ai-query-phase1-qa.ts --status|--enable|--reconcile|--retry-failed|--disable|--disable-org <organizationId> <roomId>'
     );
   }
   const databaseUrl = process.env['DATABASE_URL'];
@@ -99,13 +112,19 @@ async function main() {
     );
   }
   const result =
-    mode === '--reconcile'
-      ? await reconcileAiRoom(organizationId, roomId)
+    mode === '--reconcile' || mode === '--retry-failed'
+      ? await reconcileAiRoom(organizationId, roomId, undefined, {
+          retryPermanentlyFailed: mode === '--retry-failed',
+        })
       : await readAiRoomCoverage(organizationId, roomId);
-  process.stdout.write(`${JSON.stringify({ mode, ...verified, ...result })}\n`);
+  process.stdout.write(`${JSON.stringify({ mode, ...verified, ...result })}\n`, () =>
+    process.exit(0)
+  );
 }
 
 main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : 'AI_QA_OPERATION_FAILED'}\n`);
-  process.exitCode = 1;
+  process.stderr.write(
+    `${error instanceof Error ? error.message : 'AI_QA_OPERATION_FAILED'}\n`,
+    () => process.exit(1)
+  );
 });

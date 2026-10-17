@@ -7,6 +7,7 @@ export interface EligibleSource {
   versionId: string;
   fileSha256: string;
   mimeType: string;
+  blobId: string;
   storageBucket: string;
   storageKey: string;
 }
@@ -45,7 +46,7 @@ export async function resolveEligibleSource(
           scanStatus: true,
           fileSha256: true,
           mimeType: true,
-          fileBlob: { select: { storageBucket: true, storageKey: true } },
+          fileBlob: { select: { id: true, storageBucket: true, storageKey: true } },
         },
       },
     },
@@ -74,6 +75,7 @@ export async function resolveEligibleSource(
     versionId,
     fileSha256: version.fileSha256,
     mimeType: version.mimeType,
+    blobId: version.fileBlob.id,
     storageBucket: version.fileBlob.storageBucket,
     storageKey: version.fileBlob.storageKey,
   };

@@ -243,4 +243,8 @@ main()
   })
   .finally(async () => {
     await bootstrapDb.$disconnect();
+    // Azure storage's HTTP agent can keep this one-shot CLI alive after the
+    // archive is sealed. Exit only after all awaited backup work and stdout.
+    const exitCode = Number(process.exitCode ?? 0);
+    process.stdout.write('', () => process.stderr.write('', () => process.exit(exitCode)));
   });

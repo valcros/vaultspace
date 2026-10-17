@@ -1,16 +1,9 @@
 import { UnrecoverableError, type Job } from 'bullmq';
 
+import { isPermanentAiIndexErrorCode } from '@/lib/ai/indexErrors';
 import { indexAiVersion } from '@/lib/ai/indexer';
 
 import type { AiIndexJobPayload } from '../types';
-
-const PERMANENT_INDEX_ERRORS = new Set([
-  'AI_FORMAT_UNSUPPORTED',
-  'AI_FILE_CHECKSUM_MISMATCH',
-  'AI_SOURCE_TOO_LARGE',
-  'AI_TOO_MANY_CHUNKS',
-  'AI_EMPTY_TEXT',
-]);
 
 export async function processAiIndexJob(job: Job<AiIndexJobPayload>): Promise<void> {
   const { organizationId, documentId, versionId } = job.data;
@@ -20,7 +13,7 @@ export async function processAiIndexJob(job: Job<AiIndexJobPayload>): Promise<vo
   try {
     await indexAiVersion(organizationId, documentId, versionId);
   } catch (error) {
-    if (error instanceof Error && PERMANENT_INDEX_ERRORS.has(error.message)) {
+    if (error instanceof Error && isPermanentAiIndexErrorCode(error.message)) {
       throw new UnrecoverableError(error.message);
     }
     throw error;

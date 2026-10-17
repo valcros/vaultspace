@@ -1,11 +1,25 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { readAiRoomCoverage } from '@/lib/ai/coverage';
+import { aiIndexInputFingerprint } from '@/lib/ai/indexFingerprint';
+import { indexAiVersion } from '@/lib/ai/indexer';
+import { reconcileAiRoom } from '@/lib/ai/reconciliation';
 import { withOrgContext, db } from '@/lib/db';
 
 import { prisma } from '../../vitest.integration.setup';
+
+const { addJobMock, storageGetMock } = vi.hoisted(() => ({
+  addJobMock: vi.fn().mockResolvedValue(undefined),
+  storageGetMock: vi.fn(),
+}));
+vi.mock('@/providers', () => ({
+  getProviders: () => ({ job: { addJob: addJobMock }, storage: { get: storageGetMock } }),
+}));
+
+const fixtureBytes = Buffer.from('Synthetic note');
+const fixtureSha = createHash('sha256').update(fixtureBytes).digest('hex');
 
 async function seed() {
   const suffix = randomUUID();
@@ -46,7 +60,7 @@ async function seed() {
       name: 'Synthetic note',
       originalFileName: 'note.txt',
       mimeType: 'text/plain',
-      fileSize: BigInt(12),
+      fileSize: BigInt(fixtureBytes.length),
     },
   });
   const version = await prisma.documentVersion.create({
@@ -56,8 +70,8 @@ async function seed() {
       versionNumber: 1,
       fileName: 'note.txt',
       mimeType: 'text/plain',
-      fileSize: BigInt(12),
-      fileSha256: 'a'.repeat(64),
+      fileSize: BigInt(fixtureBytes.length),
+      fileSha256: fixtureSha,
       versionHash: 'b'.repeat(64),
       scanStatus: 'CLEAN',
     },
@@ -218,6 +232,133 @@ describe('AI corpus database boundary', () => {
       failedJobs: 0,
       ready: true,
     });
+  });
+
+  it('does not requeue a permanently failed current version during reconciliation', async () => {
+    const { orgA, roomA, doc, version, source } = await seed();
+    addJobMock.mockClear();
+    const blob = await prisma.fileBlob.findUniqueOrThrow({ where: { versionId: version.id } });
+    const fingerprint = aiIndexInputFingerprint(
+      {
+        organizationId: orgA.id,
+        roomId: roomA.id,
+        documentId: doc.id,
+        versionId: version.id,
+        fileSha256: version.fileSha256,
+        mimeType: version.mimeType,
+        blobId: blob.id,
+        storageBucket: blob.storageBucket,
+        storageKey: blob.storageKey,
+      },
+      'synthetic-test-model'
+    );
+    await prisma.aiSource.delete({ where: { id: source.id } });
+    await prisma.aiIndexJob.create({
+      data: {
+        organizationId: orgA.id,
+        documentId: doc.id,
+        versionId: version.id,
+        state: 'FAILED',
+        attempts: 1,
+        lastErrorCode: 'AI_EMPTY_TEXT',
+        failureFingerprint: fingerprint,
+      },
+    });
+    const result = await reconcileAiRoom(orgA.id, roomA.id, 'synthetic-test-model');
+    expect(result).toMatchObject({ missingDocuments: 1, failedJobs: 1 });
+    expect(
+      await prisma.aiIndexJob.findUniqueOrThrow({
+        where: { organizationId_versionId: { organizationId: orgA.id, versionId: version.id } },
+      })
+    ).toMatchObject({ state: 'FAILED', attempts: 1, lastErrorCode: 'AI_EMPTY_TEXT' });
+    expect(addJobMock).not.toHaveBeenCalled();
+
+    await prisma.documentVersion.update({
+      where: { id: version.id },
+      data: { mimeType: 'application/pdf' },
+    });
+    const repaired = await reconcileAiRoom(orgA.id, roomA.id, 'synthetic-test-model');
+    expect(repaired).toMatchObject({ missingDocuments: 1, failedJobs: 0 });
+    expect(
+      await prisma.aiIndexJob.findUniqueOrThrow({
+        where: { organizationId_versionId: { organizationId: orgA.id, versionId: version.id } },
+      })
+    ).toMatchObject({ state: 'PENDING', lastErrorCode: null, failureFingerprint: null });
+    expect(addJobMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an explicit retry after a same-metadata source repair', async () => {
+    const { orgA, roomA, doc, version, source } = await seed();
+    addJobMock.mockClear();
+    const blob = await prisma.fileBlob.findUniqueOrThrow({ where: { versionId: version.id } });
+    await prisma.aiSource.delete({ where: { id: source.id } });
+    await prisma.aiIndexJob.create({
+      data: {
+        organizationId: orgA.id,
+        documentId: doc.id,
+        versionId: version.id,
+        state: 'FAILED',
+        attempts: 1,
+        lastErrorCode: 'AI_FILE_CHECKSUM_MISMATCH',
+        failureFingerprint: aiIndexInputFingerprint(
+          {
+            organizationId: orgA.id,
+            roomId: roomA.id,
+            documentId: doc.id,
+            versionId: version.id,
+            fileSha256: version.fileSha256,
+            mimeType: version.mimeType,
+            blobId: blob.id,
+            storageBucket: blob.storageBucket,
+            storageKey: blob.storageKey,
+          },
+          'synthetic-test-model'
+        ),
+      },
+    });
+    await reconcileAiRoom(orgA.id, roomA.id, 'synthetic-test-model', {
+      retryPermanentlyFailed: true,
+    });
+    expect(
+      await prisma.aiIndexJob.findUniqueOrThrow({
+        where: { organizationId_versionId: { organizationId: orgA.id, versionId: version.id } },
+      })
+    ).toMatchObject({ state: 'PENDING', lastErrorCode: null, failureFingerprint: null });
+    expect(addJobMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not commit indexing after a concurrent policy disable during embedding', async () => {
+    const { orgA, roomA, doc, version, source } = await seed();
+    await prisma.aiSource.delete({ where: { id: source.id } });
+    storageGetMock.mockResolvedValueOnce(fixtureBytes);
+    let markEmbeddingStarted!: () => void;
+    let releaseEmbedding!: () => void;
+    const embeddingStarted = new Promise<void>((resolve) => {
+      markEmbeddingStarted = resolve;
+    });
+    const embeddingBarrier = new Promise<void>((resolve) => {
+      releaseEmbedding = resolve;
+    });
+    const provider = {
+      modelId: 'synthetic-test-model',
+      dimensions: 1536,
+      embed: vi.fn(async () => {
+        markEmbeddingStarted();
+        await embeddingBarrier;
+        return [[1, ...Array(1535).fill(0)]];
+      }),
+    };
+    const indexing = indexAiVersion(orgA.id, doc.id, version.id, provider);
+    await embeddingStarted;
+    try {
+      await prisma.aiPolicy.update({ where: { roomId: roomA.id }, data: { enabled: false } });
+    } finally {
+      releaseEmbedding();
+    }
+    expect(await indexing).toBe('SKIPPED');
+    expect(await prisma.aiSource.count({ where: { organizationId: orgA.id } })).toBe(0);
+    expect(await prisma.aiChunk.count({ where: { organizationId: orgA.id } })).toBe(0);
+    expect(await prisma.document.count({ where: { id: doc.id } })).toBe(1);
   });
 
   it('purges sources on version change, withdrawal, and policy disable', async () => {
