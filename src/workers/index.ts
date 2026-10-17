@@ -115,6 +115,7 @@ import { createServer } from 'node:http';
 import { Worker, type ConnectionOptions, type Job } from 'bullmq';
 
 import {
+  processAiIndexJob,
   processEmailJob,
   processPasswordResetAcceptanceJob,
   processPasswordResetDeliveryJob,
@@ -178,6 +179,10 @@ async function processJob(job: Job): Promise<void> {
 
     case JOB_NAMES.SEARCH_INDEX:
       await processSearchIndexJob(job);
+      break;
+
+    case JOB_NAMES.AI_INDEX:
+      await processAiIndexJob(job);
       break;
 
     case JOB_NAMES.EMAIL_SEND:

@@ -68,6 +68,13 @@ export interface SearchIndexJobPayload {
   };
 }
 
+/** IDs only. The AI worker resolves current policy, version, scan and blob state. */
+export interface AiIndexJobPayload {
+  organizationId: string;
+  documentId: string;
+  versionId: string;
+}
+
 // =============================================================================
 // Email Jobs
 // =============================================================================
@@ -171,6 +178,7 @@ export const JOB_NAMES = {
 
   // Search
   SEARCH_INDEX: 'search.index',
+  AI_INDEX: 'ai.index',
 
   // Email
   EMAIL_SEND: 'email.send',

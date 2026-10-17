@@ -14,11 +14,13 @@ const mockDocumentVersionFindUnique = vi.fn();
 // default to a servable (CLEAN) version so existing tests still index text.
 const SERVABLE_VERSION_ROW = {
   scanStatus: 'CLEAN',
+  mimeType: 'application/pdf',
   fileBlob: { storageKey: 'documents/org-1/file.pdf', storageBucket: 'documents' },
 };
 const mockDocumentVersionFindFirst = vi.fn().mockResolvedValue(SERVABLE_VERSION_ROW);
 const mockSearchIndexUpsert = vi.fn().mockResolvedValue({});
 const mockSearchIndexDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
+const mockAiPolicyFindFirst = vi.fn().mockResolvedValue(null);
 
 vi.mock('@/lib/db', () => {
   const mockDb = {
@@ -32,6 +34,7 @@ vi.mock('@/lib/db', () => {
       upsert: (...args: unknown[]) => mockSearchIndexUpsert(...args),
       deleteMany: (...args: unknown[]) => mockSearchIndexDeleteMany(...args),
     },
+    aiPolicy: { findFirst: (...args: unknown[]) => mockAiPolicyFindFirst(...args) },
   };
 
   return {
@@ -103,6 +106,7 @@ function makeIndexJob(overrides: Record<string, unknown> = {}) {
 // a non-servable status set by one test leak into the next.
 beforeEach(() => {
   mockDocumentVersionFindFirst.mockResolvedValue(SERVABLE_VERSION_ROW);
+  mockAiPolicyFindFirst.mockResolvedValue(null);
 });
 
 // Worker-side scan gate: never extract/index a non-servable original -- indexed
@@ -152,6 +156,10 @@ describe('processTextExtractJob — scan gate', () => {
 describe('processTextExtractJob — plain text', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      ...SERVABLE_VERSION_ROW,
+      mimeType: 'text/plain',
+    });
     mockStorageGet.mockResolvedValue(Buffer.from('plain text content'));
     mockDocumentFindFirst.mockResolvedValue({ roomId: 'room-1', name: 'report.txt' });
     mockJobAddJob.mockResolvedValue('job-1');
@@ -172,6 +180,44 @@ describe('processTextExtractJob — plain text', () => {
       'normal',
       'search.index',
       expect.objectContaining({ documentId: 'doc-1', versionId: 'ver-1', roomId: 'room-1' })
+    );
+  });
+
+  it('queues ID-only AI indexing only for a CLEAN version and enabled policy', async () => {
+    mockAiPolicyFindFirst.mockResolvedValue({ id: 'policy-1' });
+    await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
+    expect(mockJobAddJob).toHaveBeenCalledWith(
+      'low',
+      'ai.index',
+      { organizationId: 'org-1', documentId: 'doc-1', versionId: 'ver-1' },
+      expect.objectContaining({ attempts: 4, removeOnFail: true })
+    );
+    mockJobAddJob.mockClear();
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      ...SERVABLE_VERSION_ROW,
+      scanStatus: 'SKIPPED',
+    });
+    await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
+    expect(mockJobAddJob).not.toHaveBeenCalledWith(
+      'low',
+      'ai.index',
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it('does not queue AI indexing for an unsupported CLEAN version', async () => {
+    mockAiPolicyFindFirst.mockResolvedValue({ id: 'policy-1' });
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      ...SERVABLE_VERSION_ROW,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
+    expect(mockJobAddJob).not.toHaveBeenCalledWith(
+      'low',
+      'ai.index',
+      expect.anything(),
+      expect.anything()
     );
   });
 });

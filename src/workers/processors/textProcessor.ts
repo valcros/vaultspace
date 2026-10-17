@@ -9,6 +9,7 @@ import { Job } from 'bullmq';
 import { PDFParse } from 'pdf-parse';
 
 import { withOrgContext } from '@/lib/db';
+import { isAiMimeSupported } from '@/lib/ai/sourceEligibility';
 import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 
@@ -31,6 +32,7 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
       where: { id: versionId, organizationId },
       select: {
         scanStatus: true,
+        mimeType: true,
         fileBlob: { select: { storageKey: true, storageBucket: true } },
       },
     })
@@ -149,6 +151,38 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
           pageCount: job.data.pageCount,
         },
       } satisfies SearchIndexJobPayload);
+
+      // A separate AI policy controls model-connected indexing. The queue
+      // carries IDs only and the AI worker rechecks every source gate.
+      const aiEnabled = await withOrgContext(organizationId, (tx) =>
+        tx.aiPolicy.findFirst({
+          where: {
+            organizationId,
+            roomId: document.roomId,
+            enabled: true,
+            organization: { aiEnabled: true, isActive: true },
+          },
+          select: { id: true },
+        })
+      );
+      if (
+        aiEnabled &&
+        versionScan.scanStatus === 'CLEAN' &&
+        isAiMimeSupported(versionScan.mimeType)
+      ) {
+        await providers.job.addJob(
+          'low',
+          'ai.index',
+          { organizationId, documentId, versionId },
+          {
+            jobId: `ai-index-${versionId}`,
+            attempts: 4,
+            backoff: { type: 'exponential', delay: 30_000 },
+            removeOnComplete: true,
+            removeOnFail: true,
+          }
+        );
+      }
     }
   } catch (error) {
     console.error(`[TextProcessor] Text extraction failed for document ${documentId}:`, error);

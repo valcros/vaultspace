@@ -420,6 +420,7 @@ model Organization {
   allowSelfSignup  Boolean          @default(false)
   auditCaptureMode AuditCaptureMode @default(OFF)
   companyLibraryEnabled Boolean     @default(false)
+  aiEnabled             Boolean     @default(false)
 
   // Custom Domain (F001)
   customDomain String? @unique @db.VarChar(255)
@@ -447,6 +448,11 @@ model Organization {
   groups                Group[]
   links                 Link[]
   searchIndexes         SearchIndex[]
+  aiPolicies            AiPolicy[]
+  aiSources             AiSource[]
+  aiChunks              AiChunk[]
+  aiIndexJobs           AiIndexJob[]
+  aiIndexAudits         AiIndexAudit[]
   fileBlobs             FileBlob[]
   previewAssets         PreviewAsset[]
   extractedTexts        ExtractedText[]
@@ -754,6 +760,8 @@ model Room {
   updatedAt DateTime @updatedAt
 
   organizationId String
+  aiPolicy       AiPolicy?
+  aiSources      AiSource[]
 
   // Identity
   name        String  @db.VarChar(255)
@@ -956,6 +964,8 @@ model Document {
   versions          DocumentVersion[]
   permissions       Permission[]
   searchIndexes     SearchIndex[]
+  aiSources         AiSource[]
+  aiIndexJobs       AiIndexJob[]
   linkVisits        LinkVisit[]
   viewSessions      ViewSession[]
   questions         Question[]
@@ -1028,8 +1038,10 @@ model DocumentVersion {
   previewAssets PreviewAsset[]
   extractedText ExtractedText?
   searchIndexes SearchIndex[]
+  aiSource      AiSource?
 
   @@unique([documentId, versionNumber])
+  @@unique([organizationId, id])
   @@index([organizationId])
   @@index([documentId])
   @@index([previewStatus])
@@ -1160,6 +1172,108 @@ model SearchIndex {
   @@index([documentId])
   @@index([versionId])
   @@map("search_indexes")
+}
+
+// AI corpus is separate from ordinary search. Policies default off and sources
+// are indexed only from current, CLEAN versions in active independent rooms.
+model AiPolicy {
+  id             String   @id @default(cuid())
+  organizationId String
+  roomId         String   @unique
+  enabled        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room           Room @relation(fields: [organizationId, roomId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([organizationId, enabled])
+  @@unique([organizationId, roomId])
+  @@map("ai_policies")
+}
+
+model AiSource {
+  id             String   @id @default(cuid())
+  organizationId String
+  roomId         String
+  documentId     String
+  versionId      String   @unique
+  fileSha256     String   @db.VarChar(64)
+  contentSha256  String   @db.VarChar(64)
+  embeddingModelId String @db.VarChar(120)
+  pipelineRevision Int @default(1)
+  state          String   @default("READY") @db.VarChar(24)
+  chunkCount     Int      @default(0)
+  indexedAt      DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room           Room @relation(fields: [organizationId, roomId], references: [organizationId, id], onDelete: Cascade)
+  document       Document @relation(fields: [organizationId, documentId], references: [organizationId, id], onDelete: Cascade)
+  version        DocumentVersion @relation(fields: [organizationId, versionId], references: [organizationId, id], onDelete: Cascade)
+  chunks         AiChunk[]
+
+  @@index([organizationId, roomId, state])
+  @@index([organizationId, documentId])
+  @@unique([organizationId, id])
+  @@unique([organizationId, versionId])
+  @@map("ai_sources")
+}
+
+model AiChunk {
+  id             String   @id @default(cuid())
+  organizationId String
+  roomId         String
+  sourceId       String
+  documentId     String
+  versionId      String
+  ordinal        Int
+  pageNumber     Int?
+  content        String   @db.Text
+  contentSha256  String   @db.VarChar(64)
+  embedding      Float[]
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  source         AiSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, ordinal])
+  @@index([organizationId, roomId, documentId])
+  @@index([organizationId, versionId])
+  @@map("ai_chunks")
+}
+
+model AiIndexJob {
+  id             String   @id @default(cuid())
+  organizationId String
+  documentId     String
+  versionId      String
+  state          String   @default("PENDING") @db.VarChar(24)
+  attempts       Int      @default(0)
+  lastErrorCode  String?  @db.VarChar(80)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  completedAt    DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document       Document @relation(fields: [organizationId, documentId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, versionId])
+  @@index([organizationId, state, updatedAt])
+  @@map("ai_index_jobs")
+}
+
+model AiIndexAudit {
+  id             String   @id @default(cuid())
+  organizationId String
+  documentId     String?
+  versionId      String?
+  action         String   @db.VarChar(40)
+  outcome        String   @db.VarChar(24)
+  detailCode     String?  @db.VarChar(80)
+  chunkCount     Int?
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("ai_index_audits")
 }
 
 // Note: search_indexes also carries a generated tsvector column ("tsv",
