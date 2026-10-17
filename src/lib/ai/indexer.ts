@@ -7,6 +7,7 @@ import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 import { AI_PIPELINE_REVISION, chunkPages, sha256, type TextPage } from './chunking';
+import { aiIndexInputFingerprint } from './indexFingerprint';
 import {
   AzureEmbeddingProvider,
   configuredEmbeddingIdentity,
@@ -87,7 +88,12 @@ export async function indexAiVersion(
       }
       await tx.aiIndexJob.updateMany({
         where: { organizationId, versionId },
-        data: { state: 'SKIPPED', completedAt: new Date(), lastErrorCode: 'AI_SOURCE_INELIGIBLE' },
+        data: {
+          state: 'SKIPPED',
+          completedAt: new Date(),
+          lastErrorCode: 'AI_SOURCE_INELIGIBLE',
+          failureFingerprint: null,
+        },
       });
       await audit(
         tx,
@@ -154,7 +160,12 @@ export async function indexAiVersion(
       await withOrgContext(organizationId, (tx) =>
         tx.aiIndexJob.updateMany({
           where: { organizationId, versionId },
-          data: { state: 'READY', completedAt: new Date(), lastErrorCode: null },
+          data: {
+            state: 'READY',
+            completedAt: new Date(),
+            lastErrorCode: null,
+            failureFingerprint: null,
+          },
         })
       );
       return 'UNCHANGED';
@@ -169,6 +180,7 @@ export async function indexAiVersion(
         state: 'RUNNING',
         attempts: { increment: 1 },
         lastErrorCode: null,
+        failureFingerprint: null,
         completedAt: null,
       },
     });
@@ -224,6 +236,8 @@ export async function indexAiVersion(
           !current ||
           current.roomId !== source.roomId ||
           current.fileSha256 !== source.fileSha256 ||
+          current.mimeType !== source.mimeType ||
+          current.blobId !== source.blobId ||
           current.storageBucket !== source.storageBucket ||
           current.storageKey !== source.storageKey
         ) {
@@ -237,7 +251,12 @@ export async function indexAiVersion(
           }
           await tx.aiIndexJob.updateMany({
             where: { organizationId, versionId },
-            data: { state: 'SKIPPED', completedAt: new Date(), lastErrorCode: 'AI_SOURCE_CHANGED' },
+            data: {
+              state: 'SKIPPED',
+              completedAt: new Date(),
+              lastErrorCode: 'AI_SOURCE_CHANGED',
+              failureFingerprint: null,
+            },
           });
           await audit(
             tx,
@@ -302,7 +321,12 @@ export async function indexAiVersion(
         });
         await tx.aiIndexJob.updateMany({
           where: { organizationId, versionId },
-          data: { state: 'READY', completedAt: new Date(), lastErrorCode: null },
+          data: {
+            state: 'READY',
+            completedAt: new Date(),
+            lastErrorCode: null,
+            failureFingerprint: null,
+          },
         });
         await audit(
           tx,
@@ -326,7 +350,11 @@ export async function indexAiVersion(
     await withOrgContext(organizationId, async (tx) => {
       await tx.aiIndexJob.updateMany({
         where: { organizationId, versionId },
-        data: { state: 'FAILED', lastErrorCode: code },
+        data: {
+          state: 'FAILED',
+          lastErrorCode: code,
+          failureFingerprint: aiIndexInputFingerprint(source, expectedModelId),
+        },
       });
       await audit(tx, organizationId, documentId, versionId, 'INDEX', 'FAILED', code);
     });

@@ -1,12 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { readAiRoomCoverage } from '@/lib/ai/coverage';
+import { aiIndexInputFingerprint } from '@/lib/ai/indexFingerprint';
 import { reconcileAiRoom } from '@/lib/ai/reconciliation';
 import { withOrgContext, db } from '@/lib/db';
 
 import { prisma } from '../../vitest.integration.setup';
+
+const { addJobMock } = vi.hoisted(() => ({ addJobMock: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('@/providers', () => ({ getProviders: () => ({ job: { addJob: addJobMock } }) }));
 
 async function seed() {
   const suffix = randomUUID();
@@ -223,6 +227,22 @@ describe('AI corpus database boundary', () => {
 
   it('does not requeue a permanently failed current version during reconciliation', async () => {
     const { orgA, roomA, doc, version, source } = await seed();
+    addJobMock.mockClear();
+    const blob = await prisma.fileBlob.findUniqueOrThrow({ where: { versionId: version.id } });
+    const fingerprint = aiIndexInputFingerprint(
+      {
+        organizationId: orgA.id,
+        roomId: roomA.id,
+        documentId: doc.id,
+        versionId: version.id,
+        fileSha256: version.fileSha256,
+        mimeType: version.mimeType,
+        blobId: blob.id,
+        storageBucket: blob.storageBucket,
+        storageKey: blob.storageKey,
+      },
+      'synthetic-test-model'
+    );
     await prisma.aiSource.delete({ where: { id: source.id } });
     await prisma.aiIndexJob.create({
       data: {
@@ -232,6 +252,7 @@ describe('AI corpus database boundary', () => {
         state: 'FAILED',
         attempts: 1,
         lastErrorCode: 'AI_EMPTY_TEXT',
+        failureFingerprint: fingerprint,
       },
     });
     const result = await reconcileAiRoom(orgA.id, roomA.id, 'synthetic-test-model');
@@ -241,6 +262,60 @@ describe('AI corpus database boundary', () => {
         where: { organizationId_versionId: { organizationId: orgA.id, versionId: version.id } },
       })
     ).toMatchObject({ state: 'FAILED', attempts: 1, lastErrorCode: 'AI_EMPTY_TEXT' });
+    expect(addJobMock).not.toHaveBeenCalled();
+
+    await prisma.documentVersion.update({
+      where: { id: version.id },
+      data: { mimeType: 'application/pdf' },
+    });
+    const repaired = await reconcileAiRoom(orgA.id, roomA.id, 'synthetic-test-model');
+    expect(repaired).toMatchObject({ missingDocuments: 1, failedJobs: 0 });
+    expect(
+      await prisma.aiIndexJob.findUniqueOrThrow({
+        where: { organizationId_versionId: { organizationId: orgA.id, versionId: version.id } },
+      })
+    ).toMatchObject({ state: 'PENDING', lastErrorCode: null, failureFingerprint: null });
+    expect(addJobMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an explicit retry after a same-metadata source repair', async () => {
+    const { orgA, roomA, doc, version, source } = await seed();
+    addJobMock.mockClear();
+    const blob = await prisma.fileBlob.findUniqueOrThrow({ where: { versionId: version.id } });
+    await prisma.aiSource.delete({ where: { id: source.id } });
+    await prisma.aiIndexJob.create({
+      data: {
+        organizationId: orgA.id,
+        documentId: doc.id,
+        versionId: version.id,
+        state: 'FAILED',
+        attempts: 1,
+        lastErrorCode: 'AI_FILE_CHECKSUM_MISMATCH',
+        failureFingerprint: aiIndexInputFingerprint(
+          {
+            organizationId: orgA.id,
+            roomId: roomA.id,
+            documentId: doc.id,
+            versionId: version.id,
+            fileSha256: version.fileSha256,
+            mimeType: version.mimeType,
+            blobId: blob.id,
+            storageBucket: blob.storageBucket,
+            storageKey: blob.storageKey,
+          },
+          'synthetic-test-model'
+        ),
+      },
+    });
+    await reconcileAiRoom(orgA.id, roomA.id, 'synthetic-test-model', {
+      retryPermanentlyFailed: true,
+    });
+    expect(
+      await prisma.aiIndexJob.findUniqueOrThrow({
+        where: { organizationId_versionId: { organizationId: orgA.id, versionId: version.id } },
+      })
+    ).toMatchObject({ state: 'PENDING', lastErrorCode: null, failureFingerprint: null });
+    expect(addJobMock).toHaveBeenCalledTimes(1);
   });
 
   it('purges sources on version change, withdrawal, and policy disable', async () => {

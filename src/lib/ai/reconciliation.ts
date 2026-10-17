@@ -4,6 +4,7 @@ import { getProviders } from '@/providers';
 import { AI_PIPELINE_REVISION } from './chunking';
 import { configuredEmbeddingIdentity } from './embeddingProvider';
 import { isPermanentAiIndexErrorCode } from './indexErrors';
+import { aiIndexInputFingerprint } from './indexFingerprint';
 import { isAiMimeSupported } from './sourceEligibility';
 
 export interface AiCoverage {
@@ -20,7 +21,8 @@ export interface AiCoverage {
 export async function reconcileAiRoom(
   organizationId: string,
   roomId: string,
-  expectedModelId = configuredEmbeddingIdentity()
+  expectedModelId = configuredEmbeddingIdentity(),
+  options: { retryPermanentlyFailed?: boolean } = {}
 ): Promise<AiCoverage> {
   const snapshot = await withOrgContext(
     organizationId,
@@ -64,7 +66,8 @@ export async function reconcileAiRoom(
                   id: true,
                   scanStatus: true,
                   mimeType: true,
-                  fileBlob: { select: { id: true } },
+                  fileSha256: true,
+                  fileBlob: { select: { id: true, storageBucket: true, storageKey: true } },
                 },
               },
             },
@@ -75,7 +78,26 @@ export async function reconcileAiRoom(
         return version?.scanStatus === 'CLEAN' &&
           version.fileBlob &&
           isAiMimeSupported(version.mimeType)
-          ? [{ documentId: doc.id, versionId: version.id }]
+          ? [
+              {
+                documentId: doc.id,
+                versionId: version.id,
+                fingerprint: aiIndexInputFingerprint(
+                  {
+                    organizationId,
+                    roomId,
+                    documentId: doc.id,
+                    versionId: version.id,
+                    fileSha256: version.fileSha256,
+                    mimeType: version.mimeType,
+                    blobId: version.fileBlob.id,
+                    storageBucket: version.fileBlob.storageBucket,
+                    storageKey: version.fileBlob.storageKey,
+                  },
+                  expectedModelId!
+                ),
+              },
+            ]
           : [];
       });
       const eligibleIds = new Set(eligible.map((item) => item.versionId));
@@ -128,19 +150,36 @@ export async function reconcileAiRoom(
       const missing = eligible.filter((item) => !readyIds.has(item.versionId));
       const priorJobs = await tx.aiIndexJob.findMany({
         where: { organizationId, versionId: { in: missing.map((item) => item.versionId) } },
-        select: { versionId: true, state: true, lastErrorCode: true },
+        select: { versionId: true, state: true, lastErrorCode: true, failureFingerprint: true },
       });
       const permanentlyFailed = new Set(
         priorJobs
-          .filter((job) => job.state === 'FAILED' && isPermanentAiIndexErrorCode(job.lastErrorCode))
+          .filter(
+            (job) =>
+              !options.retryPermanentlyFailed &&
+              job.state === 'FAILED' &&
+              isPermanentAiIndexErrorCode(job.lastErrorCode) &&
+              job.failureFingerprint ===
+                missing.find((item) => item.versionId === job.versionId)?.fingerprint
+          )
           .map((job) => job.versionId)
       );
       const enqueue = missing.filter((item) => !permanentlyFailed.has(item.versionId));
       for (const item of enqueue) {
         await tx.aiIndexJob.upsert({
           where: { organizationId_versionId: { organizationId, versionId: item.versionId } },
-          create: { organizationId, ...item, state: 'PENDING' },
-          update: { state: 'PENDING', lastErrorCode: null, completedAt: null },
+          create: {
+            organizationId,
+            documentId: item.documentId,
+            versionId: item.versionId,
+            state: 'PENDING',
+          },
+          update: {
+            state: 'PENDING',
+            lastErrorCode: null,
+            failureFingerprint: null,
+            completedAt: null,
+          },
         });
       }
       const failedJobs = await tx.aiIndexJob.count({
@@ -169,9 +208,11 @@ export async function reconcileAiRoom(
       await getProviders().job.addJob(
         'low',
         'ai.index',
-        { organizationId, ...item },
+        { organizationId, documentId: item.documentId, versionId: item.versionId },
         {
-          jobId: `ai-index-${item.versionId}`,
+          jobId: options.retryPermanentlyFailed
+            ? `ai-index-retry-${item.versionId}-${Date.now()}`
+            : `ai-index-${item.versionId}-${item.fingerprint.slice(0, 16)}`,
           attempts: 4,
           backoff: { type: 'exponential', delay: 30_000 },
           removeOnComplete: true,

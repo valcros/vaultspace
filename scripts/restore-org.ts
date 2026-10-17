@@ -242,5 +242,5 @@ main()
   .finally(async () => {
     await bootstrapDb.$disconnect();
     const exitCode = Number(process.exitCode ?? 0);
-    process.stdout.write('', () => process.exit(exitCode));
+    process.stdout.write('', () => process.stderr.write('', () => process.exit(exitCode)));
   });
