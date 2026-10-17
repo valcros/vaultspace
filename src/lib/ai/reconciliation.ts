@@ -3,6 +3,7 @@ import { getProviders } from '@/providers';
 
 import { AI_PIPELINE_REVISION } from './chunking';
 import { configuredEmbeddingIdentity } from './embeddingProvider';
+import { isPermanentAiIndexErrorCode } from './indexErrors';
 import { isAiMimeSupported } from './sourceEligibility';
 
 export interface AiCoverage {
@@ -125,7 +126,17 @@ export async function reconcileAiRoom(
           .map((source) => source.versionId)
       );
       const missing = eligible.filter((item) => !readyIds.has(item.versionId));
-      for (const item of missing) {
+      const priorJobs = await tx.aiIndexJob.findMany({
+        where: { organizationId, versionId: { in: missing.map((item) => item.versionId) } },
+        select: { versionId: true, state: true, lastErrorCode: true },
+      });
+      const permanentlyFailed = new Set(
+        priorJobs
+          .filter((job) => job.state === 'FAILED' && isPermanentAiIndexErrorCode(job.lastErrorCode))
+          .map((job) => job.versionId)
+      );
+      const enqueue = missing.filter((item) => !permanentlyFailed.has(item.versionId));
+      for (const item of enqueue) {
         await tx.aiIndexJob.upsert({
           where: { organizationId_versionId: { organizationId, versionId: item.versionId } },
           create: { organizationId, ...item, state: 'PENDING' },
@@ -145,6 +156,7 @@ export async function reconcileAiRoom(
         eligible,
         readyIds,
         missing,
+        enqueue,
         failedJobs,
         oldestPendingAt: oldest?.createdAt ?? null,
       };
@@ -153,7 +165,7 @@ export async function reconcileAiRoom(
   );
 
   if (snapshot.active) {
-    for (const item of snapshot.missing) {
+    for (const item of snapshot.enqueue) {
       await getProviders().job.addJob(
         'low',
         'ai.index',

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { readAiRoomCoverage } from '@/lib/ai/coverage';
+import { reconcileAiRoom } from '@/lib/ai/reconciliation';
 import { withOrgContext, db } from '@/lib/db';
 
 import { prisma } from '../../vitest.integration.setup';
@@ -218,6 +219,28 @@ describe('AI corpus database boundary', () => {
       failedJobs: 0,
       ready: true,
     });
+  });
+
+  it('does not requeue a permanently failed current version during reconciliation', async () => {
+    const { orgA, roomA, doc, version, source } = await seed();
+    await prisma.aiSource.delete({ where: { id: source.id } });
+    await prisma.aiIndexJob.create({
+      data: {
+        organizationId: orgA.id,
+        documentId: doc.id,
+        versionId: version.id,
+        state: 'FAILED',
+        attempts: 1,
+        lastErrorCode: 'AI_EMPTY_TEXT',
+      },
+    });
+    const result = await reconcileAiRoom(orgA.id, roomA.id, 'synthetic-test-model');
+    expect(result).toMatchObject({ missingDocuments: 1, failedJobs: 1 });
+    expect(
+      await prisma.aiIndexJob.findUniqueOrThrow({
+        where: { organizationId_versionId: { organizationId: orgA.id, versionId: version.id } },
+      })
+    ).toMatchObject({ state: 'FAILED', attempts: 1, lastErrorCode: 'AI_EMPTY_TEXT' });
   });
 
   it('purges sources on version change, withdrawal, and policy disable', async () => {

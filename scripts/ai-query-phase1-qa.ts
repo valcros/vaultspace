@@ -102,10 +102,14 @@ async function main() {
     mode === '--reconcile'
       ? await reconcileAiRoom(organizationId, roomId)
       : await readAiRoomCoverage(organizationId, roomId);
-  process.stdout.write(`${JSON.stringify({ mode, ...verified, ...result })}\n`);
+  process.stdout.write(`${JSON.stringify({ mode, ...verified, ...result })}\n`, () =>
+    process.exit(0)
+  );
 }
 
 main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : 'AI_QA_OPERATION_FAILED'}\n`);
-  process.exitCode = 1;
+  process.stderr.write(
+    `${error instanceof Error ? error.message : 'AI_QA_OPERATION_FAILED'}\n`,
+    () => process.exit(1)
+  );
 });
