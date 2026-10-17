@@ -8,17 +8,34 @@ export interface EmbeddingProvider {
 
 const DIMENSIONS = 1536;
 
+/** Bump the revision when the deployment's underlying model or dimensions change. */
+export function configuredEmbeddingIdentity(): string | undefined {
+  const deployment = process.env['AI_EMBEDDING_DEPLOYMENT'];
+  const revision = process.env['AI_EMBEDDING_REVISION'];
+  if (
+    !deployment ||
+    !revision ||
+    !/^[A-Za-z0-9._-]{1,60}$/.test(deployment) ||
+    !/^[A-Za-z0-9._-]{1,50}$/.test(revision)
+  ) {
+    return undefined;
+  }
+  return `${deployment}@${revision}`;
+}
+
 /** Azure is the first adapter. Other deployments implement this same contract. */
 export class AzureEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions = DIMENSIONS;
   readonly modelId: string;
   private readonly endpoint: string;
+  private readonly deployment: string;
   private readonly credential = new DefaultAzureCredential();
 
   constructor() {
     const endpoint = process.env['AI_EMBEDDING_ENDPOINT'];
     const modelId = process.env['AI_EMBEDDING_DEPLOYMENT'];
-    if (!endpoint || !modelId) {
+    const identity = configuredEmbeddingIdentity();
+    if (!endpoint || !modelId || !identity) {
       throw new Error('AI_EMBEDDING_NOT_CONFIGURED');
     }
     const parsed = new URL(endpoint);
@@ -26,7 +43,8 @@ export class AzureEmbeddingProvider implements EmbeddingProvider {
       throw new Error('AI_EMBEDDING_ENDPOINT_INVALID');
     }
     this.endpoint = `${parsed.origin}/openai/v1/embeddings`;
-    this.modelId = modelId;
+    this.modelId = identity;
+    this.deployment = modelId;
   }
 
   async embed(texts: string[]): Promise<number[][]> {
@@ -47,7 +65,7 @@ export class AzureEmbeddingProvider implements EmbeddingProvider {
         Authorization: `Bearer ${token.token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ model: this.modelId, input: texts, dimensions: DIMENSIONS }),
+      body: JSON.stringify({ model: this.deployment, input: texts, dimensions: DIMENSIONS }),
       signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) {

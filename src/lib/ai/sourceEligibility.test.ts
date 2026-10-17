@@ -3,9 +3,10 @@ import type { Prisma } from '@prisma/client';
 
 import { resolveEligibleSource } from './sourceEligibility';
 
-function tx(scanStatus: string, enabled = true, roomStatus = 'ACTIVE') {
+function tx(scanStatus: string, enabled = true, roomStatus = 'ACTIVE', orgActive = true) {
   const findFirst = vi.fn().mockResolvedValue({
     roomId: 'room-a',
+    organization: { isActive: orgActive },
     room: { status: roomStatus, mode: 'INDEPENDENT' },
     versions:
       scanStatus === 'MISSING'
@@ -59,6 +60,9 @@ describe('AI source eligibility', () => {
     ).toBeNull();
     expect(
       await resolveEligibleSource(tx('CLEAN', true, 'CLOSED'), 'org-a', 'doc-a', 'version-a')
+    ).toBeNull();
+    expect(
+      await resolveEligibleSource(tx('CLEAN', true, 'ACTIVE', false), 'org-a', 'doc-a', 'version-a')
     ).toBeNull();
   });
 });

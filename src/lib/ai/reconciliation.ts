@@ -2,6 +2,7 @@ import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 import { AI_PIPELINE_REVISION } from './chunking';
+import { configuredEmbeddingIdentity } from './embeddingProvider';
 
 export interface AiCoverage {
   organizationId: string;
@@ -17,7 +18,7 @@ export interface AiCoverage {
 export async function reconcileAiRoom(
   organizationId: string,
   roomId: string,
-  expectedModelId = process.env['AI_EMBEDDING_DEPLOYMENT']
+  expectedModelId = configuredEmbeddingIdentity()
 ): Promise<AiCoverage> {
   const snapshot = await withOrgContext(
     organizationId,
@@ -29,7 +30,13 @@ export async function reconcileAiRoom(
         where: { id: roomId, organizationId },
         select: { status: true, mode: true },
       });
-      const active = Boolean(policy && room?.status === 'ACTIVE' && room.mode === 'INDEPENDENT');
+      const organization = await tx.organization.findFirst({
+        where: { id: organizationId },
+        select: { isActive: true },
+      });
+      const active = Boolean(
+        policy && organization?.isActive && room?.status === 'ACTIVE' && room.mode === 'INDEPENDENT'
+      );
       if (active && !expectedModelId) {
         throw new Error('AI_EMBEDDING_NOT_CONFIGURED');
       }

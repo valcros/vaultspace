@@ -7,7 +7,11 @@ import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
 import { AI_PIPELINE_REVISION, chunkPages, sha256, type TextPage } from './chunking';
-import { AzureEmbeddingProvider, type EmbeddingProvider } from './embeddingProvider';
+import {
+  AzureEmbeddingProvider,
+  configuredEmbeddingIdentity,
+  type EmbeddingProvider,
+} from './embeddingProvider';
 import { resolveEligibleSource } from './sourceEligibility';
 
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
@@ -94,8 +98,35 @@ export async function indexAiVersion(
     return 'SKIPPED';
   }
 
-  const expectedModelId = embeddingProvider?.modelId ?? process.env['AI_EMBEDDING_DEPLOYMENT'];
+  const expectedModelId = embeddingProvider?.modelId ?? configuredEmbeddingIdentity();
   if (!expectedModelId) {
+    await withOrgContext(organizationId, async (tx) => {
+      await tx.aiIndexJob.upsert({
+        where: { organizationId_versionId: { organizationId, versionId } },
+        create: {
+          organizationId,
+          documentId,
+          versionId,
+          state: 'FAILED',
+          attempts: 1,
+          lastErrorCode: 'AI_EMBEDDING_NOT_CONFIGURED',
+        },
+        update: {
+          state: 'FAILED',
+          attempts: { increment: 1 },
+          lastErrorCode: 'AI_EMBEDDING_NOT_CONFIGURED',
+        },
+      });
+      await audit(
+        tx,
+        organizationId,
+        documentId,
+        versionId,
+        'INDEX',
+        'FAILED',
+        'AI_EMBEDDING_NOT_CONFIGURED'
+      );
+    });
     throw new Error('AI_EMBEDDING_NOT_CONFIGURED');
   }
   const existing = await withOrgContext(organizationId, (tx) =>
@@ -116,6 +147,12 @@ export async function indexAiVersion(
       tx.aiChunk.count({ where: { organizationId, sourceId: existing.id } })
     );
     if (count === existing.chunkCount) {
+      await withOrgContext(organizationId, (tx) =>
+        tx.aiIndexJob.updateMany({
+          where: { organizationId, versionId },
+          data: { state: 'READY', completedAt: new Date(), lastErrorCode: null },
+        })
+      );
       return 'UNCHANGED';
     }
   }

@@ -30,6 +30,7 @@ export async function resolveEligibleSource(
     },
     select: {
       roomId: true,
+      organization: { select: { isActive: true } },
       room: { select: { status: true, mode: true } },
       versions: {
         where: { id: versionId, organizationId, scanStatus: 'CLEAN' },
@@ -43,7 +44,12 @@ export async function resolveEligibleSource(
       },
     },
   });
-  if (!document || document.room.status !== 'ACTIVE' || document.room.mode !== 'INDEPENDENT') {
+  if (
+    !document ||
+    !document.organization.isActive ||
+    document.room.status !== 'ACTIVE' ||
+    document.room.mode !== 'INDEPENDENT'
+  ) {
     return null;
   }
   const policy = await tx.aiPolicy.findFirst({

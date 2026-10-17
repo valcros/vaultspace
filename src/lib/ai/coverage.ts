@@ -1,6 +1,7 @@
 import { withOrgContext } from '@/lib/db';
 
 import { AI_PIPELINE_REVISION } from './chunking';
+import { configuredEmbeddingIdentity } from './embeddingProvider';
 
 export interface AiRoomCoverage {
   roomId: string;
@@ -18,7 +19,7 @@ export interface AiRoomCoverage {
 export async function readAiRoomCoverage(
   organizationId: string,
   roomId: string,
-  expectedModelId = process.env['AI_EMBEDDING_DEPLOYMENT']
+  expectedModelId = configuredEmbeddingIdentity()
 ): Promise<AiRoomCoverage> {
   return withOrgContext(organizationId, async (tx) => {
     const room = await tx.room.findFirst({
@@ -28,6 +29,10 @@ export async function readAiRoomCoverage(
     if (!room) {
       throw new Error('AI_ROOM_NOT_FOUND');
     }
+    const organization = await tx.organization.findFirst({
+      where: { id: organizationId },
+      select: { isActive: true },
+    });
     const policy = await tx.aiPolicy.findFirst({
       where: { organizationId, roomId },
       select: { enabled: true },
@@ -102,6 +107,7 @@ export async function readAiRoomCoverage(
       oldestPendingAt: pending?.createdAt ?? null,
       ready:
         enabled &&
+        Boolean(organization?.isActive) &&
         room.status === 'ACTIVE' &&
         room.mode === 'INDEPENDENT' &&
         docs.length > 0 &&

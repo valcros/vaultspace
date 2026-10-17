@@ -160,5 +160,11 @@ describe('AI corpus database boundary', () => {
     const third = await seed();
     await prisma.aiPolicy.update({ where: { roomId: third.roomA.id }, data: { enabled: false } });
     expect(await prisma.aiSource.count({ where: { id: third.source.id } })).toBe(0);
+    const fourth = await seed();
+    await prisma.aiPolicy.delete({ where: { roomId: fourth.roomA.id } });
+    expect(await prisma.aiSource.count({ where: { id: fourth.source.id } })).toBe(0);
+    const fifth = await seed();
+    await prisma.organization.update({ where: { id: fifth.orgA.id }, data: { isActive: false } });
+    expect(await prisma.aiSource.count({ where: { id: fifth.source.id } })).toBe(0);
   });
 });

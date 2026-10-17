@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 
 import { withOrgContext } from '@/lib/db';
 
+import { AI_PIPELINE_REVISION } from './chunking';
+
 export interface RetrievalRequest {
   organizationId: string;
   roomId: string;
@@ -9,6 +11,7 @@ export interface RetrievalRequest {
   allowedVersionIds: string[];
   question: string;
   questionEmbedding: number[];
+  embeddingModelId: string;
   limit?: number;
 }
 
@@ -35,6 +38,8 @@ function validate(request: RetrievalRequest): void {
     !request.question.trim() ||
     request.question.length > 2000 ||
     request.allowedVersionIds.length > 1000 ||
+    !request.embeddingModelId ||
+    request.embeddingModelId.length > 120 ||
     request.questionEmbedding.length !== 1536 ||
     request.questionEmbedding.some((n) => !Number.isFinite(n))
   ) {
@@ -49,7 +54,7 @@ export class PostgresRetrievalProvider implements RetrievalProvider {
     if (!request.allowedVersionIds.length) {
       return [];
     }
-    const { organizationId, roomId, allowedVersionIds, question } = request;
+    const { organizationId, roomId, allowedVersionIds, question, embeddingModelId } = request;
     const limit = Math.min(Math.max(request.limit ?? 8, 1), 12);
     const queryVector = `[${request.questionEmbedding.join(',')}]`;
     const scope = Prisma.sql`
@@ -58,11 +63,14 @@ export class PostgresRetrievalProvider implements RetrievalProvider {
       JOIN document_versions v ON v.id = c."versionId" AND v."organizationId" = c."organizationId"
       JOIN documents d ON d.id = c."documentId" AND d."organizationId" = c."organizationId"
       JOIN rooms r ON r.id = c."roomId" AND r."organizationId" = c."organizationId"
+      JOIN organizations o ON o.id = c."organizationId"
       JOIN ai_policies p ON p."roomId" = r.id AND p."organizationId" = c."organizationId"
       WHERE c."organizationId" = ${organizationId}
         AND c."roomId" = ${roomId}
         AND c."versionId" IN (${Prisma.join(allowedVersionIds)})
         AND s.state = 'READY' AND s."versionId" = c."versionId"
+        AND s."embeddingModelId" = ${embeddingModelId}
+        AND s."pipelineRevision" = ${AI_PIPELINE_REVISION}
         AND s."documentId" = c."documentId" AND s."roomId" = c."roomId"
         AND s."fileSha256" = v."fileSha256"
         AND v."documentId" = d.id AND v."scanStatus" = 'CLEAN'
@@ -70,6 +78,7 @@ export class PostgresRetrievalProvider implements RetrievalProvider {
         AND d."deletedAt" IS NULL AND d."withdrawnAt" IS NULL
         AND (d."expiresAt" IS NULL OR d."expiresAt" > now())
         AND d."roomId" = r.id AND r.status = 'ACTIVE' AND r.mode = 'INDEPENDENT'
+        AND o."isActive" = true
         AND p.enabled = true`;
     const columns = Prisma.sql`c.id, c."documentId", c."versionId", c."pageNumber", c.content, c."contentSha256"`;
     return withOrgContext(organizationId, async (tx) => {

@@ -161,6 +161,26 @@ $$;
 CREATE TRIGGER ai_policy_invalidate AFTER UPDATE OF enabled ON ai_policies
   FOR EACH ROW EXECUTE FUNCTION invalidate_ai_policy_sources();
 
+CREATE FUNCTION invalidate_ai_policy_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  DELETE FROM ai_sources WHERE "organizationId" = OLD."organizationId" AND "roomId" = OLD."roomId";
+  RETURN OLD;
+END;
+$$;
+CREATE TRIGGER ai_policy_delete AFTER DELETE ON ai_policies
+  FOR EACH ROW EXECUTE FUNCTION invalidate_ai_policy_delete();
+
+CREATE FUNCTION invalidate_ai_organization_sources() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW."isActive" = false THEN
+    DELETE FROM ai_sources WHERE "organizationId" = NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER ai_organization_invalidate AFTER UPDATE OF "isActive" ON organizations
+  FOR EACH ROW EXECUTE FUNCTION invalidate_ai_organization_sources();
+
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vaultspace_app') THEN
