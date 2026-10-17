@@ -36,7 +36,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "node scripts/run-prisma-migrate-deploy.mjs",
     "db:migrate:dev": "DEPLOYMENT_MODE=standalone prisma migrate dev",
-    "db:push": "DEPLOYMENT_MODE=standalone prisma db push",
+    "db:push": "node scripts/reject-prisma-db-push.mjs",
     "db:seed": "prisma db seed",
     "db:reset": "DEPLOYMENT_MODE=standalone prisma migrate reset",
     "db:studio": "DEPLOYMENT_MODE=standalone prisma studio",

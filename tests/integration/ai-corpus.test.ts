@@ -130,6 +130,31 @@ async function seed() {
 }
 
 describe('AI corpus database boundary', () => {
+  it('builds a stored lexical search vector without weakening tenant isolation', async () => {
+    const { orgA, orgB, source } = await seed();
+    const rows = await withOrgContext(
+      orgA.id,
+      (tx) =>
+        tx.$queryRaw<Array<{ matches: boolean; rank: number }>>`
+        SELECT "contentSearch" @@ plainto_tsquery('english', 'synthetic financing') AS matches,
+          ts_rank_cd("contentSearch", plainto_tsquery('english', 'synthetic financing')) AS rank
+        FROM ai_chunks WHERE "sourceId" = ${source.id}`
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.matches).toBe(true);
+    expect(rows[0]?.rank).toBeGreaterThan(0);
+    expect(
+      await withOrgContext(
+        orgB.id,
+        (tx) =>
+          tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM ai_chunks
+          WHERE "sourceId" = ${source.id}
+            AND "contentSearch" @@ plainto_tsquery('english', 'synthetic financing')`
+      )
+    ).toHaveLength(0);
+  });
+
   it('isolates derivative rows and denies direct no-context access', async () => {
     const { orgA, orgB, source } = await seed();
     expect(await withOrgContext(orgA.id, (tx) => tx.aiChunk.count())).toBe(1);

@@ -88,8 +88,8 @@ export class PostgresRetrievalProvider implements RetrievalProvider {
       // boundary, not the only tenant filter.
       const lexical = await tx.$queryRaw<Row[]>(Prisma.sql`
         SELECT ${columns} ${scope}
-        AND to_tsvector('english', c.content) @@ plainto_tsquery('english', ${question})
-        ORDER BY ts_rank_cd(to_tsvector('english', c.content), plainto_tsquery('english', ${question})) DESC
+        AND c."contentSearch" @@ plainto_tsquery('english', ${question})
+        ORDER BY ts_rank_cd(c."contentSearch", plainto_tsquery('english', ${question})) DESC
         LIMIT 40`);
       const semantic = await tx.$queryRaw<Row[]>(Prisma.sql`
         SELECT ${columns} ${scope}
