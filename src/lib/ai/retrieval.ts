@@ -83,30 +83,36 @@ export class PostgresRetrievalProvider implements RetrievalProvider {
         AND o."isActive" = true AND o."aiEnabled" = true
         AND p.enabled = true`;
     const columns = Prisma.sql`c.id, c."documentId", c."versionId", c."pageNumber", c.content, c."contentSha256"`;
-    return withOrgContext(organizationId, async (tx) => {
-      // All predicates are repeated in both SQL lanes. RLS is an additional
-      // boundary, not the only tenant filter.
-      const lexical = await tx.$queryRaw<Row[]>(Prisma.sql`
+    return withOrgContext(
+      organizationId,
+      async (tx) => {
+        // All predicates are repeated in both SQL lanes. RLS is an additional
+        // boundary, not the only tenant filter.
+        const lexical = await tx.$queryRaw<Row[]>(Prisma.sql`
         SELECT ${columns} ${scope}
         AND c."contentSearch" @@ plainto_tsquery('english', ${question})
         ORDER BY ts_rank_cd(c."contentSearch", plainto_tsquery('english', ${question})) DESC
         LIMIT 40`);
-      const semantic = await tx.$queryRaw<Row[]>(Prisma.sql`
+        const semantic = await tx.$queryRaw<Row[]>(Prisma.sql`
         SELECT ${columns} ${scope}
         ORDER BY c.embedding::vector(1536) <=> ${queryVector}::vector(1536)
         LIMIT 40`);
-      const ranked = new Map<string, RetrievedChunk>();
-      for (const [lane, rows] of [lexical, semantic].entries()) {
-        rows.forEach((row, index) => {
-          const current = ranked.get(row.id);
-          const score = 1 / (60 + index + 1);
-          ranked.set(row.id, {
-            ...row,
-            score: (current?.score ?? 0) + score + (lane === 0 ? 0.000001 : 0),
+        const ranked = new Map<string, RetrievedChunk>();
+        for (const [lane, rows] of [lexical, semantic].entries()) {
+          rows.forEach((row, index) => {
+            const current = ranked.get(row.id);
+            const score = 1 / (60 + index + 1);
+            ranked.set(row.id, {
+              ...row,
+              score: (current?.score ?? 0) + score + (lane === 0 ? 0.000001 : 0),
+            });
           });
-        });
-      }
-      return [...ranked.values()].sort((a, b) => b.score - a.score).slice(0, limit);
-    });
+        }
+        return [...ranked.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+      },
+      // Concurrent retrieval shares a bounded connection pool. Bound both pool
+      // admission and the two-lane transaction explicitly.
+      { maxWait: 10_000, timeout: 10_000 }
+    );
   }
 }
