@@ -1229,6 +1229,8 @@ model AiChunk {
   ordinal        Int
   pageNumber     Int?
   content        String   @db.Text
+  // contentSearch is a stored generated tsvector in the SQL migration.
+  // Prisma 5 cannot represent generated columns, so retrieval reads it via raw SQL.
   contentSha256  String   @db.VarChar(64)
   embedding      Float[]
   createdAt      DateTime @default(now())
