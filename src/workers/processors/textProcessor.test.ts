@@ -14,6 +14,7 @@ const mockDocumentVersionFindUnique = vi.fn();
 // default to a servable (CLEAN) version so existing tests still index text.
 const SERVABLE_VERSION_ROW = {
   scanStatus: 'CLEAN',
+  mimeType: 'application/pdf',
   fileBlob: { storageKey: 'documents/org-1/file.pdf', storageBucket: 'documents' },
 };
 const mockDocumentVersionFindFirst = vi.fn().mockResolvedValue(SERVABLE_VERSION_ROW);
@@ -155,6 +156,10 @@ describe('processTextExtractJob — scan gate', () => {
 describe('processTextExtractJob — plain text', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      ...SERVABLE_VERSION_ROW,
+      mimeType: 'text/plain',
+    });
     mockStorageGet.mockResolvedValue(Buffer.from('plain text content'));
     mockDocumentFindFirst.mockResolvedValue({ roomId: 'room-1', name: 'report.txt' });
     mockJobAddJob.mockResolvedValue('job-1');
@@ -191,6 +196,21 @@ describe('processTextExtractJob — plain text', () => {
     mockDocumentVersionFindFirst.mockResolvedValue({
       ...SERVABLE_VERSION_ROW,
       scanStatus: 'SKIPPED',
+    });
+    await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
+    expect(mockJobAddJob).not.toHaveBeenCalledWith(
+      'low',
+      'ai.index',
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it('does not queue AI indexing for an unsupported CLEAN version', async () => {
+    mockAiPolicyFindFirst.mockResolvedValue({ id: 'policy-1' });
+    mockDocumentVersionFindFirst.mockResolvedValue({
+      ...SERVABLE_VERSION_ROW,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
     await processTextExtractJob(makeExtractJob({ contentType: 'text/plain' }));
     expect(mockJobAddJob).not.toHaveBeenCalledWith(

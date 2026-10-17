@@ -9,6 +9,7 @@ import { Job } from 'bullmq';
 import { PDFParse } from 'pdf-parse';
 
 import { withOrgContext } from '@/lib/db';
+import { isAiMimeSupported } from '@/lib/ai/sourceEligibility';
 import { isServable } from '@/lib/documents/scanGate';
 import { getProviders } from '@/providers';
 
@@ -31,6 +32,7 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
       where: { id: versionId, organizationId },
       select: {
         scanStatus: true,
+        mimeType: true,
         fileBlob: { select: { storageKey: true, storageBucket: true } },
       },
     })
@@ -163,7 +165,11 @@ export async function processTextExtractJob(job: Job<TextExtractJobPayload>): Pr
           select: { id: true },
         })
       );
-      if (aiEnabled && versionScan.scanStatus === 'CLEAN') {
+      if (
+        aiEnabled &&
+        versionScan.scanStatus === 'CLEAN' &&
+        isAiMimeSupported(versionScan.mimeType)
+      ) {
         await providers.job.addJob(
           'low',
           'ai.index',

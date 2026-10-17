@@ -32,15 +32,23 @@ async function main() {
     await client.$executeRawUnsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ai_chunks_embedding_hnsw_idx
       ON ai_chunks USING hnsw ((embedding::vector(1536)) vector_cosine_ops)`);
     const index = await client.$queryRaw<
-      Array<{ valid: boolean; ready: boolean; access_method: string; definition: string }>
+      Array<{
+        valid: boolean;
+        ready: boolean;
+        access_method: string;
+        expression: string | null;
+        operator_class: string;
+      }>
     >`
       SELECT i.indisvalid AS valid, i.indisready AS ready, am.amname AS access_method,
-             pg_get_indexdef(i.indexrelid) AS definition
+             pg_get_expr(i.indexprs, i.indrelid) AS expression,
+             opc.opcname AS operator_class
       FROM pg_index i
       JOIN pg_class idx ON idx.oid = i.indexrelid
       JOIN pg_class tbl ON tbl.oid = i.indrelid
       JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
       JOIN pg_am am ON am.oid = idx.relam
+      JOIN pg_opclass opc ON opc.oid = i.indclass[0]
       WHERE ns.nspname = 'public' AND tbl.relname = 'ai_chunks'
         AND idx.relname = 'ai_chunks_embedding_hnsw_idx'`;
     if (!index.length) throw new Error('AI_VECTOR_INDEX_MISSING');
@@ -48,8 +56,8 @@ async function main() {
       !index[0]?.valid ||
       !index[0].ready ||
       index[0].access_method !== 'hnsw' ||
-      !index[0].definition.includes('vector_cosine_ops') ||
-      !index[0].definition.includes('embedding')
+      index[0].operator_class !== 'vector_cosine_ops' ||
+      index[0].expression?.replace(/[\s()"]/g, '') !== 'embedding::vector1536'
     ) {
       throw new Error('AI_VECTOR_INDEX_INVALID');
     }
