@@ -1,5 +1,7 @@
 import { withOrgContext } from '@/lib/db';
 
+import { AI_PIPELINE_REVISION } from './chunking';
+
 export interface AiRoomCoverage {
   roomId: string;
   enabled: boolean;
@@ -15,7 +17,8 @@ export interface AiRoomCoverage {
 /** Metadata only. It never reads chunks, embeddings, or document text. */
 export async function readAiRoomCoverage(
   organizationId: string,
-  roomId: string
+  roomId: string,
+  expectedModelId = process.env['AI_EMBEDDING_DEPLOYMENT']
 ): Promise<AiRoomCoverage> {
   return withOrgContext(organizationId, async (tx) => {
     const room = await tx.room.findFirst({
@@ -54,7 +57,14 @@ export async function readAiRoomCoverage(
     );
     const sources = await tx.aiSource.findMany({
       where: { organizationId, roomId, versionId: { in: clean }, state: 'READY' },
-      select: { id: true, versionId: true, fileSha256: true, chunkCount: true },
+      select: {
+        id: true,
+        versionId: true,
+        fileSha256: true,
+        chunkCount: true,
+        embeddingModelId: true,
+        pipelineRevision: true,
+      },
     });
     const chunkCounts = await Promise.all(
       sources.map((source) => tx.aiChunk.count({ where: { organizationId, sourceId: source.id } }))
@@ -64,6 +74,9 @@ export async function readAiRoomCoverage(
         .filter(
           (source, i) =>
             source.chunkCount > 0 &&
+            Boolean(expectedModelId) &&
+            source.embeddingModelId === expectedModelId &&
+            source.pipelineRevision === AI_PIPELINE_REVISION &&
             source.fileSha256 === checksumByVersion.get(source.versionId) &&
             source.chunkCount === chunkCounts[i]
         )

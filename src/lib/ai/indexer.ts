@@ -6,13 +6,12 @@ import type { Prisma } from '@prisma/client';
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
-import { chunkPages, sha256, type TextPage } from './chunking';
+import { AI_PIPELINE_REVISION, chunkPages, sha256, type TextPage } from './chunking';
 import { AzureEmbeddingProvider, type EmbeddingProvider } from './embeddingProvider';
 import { resolveEligibleSource } from './sourceEligibility';
 
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 const MAX_CHUNKS = 500;
-const PIPELINE_REVISION = 1;
 
 export type AiIndexOutcome = 'READY' | 'SKIPPED' | 'UNCHANGED';
 
@@ -107,7 +106,7 @@ export async function indexAiVersion(
         state: 'READY',
         fileSha256: source.fileSha256,
         embeddingModelId: expectedModelId,
-        pipelineRevision: PIPELINE_REVISION,
+        pipelineRevision: AI_PIPELINE_REVISION,
       },
       select: { id: true, chunkCount: true, contentSha256: true },
     })
@@ -219,7 +218,7 @@ export async function indexAiVersion(
             fileSha256: source.fileSha256,
             contentSha256,
             embeddingModelId: embedder.modelId,
-            pipelineRevision: PIPELINE_REVISION,
+            pipelineRevision: AI_PIPELINE_REVISION,
             chunkCount: chunks.length,
             indexedAt: new Date(),
           },
@@ -229,7 +228,7 @@ export async function indexAiVersion(
             fileSha256: source.fileSha256,
             contentSha256,
             embeddingModelId: embedder.modelId,
-            pipelineRevision: PIPELINE_REVISION,
+            pipelineRevision: AI_PIPELINE_REVISION,
             chunkCount: chunks.length,
             state: 'READY',
             indexedAt: new Date(),

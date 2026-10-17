@@ -1,6 +1,8 @@
 import { withOrgContext } from '@/lib/db';
 import { getProviders } from '@/providers';
 
+import { AI_PIPELINE_REVISION } from './chunking';
+
 export interface AiCoverage {
   organizationId: string;
   roomId: string;
@@ -12,7 +14,11 @@ export interface AiCoverage {
 }
 
 /** Rechecks every current eligible source and removes derivatives of ineligible versions. */
-export async function reconcileAiRoom(organizationId: string, roomId: string): Promise<AiCoverage> {
+export async function reconcileAiRoom(
+  organizationId: string,
+  roomId: string,
+  expectedModelId = process.env['AI_EMBEDDING_DEPLOYMENT']
+): Promise<AiCoverage> {
   const snapshot = await withOrgContext(
     organizationId,
     async (tx) => {
@@ -24,6 +30,9 @@ export async function reconcileAiRoom(organizationId: string, roomId: string): P
         select: { status: true, mode: true },
       });
       const active = Boolean(policy && room?.status === 'ACTIVE' && room.mode === 'INDEPENDENT');
+      if (active && !expectedModelId) {
+        throw new Error('AI_EMBEDDING_NOT_CONFIGURED');
+      }
       const docs = active
         ? await tx.document.findMany({
             where: {
@@ -50,7 +59,14 @@ export async function reconcileAiRoom(organizationId: string, roomId: string): P
       const eligibleIds = new Set(eligible.map((item) => item.versionId));
       const sources = await tx.aiSource.findMany({
         where: { organizationId, roomId },
-        select: { id: true, versionId: true, chunkCount: true, state: true },
+        select: {
+          id: true,
+          versionId: true,
+          chunkCount: true,
+          state: true,
+          embeddingModelId: true,
+          pipelineRevision: true,
+        },
       });
       for (const source of sources) {
         if (eligibleIds.has(source.versionId)) {
@@ -78,7 +94,12 @@ export async function reconcileAiRoom(organizationId: string, roomId: string): P
         retained
           .filter(
             (source, i) =>
-              source.state === 'READY' && source.chunkCount > 0 && counts[i] === source.chunkCount
+              source.state === 'READY' &&
+              source.chunkCount > 0 &&
+              counts[i] === source.chunkCount &&
+              Boolean(expectedModelId) &&
+              source.embeddingModelId === expectedModelId &&
+              source.pipelineRevision === AI_PIPELINE_REVISION
           )
           .map((source) => source.versionId)
       );

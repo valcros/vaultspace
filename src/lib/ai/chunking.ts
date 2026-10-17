@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+export const AI_PIPELINE_REVISION = 1;
+
 export interface TextPage {
   pageNumber: number | null;
   text: string;

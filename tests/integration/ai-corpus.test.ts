@@ -121,7 +121,7 @@ describe('AI corpus database boundary', () => {
 
   it('reports complete coverage only for current CLEAN versions', async () => {
     const { orgA, roomA, doc, version } = await seed();
-    const complete = await readAiRoomCoverage(orgA.id, roomA.id);
+    const complete = await readAiRoomCoverage(orgA.id, roomA.id, 'synthetic-test-model');
     expect(complete).toMatchObject({
       activeDocuments: 1,
       cleanCurrentVersions: 1,
@@ -135,13 +135,13 @@ describe('AI corpus database boundary', () => {
     });
     expect(await prisma.aiSource.count({ where: { versionId: version.id } })).toBe(0);
     expect(await prisma.aiChunk.count({ where: { versionId: version.id } })).toBe(0);
-    expect(await readAiRoomCoverage(orgA.id, roomA.id)).toMatchObject({
+    expect(await readAiRoomCoverage(orgA.id, roomA.id, 'synthetic-test-model')).toMatchObject({
       ready: false,
       cleanCurrentVersions: 0,
       indexedVersions: 0,
     });
     await prisma.document.update({ where: { id: doc.id }, data: { withdrawnAt: new Date() } });
-    expect(await readAiRoomCoverage(orgA.id, roomA.id)).toMatchObject({
+    expect(await readAiRoomCoverage(orgA.id, roomA.id, 'synthetic-test-model')).toMatchObject({
       activeDocuments: 0,
       ready: false,
     });
