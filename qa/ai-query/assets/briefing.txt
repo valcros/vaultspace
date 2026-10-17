@@ -1,0 +1,3 @@
+VaultSpace AI QA synthetic fixture. All names and figures are fictional.
+
+Cedar Arc Labs builds SolarGrid, a grid-planning platform for electric utilities and commercial solar operators. Its planning workflow combines weather forecasting with battery scheduling. The company is preparing a fictional Series A discussion. The material is for product QA only and does not describe a real customer.

@@ -1,0 +1,3 @@
+VaultSpace AI QA synthetic version 2.
+
+The current release label is Bluebird. This version supersedes Amber.

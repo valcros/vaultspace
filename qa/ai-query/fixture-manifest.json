@@ -1,0 +1,203 @@
+{
+  "fixtureSet": "vaultspace-ai-query-phase0",
+  "version": "2026-10-17.1",
+  "organizations": [
+    {
+      "key": "primary",
+      "name": "VaultSpace AI QA Synthetic",
+      "slug": "vaultspace-ai-qa-synthetic"
+    },
+    {
+      "key": "isolation",
+      "name": "VaultSpace AI QA Isolation",
+      "slug": "vaultspace-ai-qa-isolation"
+    }
+  ],
+  "users": [
+    {
+      "key": "owner",
+      "email": "aiqa-owner@example.test",
+      "organization": "primary",
+      "role": "ADMIN"
+    },
+    {
+      "key": "full",
+      "email": "aiqa-full@example.test",
+      "organization": "primary",
+      "role": "VIEWER"
+    },
+    {
+      "key": "partial",
+      "email": "aiqa-partial@example.test",
+      "organization": "primary",
+      "role": "VIEWER"
+    },
+    {
+      "key": "outsider",
+      "email": "aiqa-outsider@example.test",
+      "organization": "primary",
+      "role": "VIEWER"
+    },
+    {
+      "key": "isolationOwner",
+      "email": "aiqa-isolation-owner@example.test",
+      "organization": "isolation",
+      "role": "ADMIN"
+    },
+    {
+      "key": "isolation",
+      "email": "aiqa-isolation@example.test",
+      "organization": "isolation",
+      "role": "VIEWER"
+    }
+  ],
+  "rooms": [
+    {
+      "key": "full",
+      "organization": "primary",
+      "name": "AI QA Full Access",
+      "slug": "ai-qa-full-access",
+      "status": "ACTIVE",
+      "mode": "INDEPENDENT"
+    },
+    {
+      "key": "split",
+      "organization": "primary",
+      "name": "AI QA Split Access",
+      "slug": "ai-qa-split-access",
+      "status": "ACTIVE",
+      "mode": "INDEPENDENT"
+    },
+    {
+      "key": "lifecycle",
+      "organization": "primary",
+      "name": "AI QA Version Lifecycle",
+      "slug": "ai-qa-version-lifecycle",
+      "status": "ACTIVE",
+      "mode": "INDEPENDENT"
+    },
+    {
+      "key": "finance",
+      "organization": "primary",
+      "name": "AI QA Model Finance",
+      "slug": "ai-qa-model-finance",
+      "status": "ACTIVE",
+      "mode": "INDEPENDENT"
+    },
+    {
+      "key": "external",
+      "organization": "primary",
+      "name": "AI QA External Viewer",
+      "slug": "ai-qa-external-viewer",
+      "status": "ACTIVE",
+      "mode": "INDEPENDENT"
+    },
+    {
+      "key": "published",
+      "organization": "primary",
+      "name": "AI QA Published View Placeholder",
+      "slug": "ai-qa-published-view",
+      "status": "DRAFT",
+      "mode": "INDEPENDENT"
+    },
+    {
+      "key": "isolation",
+      "organization": "isolation",
+      "name": "AI QA Other Tenant",
+      "slug": "ai-qa-other-tenant",
+      "status": "ACTIVE",
+      "mode": "INDEPENDENT"
+    }
+  ],
+  "documents": [
+    {
+      "key": "briefing",
+      "room": "full",
+      "asset": "assets/briefing.txt",
+      "mimeType": "text/plain",
+      "indexExpected": true
+    },
+    {
+      "key": "technology",
+      "room": "full",
+      "asset": "assets/technology-overview.pdf",
+      "mimeType": "application/pdf",
+      "indexExpected": true
+    },
+    {
+      "key": "injection",
+      "room": "full",
+      "asset": "assets/untrusted-instructions.txt",
+      "mimeType": "text/plain",
+      "indexExpected": true
+    },
+    {
+      "key": "splitPublic",
+      "room": "split",
+      "asset": "assets/split-public.txt",
+      "mimeType": "text/plain",
+      "indexExpected": true
+    },
+    {
+      "key": "splitRestricted",
+      "room": "split",
+      "asset": "assets/split-restricted.txt",
+      "mimeType": "text/plain",
+      "indexExpected": true
+    },
+    {
+      "key": "lifecycle",
+      "room": "lifecycle",
+      "asset": "assets/version-v1.txt",
+      "mimeType": "text/plain",
+      "indexExpected": true,
+      "laterVersionAsset": "assets/version-v2.txt"
+    },
+    {
+      "key": "finance",
+      "room": "finance",
+      "asset": "assets/finance-model.xlsx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "indexExpected": false
+    },
+    {
+      "key": "external",
+      "room": "external",
+      "asset": "assets/external-share.txt",
+      "mimeType": "text/plain",
+      "indexExpected": true
+    },
+    {
+      "key": "otherTenant",
+      "room": "isolation",
+      "asset": "assets/other-tenant.txt",
+      "mimeType": "text/plain",
+      "indexExpected": true
+    }
+  ],
+  "grants": [
+    { "room": "full", "user": "full", "level": "VIEW" },
+    { "room": "split", "user": "full", "level": "VIEW" },
+    { "room": "split", "user": "partial", "level": "VIEW" },
+    { "room": "lifecycle", "user": "full", "level": "VIEW" },
+    { "room": "finance", "user": "full", "level": "VIEW" },
+    { "room": "external", "user": "full", "level": "VIEW" },
+    { "room": "isolation", "user": "isolation", "level": "VIEW" }
+  ],
+  "documentDenies": [{ "document": "splitRestricted", "user": "partial", "level": "NONE" }],
+  "links": [
+    {
+      "key": "entireRoom",
+      "room": "external",
+      "slug": "ai-qa-entire-room",
+      "scope": "ENTIRE_ROOM"
+    },
+    {
+      "key": "singleDocument",
+      "room": "external",
+      "document": "external",
+      "slug": "ai-qa-single-document",
+      "scope": "DOCUMENT"
+    }
+  ]
+}

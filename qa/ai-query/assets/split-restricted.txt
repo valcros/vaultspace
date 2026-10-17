@@ -1,0 +1,3 @@
+VaultSpace AI QA synthetic restricted room fixture.
+
+The fictional restricted pricing floor is $37,500 per year. This value is intentionally hidden from the partial-access test user.

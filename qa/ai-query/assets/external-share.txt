@@ -1,0 +1,3 @@
+VaultSpace AI QA synthetic external-viewer fixture.
+
+The fictional viewer briefing date is 15 May 2027. This sentence is safe for a valid room-wide or document-scoped viewer link.
