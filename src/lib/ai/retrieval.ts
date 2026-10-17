@@ -61,6 +61,7 @@ export class PostgresRetrievalProvider implements RetrievalProvider {
       FROM ai_chunks c
       JOIN ai_sources s ON s.id = c."sourceId" AND s."organizationId" = c."organizationId"
       JOIN document_versions v ON v.id = c."versionId" AND v."organizationId" = c."organizationId"
+      JOIN file_blobs b ON b."versionId" = v.id AND b."organizationId" = c."organizationId"
       JOIN documents d ON d.id = c."documentId" AND d."organizationId" = c."organizationId"
       JOIN rooms r ON r.id = c."roomId" AND r."organizationId" = c."organizationId"
       JOIN organizations o ON o.id = c."organizationId"
@@ -74,6 +75,7 @@ export class PostgresRetrievalProvider implements RetrievalProvider {
         AND s."documentId" = c."documentId" AND s."roomId" = c."roomId"
         AND s."fileSha256" = v."fileSha256"
         AND v."documentId" = d.id AND v."scanStatus" = 'CLEAN'
+        AND (v."mimeType" = 'text/plain' OR v."mimeType" = 'application/pdf' OR v."mimeType" LIKE 'image/%')
         AND d."currentVersionId" = v.id AND d.status = 'ACTIVE'
         AND d."deletedAt" IS NULL AND d."withdrawnAt" IS NULL
         AND (d."expiresAt" IS NULL OR d."expiresAt" > now())

@@ -118,6 +118,7 @@ CREATE POLICY "ai_index_audits_org_isolation" ON "ai_index_audits" FOR ALL USING
 CREATE FUNCTION invalidate_ai_document_source() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF OLD."currentVersionId" IS DISTINCT FROM NEW."currentVersionId"
+     OR OLD."roomId" IS DISTINCT FROM NEW."roomId"
      OR NEW.status <> 'ACTIVE' OR NEW."deletedAt" IS NOT NULL
      OR NEW."withdrawnAt" IS NOT NULL
      OR (NEW."expiresAt" IS NOT NULL AND NEW."expiresAt" <= now()) THEN
@@ -126,19 +127,43 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER ai_document_invalidate AFTER UPDATE OF "currentVersionId", status, "deletedAt", "withdrawnAt", "expiresAt" ON documents
+CREATE TRIGGER ai_document_invalidate AFTER UPDATE OF "currentVersionId", "roomId", status, "deletedAt", "withdrawnAt", "expiresAt" ON documents
   FOR EACH ROW EXECUTE FUNCTION invalidate_ai_document_source();
 
 CREATE FUNCTION invalidate_ai_version_source() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW."scanStatus" <> 'CLEAN' THEN
+  IF NEW."scanStatus" <> 'CLEAN'
+     OR OLD."mimeType" IS DISTINCT FROM NEW."mimeType"
+     OR OLD."fileSha256" IS DISTINCT FROM NEW."fileSha256"
+     OR OLD."documentId" IS DISTINCT FROM NEW."documentId" THEN
     DELETE FROM ai_sources WHERE "organizationId" = NEW."organizationId" AND "versionId" = NEW.id;
   END IF;
   RETURN NEW;
 END;
 $$;
-CREATE TRIGGER ai_version_invalidate AFTER UPDATE OF "scanStatus" ON document_versions
+CREATE TRIGGER ai_version_invalidate AFTER UPDATE OF "scanStatus", "mimeType", "fileSha256", "documentId" ON document_versions
   FOR EACH ROW EXECUTE FUNCTION invalidate_ai_version_source();
+
+CREATE FUNCTION invalidate_ai_blob_source() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM ai_sources WHERE "organizationId" = OLD."organizationId" AND "versionId" = OLD."versionId";
+    RETURN OLD;
+  END IF;
+  IF OLD."storageKey" IS DISTINCT FROM NEW."storageKey"
+     OR OLD."storageBucket" IS DISTINCT FROM NEW."storageBucket"
+     OR OLD."isEncrypted" IS DISTINCT FROM NEW."isEncrypted"
+     OR OLD."encryptionKey" IS DISTINCT FROM NEW."encryptionKey"
+     OR OLD."encryptionAlgorithm" IS DISTINCT FROM NEW."encryptionAlgorithm" THEN
+    DELETE FROM ai_sources WHERE "organizationId" = OLD."organizationId" AND "versionId" = OLD."versionId";
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER ai_blob_invalidate_delete AFTER DELETE ON file_blobs
+  FOR EACH ROW EXECUTE FUNCTION invalidate_ai_blob_source();
+CREATE TRIGGER ai_blob_invalidate_update AFTER UPDATE OF "storageKey", "storageBucket", "isEncrypted", "encryptionKey", "encryptionAlgorithm" ON file_blobs
+  FOR EACH ROW EXECUTE FUNCTION invalidate_ai_blob_source();
 
 CREATE FUNCTION invalidate_ai_room_sources() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

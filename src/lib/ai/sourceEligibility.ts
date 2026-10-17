@@ -11,6 +11,12 @@ export interface EligibleSource {
   storageKey: string;
 }
 
+export function isAiMimeSupported(mimeType: string): boolean {
+  return (
+    mimeType === 'text/plain' || mimeType === 'application/pdf' || mimeType.startsWith('image/')
+  );
+}
+
 /** Queue payload IDs never grant authorization to read or embed source bytes. */
 export async function resolveEligibleSource(
   tx: Prisma.TransactionClient,

@@ -209,12 +209,22 @@ export async function indexAiVersion(
     return await withOrgContext(
       organizationId,
       async (tx) => {
-        // Serialize duplicate jobs and version changes against the document row.
+        // Hold locks on every row whose update/delete trigger purges this source.
+        // A disabling transaction then either commits before this recheck or
+        // waits to purge the newly written source after this transaction commits.
+        await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${organizationId} FOR SHARE`;
+        await tx.$queryRaw`SELECT id FROM rooms WHERE id = ${source.roomId} AND "organizationId" = ${organizationId} FOR SHARE`;
+        await tx.$queryRaw`SELECT id FROM ai_policies WHERE "roomId" = ${source.roomId} AND "organizationId" = ${organizationId} FOR SHARE`;
+        // FOR UPDATE also serializes duplicate index jobs for this document.
         await tx.$queryRaw`SELECT id FROM documents WHERE id = ${documentId} AND "organizationId" = ${organizationId} FOR UPDATE`;
+        await tx.$queryRaw`SELECT id FROM document_versions WHERE id = ${versionId} AND "organizationId" = ${organizationId} FOR SHARE`;
+        await tx.$queryRaw`SELECT id FROM file_blobs WHERE "versionId" = ${versionId} AND "organizationId" = ${organizationId} FOR SHARE`;
         const current = await resolveEligibleSource(tx, organizationId, documentId, versionId);
         if (
           !current ||
+          current.roomId !== source.roomId ||
           current.fileSha256 !== source.fileSha256 ||
+          current.storageBucket !== source.storageBucket ||
           current.storageKey !== source.storageKey
         ) {
           const stale = await tx.aiSource.findFirst({

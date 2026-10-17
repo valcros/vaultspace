@@ -31,11 +31,29 @@ async function main() {
     // A concurrent build avoids blocking normal document writes in staging.
     await client.$executeRawUnsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ai_chunks_embedding_hnsw_idx
       ON ai_chunks USING hnsw ((embedding::vector(1536)) vector_cosine_ops)`);
-    const index = await client.$queryRaw<Array<{ indexname: string }>>`
-      SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
-      AND tablename = 'ai_chunks' AND indexname = 'ai_chunks_embedding_hnsw_idx'`;
+    const index = await client.$queryRaw<
+      Array<{ valid: boolean; ready: boolean; access_method: string; definition: string }>
+    >`
+      SELECT i.indisvalid AS valid, i.indisready AS ready, am.amname AS access_method,
+             pg_get_indexdef(i.indexrelid) AS definition
+      FROM pg_index i
+      JOIN pg_class idx ON idx.oid = i.indexrelid
+      JOIN pg_class tbl ON tbl.oid = i.indrelid
+      JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+      JOIN pg_am am ON am.oid = idx.relam
+      WHERE ns.nspname = 'public' AND tbl.relname = 'ai_chunks'
+        AND idx.relname = 'ai_chunks_embedding_hnsw_idx'`;
     if (!index.length) throw new Error('AI_VECTOR_INDEX_MISSING');
-    process.stdout.write('AI vector extension and HNSW index present\n');
+    if (
+      !index[0]?.valid ||
+      !index[0].ready ||
+      index[0].access_method !== 'hnsw' ||
+      !index[0].definition.includes('vector_cosine_ops') ||
+      !index[0].definition.includes('embedding')
+    ) {
+      throw new Error('AI_VECTOR_INDEX_INVALID');
+    }
+    process.stdout.write('AI vector extension and valid HNSW index present\n');
   } finally {
     await client.$disconnect();
   }

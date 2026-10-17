@@ -62,6 +62,14 @@ async function seed() {
       scanStatus: 'CLEAN',
     },
   });
+  await prisma.fileBlob.create({
+    data: {
+      organizationId: orgA.id,
+      versionId: version.id,
+      storageBucket: 'documents',
+      storageKey: `synthetic/${version.id}`,
+    },
+  });
   await prisma.document.update({ where: { id: doc.id }, data: { currentVersionId: version.id } });
   const source = await prisma.aiSource.create({
     data: {
@@ -139,11 +147,76 @@ describe('AI corpus database boundary', () => {
       ready: false,
       cleanCurrentVersions: 0,
       indexedVersions: 0,
+      excludedDocuments: 1,
     });
     await prisma.document.update({ where: { id: doc.id }, data: { withdrawnAt: new Date() } });
     expect(await readAiRoomCoverage(orgA.id, roomA.id, 'synthetic-test-model')).toMatchObject({
       activeDocuments: 0,
       ready: false,
+    });
+  });
+
+  it('distinguishes unsupported active documents from pending index work', async () => {
+    const { orgA, roomA, doc, version, source } = await seed();
+    await prisma.documentVersion.update({
+      where: { id: version.id },
+      data: { mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+    });
+    expect(await prisma.aiSource.count({ where: { id: source.id } })).toBe(0);
+    expect(await readAiRoomCoverage(orgA.id, roomA.id, 'synthetic-test-model')).toMatchObject({
+      activeDocuments: 1,
+      missingVersions: 1,
+      unsupportedDocuments: 1,
+      pendingDocuments: 0,
+      ready: false,
+    });
+    await prisma.documentVersion.update({
+      where: { id: version.id },
+      data: { mimeType: 'text/plain' },
+    });
+    await prisma.aiIndexJob.create({
+      data: {
+        organizationId: orgA.id,
+        documentId: doc.id,
+        versionId: version.id,
+        state: 'PENDING',
+      },
+    });
+    expect(await readAiRoomCoverage(orgA.id, roomA.id, 'synthetic-test-model')).toMatchObject({
+      pendingDocuments: 1,
+      unsupportedDocuments: 0,
+      ready: false,
+    });
+  });
+
+  it('does not let a failed historical version block a fully indexed current version', async () => {
+    const { orgA, roomA, doc } = await seed();
+    const oldVersion = await prisma.documentVersion.create({
+      data: {
+        organizationId: orgA.id,
+        documentId: doc.id,
+        versionNumber: 2,
+        fileName: 'old-note.txt',
+        mimeType: 'text/plain',
+        fileSize: BigInt(12),
+        fileSha256: 'e'.repeat(64),
+        versionHash: 'f'.repeat(64),
+        scanStatus: 'CLEAN',
+      },
+    });
+    await prisma.aiIndexJob.create({
+      data: {
+        organizationId: orgA.id,
+        documentId: doc.id,
+        versionId: oldVersion.id,
+        state: 'FAILED',
+        lastErrorCode: 'AI_FORMAT_UNSUPPORTED',
+      },
+    });
+    expect(await readAiRoomCoverage(orgA.id, roomA.id, 'synthetic-test-model')).toMatchObject({
+      indexedVersions: 1,
+      failedJobs: 0,
+      ready: true,
     });
   });
 
@@ -169,5 +242,33 @@ describe('AI corpus database boundary', () => {
     const sixth = await seed();
     await prisma.organization.update({ where: { id: sixth.orgA.id }, data: { aiEnabled: false } });
     expect(await prisma.aiSource.count({ where: { id: sixth.source.id } })).toBe(0);
+  });
+
+  it('purges derivatives when the original file reference is removed', async () => {
+    const { orgA, roomA, version, source } = await seed();
+    await prisma.fileBlob.delete({ where: { versionId: version.id } });
+    expect(await prisma.aiSource.count({ where: { id: source.id } })).toBe(0);
+    expect(await prisma.aiChunk.count({ where: { sourceId: source.id } })).toBe(0);
+    expect(await readAiRoomCoverage(orgA.id, roomA.id, 'synthetic-test-model')).toMatchObject({
+      indexedVersions: 0,
+      excludedDocuments: 1,
+      ready: false,
+    });
+  });
+
+  it('purges derivatives when a document moves to a different room', async () => {
+    const { orgA, doc, source } = await seed();
+    const destination = await prisma.room.create({
+      data: {
+        organizationId: orgA.id,
+        name: 'AI QA destination',
+        slug: `ai-destination-${randomUUID()}`,
+        status: 'ACTIVE',
+        mode: 'INDEPENDENT',
+      },
+    });
+    await prisma.document.update({ where: { id: doc.id }, data: { roomId: destination.id } });
+    expect(await prisma.aiSource.count({ where: { id: source.id } })).toBe(0);
+    expect(await prisma.aiChunk.count({ where: { sourceId: source.id } })).toBe(0);
   });
 });

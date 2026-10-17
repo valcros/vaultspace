@@ -112,6 +112,14 @@ describe('AI index worker trust boundary', () => {
     );
   });
 
+  it('rejects a document moved to another room while embedding was running', async () => {
+    mockResolveEligibleSource
+      .mockResolvedValueOnce(source)
+      .mockResolvedValueOnce({ ...source, roomId: 'room-b' });
+    expect(await indexAiVersion('org-a', 'doc-a', 'version-a', provider)).toBe('SKIPPED');
+    expect(tx.aiChunk.createMany).not.toHaveBeenCalled();
+  });
+
   it('uses OCR for an unreadable PDF without logging parser content', async () => {
     mockResolveEligibleSource.mockResolvedValue({ ...source, mimeType: 'application/pdf' });
     mockPdfGetText.mockRejectedValue(new Error('parser saw source fragment'));

@@ -2,6 +2,7 @@ import { withOrgContext } from '@/lib/db';
 
 import { AI_PIPELINE_REVISION } from './chunking';
 import { configuredEmbeddingIdentity } from './embeddingProvider';
+import { isAiMimeSupported } from './sourceEligibility';
 
 export interface AiRoomCoverage {
   roomId: string;
@@ -11,6 +12,11 @@ export interface AiRoomCoverage {
   cleanCurrentVersions: number;
   indexedVersions: number;
   missingVersions: number;
+  pendingDocuments: number;
+  unsupportedDocuments: number;
+  failedDocuments: number;
+  excludedDocuments: number;
+  unqueuedDocuments: number;
   failedJobs: number;
   oldestPendingAt: Date | null;
   ready: boolean;
@@ -50,16 +56,29 @@ export async function readAiRoomCoverage(
       select: {
         id: true,
         currentVersionId: true,
-        versions: { select: { id: true, scanStatus: true, fileSha256: true } },
+        versions: {
+          select: {
+            id: true,
+            scanStatus: true,
+            fileSha256: true,
+            mimeType: true,
+            fileBlob: { select: { id: true } },
+          },
+        },
       },
     });
     const cleanVersions = docs.flatMap((doc) => {
       const version = doc.versions.find((item) => item.id === doc.currentVersionId);
-      return version?.scanStatus === 'CLEAN' ? [version] : [];
+      return version?.scanStatus === 'CLEAN' && version.fileBlob ? [version] : [];
     });
     const clean = cleanVersions.map((version) => version.id);
     const checksumByVersion = new Map(
       cleanVersions.map((version) => [version.id, version.fileSha256])
+    );
+    const supportedVersions = new Set(
+      cleanVersions
+        .filter((version) => isAiMimeSupported(version.mimeType))
+        .map((version) => version.id)
     );
     const sources = await tx.aiSource.findMany({
       where: { organizationId, roomId, versionId: { in: clean }, state: 'READY' },
@@ -84,15 +103,53 @@ export async function readAiRoomCoverage(
             source.embeddingModelId === expectedModelId &&
             source.pipelineRevision === AI_PIPELINE_REVISION &&
             source.fileSha256 === checksumByVersion.get(source.versionId) &&
+            supportedVersions.has(source.versionId) &&
             source.chunkCount === chunkCounts[i]
         )
         .map((source) => source.versionId)
     );
+    const currentVersionIds = docs.flatMap((doc) =>
+      doc.currentVersionId ? [doc.currentVersionId] : []
+    );
+    const jobs = await tx.aiIndexJob.findMany({
+      where: { organizationId, versionId: { in: currentVersionIds } },
+      select: { versionId: true, state: true, lastErrorCode: true },
+    });
+    const jobByVersion = new Map(jobs.map((job) => [job.versionId, job]));
+    const categories = {
+      pendingDocuments: 0,
+      unsupportedDocuments: 0,
+      failedDocuments: 0,
+      excludedDocuments: 0,
+      unqueuedDocuments: 0,
+    };
+    for (const doc of docs) {
+      const version = doc.versions.find((item) => item.id === doc.currentVersionId);
+      if (!version || version.scanStatus !== 'CLEAN' || !version.fileBlob) {
+        categories.excludedDocuments++;
+      } else if (
+        !isAiMimeSupported(version.mimeType) ||
+        jobByVersion.get(version.id)?.lastErrorCode === 'AI_FORMAT_UNSUPPORTED'
+      ) {
+        categories.unsupportedDocuments++;
+      } else if (indexed.has(version.id)) {
+        continue;
+      } else if (jobByVersion.get(version.id)?.state === 'FAILED') {
+        categories.failedDocuments++;
+      } else if (
+        jobByVersion.get(version.id)?.state === 'PENDING' ||
+        jobByVersion.get(version.id)?.state === 'RUNNING'
+      ) {
+        categories.pendingDocuments++;
+      } else {
+        categories.unqueuedDocuments++;
+      }
+    }
     const failedJobs = await tx.aiIndexJob.count({
-      where: { organizationId, state: 'FAILED', documentId: { in: docs.map((doc) => doc.id) } },
+      where: { organizationId, state: 'FAILED', versionId: { in: clean } },
     });
     const pending = await tx.aiIndexJob.findFirst({
-      where: { organizationId, state: 'PENDING', documentId: { in: docs.map((doc) => doc.id) } },
+      where: { organizationId, state: 'PENDING', versionId: { in: clean } },
       orderBy: { createdAt: 'asc' },
       select: { createdAt: true },
     });
@@ -105,6 +162,7 @@ export async function readAiRoomCoverage(
       cleanCurrentVersions: clean.length,
       indexedVersions: indexed.size,
       missingVersions: docs.length - indexed.size,
+      ...categories,
       failedJobs,
       oldestPendingAt: pending?.createdAt ?? null,
       ready:

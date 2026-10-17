@@ -3,6 +3,7 @@ import { getProviders } from '@/providers';
 
 import { AI_PIPELINE_REVISION } from './chunking';
 import { configuredEmbeddingIdentity } from './embeddingProvider';
+import { isAiMimeSupported } from './sourceEligibility';
 
 export interface AiCoverage {
   organizationId: string;
@@ -57,13 +58,22 @@ export async function reconcileAiRoom(
             select: {
               id: true,
               currentVersionId: true,
-              versions: { select: { id: true, scanStatus: true } },
+              versions: {
+                select: {
+                  id: true,
+                  scanStatus: true,
+                  mimeType: true,
+                  fileBlob: { select: { id: true } },
+                },
+              },
             },
           })
         : [];
       const eligible = docs.flatMap((doc) => {
         const version = doc.versions.find((candidate) => candidate.id === doc.currentVersionId);
-        return version?.scanStatus === 'CLEAN'
+        return version?.scanStatus === 'CLEAN' &&
+          version.fileBlob &&
+          isAiMimeSupported(version.mimeType)
           ? [{ documentId: doc.id, versionId: version.id }]
           : [];
       });
@@ -123,10 +133,10 @@ export async function reconcileAiRoom(
         });
       }
       const failedJobs = await tx.aiIndexJob.count({
-        where: { organizationId, state: 'FAILED', documentId: { in: docs.map((doc) => doc.id) } },
+        where: { organizationId, state: 'FAILED', versionId: { in: [...eligibleIds] } },
       });
       const oldest = await tx.aiIndexJob.findFirst({
-        where: { organizationId, state: 'PENDING', documentId: { in: docs.map((doc) => doc.id) } },
+        where: { organizationId, state: 'PENDING', versionId: { in: [...eligibleIds] } },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       });
